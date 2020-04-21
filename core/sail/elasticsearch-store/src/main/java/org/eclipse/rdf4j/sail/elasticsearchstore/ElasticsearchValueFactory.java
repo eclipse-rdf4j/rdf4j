@@ -9,13 +9,18 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleContextStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementImpl;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-class ElasticsearchValueFactory extends AbstractValueFactory {
+class ElasticsearchValueFactory extends AbstractValueFactory implements ExtensibleStatementHelper {
 
 	/*-----------*
 	 * Constants *
@@ -38,12 +43,37 @@ class ElasticsearchValueFactory extends AbstractValueFactory {
 	private ElasticsearchValueFactory() {
 	}
 
-	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object) {
-		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object);
+	ExtensibleStatement createStatement(Resource subject, IRI predicate, Value object, boolean inferred) {
+		return new ExtensibleStatementImpl(subject, predicate, object, inferred);
+	}
+
+	ExtensibleStatement createStatement(Resource subject, IRI predicate, Value object,
+			Resource context, boolean inferred) {
+		return new ExtensibleContextStatement(subject, predicate, object, context, inferred);
+	}
+
+	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
+			boolean inferred) {
+		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object, inferred);
 	}
 
 	ElasticsearchContextStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
-			Resource context) {
-		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context);
+			Resource context, boolean inferred) {
+		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context, inferred);
+	}
+
+	@Override
+	public ExtensibleStatement fromStatement(Statement statement, boolean inferred) {
+		if (statement instanceof ElasticsearchId) {
+
+			ElasticsearchId elasticsearchIdStatement = (ElasticsearchId) statement;
+
+			if (elasticsearchIdStatement.isInferred() == inferred) {
+				return elasticsearchIdStatement;
+			}
+		}
+
+		return ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
+
 	}
 }

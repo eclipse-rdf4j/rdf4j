@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -229,48 +230,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 									final String bindingStr = jp.getCurrentName();
 
-									if (jp.nextToken() != JsonToken.START_OBJECT) {
-										throw new QueryResultParseException("Did not find object for binding value",
-												jp.getCurrentLocation().getLineNr(),
-												jp.getCurrentLocation().getColumnNr());
-									}
-
-									String lang = null;
-									String type = null;
-									String datatype = null;
-									String value = null;
-
-									while (jp.nextToken() != JsonToken.END_OBJECT) {
-
-										if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
-											throw new QueryResultParseException(
-													"Did not find value attribute under " + bindingStr + " field",
-													jp.getCurrentLocation().getLineNr(),
-													jp.getCurrentLocation().getColumnNr());
-										}
-										String fieldName = jp.getCurrentName();
-
-										// move to the value token
-										jp.nextToken();
-
-										// set the appropriate state variable
-										if (TYPE.equals(fieldName)) {
-											type = jp.getText();
-										} else if (XMLLANG.equals(fieldName)) {
-											lang = jp.getText();
-										} else if (DATATYPE.equals(fieldName)) {
-											datatype = jp.getText();
-										} else if (VALUE.equals(fieldName)) {
-											value = jp.getText();
-										} else {
-											throw new QueryResultParseException("Unexpected field name: " + fieldName,
-													jp.getCurrentLocation().getLineNr(),
-													jp.getCurrentLocation().getColumnNr());
-
-										}
-									}
-
-									nextBindingSet.addBinding(bindingStr, parseValue(type, value, lang, datatype));
+									nextBindingSet.addBinding(bindingStr, parseValue(jp, bindingStr));
 								}
 								// parsing of solution finished, report result return to
 								// bindings state
@@ -344,6 +304,69 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		}
 
 		return result;
+	}
+
+	protected Value parseValue(JsonParser jp, String bindingStr) throws IOException {
+		if (jp.nextToken() != JsonToken.START_OBJECT) {
+			throw new QueryResultParseException("Did not find object for binding value",
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
+		}
+
+		String lang = null;
+		String type = null;
+		String datatype = null;
+		String value = null;
+
+		Triple triple = null;
+
+		while (jp.nextToken() != JsonToken.END_OBJECT) {
+			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
+				throw new QueryResultParseException(
+						"Did not find value attribute under " + bindingStr + " field",
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
+			}
+			String fieldName = jp.getCurrentName();
+
+			// move to the value token
+			jp.nextToken();
+
+			// set the appropriate state variable
+			if (TYPE.equals(fieldName)) {
+				type = jp.getText();
+			} else if (XMLLANG.equals(fieldName)) {
+				lang = jp.getText();
+			} else if (DATATYPE.equals(fieldName)) {
+				datatype = jp.getText();
+			} else if (VALUE.equals(fieldName)) {
+				if (jp.getCurrentToken() == JsonToken.START_OBJECT) {
+					triple = parseTripleValue(jp, fieldName);
+				} else {
+					value = jp.getText();
+				}
+			} else {
+				throw new QueryResultParseException("Unexpected field name: " + fieldName,
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
+
+			}
+		}
+
+		if (triple != null && checkTripleType(jp, type)) {
+			return triple;
+		}
+
+		return parseValue(type, value, lang, datatype);
+	}
+
+	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
+		throw new QueryResultParseException("Unexpected object as value", jp.getCurrentLocation().getLineNr(),
+				jp.getCurrentLocation().getColumnNr());
+	}
+
+	protected boolean checkTripleType(JsonParser jp, String type) {
+		throw new IllegalStateException();
 	}
 
 	/**

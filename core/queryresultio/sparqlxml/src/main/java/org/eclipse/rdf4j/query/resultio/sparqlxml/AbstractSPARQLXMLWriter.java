@@ -30,9 +30,7 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -97,7 +95,9 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 *--------------*/
 
 	protected AbstractSPARQLXMLWriter(OutputStream out) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		super(out);
+		this.xmlWriter = new XMLWriter(out);
+		this.xmlWriter.setPrettyPrint(true);
 	}
 
 	protected AbstractSPARQLXMLWriter(Writer writer) {
@@ -282,6 +282,8 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		try {
 			if (!documentOpen) {
 				startDocument();
@@ -328,7 +330,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		try {
 			if (!documentOpen) {
 				startDocument();

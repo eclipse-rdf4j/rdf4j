@@ -13,7 +13,6 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Deque;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.StringTokenizer;
@@ -27,6 +26,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
@@ -67,7 +67,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Flag indicating whether the last written statement has been closed.
 	 */
-	protected boolean statementClosed;
+	protected boolean statementClosed = true;
 	protected Resource lastWrittenSubject;
 	protected IRI lastWrittenPredicate;
 
@@ -104,7 +104,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
+		super(out);
+		this.baseIRI = baseIRI;
+		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
 	}
 
 	/**
@@ -125,11 +127,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
-		namespaceTable = new LinkedHashMap<>();
-		writingStarted = false;
-		statementClosed = true;
-		lastWrittenSubject = null;
-		lastWrittenPredicate = null;
 	}
 
 	/*---------*
@@ -143,11 +140,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RuntimeException("Document writing has already started");
-		}
-
-		writingStarted = true;
+		super.startRDF();
 
 		try {
 			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
@@ -180,22 +173,18 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			closePreviousStatement();
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (!namespaceTable.containsKey(name)) {
 				// Namespace not yet mapped to a prefix, try to give it the
@@ -223,11 +212,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 				namespaceTable.put(name, prefix);
 
-				if (writingStarted) {
-					closePreviousStatement();
+				closePreviousStatement();
 
-					writeNamespace(prefix, name);
-				}
+				writeNamespace(prefix, name);
 			}
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
@@ -235,11 +222,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet been started");
-		}
-
+	protected void consumeStatement(Statement st) throws RDFHandlerException {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();
@@ -329,6 +312,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			closePreviousStatement();
 
@@ -432,8 +416,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected void writeResource(Resource res, boolean canShorten) throws IOException {
 		if (res instanceof IRI) {
 			writeURI((IRI) res);
-		} else {
+		} else if (res instanceof BNode) {
 			writeBNode((BNode) res, canShorten);
+		} else {
+			writeTriple((Triple) res, canShorten);
 		}
 	}
 
@@ -514,6 +500,25 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				}
 			}
 		}
+	}
+
+	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
+		throw new IOException(getRDFFormat().getName() + " does not support RDF* triples");
+	}
+
+	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
+		writer.write("<<");
+		writeResource(triple.getSubject());
+		writer.write(" ");
+		writeURI(triple.getPredicate());
+		writer.write(" ");
+		Value object = triple.getObject();
+		if (object instanceof Literal) {
+			writeLiteral((Literal) object);
+		} else {
+			writeResource((Resource) object, canShorten);
+		}
+		writer.write(">>");
 	}
 
 	protected void writeLiteral(Literal lit) throws IOException {

@@ -61,9 +61,9 @@ public class SpinSailConfig extends AbstractDelegatingSailImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectLiteral(m.filter(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null))
+			Models.objectLiteral(m.getStatements(implNode, SpinSailSchema.AXIOM_CLOSURE_NEEDED, null))
 					.ifPresent(lit -> setAxiomClosureNeeded(lit.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, SpinSailSchema.VALIDATE_CONSTRAINTS, null))
+			Models.objectLiteral(m.getStatements(implNode, SpinSailSchema.VALIDATE_CONSTRAINTS, null))
 					.ifPresent(lit -> setValidateConstraints(lit.booleanValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

@@ -106,11 +106,7 @@ public class TriGWriter extends TurtleWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet been started");
-		}
-
+	protected void consumeStatement(Statement st) {
 		// If we are pretty-printing, all writing is buffered until endRDF is called
 		if (prettyPrintModel != null) {
 			prettyPrintModel.add(st);

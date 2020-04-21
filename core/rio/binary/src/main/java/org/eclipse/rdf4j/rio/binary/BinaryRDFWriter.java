@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.MAGIC_NUMBER;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NAMESPACE_DECL;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NULL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.STATEMENT;
+import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.TRIPLE_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.URI_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_REF;
 
@@ -35,12 +36,14 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Arjohn Kampman
@@ -57,8 +60,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private final DataOutputStream out;
 
-	private boolean writingStarted = false;
-
 	private byte[] buf;
 
 	public BinaryRDFWriter(OutputStream out) {
@@ -66,6 +67,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	public BinaryRDFWriter(OutputStream out, int bufferSize) {
+		super(out);
 		this.out = new DataOutputStream(new BufferedOutputStream(out));
 		this.statementQueue = new ArrayBlockingQueue<>(bufferSize);
 		this.valueFreq = new HashMap<>(3 * bufferSize);
@@ -79,27 +81,24 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			writingStarted = true;
-			try {
-				out.write(MAGIC_NUMBER);
-				out.writeInt(FORMAT_VERSION);
-			} catch (IOException e) {
-				throw new RDFHandlerException(e);
-			}
+		super.startRDF();
+		try {
+			out.write(MAGIC_NUMBER);
+			out.writeInt(FORMAT_VERSION);
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
 		}
 	}
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			while (!statementQueue.isEmpty()) {
 				writeStatement();
 			}
 			out.writeByte(END_OF_DATA);
 			out.flush();
-			writingStarted = false;
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
@@ -107,7 +106,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			out.writeByte(NAMESPACE_DECL);
 			writeString(prefix);
@@ -119,7 +118,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
-		startRDF();
+		checkWritingStarted();
 		try {
 			out.writeByte(COMMENT);
 			writeString(comment);
@@ -129,7 +128,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
+	protected void consumeStatement(Statement st) {
 		statementQueue.add(st);
 		incValueFreq(st.getSubject());
 		incValueFreq(st.getPredicate());
@@ -142,7 +141,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 
 		// Process the first statement from the queue
-		startRDF();
 		try {
 			writeStatement();
 		} catch (IOException e) {
@@ -247,6 +245,8 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 			writeBNode((BNode) value);
 		} else if (value instanceof Literal) {
 			writeLiteral((Literal) value);
+		} else if (value instanceof Triple) {
+			writeTriple((Triple) value);
 		} else {
 			throw new RDFHandlerException("Unknown Value object type: " + value.getClass());
 		}
@@ -275,6 +275,13 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 			writeString(label);
 			writeString(datatype.toString());
 		}
+	}
+
+	private void writeTriple(Triple triple) throws IOException {
+		out.writeByte(TRIPLE_VALUE);
+		writeValue(triple.getSubject());
+		writeValue(triple.getPredicate());
+		writeValue(triple.getObject());
 	}
 
 	private void writeString(String s) throws IOException {

@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -26,6 +25,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
@@ -82,12 +82,12 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
-		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
+		return nodeShape.requiresEvaluation(addedStatements, removedStatements, stats);
 	}
 
 	public String getPlanAsGraphvizDot(PlanNode planNode, ConnectionsGroup connectionsGroup) {

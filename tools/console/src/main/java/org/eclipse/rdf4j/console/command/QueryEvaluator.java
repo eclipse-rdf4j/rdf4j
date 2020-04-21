@@ -18,6 +18,7 @@ import java.nio.file.StandardOpenOption;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -356,9 +357,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			}
 			w = Rio.createWriter(fmt.get(), out);
 		}
-		if (getShowPrefix()) {
-			getPrefixes().stream().forEach(ns -> w.handleNamespace(ns.getPrefix(), ns.getName()));
-		}
 		return w;
 	}
 
@@ -400,7 +398,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);
 			} else if (query instanceof ParsedGraphQuery) {
 				RDFWriter writer = getRDFWriter(path, os);
-				evaluator.evaluateGraphQuery(queryLn, queryString, writer);
+				evaluator.evaluateGraphQuery(queryLn, queryString, writer,
+						getShowPrefix() ? getPrefixes() : Collections.emptySet());
 			} else if (query instanceof ParsedUpdate) {
 				// no outputstream for updates, can only be console output
 				if (path != null) {

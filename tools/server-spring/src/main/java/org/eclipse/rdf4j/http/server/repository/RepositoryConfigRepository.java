@@ -118,9 +118,8 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			@Override
 			public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
 					boolean includeInferred, Resource... contexts) throws RepositoryException {
-				Model model = committed.filter(subj, pred, obj, contexts);
-				CloseableIteration<Statement, RepositoryException> iter;
-				iter = new CloseableIteratorIteration<>(model.iterator());
+				CloseableIteration<Statement, RepositoryException> iter = new CloseableIteratorIteration<>(
+						committed.getStatements(subj, pred, obj, contexts).iterator());
 				return new RepositoryResult<>(iter);
 			}
 

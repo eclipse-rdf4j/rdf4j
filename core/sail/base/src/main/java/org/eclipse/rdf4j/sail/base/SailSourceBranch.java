@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
@@ -96,7 +96,7 @@ class SailSourceBranch implements SailSource {
 	 * @param backingSource
 	 */
 	public SailSourceBranch(SailSource backingSource) {
-		this(backingSource, new LinkedHashModelFactory(), false);
+		this(backingSource, new DynamicModelFactory(), false);
 	}
 
 	/**

@@ -33,4 +33,17 @@ public class TestSPARQLUpdateDataBlockParser {
 		}
 	}
 
+	@Test
+	public void testParseRDFStar() throws IOException {
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
+
+		String[] blocksToCheck = new String[] {
+				"graph <u:g1> {<u:1> <p:1> <<<u:3><u:4>\"test\"@en>>} . <u:2> <p:2> 2",
+				"<< <a>  <urn:2><<<b> <urn:4><urn:5>>>>> <urn:6><< <urn:7> <urn:8><c>>>",
+				"@prefix u: <http://example.com/>.\n<< <a>  u:2<<<b> u:4 u:5>>>>u:6<< u:7 u:8<c>>>"
+		};
+		for (String block : blocksToCheck) {
+			parser.parse(new StringReader(block), "http://base.org");
+		}
+	}
 }

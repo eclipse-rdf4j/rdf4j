@@ -4,7 +4,7 @@ QueryRoot
          ProjectionElem "s"
          ProjectionElem "p"
          ProjectionElem "o"
-      StatementSourcePattern
+      StatementSourcePattern (resultSizeEstimate=UNKNOWN)
          Var (name=s)
          Var (name=p)
          Var (name=o)

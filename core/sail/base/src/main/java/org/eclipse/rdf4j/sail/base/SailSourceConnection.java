@@ -122,6 +122,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 */
 	private volatile FederatedServiceResolver federatedServiceResolver;
 
+	// The context that represents the unnamed graph
+	static final Resource[] NULL_CTX = new Resource[] { null };
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -544,9 +547,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 			boolean modified = false;
 			if (contexts.length == 0) {
-				if (!hasStatement(explicitOnlyDataset, subj, pred, obj)) {
+				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {
 					// only add inferred statements that aren't already explicit
-					if (!hasStatement(inferredOnlyDataset, subj, pred, obj)) {
+					if (!hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX)) {
 						// only report inferred statements that don't already
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
@@ -578,7 +581,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 0) {
-			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj)) {
+			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
 			sink.approve(subj, pred, obj, null);

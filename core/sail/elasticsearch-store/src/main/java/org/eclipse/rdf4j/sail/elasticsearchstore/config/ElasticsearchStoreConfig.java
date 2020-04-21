@@ -64,27 +64,30 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 		try {
 
-			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.hostname, null)).ifPresent(value -> {
-				try {
-					setHostname(value.stringValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"String value required for " + ElasticsearchStoreSchema.hostname + " property, found "
-									+ value);
-				}
-			});
+			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.hostname, null))
+					.ifPresent(value -> {
+						try {
+							setHostname(value.stringValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"String value required for " + ElasticsearchStoreSchema.hostname
+											+ " property, found "
+											+ value);
+						}
+					});
 
-			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.index, null)).ifPresent(value -> {
-				try {
-					setIndex(value.stringValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"String value required for " + ElasticsearchStoreSchema.index + " property, found "
-									+ value);
-				}
-			});
+			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.index, null))
+					.ifPresent(value -> {
+						try {
+							setIndex(value.stringValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"String value required for " + ElasticsearchStoreSchema.index + " property, found "
+											+ value);
+						}
+					});
 
-			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.clusterName, null))
+			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.clusterName, null))
 					.ifPresent(value -> {
 						try {
 							setClusterName(value.stringValue());
@@ -95,15 +98,16 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 						}
 					});
 
-			Models.objectLiteral(graph.filter(implNode, ElasticsearchStoreSchema.port, null)).ifPresent(value -> {
-				try {
-					setPort(value.intValue());
-				} catch (IllegalArgumentException e) {
-					throw new SailConfigException(
-							"Integer value required for " + ElasticsearchStoreSchema.port + " property, found "
-									+ value);
-				}
-			});
+			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.port, null))
+					.ifPresent(value -> {
+						try {
+							setPort(value.intValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Integer value required for " + ElasticsearchStoreSchema.port + " property, found "
+											+ value);
+						}
+					});
 
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);

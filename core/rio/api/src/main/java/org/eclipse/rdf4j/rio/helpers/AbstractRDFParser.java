@@ -71,6 +71,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	protected ValueFactory valueFactory;
 
+	private ValueFactory originalValueFactory;
+
 	/**
 	 * The base URI for resolving relative URIs.
 	 */
@@ -130,6 +132,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	@Override
 	public RDFParser setValueFactory(ValueFactory valueFactory) {
 		this.valueFactory = valueFactory;
+		this.originalValueFactory = valueFactory;
 		return this;
 	}
 
@@ -342,6 +345,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 		baseURI = null;
 		nextBNodePrefix = createUniqueBNodePrefix();
 		namespaceTable.clear();
+		// Don't use the setter setValueFactory() as it will update originalValueFactory too
+		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
+			valueFactory = new RDFStarDecodingValueFactory(originalValueFactory);
+		} else {
+			valueFactory = originalValueFactory;
+		}
 
 		initializeNamespaceTableFromConfiguration();
 	}

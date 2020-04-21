@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NAMESPACE_DECL;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NULL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.PLAIN_LITERAL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.STATEMENT;
+import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.TRIPLE_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.URI_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_DECL;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_REF;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -202,6 +204,8 @@ public class BinaryRDFParser extends AbstractRDFParser {
 			return readLangLiteral();
 		case DATATYPE_LITERAL_VALUE:
 			return readDatatypeLiteral();
+		case TRIPLE_VALUE:
+			return readTriple();
 		default:
 			reportFatalError("Unknown value type: " + valueType);
 			return null;
@@ -239,6 +243,21 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		String datatype = readString();
 		IRI dtUri = createURI(datatype);
 		return createLiteral(label, null, dtUri, -1, -1);
+	}
+
+	private Triple readTriple() throws IOException {
+		Value subject = readValue();
+		if (subject instanceof Resource) {
+			Value predicate = readValue();
+			if (predicate instanceof IRI) {
+				Value object = readValue();
+
+				return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+			}
+		}
+
+		reportFatalError("Invalid RDF* triple value");
+		return null;
 	}
 
 	private String readString() throws IOException {

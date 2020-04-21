@@ -14,40 +14,43 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 /**
  * A wrapper for an Iteration that filters the statements against a pattern similar to getStatements(Resource subject,
  * IRI predicate, Value object, Resource... context).
  */
 @Experimental
-public class FilteringIteration<E extends Statement, X extends Exception> extends LookAheadIteration<E, X> {
+public class FilteringIteration<E extends ExtensibleStatement, X extends Exception> extends LookAheadIteration<E, X> {
 
 	final Iteration<E, X> wrappedIteration;
 	CloseableIteration<E, X> closeableWrappedIteration;
 
-	Resource subject;
-	IRI predicate;
-	Value object;
-	Resource[] context;
+	private final Resource subject;
+	private final IRI predicate;
+	private final Value object;
+	private final boolean inferred;
+	private final Resource[] context;
 
 	public FilteringIteration(CloseableIteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
-			Resource... context) {
+			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.closeableWrappedIteration = wrappedIteration;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
+		this.inferred = inferred;
 		this.context = context;
 	}
 
 	public FilteringIteration(Iteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
-			Resource... context) {
+			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
+		this.inferred = inferred;
 		this.context = context;
 	}
 
@@ -71,6 +74,10 @@ public class FilteringIteration<E extends Statement, X extends Exception> extend
 				continue;
 			}
 
+			if (next.isInferred() != inferred) {
+				continue;
+			}
+
 			return next;
 
 		}
@@ -82,7 +89,7 @@ public class FilteringIteration<E extends Statement, X extends Exception> extend
 	protected void handleClose() throws X {
 		super.handleClose();
 		if (closeableWrappedIteration != null) {
-			assert (closeableWrappedIteration == closeableWrappedIteration);
+			assert (wrappedIteration == closeableWrappedIteration);
 			closeableWrappedIteration.close();
 		}
 	}

@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
 
 /**
  * Configuration handling for {@link org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer}.
- * 
+ *
  * @author Dale Visser
  */
 public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSailImplConfig {
@@ -79,7 +79,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 	/**
 	 * Set the optional matcher query.
-	 * 
+	 *
 	 * @param matcherQuery if null, internal value will be set to the empty string
 	 */
 	public void setMatcherQuery(String matcherQuery) {
@@ -96,7 +96,7 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 
 		try {
 
-			Optional<Literal> language = Models.objectLiteral(m.filter(implNode, QUERY_LANGUAGE, null));
+			Optional<Literal> language = Models.objectLiteral(m.getStatements(implNode, QUERY_LANGUAGE, null));
 
 			if (language.isPresent()) {
 				setQueryLanguage(QueryLanguage.valueOf(language.get().stringValue()));
@@ -108,15 +108,15 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 				setQueryLanguage(QueryLanguage.SPARQL);
 			}
 
-			Optional<Resource> object = Models.objectResource(m.filter(implNode, RULE_QUERY, null));
+			Optional<Resource> object = Models.objectResource(m.getStatements(implNode, RULE_QUERY, null));
 			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
+				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
 						.ifPresent(lit -> setRuleQuery(lit.stringValue()));
 			}
 
-			object = Models.objectResource(m.filter(implNode, MATCHER_QUERY, null));
+			object = Models.objectResource(m.getStatements(implNode, MATCHER_QUERY, null));
 			if (object.isPresent()) {
-				Models.objectLiteral(m.filter(object.get(), SP.TEXT_PROPERTY, null))
+				Models.objectLiteral(m.getStatements(object.get(), SP.TEXT_PROPERTY, null))
 						.ifPresent(lit -> setMatcherQuery(lit.stringValue()));
 			}
 		} catch (ModelException e) {

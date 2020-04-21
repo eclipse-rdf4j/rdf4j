@@ -28,6 +28,7 @@ import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
@@ -130,8 +131,11 @@ public abstract class AbstractQueryResultIOTest {
 		MapBindingSet solution9 = new MapBindingSet(bindingNames.size());
 		solution9.addBinding("a", vf.createLiteral("newline at the end \n", XMLSchema.STRING));
 
+		MapBindingSet solution10 = new MapBindingSet(bindingNames.size());
+		solution10.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
+
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4, solution5,
-				solution6, solution7, solution8, solution9);
+				solution6, solution7, solution8, solution9, solution10);
 
 		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);
 
@@ -164,6 +168,11 @@ public abstract class AbstractQueryResultIOTest {
 		solution5.addBinding("a", vf.createLiteral("''single-quoted string"));
 		solution5.addBinding("b", vf.createLiteral("\"\"double-quoted string"));
 		solution5.addBinding("c", vf.createLiteral("		unencoded tab characters followed by encoded \t\t"));
+
+		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());
+		solution6.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
+		solution6.addBinding("b", vf.createIRI("urn:test"));
+		solution6.addBinding("c", vf.createBNode("bnode1"));
 
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4,
 				solution5);

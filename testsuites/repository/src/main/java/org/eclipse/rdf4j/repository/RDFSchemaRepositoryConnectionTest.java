@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -180,8 +181,10 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 		// the reasoner to support usage of other contexts, this will have to be amended.
 		assertTrue("inferred triple should have been added to null context",
 				testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true, (Resource) null));
-		assertFalse("input triple should not have been re-added as inferred",
-				testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true, (Resource) null));
+
+// It used to expected behaviour that all inferred statements be added to the null context except those that already existed in some other context. There is no longer a check for if an inferred statement exists in other contexts.
+//		assertFalse("input triple should not have been re-added as inferred",
+//				testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true, (Resource) null));
 	}
 
 	@Test
@@ -193,10 +196,13 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 		// the reasoner to support usage of other contexts, this will have to be amended.
 		assertTrue("inferred triple should have been added to null context",
 				testCon.hasStatement(FOAF.AGENT, RDF.TYPE, RDFS.CLASS, true, (Resource) null));
-		assertFalse("input triple should not have been re-added as inferred",
-				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, true, (Resource) null));
-		assertFalse("input triple should not have been re-added as inferred",
-				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, true, (Resource) null));
+		// It used to expected behaviour that all inferred statements be added to the null context except those that
+		// already existed in some other context. There is no longer a check for if an inferred statement exists in
+		// other contexts.
+		// assertFalse("input triple should not have been re-added as inferred", testCon.hasStatement(FOAF.PERSON,
+		// RDF.TYPE, RDFS.CLASS, true, (Resource) null));
+		// assertFalse("input triple should not have been re-added as inferred", testCon.hasStatement(FOAF.PERSON,
+		// RDFS.SUBCLASSOF, FOAF.AGENT, true, (Resource) null));
 		assertTrue("input triple should be explicitly present",
 				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));
 		assertTrue("input triple should be explicitly present",

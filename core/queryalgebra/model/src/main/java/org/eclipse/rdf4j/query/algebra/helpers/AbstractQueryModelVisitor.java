@@ -87,11 +87,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
@@ -485,6 +487,16 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 
 	@Override
 	public void meet(ZeroLengthPath node) throws X {
+		meetNode(node);
+	}
+
+	@Override
+	public void meet(TripleRef node) throws X {
+		meetNode(node);
+	}
+
+	@Override
+	public void meet(ValueExprTripleRef node) throws X {
 		meetNode(node);
 	}
 

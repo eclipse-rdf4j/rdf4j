@@ -68,7 +68,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 		try {
 
-			Models.objectLiteral(graph.filter(implNode, EVALUATION_STRATEGY_FACTORY, null))
+			Models.objectLiteral(graph.getStatements(implNode, EVALUATION_STRATEGY_FACTORY, null))
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});

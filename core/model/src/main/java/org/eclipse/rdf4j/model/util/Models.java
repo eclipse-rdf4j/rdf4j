@@ -20,18 +20,26 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 
 /**
  * Utility functions for working with {@link Model}s and other {@link Statement} collections.
@@ -56,8 +64,8 @@ public class Models {
 	 * @param m the model from which to retrieve an object value.
 	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<Value> object(Model m) {
-		return m.stream().map(st -> st.getObject()).findAny();
+	public static Optional<Value> object(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject()).findAny();
 	}
 
 	/**
@@ -67,8 +75,12 @@ public class Models {
 	 * @param m the model from which to retrieve an object Literal value.
 	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
-	public static Optional<Literal> objectLiteral(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Literal).map(l -> (Literal) l).findAny();
+	public static Optional<Literal> objectLiteral(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.findAny();
 	}
 
 	/**
@@ -79,8 +91,8 @@ public class Models {
 	 *         such value exists.
 	 * @see Model#objects()
 	 */
-	public static Set<Literal> objectLiterals(Model m) {
-		return m.stream()
+	public static Set<Literal> objectLiterals(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Literal)
 				.map(l -> (Literal) l)
@@ -95,8 +107,12 @@ public class Models {
 	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<Resource> objectResource(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof Resource).map(r -> (Resource) r).findAny();
+	public static Optional<Resource> objectResource(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.findAny();
 	}
 
 	/**
@@ -107,8 +123,8 @@ public class Models {
 	 *         such value exists.
 	 * @see Model#objects()
 	 */
-	public static Set<Resource> objectResources(Model m) {
-		return m.stream()
+	public static Set<Resource> objectResources(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Resource)
 				.map(r -> (Resource) r)
@@ -123,8 +139,12 @@ public class Models {
 	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<IRI> objectIRI(Model m) {
-		return m.stream().map(st -> st.getObject()).filter(o -> o instanceof IRI).map(r -> (IRI) r).findAny();
+	public static Optional<IRI> objectIRI(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.findAny();
 	}
 
 	/**
@@ -135,8 +155,8 @@ public class Models {
 	 *         exists.
 	 * @see Model#objects()
 	 */
-	public static Set<IRI> objectIRIs(Model m) {
-		return m.stream()
+	public static Set<IRI> objectIRIs(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof IRI)
 				.map(r -> (IRI) r)
@@ -151,8 +171,8 @@ public class Models {
 	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<String> objectString(Model m) {
-		return m.stream().map(st -> st.getObject().stringValue()).findAny();
+	public static Optional<String> objectString(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject().stringValue()).findAny();
 	}
 
 	/**
@@ -163,8 +183,10 @@ public class Models {
 	 *         exists.
 	 * @see Model#objects()
 	 */
-	public static Set<String> objectStrings(Model m) {
-		return m.stream().map(st -> st.getObject().stringValue()).collect(Collectors.toSet());
+	public static Set<String> objectStrings(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getObject().stringValue())
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -175,8 +197,8 @@ public class Models {
 	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<Resource> subject(Model m) {
-		return m.stream().map(st -> st.getSubject()).findAny();
+	public static Optional<Resource> subject(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getSubject()).findAny();
 	}
 
 	/**
@@ -187,8 +209,12 @@ public class Models {
 	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
 	 */
-	public static Optional<IRI> subjectIRI(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof IRI).map(s -> (IRI) s).findAny();
+	public static Optional<IRI> subjectIRI(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof IRI)
+				.map(s -> (IRI) s)
+				.findAny();
 	}
 
 	/**
@@ -209,8 +235,12 @@ public class Models {
 	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
 	 */
-	public static Optional<BNode> subjectBNode(Model m) {
-		return m.stream().map(st -> st.getSubject()).filter(s -> s instanceof BNode).map(s -> (BNode) s).findAny();
+	public static Optional<BNode> subjectBNode(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof BNode)
+				.map(s -> (BNode) s)
+				.findAny();
 	}
 
 	/**
@@ -231,8 +261,8 @@ public class Models {
 	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
 	 *         no such value exists.
 	 */
-	public static Optional<IRI> predicate(Model m) {
-		return m.stream().map(st -> st.getPredicate()).findAny();
+	public static Optional<IRI> predicate(Iterable<Statement> m) {
+		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getPredicate()).findAny();
 	}
 
 	/**
@@ -275,7 +305,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return object(m.filter(subject, property, null, contexts));
+		return object(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -311,7 +341,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectResource(m.filter(subject, property, null, contexts));
+		return objectResource(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -328,7 +358,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectResources(m.filter(subject, property, null, contexts));
+		return objectResources(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -346,7 +376,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectIRI(m.filter(subject, property, null, contexts));
+		return objectIRI(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -363,7 +393,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectIRIs(m.filter(subject, property, null, contexts));
+		return objectIRIs(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -381,7 +411,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectLiteral(m.filter(subject, property, null, contexts));
+		return objectLiteral(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -398,7 +428,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectLiterals(m.filter(subject, property, null, contexts));
+		return objectLiterals(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -416,7 +446,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectString(m.filter(subject, property, null, contexts));
+		return objectString(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -433,7 +463,7 @@ public class Models {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
-		return objectStrings(m.filter(subject, property, null, contexts));
+		return objectStrings(m.getStatements(subject, property, null, contexts));
 	}
 
 	/**
@@ -507,7 +537,216 @@ public class Models {
 			} else {
 				return st;
 			}
-		}).collect(Collectors.toCollection(LinkedHashModel::new));
+		}).collect(ModelCollector.toModel());
+	}
+
+	/**
+	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
+	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
+	 *
+	 * @param message The message to be used for the exception
+	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
+	 */
+	public static Supplier<ModelException> modelException(String message) {
+		return () -> new ModelException(message);
+	}
+
+	/**
+	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
+	 *
+	 * @param toSynchronize the model that should be synchronized
+	 * @return Synchronized Model
+	 */
+	public static Model synchronizedModel(Model toSynchronize) {
+		return new SynchronizedModel(toSynchronize);
+	}
+
+	/**
+	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf       the {@link ValueFactory} to use for creating statements.
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertRDFStarToReification(ValueFactory vf, Model model, Consumer<Statement> consumer) {
+		model.forEach(st -> Statements.convertRDFStarToReification(vf, st, consumer));
+	}
+
+	/**
+	 * Converts the supplied RDF* model to RDF reification statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 *
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertRDFStarToReification(Model model, Consumer<Statement> consumer) {
+		convertRDFStarToReification(SimpleValueFactory.getInstance(), model, consumer);
+	}
+
+	/**
+	 * Converts the statements in supplied RDF* model to a new RDF model using reificiation.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf    the {@link ValueFactory} to use for creating statements.
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(ValueFactory vf, Model model) {
+		Model reificationModel = new LinkedHashModel();
+		convertRDFStarToReification(vf, model, (Consumer<Statement>) reificationModel::add);
+		return reificationModel;
+	}
+
+	/**
+	 * Converts the statements in supplied RDF* model to a new RDF model using reificiation.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf           the {@link ValueFactory} to use for creating statements.
+	 * @param model        the {@link Model} to convert.
+	 * @param modelFactory the {@link ModelFactory} used to create the new output {@link Model}.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(ValueFactory vf, Model model, ModelFactory modelFactory) {
+		Model reificationModel = modelFactory.createEmptyModel();
+		convertRDFStarToReification(vf, model, (Consumer<Statement>) reificationModel::add);
+		return reificationModel;
+	}
+
+	/**
+	 * Converts the statements in the supplied RDF* model to a new RDF model using reification.
+	 *
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with RDF* statements converted to reified triples.
+	 */
+	@Experimental
+	public static Model convertRDFStarToReification(Model model) {
+		return convertRDFStarToReification(SimpleValueFactory.getInstance(), model);
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf       the {@link ValueFactory} to use for creating statements.
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertReificationToRDFStar(ValueFactory vf, Model model, Consumer<Statement> consumer) {
+		Map<Resource, Triple> convertedStatements = new HashMap<>();
+		model.filter(null, RDF.TYPE, RDF.STATEMENT).forEach((s) -> {
+			Value subject = object(model.filter(s.getSubject(), RDF.SUBJECT, null)).orElse(null);
+			if (!(subject instanceof IRI) && !(subject instanceof BNode)) {
+				return;
+			}
+			Value predicate = object(model.filter(s.getSubject(), RDF.PREDICATE, null)).orElse(null);
+			if (!(predicate instanceof IRI)) {
+				return;
+			}
+			Value object = object(model.filter(s.getSubject(), RDF.OBJECT, null)).orElse(null);
+			if (!(object instanceof Value)) {
+				return;
+			}
+			Triple t = vf.createTriple((Resource) subject, (IRI) predicate, object);
+			convertedStatements.put(s.getSubject(), t);
+		});
+
+		for (Map.Entry<Resource, Triple> e : convertedStatements.entrySet()) {
+			Triple t = e.getValue();
+			Resource subject = convertedStatements.get(t.getSubject());
+			Resource object = convertedStatements.get(t.getObject());
+			if (subject != null || object != null) {
+				// Triples within triples, replace them in the map
+				Triple nt = vf.createTriple(subject != null ? subject : t.getSubject(), t.getPredicate(),
+						object != null ? object : t.getObject());
+				e.setValue(nt);
+			}
+		}
+
+		model.forEach((s) -> {
+			Resource subject = s.getSubject();
+			IRI predicate = s.getPredicate();
+			Value object = s.getObject();
+			Triple subjectTriple = convertedStatements.get(subject);
+			Triple objectTriple = convertedStatements.get(object);
+
+			if (subjectTriple == null && objectTriple == null) {
+				// Statement not part of detected reification, add it as is
+				consumer.accept(s);
+			} else if (subjectTriple == null || ((!RDF.TYPE.equals(predicate) || !RDF.STATEMENT.equals(object))
+					&& !RDF.SUBJECT.equals(predicate) && !RDF.PREDICATE.equals(predicate)
+					&& !RDF.OBJECT.equals(predicate))) {
+				// Statement uses reified data and needs to be converted
+				Statement ns = vf.createStatement(subjectTriple != null ? subjectTriple : s.getSubject(),
+						s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());
+				consumer.accept(ns);
+			} // else: Statement part of reification and needs to be removed (skipped)
+		});
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to RDF* statements. The converted statements are sent to the supplied
+	 * consumer function.
+	 *
+	 * @param model    the {@link Model} to convert.
+	 * @param consumer the {@link Consumer} function for the produced statements.
+	 */
+	@Experimental
+	public static void convertReificationToRDFStar(Model model, Consumer<Statement> consumer) {
+		convertReificationToRDFStar(SimpleValueFactory.getInstance(), model, consumer);
+	}
+
+	/**
+	 * Converts the statements in supplied RDF reification model to a new RDF* model.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf           the {@link ValueFactory} to use for creating statements.
+	 * @param model        the {@link Model} to convert.
+	 * @param modelFactory the {@link ModelFactory} to use for creating a new Model object for the output.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(ValueFactory vf, Model model, ModelFactory modelFactory) {
+		Model rdfStarModel = modelFactory.createEmptyModel();
+		convertReificationToRDFStar(vf, model, (Consumer<Statement>) rdfStarModel::add);
+		return rdfStarModel;
+	}
+
+	/**
+	 * Converts the statements in supplied RDF reification model to a new RDF* model.
+	 * <p>
+	 * The supplied value factory is used to create all new statements.
+	 *
+	 * @param vf    the {@link ValueFactory} to use for creating statements.
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(ValueFactory vf, Model model) {
+		return convertReificationToRDFStar(vf, model, new DynamicModelFactory());
+	}
+
+	/**
+	 * Converts the supplied RDF reification model to a new RDF* model.
+	 *
+	 * @param model the {@link Model} to convert.
+	 * @return a new {@link Model} with reification statements converted to RDF* {@link Triple}s.
+	 */
+	@Experimental
+	public static Model convertReificationToRDFStar(Model model) {
+		return convertReificationToRDFStar(SimpleValueFactory.getInstance(), model);
 	}
 
 	private static boolean isSubsetInternal(Set<Statement> model1, Model model2) {
@@ -733,24 +972,4 @@ public class Models {
 
 	}
 
-	/**
-	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
-	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
-	 *
-	 * @param message The message to be used for the exception
-	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
-	 */
-	public static Supplier<ModelException> modelException(String message) {
-		return () -> new ModelException(message);
-	}
-
-	/**
-	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
-	 *
-	 * @param toSynchronize the model that should be synchronized
-	 * @return Synchronized Model
-	 */
-	public static Model synchronizedModel(Model toSynchronize) {
-		return new SynchronizedModel(toSynchronize);
-	}
 }
