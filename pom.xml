@@ -247,7 +247,7 @@
 			</properties>
 		</profile>
 		<profile>
-			<id>formatting-check</id>
+			<id>formatting</id>
 			<activation>
 				<!-- active on all Java 8 and higher builds by default -->
 				<jdk>[1.8,)</jdk>
@@ -260,7 +260,7 @@
 						<executions>
 							<execution>
 								<goals>
-									<goal>validate</goal>
+									<goal>format</goal>
 								</goals>
 							</execution>
 						</executions>
@@ -271,7 +271,7 @@
 						<executions>
 							<execution>
 								<goals>
-									<goal>check</goal>
+									<goal>sort</goal>
 								</goals>
 							</execution>
 						</executions>
