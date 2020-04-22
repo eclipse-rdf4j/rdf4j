@@ -201,7 +201,7 @@ public class IDFile implements Closeable {
 			return cacheLine[cacheLineLookupIndex];
 		}
 
-		// We only cache complete lines og size cacheLineSize. This means that the last line in the file will almost
+		// We only cache complete lines of size cacheLineSize. This means that the last line in the file will almost
 		// never be cached. This simplifies the code since we don't have to deal with partial lines.
 		if (getMaxID() > cacheLineSize && id < getMaxID() - cacheLineSize) {
 
@@ -216,10 +216,9 @@ public class IDFile implements Closeable {
 				if (!cache.containsKey(cacheLineLookupIndex)) {
 					cache.put(cacheLookupIndex, cacheLine);
 				}
+				gcReducingCache = cacheLine;
+				gcReducingCacheIndex = cacheLookupIndex;
 			}
-
-			gcReducingCache = cacheLine;
-			gcReducingCacheIndex = cacheLookupIndex;
 
 			return cacheLine[cacheLineLookupIndex];
 
@@ -237,6 +236,7 @@ public class IDFile implements Closeable {
 	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 		nioFileSize = nioFile.size();
+		cache.clear();
 	}
 
 	/**
