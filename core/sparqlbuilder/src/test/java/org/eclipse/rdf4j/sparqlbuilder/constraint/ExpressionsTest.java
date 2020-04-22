@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import org.junit.Test;
-
 import static org.junit.Assert.*;
+
+import org.junit.Test;
 
 public class ExpressionsTest {
 

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.junit.Before;
@@ -35,8 +36,6 @@ import org.junit.rules.ExpectedException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.github.jsonldjava.core.DocumentLoader;
-
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.

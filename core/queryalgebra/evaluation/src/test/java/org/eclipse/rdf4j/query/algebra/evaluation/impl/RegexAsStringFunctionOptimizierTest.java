@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.Assert.assertEquals;
+
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;

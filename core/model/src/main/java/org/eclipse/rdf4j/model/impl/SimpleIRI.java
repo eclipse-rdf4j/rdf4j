@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
-
-import java.util.Objects;
 
 /**
  * The default implementation of the {@link IRI} interface.

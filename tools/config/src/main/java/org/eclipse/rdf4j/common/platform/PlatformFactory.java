@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.common.platform.support.PosixGnomePlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixKDEPlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixPlatform;
 import org.eclipse.rdf4j.common.platform.support.WindowsPlatform;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

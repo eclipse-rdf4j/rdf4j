@@ -22,15 +22,14 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This connection inherits Lucene index supporting methods from {@link LuceneSailConnection}.

@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.TreeSet;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,10 +27,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValuesBackedNode;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.TreeSet;
 
 /**
  * sh:targetNode

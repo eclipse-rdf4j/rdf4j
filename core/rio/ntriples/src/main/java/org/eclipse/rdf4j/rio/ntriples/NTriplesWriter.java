@@ -17,7 +17,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;

@@ -7,24 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import com.github.jsonldjava.utils.JsonUtils;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 
 import org.eclipse.rdf4j.RDF4JException;
-
 import org.junit.After;
-import static org.junit.Assert.assertFalse;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.junit.Assert.assertTrue;
-
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.github.jsonldjava.utils.JsonUtils;
 
 /**
  * @author Bart Hanssens

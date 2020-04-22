@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import java.util.Map;
+
 import org.elasticsearch.action.Action;
 import org.elasticsearch.action.ActionFuture;
 import org.elasticsearch.action.ActionListener;
@@ -51,8 +53,6 @@ import org.elasticsearch.client.AdminClient;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.threadpool.ThreadPool;
-
-import java.util.Map;
 
 public class ClientWithStats implements Client {
 

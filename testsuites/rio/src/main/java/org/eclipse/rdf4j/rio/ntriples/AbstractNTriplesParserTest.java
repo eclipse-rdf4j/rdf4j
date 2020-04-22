@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.rio.ntriples;
 
 import java.io.InputStream;
 
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +23,8 @@ import org.eclipse.rdf4j.rio.PositiveParserTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import junit.framework.TestSuite;
 
 /**
  * JUnit test for the N-Triples parser that uses the tests that are available

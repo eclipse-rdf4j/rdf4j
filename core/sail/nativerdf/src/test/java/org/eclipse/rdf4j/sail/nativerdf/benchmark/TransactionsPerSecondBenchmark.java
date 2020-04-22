@@ -8,6 +8,11 @@
 
 package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
+
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -27,11 +32,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
 
 /**
  * @author Håvard Ottestad

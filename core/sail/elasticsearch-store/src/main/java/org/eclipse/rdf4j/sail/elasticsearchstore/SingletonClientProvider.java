@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 import org.eclipse.rdf4j.sail.SailException;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
-
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 
 /**
  * @author Håvard Mikkelsen Ottestad

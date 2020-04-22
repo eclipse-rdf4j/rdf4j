@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 @Experimental
 public class SimpleMemoryNamespaceStore implements NamespaceStoreInterface {

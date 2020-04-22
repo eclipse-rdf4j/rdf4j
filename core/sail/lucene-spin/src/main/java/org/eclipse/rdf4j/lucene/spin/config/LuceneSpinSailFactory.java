@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.lucene.spin.config;
 
 import java.util.Properties;
+
 import org.eclipse.rdf4j.lucene.spin.LuceneSpinSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
