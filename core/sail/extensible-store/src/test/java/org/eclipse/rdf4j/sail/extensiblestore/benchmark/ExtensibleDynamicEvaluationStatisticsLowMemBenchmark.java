@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.extensiblestore.benchmark;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -27,10 +31,6 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author Håvard Ottestad

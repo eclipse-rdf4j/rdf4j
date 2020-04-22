@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.LanguageHandlerRegistry;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RioSetting;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

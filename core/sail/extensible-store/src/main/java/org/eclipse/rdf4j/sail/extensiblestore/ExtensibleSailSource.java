@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -22,9 +25,6 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
-
-import java.util.HashSet;
-import java.util.Set;
 
 /**
  * @author Håvard Mikkelsen Ottestad

@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 /**
  * Utility methods for RDF* triples.

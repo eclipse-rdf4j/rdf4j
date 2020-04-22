@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.eclipse.rdf4j.rio.RDFParseException;
-
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.History;
 import org.jline.reader.LineReader;

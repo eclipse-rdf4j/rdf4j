@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.TupleQueryResultTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
-
-import java.io.IOException;
 
 public class ExtensibleStoreTupleQueryResultTest extends TupleQueryResultTest {
 

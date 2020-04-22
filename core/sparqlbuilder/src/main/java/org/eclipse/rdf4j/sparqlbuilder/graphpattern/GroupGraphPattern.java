@@ -8,11 +8,11 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
-
-import java.util.Optional;
 
 /**
  * A SPARQL Group Graph Pattern

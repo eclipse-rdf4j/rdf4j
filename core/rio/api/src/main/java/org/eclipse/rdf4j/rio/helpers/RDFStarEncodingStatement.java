@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-
-import java.util.Objects;
 
 /**
  * Represents a {@link Statement} whose subject or object may be an RDF* triple that will be encoded as a special IRI

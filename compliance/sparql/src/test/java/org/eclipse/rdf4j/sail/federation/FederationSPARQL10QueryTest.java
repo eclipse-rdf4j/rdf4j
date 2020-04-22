@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL10ManifestTest;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
@@ -16,6 +14,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import junit.framework.Test;
 
 public class FederationSPARQL10QueryTest extends SPARQLQueryTest {
 

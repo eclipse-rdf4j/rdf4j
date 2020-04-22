@@ -7,6 +7,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
@@ -24,20 +39,6 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.junit.AfterClass;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public abstract class MultithreadedTest {
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();

@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.junit.Before;
 import org.junit.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 public class ElasticsearchStoreFactoryTest {
 

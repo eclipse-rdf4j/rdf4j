@@ -7,13 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.junit.Test;
-import java.util.ArrayList;
-import java.util.List;
-import static org.junit.Assert.assertEquals;
 
 public class QuerySpecTest extends SearchQueryEvaluatorTest {
 	private static final String QUERY = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>\n" +

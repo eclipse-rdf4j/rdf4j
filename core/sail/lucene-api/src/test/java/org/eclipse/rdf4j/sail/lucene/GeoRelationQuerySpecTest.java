@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import static org.junit.Assert.assertEquals;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
@@ -16,12 +22,6 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
 
 public class GeoRelationQuerySpecTest extends SearchQueryEvaluatorTest {
 

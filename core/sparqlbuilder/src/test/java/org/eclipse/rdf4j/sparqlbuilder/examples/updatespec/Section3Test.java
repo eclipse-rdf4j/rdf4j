@@ -8,8 +8,6 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.updatespec;
 
-import org.junit.Test;
-
 import static org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns.and;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
@@ -27,6 +25,7 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.junit.Test;
 
 /**
  * Follows the SPARQL 1.1 Update Spec starting <a href="https://www.w3.org/TR/sparql11-update/#graphManagement">here</a>

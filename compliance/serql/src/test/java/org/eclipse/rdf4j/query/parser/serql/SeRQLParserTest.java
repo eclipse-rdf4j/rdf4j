@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.serql;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.parser.QueryParser;
+
+import junit.framework.Test;
 
 public class SeRQLParserTest extends SeRQLParserTestCase {
 

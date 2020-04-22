@@ -28,7 +28,6 @@ import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -41,7 +40,6 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

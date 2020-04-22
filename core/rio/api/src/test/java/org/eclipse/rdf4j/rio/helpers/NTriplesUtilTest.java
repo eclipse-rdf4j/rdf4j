@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
@@ -20,9 +23,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.function.Function;
 
 /**
  * Unit tests for {@link NTriplesUtil}

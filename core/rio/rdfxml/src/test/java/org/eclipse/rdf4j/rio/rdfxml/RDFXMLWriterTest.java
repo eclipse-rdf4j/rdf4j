@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import java.io.StringWriter;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.rio.RDFWriter;

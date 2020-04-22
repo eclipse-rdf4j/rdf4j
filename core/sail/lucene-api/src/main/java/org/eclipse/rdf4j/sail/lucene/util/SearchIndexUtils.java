@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.util;
 
-import java.util.Properties;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.DEFAULT_INDEX_CLASS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEX_CLASS_KEY;
+
+import java.util.Properties;
+
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 /**

@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Date;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -15,11 +21,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.Date;
 
 /**
  * A {@link ValueFactory} that will delegate everything to another {@link ValueFactory} and create statements whose

@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.query.resultio;
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -25,8 +27,6 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Abstract test for QueryResultIO.

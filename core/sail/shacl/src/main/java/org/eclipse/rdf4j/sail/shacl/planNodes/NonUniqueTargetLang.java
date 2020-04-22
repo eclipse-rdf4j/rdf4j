@@ -8,15 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Set;
 
 /**
  * This PlanNode takes a stream of Tuples like: (ex:companyA, "Company A"@en). It assumes that the stream is sorted on

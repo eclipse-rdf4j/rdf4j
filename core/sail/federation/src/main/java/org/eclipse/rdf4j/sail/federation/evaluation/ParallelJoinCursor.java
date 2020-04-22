@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -15,9 +18,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.QueueCursor;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Iterate the left side and evaluate the right side in separate thread, only iterate the right side in the controlling

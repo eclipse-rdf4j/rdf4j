@@ -8,7 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -40,10 +44,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad

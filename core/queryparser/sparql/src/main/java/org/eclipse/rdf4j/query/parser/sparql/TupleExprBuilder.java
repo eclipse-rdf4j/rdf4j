@@ -88,18 +88,18 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
-import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.parser.sparql.ast.*;
 
 /**

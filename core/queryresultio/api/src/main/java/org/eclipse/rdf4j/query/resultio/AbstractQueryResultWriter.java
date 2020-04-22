@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.query.resultio;
 import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;

@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleSailStore;
-
-import java.util.function.Function;
 
 /**
  * Enum to support multiple different EvaluationStatistics implementations. The user can control which is used by

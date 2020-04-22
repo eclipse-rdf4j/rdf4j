@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.query.parser.serql;
 
 import java.util.List;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import junit.framework.Test;
 
 public class SeRQLQueryTest extends SeRQLQueryTestCase {
 

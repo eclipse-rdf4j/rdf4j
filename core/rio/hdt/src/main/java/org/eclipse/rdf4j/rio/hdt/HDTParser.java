@@ -18,19 +18,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.io.input.CountingInputStream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
-
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**

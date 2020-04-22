@@ -1,14 +1,14 @@
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.function.Function;
 
 /**
  * <p>

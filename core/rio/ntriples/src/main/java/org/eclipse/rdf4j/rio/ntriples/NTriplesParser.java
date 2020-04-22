@@ -18,7 +18,6 @@ import java.util.Collection;
 import java.util.HashSet;
 
 import org.apache.commons.io.input.BOMInputStream;
-
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -33,8 +32,8 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 /**
  * RDF parser for N-Triples files. A specification of NTriples can be found in

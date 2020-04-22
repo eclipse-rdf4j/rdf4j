@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base.config;
 
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.*;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -15,8 +17,6 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-
-import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.*;
 
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 

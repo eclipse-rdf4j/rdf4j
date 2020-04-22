@@ -1,5 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.File;
+import java.io.IOException;
+
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -7,9 +10,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Test;
-
-import java.io.File;
-import java.io.IOException;
 
 public class DeadlockTest {
 
