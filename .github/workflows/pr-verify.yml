@@ -23,11 +23,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-maven-
     - name: Verify formatting
-      run: mvn -B formatter:validate
+      run: mvn -B formatter:validate impsort:check
     - name: Build
-      run: mvn -B clean install -DskipTests  
+      run: mvn -B clean install -Pquick,\!formatting
     - name: Run tests
-      run: mvn -B verify -Pcompliance --file pom.xml
+      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
     - name: Print test failures
       if: failure()
       run: ./printTestResults.sh

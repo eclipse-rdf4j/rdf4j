@@ -7,6 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.junit.Assert.assertEquals;
+
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -17,11 +22,6 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.junit.Test;
-
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * @author TriangularIT

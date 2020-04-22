@@ -7,6 +7,8 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
+import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEXEDFIELDS;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
@@ -27,7 +29,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEXEDFIELDS;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 import org.eclipse.rdf4j.sail.lucene.SearchIndexQueryContextInitializer;
 import org.eclipse.rdf4j.sail.lucene.util.SearchIndexUtils;

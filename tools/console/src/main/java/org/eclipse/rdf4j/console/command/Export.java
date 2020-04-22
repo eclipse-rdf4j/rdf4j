@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.WorkDir;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;

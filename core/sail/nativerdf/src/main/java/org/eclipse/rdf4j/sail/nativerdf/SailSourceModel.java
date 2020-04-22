@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -27,13 +34,6 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.

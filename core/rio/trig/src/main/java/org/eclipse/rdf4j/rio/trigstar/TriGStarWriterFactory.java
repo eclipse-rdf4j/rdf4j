@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
+import java.io.OutputStream;
+import java.io.Writer;
+import java.net.URISyntaxException;
+
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
-
-import java.io.OutputStream;
-import java.io.Writer;
-import java.net.URISyntaxException;
 
 /**
  * An {@link RDFWriterFactory} for TriG* writers.

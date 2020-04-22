@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.http.client.shacl;
 
+import java.io.StringReader;
+
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.rio.RDFFormat;
-
-import java.io.StringReader;
 
 /**
  * Experimental support for handling SHACL violations against a remote RDF4J server.

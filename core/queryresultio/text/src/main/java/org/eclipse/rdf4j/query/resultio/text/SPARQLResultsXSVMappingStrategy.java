@@ -7,8 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text;
 
-import com.opencsv.bean.BeanField;
-import com.opencsv.bean.MappingStrategy;
+import java.beans.PropertyDescriptor;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -16,10 +19,8 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 
-import java.beans.PropertyDescriptor;
-import java.util.List;
-import java.util.Locale;
-import java.util.regex.Pattern;
+import com.opencsv.bean.BeanField;
+import com.opencsv.bean.MappingStrategy;
 
 /**
  * This serves as a base class for mapping strategies for character separated inputs. Specifically, it is meant for

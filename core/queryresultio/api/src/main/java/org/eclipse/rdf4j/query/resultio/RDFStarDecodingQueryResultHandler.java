@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandler;
@@ -14,8 +16,6 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
-
-import java.util.List;
 
 /**
  * A {@link QueryResultHandler} that delegates all results to another handler and processes RDF* triples encoded as

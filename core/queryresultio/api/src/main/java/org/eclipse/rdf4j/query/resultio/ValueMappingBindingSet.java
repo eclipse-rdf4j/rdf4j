@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
+import java.util.Iterator;
+import java.util.Set;
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-
-import java.util.Iterator;
-import java.util.Set;
-import java.util.function.Function;
 
 /**
  * A {@link BindingSet} that provides a mechanism to map values by using a custom {@link Function}.

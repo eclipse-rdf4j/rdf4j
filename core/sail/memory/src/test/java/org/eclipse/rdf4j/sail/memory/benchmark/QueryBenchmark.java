@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.memory.benchmark;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -31,12 +37,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author Håvard Ottestad

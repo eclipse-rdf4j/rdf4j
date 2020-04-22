@@ -14,10 +14,9 @@ import java.net.URL;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;

@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
+import java.io.OutputStream;
+
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
-
-import java.io.OutputStream;
 
 /**
  * {@link TupleQueryResultWriterFactory} for creating instances of {@link SPARQLStarResultsTSVWriter}.

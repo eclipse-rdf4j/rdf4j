@@ -14,7 +14,6 @@ import java.util.Map;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -24,11 +23,9 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;

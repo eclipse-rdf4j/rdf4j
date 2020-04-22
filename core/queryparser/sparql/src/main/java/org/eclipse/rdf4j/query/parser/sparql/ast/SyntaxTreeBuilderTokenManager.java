@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 import java.io.StringReader;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;

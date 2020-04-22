@@ -56,6 +56,7 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
 
 - We use a line width of 120 characters.
 - We use Unix line endings (LF).
+- We require curly braces for every control statement body (e.g. if-else), even if it is a single line.
 - We use the following header comment on every Java file:
 
 ```
@@ -72,6 +73,12 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
 copyright header, mentioning 'Aduna' as additional copyright holder . Please
 make sure you do not use that different header for any new contributions. 
 
+For import statements, the following conventions hold:
+
+- we do not use wildcard imports or wildcard static imports
+- we allow static imports where possible, but do not require their use
+- we apply a fixed ordering for import statements, following Eclipse conventions. Import statements are ordered in groups separated by a single empty line, in the following order: static imports, java.\*, javax.\*, org.\*, com.\*, everything else.
+
 There are various ways to apply these conventions to your code, depending on which editor/IDE you use.
 
 ### Eclipse IDE users
@@ -87,11 +94,19 @@ Similarly, to apply templates:
 2. Click 'Import...' and find the file `eclipse-settings/codetemplates.xml`, located in the git repository root.
 3. Click OK. The templates will be automatically applied when necessary. 
 
-### Other IDEs / using the Maven formatter plugin
+For import organization, the Eclipse defaults should be fine, but you can make sure as follows:
 
-If you do not use Eclipse IDE, we still welcome your contributions of course. There are several ways in which you can configure your IDE to format according to our conventions. Some tools will have the Eclipse code conventions built in, or will have options to import Eclipse formatter settings. 
+1. go to 'Preferences' -> 'Java' -> 'Code Style' -> 'Organize Imports'. 
+2. Make sure the list of ordered groups corresponds to 'java', 'javax', 'org', 'com'.
+3. Make sure the numbers of (static) imports needed for wildcard imports are set suitable high (99 or more).
 
-In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/) for validation of all code changes against the coding conventions. 
+You can apply import organization by hitting Ctrl+Shift+O, or you can configure Eclipse to automtaically organize imports on save. This can be activated by going to 'Preferences' -> 'Java' -> 'Editor' -> 'Save Actions' and making sure the 'Organize imports' option checkbox is ticked.
+
+### Other IDEs / using the Maven formatter and import sorting plugins
+
+If you do not use Eclipse IDE, we still welcome your contributions of course. There are several ways in which you can configure your IDE to format according to our conventions. Some tools will have the Eclipse code conventions built in, or will have options to import Eclipse formatter and import sorting settings. 
+
+In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/) and [import sorting maven plugin](https://code.revelc.net/impsort-maven-plugin/index.html) for validation of all code changes against the coding conventions, and compiling the project will automatically fix formatting/import issues.
 
 To validate your changes manually, run the following command:
 
@@ -101,9 +116,14 @@ mvn formatter:validate
 
 To reformat your code before committing, run:
 
-
 ```
 mvn formatter:format
+```
+
+To manually fix import statement organization using maven, run the following command:
+
+```
+mvn impsort:sort
 ```
 
 ### XML indentation

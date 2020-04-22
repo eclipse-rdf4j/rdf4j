@@ -7,12 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import org.eclipse.rdf4j.rio.hdt.VByte;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import org.eclipse.rdf4j.rio.hdt.VByte;
 import org.junit.Test;
 
 /**

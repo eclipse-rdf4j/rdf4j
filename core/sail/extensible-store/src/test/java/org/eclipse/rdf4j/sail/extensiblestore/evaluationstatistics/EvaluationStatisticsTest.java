@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
+import static junit.framework.TestCase.assertEquals;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.stream.IntStream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,12 +27,6 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHe
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.stream.IntStream;
-
-import static junit.framework.TestCase.assertEquals;
 
 public class EvaluationStatisticsTest {
 

@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.base.AbstractRepository;
 
 /**
  * <p>

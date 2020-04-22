@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
-import org.eclipse.rdf4j.common.io.ByteArrayUtil;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.zip.CRC32;
+
+import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 
 /**
  * Class that provides indexed storage and retrieval of arbitrary length data.

@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -18,15 +21,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 /**
  * An extension of RDFStoreTest for testing the class {@link NativeStore}.

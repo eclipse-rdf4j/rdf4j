@@ -7,18 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 
 /**
  * Test log level setting

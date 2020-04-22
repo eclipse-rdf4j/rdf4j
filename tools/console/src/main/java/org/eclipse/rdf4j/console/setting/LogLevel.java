@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 
-import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 
 /**
  * Console log level setting.

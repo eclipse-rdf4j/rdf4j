@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import org.eclipse.rdf4j.common.io.NioFile;
+import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import java.io.File;
 import java.io.IOException;
 
-import static java.nio.charset.StandardCharsets.US_ASCII;
+import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
  * Writes transaction statuses to a file.

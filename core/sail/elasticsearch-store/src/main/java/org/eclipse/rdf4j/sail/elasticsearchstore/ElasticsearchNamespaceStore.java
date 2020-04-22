@@ -7,6 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
+import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.stream.StreamSupport;
+
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
@@ -23,15 +32,6 @@ import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.stream.StreamSupport;
-
-import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 
 /**
  * @Author Håvard Mikkelsen Ottestad

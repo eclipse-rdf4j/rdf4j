@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
+import java.io.OutputStream;
+
 import org.eclipse.rdf4j.rio.AbstractParserHandlingTest;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
-
-import java.io.OutputStream;
 
 /**
  * @author Pavel Mihaylov

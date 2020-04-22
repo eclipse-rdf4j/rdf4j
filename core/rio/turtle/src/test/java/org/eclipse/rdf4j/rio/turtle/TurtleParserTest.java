@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
@@ -26,16 +33,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-
 import org.junit.Before;
 import org.junit.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * @author jeen

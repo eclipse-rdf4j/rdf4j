@@ -8,7 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -41,12 +47,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
+import ch.qos.logback.classic.Logger;
 
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)

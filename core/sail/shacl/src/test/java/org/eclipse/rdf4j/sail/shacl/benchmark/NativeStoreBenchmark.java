@@ -8,7 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -37,11 +42,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.concurrent.TimeUnit;
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad

@@ -7,15 +7,15 @@
  */
 package org.eclipse.rdf4j.model.util;
 
+import static org.junit.Assert.assertEquals;
+
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.DC;
-
 import org.junit.Test;
-import static org.junit.Assert.assertEquals;
 
 /**
  * @author Bart Hanssens

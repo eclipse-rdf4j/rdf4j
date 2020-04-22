@@ -8,6 +8,13 @@
 
 package org.eclipse.rdf4j.sail.spin.benchmarks;
 
+import static org.junit.Assert.assertFalse;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -36,13 +43,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.concurrent.TimeUnit;
-
-import static org.junit.Assert.assertFalse;
 
 /**
  * @author Håvard Ottestad

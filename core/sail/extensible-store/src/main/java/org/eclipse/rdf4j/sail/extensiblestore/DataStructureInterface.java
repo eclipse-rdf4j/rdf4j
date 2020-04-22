@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Collection;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -14,8 +16,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
-
-import java.util.Collection;
 
 /**
  * An interface to implement a base data structure for the ExtensibleStore. The data structure needs to be thread safe.

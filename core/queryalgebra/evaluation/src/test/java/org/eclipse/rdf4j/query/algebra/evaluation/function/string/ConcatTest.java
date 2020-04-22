@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -16,9 +19,6 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
 import org.junit.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 public class ConcatTest {
 

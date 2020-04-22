@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import java.util.function.Supplier;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-
-import java.util.function.Supplier;
 
 /**
  * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access the

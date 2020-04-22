@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -16,9 +23,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
 import org.eclipse.rdf4j.sail.extensiblestore.FilteringIteration;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
-
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {
 

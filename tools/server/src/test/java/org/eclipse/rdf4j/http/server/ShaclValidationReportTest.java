@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.io.StringReader;
+
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -18,16 +25,9 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.StringReader;
-
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 public class ShaclValidationReportTest {
 

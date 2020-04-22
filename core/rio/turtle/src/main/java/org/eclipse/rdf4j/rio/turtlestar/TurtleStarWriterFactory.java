@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
+import java.io.OutputStream;
+import java.io.Writer;
+import java.net.URISyntaxException;
+
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.turtle.ArrangedWriter;
-
-import java.io.OutputStream;
-import java.io.Writer;
-import java.net.URISyntaxException;
 
 /**
  * An {@link RDFWriterFactory} for Turtle* writers.

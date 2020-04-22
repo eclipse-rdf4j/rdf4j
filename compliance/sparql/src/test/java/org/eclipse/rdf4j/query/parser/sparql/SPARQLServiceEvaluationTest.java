@@ -19,8 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import junit.framework.TestCase;
-
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -59,8 +57,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
@@ -69,6 +67,8 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
 
 /**
  * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded Jetty

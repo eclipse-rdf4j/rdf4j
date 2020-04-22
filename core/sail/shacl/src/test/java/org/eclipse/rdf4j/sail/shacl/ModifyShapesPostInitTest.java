@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertTrue;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -21,14 +29,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.List;
-
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
 
 public class ModifyShapesPostInitTest {
 

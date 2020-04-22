@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -19,14 +27,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
-
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * @author Håvard Mikkelsen Ottestad

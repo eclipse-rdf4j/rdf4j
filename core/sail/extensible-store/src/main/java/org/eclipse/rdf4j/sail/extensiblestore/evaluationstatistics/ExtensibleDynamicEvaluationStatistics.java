@@ -7,8 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+
 import org.apache.druid.hll.HyperLogLogCollector;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
@@ -22,12 +27,8 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
 
 /**
  * <p>

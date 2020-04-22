@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
-import org.eclipse.rdf4j.common.io.NioFile;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+
+import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
  * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the entry's
