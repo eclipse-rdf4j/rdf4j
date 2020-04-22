@@ -7,16 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
-import com.google.common.math.LongMath;
-import org.apache.commons.collections4.map.ReferenceMap;
-import org.eclipse.rdf4j.common.io.NioFile;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Map;
+
+import org.apache.commons.collections4.map.ReferenceMap;
+import org.eclipse.rdf4j.common.io.NioFile;
+
+import com.google.common.math.LongMath;
 
 /**
  * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long integers). There
