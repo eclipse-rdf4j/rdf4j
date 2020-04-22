@@ -73,7 +73,7 @@ public class FedXConnection extends AbstractSailConnection {
 	protected final FederationContext federationContext;
 
 	/**
-	 * If set, contains the initialized write strategy. Always access via {@link #getWriteStrategyInternal()}
+	 * If set, contains the write strategy. Always access via {@link #getWriteStrategyInternal()}
 	 */
 	private WriteStrategy writeStrategy;
 
@@ -95,8 +95,9 @@ public class FedXConnection extends AbstractSailConnection {
 		QueryInfo queryInfo = null;
 		if (true) {
 			String queryString = getOriginalQueryString(bindings);
-			if (queryString == null)
+			if (queryString == null) {
 				log.warn("Query string is null. Please check your FedX setup.");
+			}
 			queryInfo = new QueryInfo(queryString, getOriginalQueryType(bindings),
 					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext);
 
@@ -114,9 +115,10 @@ public class FedXConnection extends AbstractSailConnection {
 				log.debug("Details: ", e);
 				throw new SailException(e);
 			}
-			if (log.isDebugEnabled())
+			if (log.isDebugEnabled()) {
 				log.debug(("Optimization duration: " + ((System.currentTimeMillis() - start))) + " (Query: "
 						+ queryInfo.getQueryID() + ")");
+			}
 		}
 
 		// log the optimized query plan, if Config#isLogQueryPlan(), otherwise void operation
@@ -153,7 +155,11 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
-		throw new UnsupportedOperationException("Operation is not yet supported.");
+		try {
+			getWriteStrategyInternal().clear(contexts);
+		} catch (RepositoryException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
@@ -171,7 +177,6 @@ public class FedXConnection extends AbstractSailConnection {
 
 		// the write strategy needs to be closed
 		try {
-			// Note: access the field directly to not initialize write connection
 			if (this.writeStrategy != null) {
 				this.writeStrategy.close();
 			}
@@ -309,8 +314,9 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		if (contexts != null && contexts.length > 0)
+		if (contexts != null && contexts.length > 0) {
 			throw new UnsupportedOperationException("Context handling for size() not supported");
+		}
 		long size = 0;
 		List<String> errorEndpoints = new ArrayList<>();
 		for (Endpoint e : federation.getMembers()) {
@@ -320,9 +326,10 @@ public class FedXConnection extends AbstractSailConnection {
 				errorEndpoints.add(e.getId());
 			}
 		}
-		if (errorEndpoints.size() > 0)
+		if (errorEndpoints.size() > 0) {
 			throw new SailException("Could not determine size for members " + errorEndpoints.toString() +
 					"(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
+		}
 		return size;
 	}
 
@@ -346,31 +353,30 @@ public class FedXConnection extends AbstractSailConnection {
 
 		if (writeStrategy == null) {
 			writeStrategy = federation.getWriteStrategy();
-			try {
-				writeStrategy.initialize();
-			} catch (RepositoryException e) {
-				throw new SailException(e);
-			}
 		}
 
 		return writeStrategy;
 	}
 
 	private static String getOriginalQueryString(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY);
-		if (q != null)
+		if (q != null) {
 			return q.stringValue();
+		}
 		return null;
 	}
 
 	private static QueryType getOriginalQueryType(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return null;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY_TYPE);
-		if (q != null)
+		if (q != null) {
 			return QueryType.valueOf(q.stringValue());
+		}
 		return null;
 	}
 
@@ -382,11 +388,13 @@ public class FedXConnection extends AbstractSailConnection {
 	 * @return
 	 */
 	private static int getOriginalMaxExecutionTime(BindingSet b) {
-		if (b == null)
+		if (b == null) {
 			return 0;
+		}
 		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_MAX_EXECUTION_TIME);
-		if (q != null)
+		if (q != null) {
 			return Integer.parseInt(q.stringValue());
+		}
 		return 0;
 	}
 
