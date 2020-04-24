@@ -89,18 +89,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private final SPARQLProtocolSession client;
 
+	private ModelFactory modelFactory = new DynamicModelFactory();
+
 	private StringBuilder sparqlTransaction;
 
 	private Object transactionLock = new Object();
 
-	private Model pendingAdds = this.getModelFactory().createEmptyModel();
-	private Model pendingRemoves = this.getModelFactory().createEmptyModel();
+	private final Model pendingAdds;
+	private final Model pendingRemoves;
 
 	private final boolean quadMode;
-
-	private ModelFactory getModelFactory() {
-		return new DynamicModelFactory();
-	}
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
@@ -110,6 +108,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
+		this.pendingAdds = getModelFactory().createEmptyModel();
+		this.pendingRemoves = getModelFactory().createEmptyModel();
 	}
 
 	@Override
@@ -179,9 +179,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			});
 			allGood = true;
 			return result;
-		} catch (MalformedQueryException |
-
-				QueryEvaluationException e) {
+		} catch (MalformedQueryException | QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		} finally {
 			if (!allGood) {
@@ -996,6 +994,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			}
 
 		};
+	}
+
+	private ModelFactory getModelFactory() {
+		return modelFactory;
 	}
 
 }
