@@ -47,10 +47,11 @@ import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
-import org.json.JSONException;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class QueryServlet extends TransformationServlet {
 
@@ -71,6 +72,8 @@ public class QueryServlet extends TransformationServlet {
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryServlet.class);
 
 	private static final QueryEvaluator EVAL = QueryEvaluator.INSTANCE;
+
+	private static final ObjectMapper mapper = new ObjectMapper();
 
 	private QueryStorage storage;
 
@@ -159,7 +162,7 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws IOException, RDF4JException, BadRequestException, JSONException {
+			throws IOException, RDF4JException, BadRequestException {
 		if (!writeQueryCookie) {
 			// If we suppressed putting the query text into the cookies before.
 			cookies.addCookie(req, resp, REF, "hash");
@@ -169,11 +172,11 @@ public class QueryServlet extends TransformationServlet {
 			cookies.addCookie(req, resp, QUERY, hash);
 		}
 		if ("get".equals(req.getParameter("action"))) {
-			JSONObject json = new JSONObject();
-			json.put("queryText", getQueryText(req));
+			ObjectNode jsonObject = mapper.createObjectNode();
+			jsonObject.put("queryText", getQueryText(req));
 			PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 			try {
-				writer.write(json.toString());
+				writer.write(mapper.writeValueAsString(jsonObject));
 			} finally {
 				writer.flush();
 			}
@@ -211,7 +214,7 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws IOException, BadRequestException, RDF4JException, JSONException {
+			throws IOException, BadRequestException, RDF4JException {
 		final String action = req.getParameter("action");
 		if ("save".equals(action)) {
 			saveQuery(req, resp);
@@ -247,17 +250,19 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void saveQuery(final WorkbenchRequest req, final HttpServletResponse resp)
-			throws IOException, BadRequestException, RDF4JException, JSONException {
+			throws IOException, BadRequestException, RDF4JException {
 		resp.setContentType("application/json");
-		final JSONObject json = new JSONObject();
+		ObjectNode jsonObject = mapper.createObjectNode();
+		jsonObject.put("queryText", getQueryText(req));
+
 		final HTTPRepository http = (HTTPRepository) repository;
 		final boolean accessible = storage.checkAccess(http);
-		json.put("accessible", accessible);
+		jsonObject.put("accessible", accessible);
 		if (accessible) {
 			final String queryName = req.getParameter("query-name");
 			String userName = getUserNameFromParameter(req, SERVER_USER);
 			final boolean existed = storage.askExists(http, queryName, userName);
-			json.put("existed", existed);
+			jsonObject.put("existed", existed);
 			final boolean written = Boolean.valueOf(req.getParameter("overwrite")) || !existed;
 			if (written) {
 				final boolean shared = !Boolean.valueOf(req.getParameter("save-private"));
@@ -272,10 +277,10 @@ public class QueryServlet extends TransformationServlet {
 					storage.saveQuery(http, queryName, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
 				}
 			}
-			json.put("written", written);
+			jsonObject.put("written", written);
 		}
 		final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
-		writer.write(json.toString());
+		writer.write(mapper.writeValueAsString(jsonObject));
 		writer.flush();
 	}
 
