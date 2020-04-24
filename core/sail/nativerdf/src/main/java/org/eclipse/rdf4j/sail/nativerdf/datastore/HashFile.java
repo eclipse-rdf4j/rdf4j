@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
  * Class supplying access to a hash file.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class HashFile implements Closeable {
@@ -71,7 +71,7 @@ public class HashFile implements Closeable {
 	private volatile int itemCount;
 
 	// Load factor (fixed, for now)
-	private final float loadFactor = 0.75f;
+	private final float loadFactor;
 
 	// recordSize = ITEM_SIZE * bucketSize + 4
 	private final int recordSize;
@@ -93,6 +93,7 @@ public class HashFile implements Closeable {
 	public HashFile(File file, boolean forceSync) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
+		loadFactor = 0.75f;
 
 		try {
 			if (nioFile.size() == 0L) {
