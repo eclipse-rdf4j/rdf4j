@@ -20,12 +20,16 @@ import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
-import org.json.JSONObject;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Servlet responsible for presenting the list of repositories, and deleting the chosen one.
  */
 public class DeleteServlet extends TransformationServlet {
+
+	private static final ObjectMapper mapper = new ObjectMapper();
 
 	/**
 	 * Deletes the repository with the given ID, then redirects to the repository selection page. If given a "checkSafe"
@@ -45,8 +49,10 @@ public class DeleteServlet extends TransformationServlet {
 			super.service(req, resp, xslPath);
 		} else {
 			// Respond to 'checkSafe' XmlHttpRequest with JSON.
+			ObjectNode jsonObject = mapper.createObjectNode();
+			jsonObject.put("safe", manager.isSafeToRemove(checkSafe));
 			final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
-			writer.write(new JSONObject().put("safe", manager.isSafeToRemove(checkSafe)).toString());
+			writer.write(mapper.writeValueAsString(jsonObject));
 			writer.flush();
 		}
 
