@@ -14,8 +14,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.OpenRDFUtil;
@@ -30,11 +28,13 @@ import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -93,7 +93,14 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private Object transactionLock = new Object();
 
+	private Model pendingAdds = this.getModelFactory().createEmptyModel();
+	private Model pendingRemoves = this.getModelFactory().createEmptyModel();
+
 	private final boolean quadMode;
+
+	private ModelFactory getModelFactory() {
+		return new DynamicModelFactory();
+	}
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
@@ -172,7 +179,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			});
 			allGood = true;
 			return result;
-		} catch (MalformedQueryException | QueryEvaluationException e) {
+		} catch (MalformedQueryException |
+
+				QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		} finally {
 			if (!allGood) {
@@ -392,6 +401,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		synchronized (transactionLock) {
 			if (isActive()) {
 				synchronized (transactionLock) {
+					flushPendingAdds();
+					flushPendingRemoves();
 					// treat commit as a no-op if transaction string is empty
 					if (sparqlTransaction.length() > 0) {
 						SPARQLUpdate transaction = new SPARQLUpdate(client, null, sparqlTransaction.toString());
@@ -416,6 +427,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			if (isActive()) {
 				synchronized (transactionLock) {
 					sparqlTransaction = null;
+					pendingAdds.clear();
+					pendingRemoves.clear();
 				}
 			} else {
 				throw new RepositoryException("no transaction active.");
@@ -559,14 +572,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(Statement st, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
-
-		List<Statement> list = new ArrayList<>(1);
-		list.add(st);
-		String sparqlCommand = createInsertDataCommand(list, contexts);
-
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
-
+		addWithoutCommit(st, contexts);
 		try {
 			conditionalCommit(localTransaction);
 		} catch (RepositoryException e) {
@@ -578,12 +584,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
-
-		String sparqlCommand = createInsertDataCommand(statements, contexts);
-
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
-
+		for (Statement st : statements) {
+			addWithoutCommit(st, contexts);
+		}
 		try {
 			conditionalCommit(localTransaction);
 		} catch (RepositoryException e) {
@@ -632,14 +635,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void remove(Statement st, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
-
-		List<Statement> list = new ArrayList<>(1);
-		list.add(st);
-		String sparqlCommand = createDeleteDataCommand(list, contexts);
-
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
-
+		removeWithoutCommit(st, contexts);
 		try {
 			conditionalCommit(localTransaction);
 		} catch (RepositoryException e) {
@@ -652,11 +648,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
 		boolean localTransaction = startLocalTransaction();
-
-		String sparqlCommand = createDeleteDataCommand(statements, contexts);
-
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
+		for (Statement st : statements) {
+			removeWithoutCommit(st, contexts);
+		}
 
 		try {
 			conditionalCommit(localTransaction);
@@ -828,38 +822,70 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
+	protected void addWithoutCommit(Statement st, Resource... contexts)
+			throws RepositoryException {
+		flushPendingRemoves();
+		if (contexts.length == 0) {
+			pendingAdds.add(st);
+		} else {
+			pendingAdds.add(st.getSubject(), st.getPredicate(), st.getObject(), contexts);
+		}
+	}
+
+	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
-		ValueFactory f = getValueFactory();
+		flushPendingRemoves();
+		pendingAdds.add(subject, predicate, object, contexts);
+	}
 
-		Statement st = f.createStatement(subject, predicate, object);
+	private void flushPendingRemoves() {
+		if (!pendingRemoves.isEmpty()) {
+			for (Resource context : pendingRemoves.contexts()) {
+				String sparqlCommand = createDeleteDataCommand(pendingRemoves.getStatements(null, null, null, context),
+						context);
+				sparqlTransaction.append(sparqlCommand);
+				sparqlTransaction.append("; ");
+			}
+			pendingRemoves.clear();
+		}
+	}
 
-		List<Statement> list = new ArrayList<>(1);
-		list.add(st);
-		String sparqlCommand = createInsertDataCommand(list, contexts);
+	private void flushPendingAdds() {
+		if (!pendingAdds.isEmpty()) {
+			for (Resource context : pendingAdds.contexts()) {
+				String sparqlCommand = createInsertDataCommand(pendingAdds.getStatements(null, null, null, context),
+						context);
+				sparqlTransaction.append(sparqlCommand);
+				sparqlTransaction.append("; ");
+			}
+			pendingAdds.clear();
+		}
+	}
 
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
+	@Override
+	protected void removeWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
+		flushPendingAdds();
+		if (contexts.length == 0) {
+			pendingRemoves.add(st);
+		} else {
+			pendingRemoves.add(st.getSubject(), st.getPredicate(), st.getObject(), contexts);
+		}
 	}
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
-		String sparqlCommand = "";
+		flushPendingAdds();
+
 		if (subject != null && predicate != null && object != null) {
-			ValueFactory f = getValueFactory();
-
-			Statement st = f.createStatement(subject, predicate, object);
-
-			List<Statement> list = new ArrayList<>(1);
-			list.add(st);
-			sparqlCommand = createDeleteDataCommand(list, contexts);
+			pendingRemoves.add(subject, predicate, object, contexts);
 		} else {
-			sparqlCommand = createDeletePatternCommand(subject, predicate, object, contexts);
+			flushPendingRemoves();
+			String sparqlCommand = createDeletePatternCommand(subject, predicate, object, contexts);
+			sparqlTransaction.append(sparqlCommand);
+			sparqlTransaction.append("; ");
 		}
-
-		sparqlTransaction.append(sparqlCommand);
-		sparqlTransaction.append("; ");
 	}
 
 	private String createDeletePatternCommand(Resource subject, IRI predicate, Value object, Resource[] contexts) {
