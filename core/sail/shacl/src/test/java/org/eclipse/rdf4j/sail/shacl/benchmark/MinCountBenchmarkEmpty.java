@@ -173,4 +173,25 @@ public class MinCountBenchmarkEmpty {
 
 	}
 
+	@Benchmark
+	public void shaclMinCountZero() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMinCountZero.ttl"));
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (List<Statement> statements : allStatements) {
+				connection.begin();
+				connection.add(statements);
+				connection.commit();
+			}
+		}
+		repository.shutDown();
+
+	}
+
 }

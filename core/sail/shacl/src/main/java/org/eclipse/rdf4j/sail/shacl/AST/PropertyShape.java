@@ -177,7 +177,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
-			if (shaclProperties.minCount != null) {
+			if (shaclProperties.minCount != null && shaclProperties.minCount > 0) {
 				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minCount));
 			}
