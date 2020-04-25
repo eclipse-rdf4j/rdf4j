@@ -164,7 +164,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = query.explain(Explanation.Level.Executed).asGenericPlanNode().toString();
+			String actual = query.explain(Explanation.Level.Executed).toGenericPlanNode().toString();
 			String expected = "Projection (resultSizeActual=2)\n" +
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
@@ -207,7 +207,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = query.explain(Explanation.Level.Executed).asJson();
+			String actual = query.explain(Explanation.Level.Executed).toJson();
 			String expected = "{\n" +
 					"  \"type\" : \"Projection\",\n" +
 					"  \"resultSizeActual\" : 2,\n" +

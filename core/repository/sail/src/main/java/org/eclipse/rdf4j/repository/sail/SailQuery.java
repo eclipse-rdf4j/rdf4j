@@ -50,11 +50,11 @@ public abstract class SailQuery extends AbstractParserQuery {
 		return new Explanation() {
 			@Override
 			public String toString() {
-				return asGenericPlanNode().toString();
+				return toGenericPlanNode().toString();
 			}
 
 			@Override
-			public GenericPlanNode asGenericPlanNode() {
+			public GenericPlanNode toGenericPlanNode() {
 				QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
 						explainedTupleExpr);
 				explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
@@ -62,12 +62,12 @@ public abstract class SailQuery extends AbstractParserQuery {
 			}
 
 			@Override
-			public String asJson() {
+			public String toJson() {
 				try {
 					// TODO: Consider removing pretty printer
 					return JSON_MAPPER.setSerializationInclusion(JsonInclude.Include.NON_NULL)
 							.writerWithDefaultPrettyPrinter()
-							.writeValueAsString(asGenericPlanNode());
+							.writeValueAsString(toGenericPlanNode());
 				} catch (JsonProcessingException e) {
 					throw new RuntimeException(e);
 				}

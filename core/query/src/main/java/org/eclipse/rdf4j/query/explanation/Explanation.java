@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * This is an experimental feature. The interface may bw changes, moved or potentially removed in a future release.
  *
  * The interface is used to implement query explanations (query plan)
+ *
+ * @since 3.2.0
  */
 @Experimental
 public interface Explanation {
@@ -28,9 +30,11 @@ public interface Explanation {
 		Executed // plan as it was executed, which includes resultSizeActual
 	}
 
-	// TupleExpr asTupleExpr(); location in maven hierarchy prevents us from using TupleExpr here
-	GenericPlanNode asGenericPlanNode();
+	// location in maven hierarchy prevents us from using TupleExpr here
+	// TupleExpr asTupleExpr();
 
-	String asJson();
+	GenericPlanNode toGenericPlanNode();
+
+	String toJson();
 
 }
