@@ -94,6 +94,15 @@ public class TransactionsPerSecondBenchmark {
 	}
 
 	@Benchmark
+	public void mediumTransactionsLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		for (int k = 0; k < 10; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
+
+	@Benchmark
 	public void largerTransaction() {
 		connection.begin();
 		for (int k = 0; k < 10000; k++) {
@@ -106,6 +115,15 @@ public class TransactionsPerSecondBenchmark {
 	public void largerTransactionLevelNone() {
 		connection.begin(IsolationLevels.NONE);
 		for (int k = 0; k < 10000; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
+
+	@Benchmark
+	public void veryLargerTransactionLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		for (int k = 0; k < 1000000; k++) {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
 		}
 		connection.commit();
