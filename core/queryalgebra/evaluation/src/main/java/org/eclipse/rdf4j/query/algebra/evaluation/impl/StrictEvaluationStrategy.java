@@ -183,7 +183,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	private final long iterationCacheSyncThreshold;
 
 	// track the results size that each node in the query plan produces during execution
-	private final boolean trackResultSize;
+	private boolean trackResultSize;
 
 	private final UUID uuid;
 
@@ -2031,4 +2031,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	}
 
+	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
+
+	@Override
+	public void setTrackResultSize(boolean trackResultSize) {
+		this.trackResultSize = trackResultSize;
+	}
 }

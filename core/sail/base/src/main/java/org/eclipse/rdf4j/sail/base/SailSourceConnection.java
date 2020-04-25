@@ -126,6 +126,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	// The context that represents the unnamed graph
 	static final Resource[] NULL_CTX = new Resource[] { null };
 
+	// Track the result sizes generated when evaluating a query
+	private boolean trackResultSize;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -215,6 +218,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
+			if (trackResultSize) {
+				strategy.setTrackResultSize(trackResultSize);
+			}
 
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
@@ -258,11 +264,15 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			BindingSet bindings, boolean includeInferred) {
 		switch (queryExplainLevel) {
 		case Executed:
+			this.trackResultSize = true;
+
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
 					activeDataset, bindings, includeInferred)) {
 				while (evaluate.hasNext()) {
 					evaluate.next();
 				}
+			} finally {
+				this.trackResultSize = false;
 			}
 
 			return tupleExpr;

@@ -18,7 +18,7 @@ import org.junit.Test;
 
 public class QueryPlanRetrievalTest {
 
-	public static final String TUPLE_QUERY = "select * where {?a a ?c, ?d}";
+	public static final String TUPLE_QUERY = "select * where {?a a ?c, ?d. filter(?c != ?d)}";
 
 	@Test
 	public void testTupleQuery() {

@@ -64,7 +64,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
 	 * input.
-	 * 
+	 *
 	 * @param expr       The Service Expression to evaluate
 	 * @param serviceUri TODO
 	 * @param bindings   The variables bindings iterator to use for evaluating the expression, if applicable.
@@ -106,4 +106,24 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 */
 	public boolean isTrue(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
+
+	/**
+	 * Returns the status of the result size tracking for the query plan. Useful to determine which parts of a query
+	 * plan generated the most data.
+	 *
+	 * @return true if result size tracking is enabled.
+	 */
+	default boolean isTrackResultSize() {
+		return false;
+	}
+
+	/**
+	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
+	 * generated the most data.
+	 *
+	 * @param trackResultSize true to enable tracking.
+	 */
+	default void setTrackResultSize(boolean trackResultSize) {
+		// no-op for backwards compatibility
+	}
 }
