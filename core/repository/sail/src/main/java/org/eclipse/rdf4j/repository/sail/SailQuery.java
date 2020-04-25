@@ -7,8 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.sail.SailConnection;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * @author Arjohn Kampman
@@ -16,6 +26,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 public abstract class SailQuery extends AbstractParserQuery {
 
 	private final SailRepositoryConnection con;
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	protected SailQuery(ParsedQuery parsedQuery, SailRepositoryConnection con) {
 		super(parsedQuery);
@@ -24,5 +35,44 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 	protected SailRepositoryConnection getConnection() {
 		return con;
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+
+		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+
+		SailConnection sailCon = getConnection().getSailConnection();
+
+		QueryModelNode explainedTupleExpr = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+				getIncludeInferred());
+
+		return new Explanation() {
+			@Override
+			public String toString() {
+				return asGenericPlanNode().toString();
+			}
+
+			@Override
+			public GenericPlanNode asGenericPlanNode() {
+				QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
+						explainedTupleExpr);
+				explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
+				return queryModelTreeToGenericPlanNode.getGenericPlanNode();
+			}
+
+			@Override
+			public String asJson() {
+				try {
+					// TODO: Consider removing pretty printer
+					return JSON_MAPPER.setSerializationInclusion(JsonInclude.Include.NON_NULL)
+							.writerWithDefaultPrettyPrinter()
+							.writeValueAsString(asGenericPlanNode());
+				} catch (JsonProcessingException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		};
+
 	}
 }

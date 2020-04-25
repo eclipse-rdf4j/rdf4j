@@ -93,45 +93,4 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 		QueryResults.report(queryResult, handler);
 	}
 
-	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-
-	@Override
-	public Explanation explain(Explanation.Level level) {
-
-		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
-
-		SailConnection sailCon = getConnection().getSailConnection();
-
-		QueryModelNode explainedTupleExpr = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
-				getIncludeInferred());
-
-		return new Explanation() {
-			@Override
-			public String toString() {
-				return asGenericPlanNode().toString();
-			}
-
-			@Override
-			public GenericPlanNode asGenericPlanNode() {
-				QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
-						explainedTupleExpr);
-				explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
-				return queryModelTreeToGenericPlanNode.getGenericPlanNode();
-			}
-
-			@Override
-			public String asJson() {
-				try {
-					// TODO: Consider removing pretty printer
-					return JSON_MAPPER.setSerializationInclusion(JsonInclude.Include.NON_NULL)
-							.writerWithDefaultPrettyPrinter()
-							.writeValueAsString(asGenericPlanNode());
-				} catch (JsonProcessingException e) {
-					throw new RuntimeException(e);
-				}
-			}
-		};
-
-	}
-
 }

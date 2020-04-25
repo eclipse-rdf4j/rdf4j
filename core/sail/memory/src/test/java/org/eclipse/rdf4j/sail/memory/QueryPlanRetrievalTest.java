@@ -10,9 +10,8 @@ package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.Assert;
@@ -21,14 +20,16 @@ import org.junit.Test;
 public class QueryPlanRetrievalTest {
 
 	public static final String TUPLE_QUERY = "select * where {?a a ?c, ?d. filter(?c != ?d) optional {?d ?e ?f}}";
+	public static final String ASK_QUERY = "ASK where {?a a ?c, ?d. filter(?c != ?d) optional {?d ?e ?f}}";
+	public static final String CONSTRUCT_QUERY = "CONSTRUCT {?a a ?c, ?d} where {?a a ?c, ?d. filter(?c != ?d) optional {?d ?e ?f}}";
 
 	@Test
 	public void testTupleQuery() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = tupleQuery.explain(Explanation.Level.Unoptimized).toString();
+			String actual = query.explain(Explanation.Level.Unoptimized).toString();
 
 			String expected = "Projection\n" +
 					"   ProjectionElemList\n" +
@@ -73,9 +74,9 @@ public class QueryPlanRetrievalTest {
 		}
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = tupleQuery.explain(Explanation.Level.Optimized).toString();
+			String actual = query.explain(Explanation.Level.Optimized).toString();
 			String expected = "Projection\n" +
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
@@ -117,9 +118,9 @@ public class QueryPlanRetrievalTest {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 		}
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = tupleQuery.explain(Explanation.Level.Executed).toString();
+			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Projection (resultSizeActual=2)\n" +
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
@@ -161,9 +162,9 @@ public class QueryPlanRetrievalTest {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 		}
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = tupleQuery.explain(Explanation.Level.Executed).asGenericPlanNode().toString();
+			String actual = query.explain(Explanation.Level.Executed).asGenericPlanNode().toString();
 			String expected = "Projection (resultSizeActual=2)\n" +
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
@@ -204,9 +205,9 @@ public class QueryPlanRetrievalTest {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 		}
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
+			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String actual = tupleQuery.explain(Explanation.Level.Executed).asJson();
+			String actual = query.explain(Explanation.Level.Executed).asJson();
 			String expected = "{\n" +
 					"  \"type\" : \"Projection\",\n" +
 					"  \"resultSizeActual\" : 2,\n" +
@@ -280,6 +281,94 @@ public class QueryPlanRetrievalTest {
 					"    } ]\n" +
 					"  } ]\n" +
 					"}";
+			Assert.assertEquals(expected, actual);
+
+		}
+	}
+
+	@Test
+	public void testAskQuery() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareBooleanQuery(ASK_QUERY);
+
+			String actual = query.explain(Explanation.Level.Executed).toString();
+			String expected = "Slice (limit=1) (resultSizeActual=1)\n" +
+					"   LeftJoin (resultSizeActual=1)\n" +
+					"      Filter (resultSizeActual=1)\n" +
+					"         Compare (!=)\n" +
+					"            Var (name=c)\n" +
+					"            Var (name=d)\n" +
+					"         Join (resultSizeActual=3)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=3, resultSizeActual=2)\n" +
+					"               Var (name=a)\n" +
+					"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"               Var (name=c)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=3, resultSizeActual=3)\n" +
+					"               Var (name=a)\n" +
+					"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"               Var (name=d)\n" +
+					"      StatementPattern (resultSizeActual=1)\n" +
+					"         Var (name=d)\n" +
+					"         Var (name=e)\n" +
+					"         Var (name=f)\n";
+			Assert.assertEquals(expected, actual);
+
+		}
+	}
+
+	@Test
+	public void testConstructQuery() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareGraphQuery(CONSTRUCT_QUERY);
+
+			String actual = query.explain(Explanation.Level.Executed).toString();
+			String expected = "Reduced (resultSizeActual=3)\n" +
+					"   MultiProjection (resultSizeActual=4)\n" +
+					"      ProjectionElemList\n" +
+					"         ProjectionElem \"a\" AS \"subject\"\n" +
+					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+					"         ProjectionElem \"c\" AS \"object\"\n" +
+					"      ProjectionElemList\n" +
+					"         ProjectionElem \"a\" AS \"subject\"\n" +
+					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+					"         ProjectionElem \"d\" AS \"object\"\n" +
+					"      Extension (resultSizeActual=2)\n" +
+					"         ExtensionElem (_const_f5e5585a_uri)\n" +
+					"            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n" +
+					"         LeftJoin (resultSizeActual=2)\n" +
+					"            Filter (resultSizeActual=2)\n" +
+					"               Compare (!=)\n" +
+					"                  Var (name=c)\n" +
+					"                  Var (name=d)\n" +
+					"               Join (resultSizeActual=5)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=3, resultSizeActual=3)\n" +
+					"                     Var (name=a)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=c)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=3, resultSizeActual=5)\n" +
+					"                     Var (name=a)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=d)\n" +
+					"            StatementPattern (resultSizeActual=1)\n" +
+					"               Var (name=d)\n" +
+					"               Var (name=e)\n" +
+					"               Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}

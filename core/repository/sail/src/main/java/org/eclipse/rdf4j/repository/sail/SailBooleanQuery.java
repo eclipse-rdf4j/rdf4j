@@ -69,8 +69,4 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 		}
 	}
 
-	@Override
-	public Explanation explain(Explanation.Level level) {
-		return null;
-	}
 }

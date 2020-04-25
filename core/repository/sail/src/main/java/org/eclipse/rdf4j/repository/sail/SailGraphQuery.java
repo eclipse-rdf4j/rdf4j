@@ -137,8 +137,4 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		QueryResults.report(queryResult, handler);
 	}
 
-	@Override
-	public Explanation explain(Explanation.Level level) {
-		return null;
-	}
 }
