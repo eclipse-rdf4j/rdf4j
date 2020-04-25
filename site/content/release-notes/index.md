@@ -2,6 +2,15 @@
 title: "Eclipse RDF4J release notes"
 layout: "doc"
 ---
+# 3.1.4 
+
+RDF4J 3.1.4 is a patch release, fixing 2 issues:
+
+- [#2078](https://github.com/eclipse/rdf4j/issues/2078): fix handling of negated/inverted property paths in SPARQL
+- [#1098](https://github.com/eclipse/rdf4j/issues/1098): remove dependency on org.json library
+
+For a complete overview, see [all issues fixed in 3.1.4](https://github.com/eclipse/rdf4j/milestone/49?closed=1).
+
 # 3.1.3 
 
 RDF4J 3.1.3 is a patch release, fixing 6 issues:
