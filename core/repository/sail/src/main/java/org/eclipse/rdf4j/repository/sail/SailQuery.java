@@ -11,14 +11,10 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
-
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * @author Arjohn Kampman
@@ -26,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public abstract class SailQuery extends AbstractParserQuery {
 
 	private final SailRepositoryConnection con;
-	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	protected SailQuery(ParsedQuery parsedQuery, SailRepositoryConnection con) {
 		super(parsedQuery);
@@ -47,32 +42,11 @@ public abstract class SailQuery extends AbstractParserQuery {
 		QueryModelNode explainedTupleExpr = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
 				getIncludeInferred());
 
-		return new Explanation() {
-			@Override
-			public String toString() {
-				return toGenericPlanNode().toString();
-			}
+		QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
+				explainedTupleExpr);
+		explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
 
-			@Override
-			public GenericPlanNode toGenericPlanNode() {
-				QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
-						explainedTupleExpr);
-				explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
-				return queryModelTreeToGenericPlanNode.getGenericPlanNode();
-			}
-
-			@Override
-			public String toJson() {
-				try {
-					// TODO: Consider removing pretty printer
-					return JSON_MAPPER.setSerializationInclusion(JsonInclude.Include.NON_NULL)
-							.writerWithDefaultPrettyPrinter()
-							.writeValueAsString(toGenericPlanNode());
-				} catch (JsonProcessingException e) {
-					throw new RuntimeException(e);
-				}
-			}
-		};
+		return new ExplanationImpl(queryModelTreeToGenericPlanNode.getGenericPlanNode());
 
 	}
 }
