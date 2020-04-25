@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import java.util.ArrayList;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Query.QueryExplainLevel;
@@ -21,8 +23,6 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.ArrayList;
 
 /**
  * @author Arjohn Kampman
