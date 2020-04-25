@@ -87,6 +87,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private static final String NAMEDGRAPHS = "SELECT DISTINCT ?_ WHERE { GRAPH ?_ { ?s ?p ?o } }";
 
+	private static final int DEFAULT_MAX_PENDING_SIZE = 1000000;
+
 	private final SPARQLProtocolSession client;
 
 	private ModelFactory modelFactory = new DynamicModelFactory();
@@ -95,8 +97,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private Object transactionLock = new Object();
 
-	private final Model pendingAdds;
-	private final Model pendingRemoves;
+	private Model pendingAdds;
+	private Model pendingRemoves;
+
+	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
 
@@ -108,8 +112,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
-		this.pendingAdds = getModelFactory().createEmptyModel();
-		this.pendingRemoves = getModelFactory().createEmptyModel();
 	}
 
 	@Override
@@ -179,7 +181,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			});
 			allGood = true;
 			return result;
-		} catch (MalformedQueryException | QueryEvaluationException e) {
+		} catch (MalformedQueryException |
+
+				QueryEvaluationException e) {
 			throw new RepositoryException(e);
 		} finally {
 			if (!allGood) {
@@ -425,8 +429,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			if (isActive()) {
 				synchronized (transactionLock) {
 					sparqlTransaction = null;
-					pendingAdds.clear();
-					pendingRemoves.clear();
+					pendingAdds = getModelFactory().createEmptyModel();
+					pendingRemoves = getModelFactory().createEmptyModel();
 				}
 			} else {
 				throw new RepositoryException("no transaction active.");
@@ -440,6 +444,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			if (!isActive()) {
 				synchronized (transactionLock) {
 					sparqlTransaction = new StringBuilder();
+					this.pendingAdds = getModelFactory().createEmptyModel();
+					this.pendingRemoves = getModelFactory().createEmptyModel();
 				}
 			} else {
 				throw new RepositoryException("active transaction already exists");
@@ -823,6 +829,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	protected void addWithoutCommit(Statement st, Resource... contexts)
 			throws RepositoryException {
 		flushPendingRemoves();
+		if (pendingAdds.size() >= maxPendingSize) {
+			flushPendingAdds();
+		}
 		if (contexts.length == 0) {
 			pendingAdds.add(st);
 		} else {
@@ -834,6 +843,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
 		flushPendingRemoves();
+		if (pendingAdds.size() >= maxPendingSize) {
+			flushPendingAdds();
+		}
 		pendingAdds.add(subject, predicate, object, contexts);
 	}
 
@@ -845,7 +857,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				sparqlTransaction.append(sparqlCommand);
 				sparqlTransaction.append("; ");
 			}
-			pendingRemoves.clear();
+			pendingRemoves = getModelFactory().createEmptyModel();
 		}
 	}
 
@@ -857,13 +869,17 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				sparqlTransaction.append(sparqlCommand);
 				sparqlTransaction.append("; ");
 			}
-			pendingAdds.clear();
+			pendingAdds = getModelFactory().createEmptyModel();
 		}
 	}
 
 	@Override
 	protected void removeWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
 		flushPendingAdds();
+		if (pendingRemoves.size() >= maxPendingSize) {
+			flushPendingRemoves();
+		}
+
 		if (contexts.length == 0) {
 			pendingRemoves.add(st);
 		} else {
@@ -875,6 +891,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
 		flushPendingAdds();
+		if (pendingRemoves.size() >= maxPendingSize) {
+			flushPendingRemoves();
+		}
 
 		if (subject != null && predicate != null && object != null) {
 			pendingRemoves.add(subject, predicate, object, contexts);

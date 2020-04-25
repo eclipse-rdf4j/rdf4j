@@ -91,71 +91,51 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on SPARQL update operation handled as part of txn")
 	public void testAddDelete() throws RDF4JException {
 		System.err.println("temporarily disabled testAddDelete() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on SPARQL update operation handled as part of txn")
 	public void testAddRemoveInsert() throws RDF4JException {
 		System.err.println("temporarily disabled testAddRemoveInsert() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on pending updates being visible in own connection")
 	public void testSizeRollback() throws Exception {
 		System.err.println("temporarily disabled testSizeRollback() for SPARQLRepository");
 	}
 
-	@Test
-	@Ignore
 	@Override
-	public void testURISerialization() throws Exception {
-		System.err.println("temporarily disabled testURISerialization() for SPARQLRepository");
-	}
-
-	@Test
-	@Ignore
-	@Override
-	public void testStatementSerialization() throws Exception {
-		System.err.println("temporarily disabled testStatementSerialization() for SPARQLRepository");
-	}
-
-	@Override
-	@Ignore
+	@Ignore("relies on pending updates being visible in own connection")
 	public void testAutoCommit() throws Exception {
 		System.err.println("temporarily disabled testAutoCommit() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on pending updates being visible in own connection")
 	public void testRollback() throws Exception {
 		System.err.println("temporarily disabled testRollback() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on pending updates being visible in own connection")
 	public void testEmptyRollback() throws Exception {
 		System.err.println("temporarily disabled testEmptyRollback() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("relies on pending updates being visible in own connection")
 	public void testEmptyCommit() throws Exception {
 		System.err.println("temporarily disabled testEmptyCommit() for SPARQLRepository");
 	}
 
 	@Override
-	@Ignore
+	@Ignore("SeRQL language not supported on SPARQL endpoints")
 	public void testPrepareSeRQLQuery() throws Exception {
 		System.err.println("disabled testPrepareSeRQLQuery() for SPARQLRepository");
-	}
-
-	@Override
-	@Ignore
-	public void testLiteralSerialization() throws Exception {
-		System.err.println("temporarily disabled testLiteralSerialization() for SPARQLRepository");
 	}
 
 	@Override
