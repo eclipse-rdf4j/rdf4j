@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * This is an experimental feature. The interface may bw changes, moved or potentially removed in a future release.
+ * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
  *
  * The interface is used to implement query explanations (query plan)
  */

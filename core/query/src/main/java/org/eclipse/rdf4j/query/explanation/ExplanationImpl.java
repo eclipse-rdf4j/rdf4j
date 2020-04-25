@@ -14,9 +14,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * This is an experimental feature. The interface may bw changes, moved or potentially removed in a future release.
- *
- * The interface is used to implement query explanations (query plan)
+ * This is an experimental feature. It may be changed, moved or potentially removed in a future release.
  *
  * @since 3.2.0
  */
