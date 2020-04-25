@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.stream.Stream;
+
 /**
  * @author Jeen Broekstra
  */
@@ -19,6 +21,15 @@ public class DescribeOperator extends UnaryTupleOperator {
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
+	}
+
+	@Override
+	public String getSignature() {
+		StringBuilder sb = new StringBuilder(super.getSignature());
+
+		appendCostAnnotation(sb);
+
+		return sb.toString();
 	}
 
 }

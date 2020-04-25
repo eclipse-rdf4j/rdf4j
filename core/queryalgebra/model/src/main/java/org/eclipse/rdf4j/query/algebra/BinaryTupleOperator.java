@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.stream.Stream;
+
 /**
  * An abstract superclass for binary tuple operators which, by definition, has two arguments.
  */
@@ -35,7 +37,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Creates a new binary tuple operator.
-	 * 
+	 *
 	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
 	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
 	 */
@@ -50,7 +52,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Gets the left argument of this binary tuple operator.
-	 * 
+	 *
 	 * @return The operator's left argument.
 	 */
 	public TupleExpr getLeftArg() {
@@ -59,7 +61,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Sets the left argument of this binary tuple operator.
-	 * 
+	 *
 	 * @param leftArg The (new) left argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setLeftArg(TupleExpr leftArg) {
@@ -71,7 +73,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Gets the right argument of this binary tuple operator.
-	 * 
+	 *
 	 * @return The operator's right argument.
 	 */
 	public TupleExpr getRightArg() {
@@ -80,7 +82,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Sets the right argument of this binary tuple operator.
-	 * 
+	 *
 	 * @param rightArg The (new) right argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setRightArg(TupleExpr rightArg) {
@@ -128,5 +130,14 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 		clone.setLeftArg(getLeftArg().clone());
 		clone.setRightArg(getRightArg().clone());
 		return clone;
+	}
+
+	@Override
+	public String getSignature() {
+		StringBuilder sb = new StringBuilder(super.getSignature());
+
+		appendCostAnnotation(sb);
+
+		return sb.toString();
 	}
 }
