@@ -23,13 +23,4 @@ public class DescribeOperator extends UnaryTupleOperator {
 		visitor.meet(this);
 	}
 
-	@Override
-	public String getSignature() {
-		StringBuilder sb = new StringBuilder(super.getSignature());
-
-		appendCostAnnotation(sb);
-
-		return sb.toString();
-	}
-
 }

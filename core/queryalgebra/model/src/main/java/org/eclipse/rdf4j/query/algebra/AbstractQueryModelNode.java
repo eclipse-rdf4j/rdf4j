@@ -12,6 +12,7 @@ import java.util.ListIterator;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
 /**
  * Base implementation of {@link QueryModelNode}.
@@ -187,19 +188,5 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		}
 
 		return humanReadbleString;
-	}
-
-	protected void appendCostAnnotation(StringBuilder sb) {
-		String costs = Stream.of(
-				"costEstimate=" + toHumanReadbleNumber(getCostEstimate()),
-				"resultSizeEstimate=" + toHumanReadbleNumber(getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadbleNumber(getResultSizeActual()))
-				.filter(s -> !s.endsWith("UNKNOWN"))
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
-
-		if (!costs.isEmpty()) {
-			sb.append(" (").append(costs).append(")");
-		}
 	}
 }

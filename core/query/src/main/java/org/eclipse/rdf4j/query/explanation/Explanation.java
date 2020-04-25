@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public interface Explanation {
 
-	String toString();
-
 	/**
 	 * The different levels that the query explanation can be at.
 	 *
@@ -29,5 +27,10 @@ public interface Explanation {
 		Optimized, // parsed and optimized, which includes cost estimated
 		Executed // plan as it was executed, which includes resultSizeActual
 	}
+
 	// TupleExpr asTupleExpr(); location in maven hierarchy prevents us from using TupleExpr here
+	GenericPlanNode asGenericPlanNode();
+
+	String asJson();
+
 }

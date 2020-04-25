@@ -183,8 +183,6 @@ public class Group extends UnaryTupleOperator {
 		}
 		sb.append(")");
 
-		appendCostAnnotation(sb);
-
 		return sb.toString();
 	}
 }

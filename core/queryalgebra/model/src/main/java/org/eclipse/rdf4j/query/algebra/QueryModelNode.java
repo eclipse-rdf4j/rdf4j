@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.io.Serializable;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
 /**
  * Main interface for all query model nodes.
@@ -112,4 +113,5 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	double getCostEstimate();
 
 	void setCostEstimate(double costEstimate);
+
 }

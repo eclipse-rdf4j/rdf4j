@@ -46,12 +46,4 @@ public class Distinct extends UnaryTupleOperator {
 		return (Distinct) super.clone();
 	}
 
-	@Override
-	public String getSignature() {
-		StringBuilder sb = new StringBuilder(super.getSignature());
-
-		appendCostAnnotation(sb);
-
-		return sb.toString();
-	}
 }
