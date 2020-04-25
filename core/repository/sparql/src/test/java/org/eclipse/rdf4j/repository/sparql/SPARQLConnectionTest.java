@@ -17,6 +17,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -29,6 +32,8 @@ public class SPARQLConnectionTest {
 
 	private SPARQLConnection subject;
 	private SPARQLProtocolSession client;
+
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setUp() throws Exception {
@@ -70,6 +75,50 @@ public class SPARQLConnectionTest {
 		String expectedTriple2 = "<" + FOAF.AGENT + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + ">";
 
 		assertThat(sparqlUpdate).containsOnlyOnce("INSERT DATA").contains(expectedTriple1).contains(expectedTriple2);
+	}
+
+	@Test
+	public void testAddSingleContextHandling() throws Exception {
+		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
+
+		IRI g1 = vf.createIRI("urn:g1");
+
+		subject.begin();
+		subject.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, g1);
+		subject.remove(FOAF.AGENT, RDF.TYPE, RDFS.CLASS);
+		subject.commit();
+
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+
+		String sparqlUpdate = sparqlUpdateCaptor.getValue();
+		String expectedAddPattern = "INSERT DATA[^{]*\\{[^G]*GRAPH <" + g1 + ">[^{]*\\{[^<]*<" + FOAF.PERSON + "> ";
+		String expectedRemovePattern = "DELETE DATA[^{]*\\{[^<]*<" + FOAF.AGENT + "> ";
+
+		assertThat(sparqlUpdate).containsPattern(expectedAddPattern).containsPattern(expectedRemovePattern);
+	}
+
+	@Test
+	public void testAddMultipleContextHandling() throws Exception {
+		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
+
+		IRI g1 = vf.createIRI("urn:g1");
+		IRI g2 = vf.createIRI("urn:g2");
+
+		subject.begin();
+		subject.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, g1, g2);
+		subject.remove(FOAF.AGENT, RDF.TYPE, RDFS.CLASS);
+		subject.commit();
+
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+
+		String sparqlUpdate = sparqlUpdateCaptor.getValue();
+		String expectedAddPattern1 = "INSERT DATA[^{]*\\{[^G]*GRAPH <" + g1 + ">[^{]*\\{[^<]*<" + FOAF.PERSON + "> ";
+		String expectedAddPattern2 = "INSERT DATA[^{]*\\{[^G]*GRAPH <" + g2 + ">[^{]*\\{[^<]*<" + FOAF.PERSON + "> ";
+		String expectedRemovePattern = "DELETE DATA[^{]*\\{[^<]*<" + FOAF.AGENT + "> ";
+
+		assertThat(sparqlUpdate).containsPattern(expectedAddPattern1)
+				.containsPattern(expectedAddPattern2)
+				.containsPattern(expectedRemovePattern);
 	}
 
 	@Test

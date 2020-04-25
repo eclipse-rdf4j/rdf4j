@@ -1072,6 +1072,21 @@ public abstract class RepositoryConnectionTest {
 	}
 
 	@Test
+	public void testRemoveStatementWithContext() throws Exception {
+		Statement statement = vf.createStatement(alice, name, nameAlice, context1);
+		testCon.add(statement);
+
+		assertThat(testCon.hasStatement(alice, name, nameAlice, false)).isTrue();
+		assertThat(testCon.hasStatement(alice, name, nameAlice, false, context1)).isTrue();
+
+		testCon.remove(alice, name, nameAlice, context1);
+
+		assertThat(testCon.hasStatement(alice, name, nameAlice, false)).isFalse();
+		assertThat(testCon.hasStatement(alice, name, nameAlice, false, context1)).isFalse();
+
+	}
+
+	@Test
 	public void testRemoveStatementCollection() throws Exception {
 		testCon.begin();
 		testCon.add(alice, name, nameAlice);
