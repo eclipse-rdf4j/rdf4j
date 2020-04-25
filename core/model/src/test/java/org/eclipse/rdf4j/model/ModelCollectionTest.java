@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 
 import com.google.common.collect.testing.SetTestSuiteBuilder;

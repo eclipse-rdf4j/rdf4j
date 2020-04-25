@@ -7,6 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 
+import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.NAMESPACE;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -15,11 +20,6 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.eclipse.rdf4j.sail.elasticsearchstore.config.ElasticsearchStoreSchema.NAMESPACE;
 
 /**
  * @author Håvard Mikkelsen Ottestad

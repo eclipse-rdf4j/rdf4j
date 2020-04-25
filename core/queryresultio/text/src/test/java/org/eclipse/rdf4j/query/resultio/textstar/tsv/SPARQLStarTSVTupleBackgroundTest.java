@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
@@ -15,9 +18,6 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
-
-import java.io.IOException;
-import java.io.InputStream;
 
 /**
  * @author Pavel Mihaylov

@@ -1,5 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -8,10 +12,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
 	List<ConstraintComponent> constraintComponent = new ArrayList<>();
@@ -19,7 +19,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public NodeShape() {
 	}
 
-	public static NodeShape getInstance(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public static NodeShape getInstance(ConstraintComponent parent, ShaclProperties properties,
+			SailRepositoryConnection connection, Cache cache) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
@@ -32,7 +33,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+			Cache cache) {
 		super.populate(parent, properties, connection, cache);
 
 		if (properties.getMinCount() != null) {

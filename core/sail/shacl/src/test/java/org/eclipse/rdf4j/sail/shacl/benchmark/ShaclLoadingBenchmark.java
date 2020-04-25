@@ -8,7 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.io.StringReader;
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -31,8 +33,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.io.StringReader;
-import java.util.concurrent.TimeUnit;
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad

@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
-import com.opencsv.CSVReader;
-
 import java.io.IOException;
 import java.io.Reader;
+
+import com.opencsv.CSVReader;
 
 /**
  * This reader respects the TSV semantics of RDF4J and does absolutely no processing except for splitting the line on

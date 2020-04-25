@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
@@ -79,6 +81,27 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		Assertions.assertEquals(new File("target/tmp/fedxTest", "repositories/dbmodel"),
 				((ManagedRepositoryEndpoint) nativeStore).repository.getDataDir());
 
+	}
+
+	@Test
+	public void testDataConfig_writableEndpoint() throws Exception {
+
+		File baseDir = new File("target/tmp/fedxTest");
+
+		File dataConfig = new File(
+				EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest_writable.ttl").toURI());
+
+		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig, baseDir);
+
+		endpoints.sort((e1, e2) -> e1.getName().compareTo(e2.getName()));
+
+		assertThat(endpoints.size()).isEqualTo(3);
+
+		Endpoint nativeStore = endpoints.get(2);
+		assertThat(nativeStore.getName()).isEqualTo("http://dbpedia.native");
+		assertThat(nativeStore.getId()).isEqualTo("dbmodel");
+		assertThat(nativeStore.getEndpoint()).isEqualTo("dbmodel");
+		assertThat(nativeStore.isWritable()).isTrue();
 	}
 
 }

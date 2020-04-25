@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -17,8 +19,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
-
-import java.io.IOException;
 
 /**
  * RDF parser for TriG* (an extension of TriG that adds RDF* support).

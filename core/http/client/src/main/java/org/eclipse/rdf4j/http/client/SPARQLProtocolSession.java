@@ -7,6 +7,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.net.HttpURLConnection;
+import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+
 import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
@@ -85,26 +105,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.StringReader;
-import java.net.HttpURLConnection;
-import java.net.URISyntaxException;
-import java.nio.charset.Charset;
-import java.nio.charset.IllegalCharsetNameException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-
-import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
 
 /**
  * The SPARQLProtocolSession provides low level HTTP methods for communication with SPARQL endpoints. All methods are
@@ -1187,7 +1187,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		if (params == null) {
 			return 0;
 		}
-		return (long) params.getIntParameter(CoreConnectionPNames.SO_TIMEOUT, 0);
+		return params.getIntParameter(CoreConnectionPNames.SO_TIMEOUT, 0);
 	}
 
 	/**

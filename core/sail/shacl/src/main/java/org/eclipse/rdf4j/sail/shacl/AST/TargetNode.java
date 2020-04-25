@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.TreeSet;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,6 +20,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -23,10 +28,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValuesBackedNode;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.TreeSet;
 
 /**
  * sh:targetNode
@@ -71,7 +72,7 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		return true;
 	}
 

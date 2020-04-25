@@ -7,11 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
@@ -22,12 +29,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad
@@ -120,14 +121,14 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements) || and.stream()
+		return super.requiresEvaluation(addedStatements, removedStatements, stats) || and.stream()
 				.flatMap(Collection::stream)
-				.map(p -> p.requiresEvaluation(addedStatements, removedStatements))
+				.map(p -> p.requiresEvaluation(addedStatements, removedStatements, stats))
 				.reduce((a, b) -> a || b)
 				.orElse(false);
 	}

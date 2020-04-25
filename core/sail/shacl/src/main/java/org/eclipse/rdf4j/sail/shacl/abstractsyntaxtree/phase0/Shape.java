@@ -1,5 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -34,13 +41,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable {
 	Resource id;
 	ConstraintComponent parent;
@@ -54,7 +54,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	public Shape() {
 	}
 
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+			Cache cache) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
@@ -89,37 +90,37 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			Set<Resource> resources = getTargetableShapes(connection);
 
 			return resources.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> {
-					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(null, p, connection, cache);
-					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(null, p, connection, cache);
-					}
-					throw new IllegalStateException("Unknown shape type for " + p.getId());
-				})
-				.collect(Collectors.toList());
+					.map(r -> new ShaclProperties(r, connection))
+					.map(p -> {
+						if (p.getType() == SHACL.NODE_SHAPE) {
+							return NodeShape.getInstance(null, p, connection, cache);
+						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+							return PropertyShape.getInstance(null, p, connection, cache);
+						}
+						throw new IllegalStateException("Unknown shape type for " + p.getId());
+					})
+					.collect(Collectors.toList());
 		}
 
 		private static Set<Resource> getTargetableShapes(SailRepositoryConnection connection) {
 			Set<Resource> collect;
 			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
-				.stream()) {
-				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
 					.stream()) {
-					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
-						.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
+				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
 						.stream()) {
-						try (Stream<Statement> TARGET_OBJECTS_OF = connection
-							.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
+					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
+							.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
 							.stream()) {
+						try (Stream<Statement> TARGET_OBJECTS_OF = connection
+								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
+								.stream()) {
 
 							collect = Stream
-								.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
-								.reduce(Stream::concat)
-								.get()
-								.map(Statement::getSubject)
-								.collect(Collectors.toSet());
+									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
+									.reduce(Stream::concat)
+									.get()
+									.map(Statement::getSubject)
+									.collect(Collectors.toSet());
 						}
 
 					}
@@ -150,21 +151,21 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, SailRepositoryConnection connection,
-													  Cache cache) {
+			Cache cache) {
 
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
 		properties.getProperty()
-			.stream()
-			.map(r -> new ShaclProperties(r, connection))
-			.map(p -> PropertyShape.getInstance(this, p, connection, cache))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> PropertyShape.getInstance(this, p, connection, cache))
+				.forEach(constraintComponent::add);
 
 		properties.getNode()
-			.stream()
-			.map(r -> new ShaclProperties(r, connection))
-			.map(p -> NodeShape.getInstance(this, p, connection, cache))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> NodeShape.getInstance(this, p, connection, cache))
+				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
 			constraintComponent.add(new MinCountConstraintComponent(this, properties.getMinCount()));
@@ -207,7 +208,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (properties.getPattern() != null) {
-			constraintComponent.add(new PatternConstraintComponent(this, properties.getPattern(), properties.getFlags()));
+			constraintComponent
+					.add(new PatternConstraintComponent(this, properties.getPattern(), properties.getFlags()));
 		}
 
 		if (properties.getLanguageIn() != null) {
@@ -223,26 +225,25 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		properties.getOr()
-			.stream()
-			.map(or -> new OrConstraintComponent(this, or, connection, cache))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(or -> new OrConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
 
 		properties.getAnd()
-			.stream()
-			.map(and -> new AndConstraintComponent(this, and, connection, cache))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(and -> new AndConstraintComponent(this, and, connection, cache))
+				.forEach(constraintComponent::add);
 
 		properties.getNot()
-			.stream()
-			.map(or -> new NotConstraintComponent(this, or, connection, cache))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(or -> new NotConstraintComponent(this, or, connection, cache))
+				.forEach(constraintComponent::add);
 
 		properties.getClazz()
-			.stream()
-			.map(clazz -> new ClassConstraintComponent(this, clazz))
-			.forEach(constraintComponent::add);
+				.stream()
+				.map(clazz -> new ClassConstraintComponent(this, clazz))
+				.forEach(constraintComponent::add);
 
 		return constraintComponent;
 	}
 }
-

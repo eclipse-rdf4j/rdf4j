@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.IOException;
+import java.io.StringReader;
+
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -20,9 +23,6 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.StringReader;
 
 /**
  * @author Håvard Ottestad

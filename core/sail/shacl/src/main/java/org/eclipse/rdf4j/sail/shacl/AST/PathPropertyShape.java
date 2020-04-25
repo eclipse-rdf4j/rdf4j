@@ -8,7 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -18,6 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -26,14 +34,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the sh:path on a property nodeShape.
@@ -147,17 +147,17 @@ public abstract class PathPropertyShape extends PropertyShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
 		if (path == null) {
-			return super.requiresEvaluation(addedStatements, removedStatements);
+			return super.requiresEvaluation(addedStatements, removedStatements, stats);
 		}
 
-		return super.requiresEvaluation(addedStatements, removedStatements)
-				|| path.requiresEvaluation(addedStatements, removedStatements);
+		return super.requiresEvaluation(addedStatements, removedStatements, stats)
+				|| path.requiresEvaluation(addedStatements, removedStatements, stats);
 	}
 
 	public Path getPath() {

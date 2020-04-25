@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
 /**
  * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the entry's
  * length (4 bytes), followed by the data itself. File offsets are used to identify entries.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DataFile implements Closeable {
@@ -101,7 +101,7 @@ public class DataFile implements Closeable {
 
 	/**
 	 * Stores the specified data and returns the byte-offset at which it has been stored.
-	 * 
+	 *
 	 * @param data The data to store, must not be <tt>null</tt>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
@@ -121,9 +121,13 @@ public class DataFile implements Closeable {
 		return offset;
 	}
 
+	// This variable is used for predicting the number of bytes to read in getData(long offset). This helps us to only
+	// need to execute a single IO read instead of first one read to find the length and then one read to read the data.
+	int dataLengthApproximateAverage = 25;
+
 	/**
 	 * Gets the data that is stored at the specified offset.
-	 * 
+	 *
 	 * @param offset An offset in the data file, must be larger than 0.
 	 * @return The data that was found on the specified offset.
 	 * @exception IOException If an I/O error occurred.
@@ -131,19 +135,47 @@ public class DataFile implements Closeable {
 	public byte[] getData(long offset) throws IOException {
 		assert offset > 0 : "offset must be larger than 0, is: " + offset;
 
-		// TODO: maybe get more data in one go is more efficient?
-		int dataLength = nioFile.readInt(offset);
-
-		byte[] data = new byte[dataLength];
+		// Read in twice the average length because multiple small read operations take more time than one single larger
+		// operation even if that larger operation is unnecessarily large (within sensible limits).
+		byte[] data = new byte[(dataLengthApproximateAverage * 2) + 4];
 		ByteBuffer buf = ByteBuffer.wrap(data);
-		nioFile.read(buf, offset + 4L);
+		nioFile.read(buf, offset);
 
-		return data;
+		int dataLength = (data[0] << 24) & 0xff000000 |
+				(data[1] << 16) & 0x00ff0000 |
+				(data[2] << 8) & 0x0000ff00 |
+				(data[3]) & 0x000000ff;
+
+		// We have either managed to read enough data and can return the required subset of the data, or we have read
+		// too little so we need to execute another read to get the correct data.
+		if (dataLength <= data.length - 4) {
+
+			// adjust the approximate average with 1 part actual length and 99 parts previous average up to a sensible
+			// max of 200
+			dataLengthApproximateAverage = (int) (Math.min(200,
+					((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
+
+			return Arrays.copyOfRange(data, 4, dataLength + 4);
+
+		} else {
+
+			// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses are
+			// costly
+			dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+
+			// we didn't read enough data so we need to execute a new read
+			data = new byte[dataLength];
+			buf = ByteBuffer.wrap(data);
+			nioFile.read(buf, offset + 4L);
+
+			return data;
+		}
+
 	}
 
 	/**
 	 * Discards all stored data.
-	 * 
+	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
@@ -161,7 +193,7 @@ public class DataFile implements Closeable {
 
 	/**
 	 * Closes the data file, releasing any file locks that it might have.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Override
@@ -171,7 +203,7 @@ public class DataFile implements Closeable {
 
 	/**
 	 * Gets an iterator that can be used to iterate over all stored data.
-	 * 
+	 *
 	 * @return a DataIterator.
 	 */
 	public DataIterator iterator() {

@@ -8,12 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -22,10 +27,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * sh:targetObjectsOf
@@ -95,7 +96,10 @@ public class TargetObjectsOf extends NodeShape {
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
+		if (stats.isEmpty()) {
+			return false;
+		}
 		return targetObjectsOf.stream()
 				.map(target -> addedStatements.hasStatement(null, target, null, false))
 				.reduce((a, b) -> a || b)

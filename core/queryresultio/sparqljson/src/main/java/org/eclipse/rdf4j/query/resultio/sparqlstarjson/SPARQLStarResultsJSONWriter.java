@@ -7,6 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
 
+import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.OBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.PREDICATE;
+import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.QUERY_RESULT_FORMAT;
+import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.SUBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.TRIPLE;
+
+import java.io.IOException;
+import java.io.OutputStream;
+
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -14,15 +23,6 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.sparqljson.AbstractSPARQLJSONParser;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
-
-import java.io.IOException;
-import java.io.OutputStream;
-
-import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.OBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.PREDICATE;
-import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.QUERY_RESULT_FORMAT;
-import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.SUBJECT;
-import static org.eclipse.rdf4j.query.resultio.sparqlstarjson.SPARQLStarResultsJSONConstants.TRIPLE;
 
 /**
  * Writer for SPARQL* JSON results. This is equivalent to the SPARQL JSON writer with the addition of support for RDF*

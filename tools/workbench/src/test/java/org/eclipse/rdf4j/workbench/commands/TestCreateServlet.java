@@ -9,10 +9,10 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.junit.Test;
-
-import java.io.IOException;
 
 /**
  * @author Dale Visser

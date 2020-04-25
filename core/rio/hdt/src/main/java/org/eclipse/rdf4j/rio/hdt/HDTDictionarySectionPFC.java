@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.rio.hdt;
 
 import java.io.IOException;
 import java.io.InputStream;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;

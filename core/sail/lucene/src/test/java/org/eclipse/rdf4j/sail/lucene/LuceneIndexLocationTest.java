@@ -1,5 +1,10 @@
 package org.eclipse.rdf4j.sail.lucene;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.stream.IntStream;
+
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -12,11 +17,6 @@ import org.junit.*;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.stream.IntStream;
 
 /**
  * This unit test reproduces issue #41

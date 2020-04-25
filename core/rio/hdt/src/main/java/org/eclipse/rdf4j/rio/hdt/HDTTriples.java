@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.rio.hdt;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-
 import java.util.zip.CheckedInputStream;
+
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**

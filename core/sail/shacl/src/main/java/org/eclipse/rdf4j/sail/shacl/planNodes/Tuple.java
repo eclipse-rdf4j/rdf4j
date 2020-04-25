@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,6 +15,11 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 
 /**
  * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
@@ -54,7 +54,12 @@ public class Tuple implements Comparable<Tuple> {
 	public Tuple(BindingSet bindingset, String[] bindingnames) {
 
 		for (String bindingname : bindingnames) {
-			Value value = bindingset.getValue(bindingname.replace("?", ""));
+			Value value;
+			if (bindingname.startsWith("?")) {
+				value = bindingset.getValue(bindingname.substring(1));
+			} else {
+				value = bindingset.getValue(bindingname);
+			}
 			if (value != null) {
 				line.add(value);
 			}

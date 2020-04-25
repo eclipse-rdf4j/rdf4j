@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -14,8 +16,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.turtle.TurtleParser;
-
-import java.io.IOException;
 
 /**
  * RDF parser for Turtle* (an extension of Turtle that adds RDF* support).

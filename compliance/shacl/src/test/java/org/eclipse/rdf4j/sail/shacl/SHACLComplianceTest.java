@@ -20,8 +20,12 @@ import junit.framework.TestSuite;
 /**
  * Tests the SHACL implementation against the w3c test suite
  *
+ * @deprecated This test suite is not maintained. Use {@see org.eclipse.rdf4j.sail.shacl.W3cComplianceTest} instead. We
+ *             may un-deprecate this suite in the future.
+ *
  * @author James Leigh
  */
+@Deprecated
 public class SHACLComplianceTest extends AbstractSHACLTest {
 
 	// set this to true to run all tests!

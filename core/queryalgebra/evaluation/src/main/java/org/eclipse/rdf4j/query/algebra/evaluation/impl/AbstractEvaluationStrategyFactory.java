@@ -14,12 +14,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 
 /**
  * Abstract base class for {@link ExtendedEvaluationStrategy}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class AbstractEvaluationStrategyFactory implements EvaluationStrategyFactory {
 
 	private long querySolutionCacheThreshold;
+
+	// track the results size that each node in the query plan produces during execution
+	private boolean trackResultSize;
 
 	private QueryOptimizerPipeline pipeline;
 
@@ -43,4 +46,13 @@ public abstract class AbstractEvaluationStrategyFactory implements EvaluationStr
 		return Optional.ofNullable(pipeline);
 	}
 
+	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
+
+	@Override
+	public void setTrackResultSize(boolean trackResultSize) {
+		this.trackResultSize = trackResultSize;
+	}
 }

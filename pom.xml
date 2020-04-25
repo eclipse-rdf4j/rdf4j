@@ -145,9 +145,6 @@
 								</goals>
 							</execution>
 						</executions>
-						<configuration>
-							<source>8</source>
-						</configuration>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
@@ -245,6 +242,39 @@
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
 			</properties>
 		</profile>
+		<profile>
+			<id>formatting</id>
+			<activation>
+				<!-- active on all Java 8 and higher builds by default -->
+				<jdk>[1.8,)</jdk>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>net.revelc.code.formatter</groupId>
+						<artifactId>formatter-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<goals>
+									<goal>format</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>net.revelc.code</groupId>
+						<artifactId>impsort-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<goals>
+									<goal>sort</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -279,7 +309,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for 
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
 				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
@@ -511,11 +541,6 @@
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
 			</dependency>
-			<dependency>
-				<groupId>org.json</groupId>
-				<artifactId>json</artifactId>
-				<version>20140107</version>
-			</dependency>
 			<!-- Testing: JUnit -->
 			<dependency>
 				<groupId>junit</groupId>
@@ -619,8 +644,7 @@
 				<plugin>
 					<groupId>au.com.acegi</groupId>
 					<artifactId>xml-format-maven-plugin</artifactId>
-					<!-- we use the snapshot version to allow tab indents -->
-					<version>3.1.2-SNAPSHOT</version>
+					<version>3.1.2</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
 					</configuration>
@@ -755,6 +779,25 @@
 					</configuration>
 				</plugin>
 				<plugin>
+					<groupId>net.revelc.code.formatter</groupId>
+					<artifactId>formatter-maven-plugin</artifactId>
+					<version>2.8.1</version>
+					<configuration>
+						<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
+						<lineEnding>LF</lineEnding>
+						<skipHtmlFormatting>true</skipHtmlFormatting>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>net.revelc.code</groupId>
+					<artifactId>impsort-maven-plugin</artifactId>
+					<version>1.3.2</version>
+					<configuration>
+						<groups>java.,javax.,org.,com.</groups>
+						<staticGroups>java,*</staticGroups>
+					</configuration>
+				</plugin>
+				<plugin>
 					<groupId>org.apache.tomcat.maven</groupId>
 					<artifactId>tomcat7-maven-plugin</artifactId>
 					<version>2.2</version>
@@ -879,6 +922,7 @@
 				<artifactId>formatter-maven-plugin</artifactId>
 				<version>2.8.1</version>
 				<configuration>
+					<!--suppress UnresolvedMavenProperty -->
 					<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
 					<lineEnding>LF</lineEnding>
 					<skipHtmlFormatting>true</skipHtmlFormatting>

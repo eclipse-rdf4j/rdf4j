@@ -85,8 +85,9 @@ public class EndpointFactory {
 	public static Endpoint loadSPARQLEndpoint(String endpoint) throws FedXException {
 		try {
 			String id = new URL(endpoint).getHost();
-			if (id.equals("localhost"))
+			if (id.equals("localhost")) {
 				id = id + "_" + new URL(endpoint).getPort();
+			}
 			return loadSPARQLEndpoint("http://" + id, endpoint);
 		} catch (MalformedURLException e) {
 			throw new FedXException("Malformed URL: " + endpoint);
@@ -94,8 +95,16 @@ public class EndpointFactory {
 	}
 
 	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName) throws FedXException {
+		return loadRemoteRepository(repositoryServer, repositoryName, false);
+	}
+
+	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName, boolean writable)
+			throws FedXException {
 		RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();
-		return repProvider.loadEndpoint(new RemoteRepositoryRepositoryInformation(repositoryServer, repositoryName));
+		RemoteRepositoryRepositoryInformation info = new RemoteRepositoryRepositoryInformation(repositoryServer,
+				repositoryName);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
 
 	}
 
@@ -118,12 +127,37 @@ public class EndpointFactory {
 	 * @see ResolvableRepositoryInformation
 	 */
 	public static Endpoint loadResolvableRepository(String repositoryId) {
-		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();
-		return repProvider.loadEndpoint(new ResolvableRepositoryInformation(repositoryId));
+		return loadResolvableRepository(repositoryId, false);
 	}
 
 	/**
-	 * Load an {@link EndpointBase} for a given (configured) Repository.
+	 * Load a {@link ResolvableEndpoint}
+	 * 
+	 * <p>
+	 * The federation must be initialized with a {@link RepositoryResolver} ( see
+	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
+	 * the id provided by {@link Endpoint#getId()}
+	 * </p>
+	 * 
+	 * <p>
+	 * Note that the name is set to "http://" + repositoryId
+	 * </p>
+	 * 
+	 * @param repositoryId the repository identifier
+	 * @param writable     whether to configure the endpoint as writable.
+	 * @return the configured {@link Endpoint}
+	 * @see ResolvableRepositoryProvider
+	 * @see ResolvableRepositoryInformation
+	 */
+	public static Endpoint loadResolvableRepository(String repositoryId, boolean writable) {
+		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();
+		ResolvableRepositoryInformation info = new ResolvableRepositoryInformation(repositoryId);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
+	}
+
+	/**
+	 * Load an {@link Endpoint} for a given (configured) Repository.
 	 * <p>
 	 * Note that {@link EndpointType} is set to {@link EndpointType#Other}
 	 * </p>
@@ -212,8 +246,9 @@ public class EndpointFactory {
 	 */
 	public static List<Endpoint> loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
 
-		if (!dataConfig.exists())
+		if (!dataConfig.exists()) {
 			throw new FedXRuntimeException("File does not exist: " + dataConfig.getAbsolutePath());
+		}
 
 		Model graph = new TreeModel();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);

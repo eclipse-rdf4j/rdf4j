@@ -8,8 +8,8 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
-import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
 
 /**
  * A triple pattern formed by a property-list blank node

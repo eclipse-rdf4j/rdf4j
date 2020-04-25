@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.sail.federation.optimizers;
 
+import static junit.framework.TestCase.assertEquals;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.Before;
 import org.junit.Test;
-
-import static junit.framework.TestCase.assertEquals;
 
 public class CardinalityTest {
 

@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.geosparql;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import junit.framework.Test;
 
 public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
 

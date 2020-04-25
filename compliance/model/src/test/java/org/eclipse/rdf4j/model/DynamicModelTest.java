@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 
 public class DynamicModelTest extends AbstractModelTest {
 

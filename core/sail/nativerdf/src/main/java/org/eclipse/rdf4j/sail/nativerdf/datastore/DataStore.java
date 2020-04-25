@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
-import org.eclipse.rdf4j.common.io.ByteArrayUtil;
-
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.zip.CRC32;
+
+import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 
 /**
  * Class that provides indexed storage and retrieval of arbitrary length data.
@@ -31,11 +31,6 @@ public class DataStore implements Closeable {
 	private final IDFile idFile;
 
 	private final HashFile hashFile;
-
-	/**
-	 * The checksum to use for calculating data hashes.
-	 */
-	private final CRC32 crc32 = new CRC32();
 
 	/*--------------*
 	 * Constructors *
@@ -194,12 +189,9 @@ public class DataStore implements Closeable {
 	 * @return A hash code for the supplied data.
 	 */
 	private int getDataHash(byte[] data) {
-		synchronized (crc32) {
-			crc32.update(data);
-			int crc = (int) crc32.getValue();
-			crc32.reset();
-			return crc;
-		}
+		CRC32 crc32 = new CRC32();
+		crc32.update(data);
+		return (int) crc32.getValue();
 	}
 
 	/*--------------------*

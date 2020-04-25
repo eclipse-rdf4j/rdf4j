@@ -7,22 +7,23 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
+import java.io.File;
+import java.io.IOException;
+
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.runners.Parameterized;
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-import java.io.File;
-import java.io.IOException;
+import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 public class ElasticsearchStoreConnectionTest extends RepositoryConnectionTest {
 

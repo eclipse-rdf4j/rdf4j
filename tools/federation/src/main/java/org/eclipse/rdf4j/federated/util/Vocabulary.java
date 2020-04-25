@@ -44,6 +44,8 @@ public class Vocabulary {
 		public static final IRI REPOSITORY_SERVER = vf.createIRI(NAMESPACE, "repositoryServer");
 
 		public static final IRI REPOSITORY_NAME = vf.createIRI(NAMESPACE, "repositoryName");
+
+		public static final IRI WRITABLE = vf.createIRI(NAMESPACE, "writable");
 	}
 
 	/**

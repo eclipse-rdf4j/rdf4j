@@ -13,16 +13,18 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Implementation of the TripleSource interface using {@link SailDataset}
  */
-class SailDatasetTripleSource implements TripleSource {
+class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 
 	private final ValueFactory vf;
 
@@ -64,5 +66,28 @@ class SailDatasetTripleSource implements TripleSource {
 			return new QueryEvaluationException(e);
 		}
 
+	}
+
+	static class TriplesIteration extends ExceptionConvertingIteration<Triple, QueryEvaluationException> {
+
+		public TriplesIteration(Iteration<? extends Triple, ? extends Exception> iter) {
+			super(iter);
+		}
+
+		@Override
+		protected QueryEvaluationException convert(Exception e) {
+			return new QueryEvaluationException(e);
+		}
+
+	}
+
+	@Override
+	public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
+			Value obj) throws QueryEvaluationException {
+		try {
+			return new TriplesIteration(dataset.getTriples(subj, pred, obj));
+		} catch (SailException e) { // TODO is this necessary?
+			throw new QueryEvaluationException(e);
+		}
 	}
 }

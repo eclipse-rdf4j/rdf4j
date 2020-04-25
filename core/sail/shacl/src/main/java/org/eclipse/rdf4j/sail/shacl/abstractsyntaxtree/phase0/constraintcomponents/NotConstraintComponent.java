@@ -1,5 +1,10 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -13,16 +18,12 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Stream;
-
 public class NotConstraintComponent implements ConstraintComponent {
 	Shape not;
 	Resource id;
 
-	public NotConstraintComponent(ConstraintComponent parent, Resource id, SailRepositoryConnection connection, Cache cache) {
+	public NotConstraintComponent(ConstraintComponent parent, Resource id, SailRepositoryConnection connection,
+			Cache cache) {
 		this.id = id;
 
 		ShaclProperties p = new ShaclProperties(id, connection);

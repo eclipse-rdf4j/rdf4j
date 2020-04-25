@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.ArrayDeque;
+import java.util.List;
+
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
@@ -15,10 +19,6 @@ import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-import org.eclipse.rdf4j.exceptions.ValidationException;
-
-import java.util.ArrayDeque;
-import java.util.List;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 

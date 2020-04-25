@@ -53,6 +53,35 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 	}
 
 	@Test
+	public void testFederationWithResolver_writable() throws Exception {
+
+		assumeSparqlEndpoint();
+
+		// load some data into endpoint2
+		loadDataSet(server.getRepository(2), "/tests/medium/data2.ttl");
+
+		RepositoryResolver repositoryResolver = ((SPARQLEmbeddedServer) server).getRepositoryResolver();
+
+		FedXRepository repo = FedXFactory.newFederation()
+				.withRepositoryResolver(repositoryResolver)
+				.withResolvableEndpoint("endpoint1", true)
+				.withResolvableEndpoint("endpoint2")
+				.create();
+
+		repo.init();
+
+		// load data into the endpoint1 via the federation
+		loadDataSet(repo, "/tests/medium/data1.ttl");
+
+		federationContext = repo.getFederationContext();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
+		}
+
+		repo.shutDown();
+	}
+
+	@Test
 	public void testFederationWithResolver_DataConfig() throws Exception {
 
 		assumeSparqlEndpoint();

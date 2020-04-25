@@ -157,7 +157,11 @@ public class FedXFactory {
 	}
 
 	public FedXFactory withResolvableEndpoint(String repositoryId) {
-		members.add(EndpointFactory.loadResolvableRepository(repositoryId));
+		return withResolvableEndpoint(repositoryId, false);
+	}
+
+	public FedXFactory withResolvableEndpoint(String repositoryId, boolean writable) {
+		members.add(EndpointFactory.loadResolvableRepository(repositoryId, writable));
 		return this;
 	}
 
@@ -183,7 +187,6 @@ public class FedXFactory {
 	 * @return the configured {@link FedXRepository}
 	 */
 	public FedXRepository create() {
-
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}

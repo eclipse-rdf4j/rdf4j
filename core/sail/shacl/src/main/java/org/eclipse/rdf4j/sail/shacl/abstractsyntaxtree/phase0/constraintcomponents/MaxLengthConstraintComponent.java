@@ -1,12 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-
-import java.util.Set;
 
 public class MaxLengthConstraintComponent implements ConstraintComponent {
 
@@ -19,6 +19,6 @@ public class MaxLengthConstraintComponent implements ConstraintComponent {
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MAX_LENGTH,
-			SimpleValueFactory.getInstance().createLiteral(maxLength + "", XMLSchema.INTEGER));
+				SimpleValueFactory.getInstance().createLiteral(maxLength + "", XMLSchema.INTEGER));
 	}
 }

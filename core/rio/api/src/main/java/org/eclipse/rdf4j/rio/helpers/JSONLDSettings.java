@@ -7,8 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import com.github.jsonldjava.core.DocumentLoader;
 import org.eclipse.rdf4j.rio.RioSetting;
+
+import com.github.jsonldjava.core.DocumentLoader;
 
 /**
  * Settings that can be passed to JSONLD Parsers and Writers.

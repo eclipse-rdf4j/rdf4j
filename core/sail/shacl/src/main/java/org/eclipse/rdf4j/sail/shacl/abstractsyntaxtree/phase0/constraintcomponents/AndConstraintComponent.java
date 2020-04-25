@@ -1,5 +1,11 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -14,30 +20,25 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 public class AndConstraintComponent implements ConstraintComponent {
 	List<Shape> and;
 	Resource id;
 
-	public AndConstraintComponent(ConstraintComponent parent, Resource id, SailRepositoryConnection connection, Cache cache) {
+	public AndConstraintComponent(ConstraintComponent parent, Resource id, SailRepositoryConnection connection,
+			Cache cache) {
 		this.id = id;
 		and = toList(connection, id)
-			.stream()
-			.map(v -> new ShaclProperties((Resource) v, connection))
-			.map(p -> {
-				if (p.getType() == SHACL.NODE_SHAPE) {
-					return NodeShape.getInstance(this, p, connection, cache);
-				} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-					return PropertyShape.getInstance(this, p, connection, cache);
-				}
-				throw new IllegalStateException("Unknown shape type for " + p.getId());
-			})
-			.collect(Collectors.toList());
+				.stream()
+				.map(v -> new ShaclProperties((Resource) v, connection))
+				.map(p -> {
+					if (p.getType() == SHACL.NODE_SHAPE) {
+						return NodeShape.getInstance(this, p, connection, cache);
+					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+						return PropertyShape.getInstance(this, p, connection, cache);
+					}
+					throw new IllegalStateException("Unknown shape type for " + p.getId());
+				})
+				.collect(Collectors.toList());
 
 	}
 

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -87,23 +88,23 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
-import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.parser.sparql.ast.*;
 
 /**
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -138,7 +139,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Maps the given valueExpr to a Var. If the supplied ValueExpr is a Var, the object itself will be returned. If it
 	 * is a ValueConstant, this method will check if an existing variable mapping exists and return that mapped
 	 * variable, otherwise it will create and store a new mapping.
-	 * 
+	 *
 	 * @param valueExpr
 	 * @return a Var for the given valueExpr.
 	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
@@ -160,7 +161,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	/**
 	 * Retrieve the associated Value (if any) for the given valueExpr.
-	 * 
+	 *
 	 * @param valueExpr
 	 * @return the value of the given ValueExpr, or null if no value exists.
 	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
@@ -180,7 +181,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	/**
 	 * Creates an anonymous Var with a unique, randomly generated, variable name.
-	 * 
+	 *
 	 * @return an anonymous Var with a unique, randomly generated, variable name
 	 */
 	protected Var createAnonVar() {
@@ -1073,8 +1074,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.jjtGetChild(1).jjtAccept(this, null);
 		TupleExpr serviceExpr = graphPattern.buildTupleExpr();
 
-		if (serviceExpr instanceof SingletonSet)
+		if (serviceExpr instanceof SingletonSet) {
 			return null; // do not add an empty service block
+		}
 
 		String serviceExpressionString = node.getPatternString();
 
@@ -1314,7 +1316,15 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						objectList.remove(objVar);
 						objectList.add(objVarReplacement[1]);
 					} else {
-						nps.setObjectList(objectList);
+						List<ValueExpr> collect = objectList.stream().map(o -> {
+							if (o instanceof Var) {
+								return o;
+							}
+
+							return mapValueExprToVar(o);
+						}).collect(Collectors.toList());
+
+						nps.setObjectList(collect);
 					}
 				} else {
 					// not last element in path.
@@ -1328,7 +1338,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 
 				// convert the NegatedPropertySet to a proper TupleExpr
-				TupleExpr te = createTupleExprForNegatedPropertySet(nps, i);
+				TupleExpr te = createTupleExprForNegatedPropertySet(nps, i, invertSequence);
 				if (objVarReplacement != null) {
 					SameTerm condition = new SameTerm(objVarReplacement[0], objVarReplacement[1]);
 					pathSequencePattern.addConstraint(condition);
@@ -1403,8 +1413,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						if (invertSequence) {
 							endVar = subjVar;
-							if (startVar.equals(subjVar)) {
-								// inverted path sequence of length 1.
+							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
+							if (!(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
 								startVar = objVar;
 							}
 						}
@@ -1478,7 +1488,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return null;
 	}
 
-	private TupleExpr createTupleExprForNegatedPropertySet(NegatedPropertySet nps, int index) {
+	private TupleExpr createTupleExprForNegatedPropertySet(NegatedPropertySet nps, int index, boolean invertSequence) {
 		Var subjVar = nps.getSubjectVar();
 
 		Var predVar = createAnonVar();
@@ -1512,13 +1522,20 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// build a regular statement pattern (or a join of several patterns if the object list has more than one item)
 		if (filterCondition != null) {
 			for (ValueExpr obj : nps.getObjectList()) {
-				final Var objVar = mapValueExprToVar(obj);
+				Var patternSubjVar = subjVar;
+				Var patternObjVar = mapValueExprToVar(obj);
+				if (invertSequence) {
+					patternSubjVar = patternObjVar;
+					patternObjVar = subjVar;
+				}
 				if (patternMatch == null) {
-					patternMatch = new StatementPattern(nps.getScope(), subjVar, predVar, (Var) objVar,
+					patternMatch = new StatementPattern(nps.getScope(), patternSubjVar, predVar,
+							patternObjVar,
 							nps.getContextVar());
 				} else {
 					patternMatch = new Join(
-							new StatementPattern(nps.getScope(), subjVar, predVar, (Var) objVar, nps.getContextVar()),
+							new StatementPattern(nps.getScope(), patternSubjVar, predVar, patternObjVar,
+									nps.getContextVar()),
 							patternMatch);
 				}
 			}

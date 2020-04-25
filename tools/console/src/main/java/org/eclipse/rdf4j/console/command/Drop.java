@@ -12,7 +12,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
-
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;

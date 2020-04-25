@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import org.eclipse.rdf4j.common.annotation.Experimental;
-
 import java.io.Serializable;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
  * Main interface for all query model nodes.
@@ -104,4 +104,12 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	default void setResultSizeEstimate(double rows) {
 		// no-op for backwards compatibility
 	}
+
+	long getResultSizeActual();
+
+	void setResultSizeActual(long resultSizeActual);
+
+	double getCostEstimate();
+
+	void setCostEstimate(double costEstimate);
 }

@@ -12,8 +12,6 @@ import java.net.MalformedURLException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import junit.framework.TestCase;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Models;
@@ -21,6 +19,8 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
 
 public class PositiveParserTest extends TestCase {
 

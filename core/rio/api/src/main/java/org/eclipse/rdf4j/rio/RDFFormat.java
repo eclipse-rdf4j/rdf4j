@@ -371,6 +371,28 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @deprecated since 3.2.0
+	 */
+	@Deprecated
+	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
+			boolean supportsContexts) {
+		this(name, mimeType, charset, fileExtension, supportsNamespaces, supportsContexts, NO_RDF_STAR);
+	}
+
+	/**
+	 * Creates a new RDFFormat object.
+	 * 
+	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
+	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
+	 *                           file format.
+	 * @param charset            The default character encoding of the RDF file format. Specify <tt>null</tt> if not
+	 *                           applicable.
+	 * @param fileExtension      The (default) file extension for the RDF file format, e.g. <tt>rdf</tt> for RDF/XML
+	 *                           files.
+	 * @param supportsNamespaces <tt>True</tt> if the RDFFormat supports the encoding of namespace/prefix information
+	 *                           and <tt>false</tt> otherwise.
+	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
+	 *                           <tt>false</tt> otherwise.
 	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
@@ -378,6 +400,28 @@ public class RDFFormat extends FileFormat {
 			boolean supportsContexts, boolean supportsRDFStar) {
 		this(name, Arrays.asList(mimeType), charset, Arrays.asList(fileExtension), supportsNamespaces,
 				supportsContexts, supportsRDFStar);
+	}
+
+	/**
+	 * Creates a new RDFFormat object.
+	 * 
+	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
+	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
+	 *                           file format.
+	 * @param charset            The default character encoding of the RDF file format. Specify <tt>null</tt> if not
+	 *                           applicable.
+	 * @param fileExtensions     The RDF format's file extensions, e.g. <tt>rdf</tt> for RDF/XML files. The first item
+	 *                           in the list is interpreted as the default file extension for the format.
+	 * @param supportsNamespaces <tt>True</tt> if the RDFFormat supports the encoding of namespace/prefix information
+	 *                           and <tt>false</tt> otherwise.
+	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
+	 *                           <tt>false</tt> otherwise.
+	 * @deprecated since 3.2.0
+	 */
+	@Deprecated
+	public RDFFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions,
+			boolean supportsNamespaces, boolean supportsContexts) {
+		this(name, mimeType, charset, fileExtensions, supportsNamespaces, supportsContexts, NO_RDF_STAR);
 	}
 
 	/**
@@ -418,6 +462,29 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
+	 * @deprecated since 3.2.0
+	 */
+	@Deprecated
+	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
+			boolean supportsNamespaces, boolean supportsContexts) {
+		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts, NO_RDF_STAR);
+	}
+
+	/**
+	 * Creates a new RDFFormat object.
+	 * 
+	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
+	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
+	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+	 *                           for the format.
+	 * @param charset            The default character encoding of the RDF file format. Specify <tt>null</tt> if not
+	 *                           applicable.
+	 * @param fileExtensions     The RDF format's file extensions, e.g. <tt>rdf</tt> for RDF/XML files. The first item
+	 *                           in the list is interpreted as the default file extension for the format.
+	 * @param supportsNamespaces <tt>True</tt> if the RDFFormat supports the encoding of namespace/prefix information
+	 *                           and <tt>false</tt> otherwise.
+	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
+	 *                           <tt>false</tt> otherwise.
 	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
@@ -425,6 +492,31 @@ public class RDFFormat extends FileFormat {
 			boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
 		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts,
 				supportsRDFStar);
+	}
+
+	/**
+	 * Creates a new RDFFormat object.
+	 * 
+	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
+	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
+	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+	 *                           for the format.
+	 * @param charset            The default character encoding of the RDF file format. Specify <tt>null</tt> if not
+	 *                           applicable.
+	 * @param fileExtensions     The RDF format's file extensions, e.g. <tt>rdf</tt> for RDF/XML files. The first item
+	 *                           in the list is interpreted as the default file extension for the format.
+	 * @param standardURI        The standard URI that has been assigned to this format by a standards organisation or
+	 *                           null if it does not currently have a standard URI.
+	 * @param supportsNamespaces <tt>True</tt> if the RDFFormat supports the encoding of namespace/prefix information
+	 *                           and <tt>false</tt> otherwise.
+	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
+	 *                           <tt>false</tt> otherwise.
+	 * @deprecated since 3.2.0
+	 */
+	@Deprecated
+	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
+			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts) {
+		this(name, mimeTypes, charset, fileExtensions, standardURI, supportsNamespaces, supportsContexts, NO_RDF_STAR);
 	}
 
 	/**

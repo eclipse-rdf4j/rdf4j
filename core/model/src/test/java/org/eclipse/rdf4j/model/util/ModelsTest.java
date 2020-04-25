@@ -7,11 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Consumer;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -22,15 +33,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.Optional;
-import java.util.Set;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 /**
  * Unit tests on {@link Models} utility methods.
@@ -460,7 +462,7 @@ public class ModelsTest {
 				Models.isomorphic(rdfStarModel2, referenceRDFStarModel));
 
 		Model rdfStarModel3 = new TreeModel();
-		Models.convertReificationToRDFStar(VF, reificationModel, rdfStarModel3::add);
+		Models.convertReificationToRDFStar(VF, reificationModel, (Consumer<Statement>) rdfStarModel3::add);
 		assertTrue("RDF reification conversion to RDF* with explicit VF, model-to-consumer",
 				Models.isomorphic(rdfStarModel3, referenceRDFStarModel));
 
@@ -485,7 +487,7 @@ public class ModelsTest {
 				Models.isomorphic(rdfStarModel2, incompleteReificationModel));
 
 		Model rdfStarModel3 = new TreeModel();
-		Models.convertReificationToRDFStar(VF, incompleteReificationModel, rdfStarModel3::add);
+		Models.convertReificationToRDFStar(VF, incompleteReificationModel, (Consumer<Statement>) rdfStarModel3::add);
 		assertTrue("Incomplete RDF reification conversion to RDF* with explicit VF, model-to-consumer",
 				Models.isomorphic(rdfStarModel3, incompleteReificationModel));
 
@@ -509,7 +511,7 @@ public class ModelsTest {
 				Models.isomorphic(reificationModel2, referenceModel));
 
 		Model reificationModel3 = new TreeModel();
-		Models.convertRDFStarToReification(VF, rdfStarModel, reificationModel3::add);
+		Models.convertRDFStarToReification(VF, rdfStarModel, (Consumer<Statement>) reificationModel3::add);
 		assertTrue("RDF* conversion to reification with explicit VF, model-to-consumer",
 				Models.isomorphic(reificationModel3, referenceModel));
 

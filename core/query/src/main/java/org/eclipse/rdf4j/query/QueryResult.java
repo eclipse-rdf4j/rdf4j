@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
+import java.util.Iterator;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
-
-import java.util.Iterator;
-import java.util.stream.Stream;
 
 /**
  * Super type of all query result types (TupleQueryResult, GraphQueryResult, etc.).

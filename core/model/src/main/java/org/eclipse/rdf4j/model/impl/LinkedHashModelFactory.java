@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.ModelFactory;
-
 import java.io.Serializable;
+
+import org.eclipse.rdf4j.model.ModelFactory;
 
 /**
  * Creates {@link LinkedHashModel}.

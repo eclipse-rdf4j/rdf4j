@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Håvard Ottestad
@@ -118,8 +118,9 @@ public class UnionNode implements PlanNode {
 
 	@Override
 	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-		if (printed)
+		if (printed) {
 			return;
+		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
@@ -146,8 +147,9 @@ public class UnionNode implements PlanNode {
 				.map(PlanNode::getIteratorDataType)
 				.distinct()
 				.collect(Collectors.toList());
-		if (collect.size() == 1)
+		if (collect.size() == 1) {
 			return collect.get(0);
+		}
 
 		throw new IllegalStateException(
 				"Not implemented support for when union node operates on nodes with different iterator data types");

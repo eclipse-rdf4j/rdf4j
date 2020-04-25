@@ -1,5 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -13,9 +16,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.SimplePath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Set;
-
 public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
@@ -28,8 +28,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	Path path;
 
-	public static PropertyShape getInstance(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
-											Cache cache) {
+	public static PropertyShape getInstance(ConstraintComponent parent, ShaclProperties properties,
+			SailRepositoryConnection connection,
+			Cache cache) {
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new PropertyShape();
@@ -41,7 +42,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection, Cache cache) {
+	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+			Cache cache) {
 		super.populate(parent, properties, connection, cache);
 
 		if (properties.getPath() instanceof IRI) {
@@ -50,7 +52,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		} else {
 			throw new UnsupportedOperationException(
-				"Path is not supported for " + properties.getPath() + " in " + properties.getId());
+					"Path is not supported for " + properties.getPath() + " in " + properties.getId());
 		}
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);

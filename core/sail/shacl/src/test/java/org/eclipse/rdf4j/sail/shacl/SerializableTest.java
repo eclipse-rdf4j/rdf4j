@@ -8,6 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static junit.framework.TestCase.assertTrue;
+
+import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -21,11 +26,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
-
-import static junit.framework.TestCase.assertTrue;
 
 public class SerializableTest {
 

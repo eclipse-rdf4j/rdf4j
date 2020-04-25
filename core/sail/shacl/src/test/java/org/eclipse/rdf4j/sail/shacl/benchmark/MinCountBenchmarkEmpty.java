@@ -8,7 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -20,6 +23,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -35,9 +39,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad
@@ -94,6 +96,33 @@ public class MinCountBenchmarkEmpty {
 	}
 
 	@Benchmark
+	public void shaclClear() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (List<Statement> statements : allStatements) {
+				connection.begin();
+				connection.add(statements);
+				connection.commit();
+			}
+
+			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+			connection.clear();
+			System.out.println();
+			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+		}
+		repository.shutDown();
+
+	}
+
+	@Benchmark
 	public void noShacl() {
 
 		SailRepository repository = new SailRepository(new MemoryStore());
@@ -137,6 +166,27 @@ public class MinCountBenchmarkEmpty {
 						.stream()) {
 					stream.forEach(System.out::println);
 				}
+				connection.commit();
+			}
+		}
+		repository.shutDown();
+
+	}
+
+	@Benchmark
+	public void shaclMinCountZero() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMinCountZero.ttl"));
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (List<Statement> statements : allStatements) {
+				connection.begin();
+				connection.add(statements);
 				connection.commit();
 			}
 		}

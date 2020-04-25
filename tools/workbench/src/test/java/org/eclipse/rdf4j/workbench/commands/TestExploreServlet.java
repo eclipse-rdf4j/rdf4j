@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -26,7 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet.ResultCursor;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

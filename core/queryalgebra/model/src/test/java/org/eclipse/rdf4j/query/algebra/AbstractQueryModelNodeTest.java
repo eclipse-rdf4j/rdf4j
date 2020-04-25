@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import org.junit.Test;
-
 import static org.junit.Assert.*;
+
+import org.junit.Test;
 
 public class AbstractQueryModelNodeTest {
 

@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
+import java.io.IOException;
+import java.io.OutputStream;
+
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVWriter;
-
-import java.io.IOException;
-import java.io.OutputStream;
 
 /**
  * Writer for SPARQL* TSV results. This is equivalent to the SPARQL TSV writer with the addition of support for RDF*
