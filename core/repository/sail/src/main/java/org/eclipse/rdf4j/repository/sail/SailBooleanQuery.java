@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -69,7 +70,7 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 	}
 
 	@Override
-	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+	public Explanation explain(Explanation.Level level) {
 		return null;
 	}
 }

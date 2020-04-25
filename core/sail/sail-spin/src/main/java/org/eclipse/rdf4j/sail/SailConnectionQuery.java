@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
@@ -27,7 +28,7 @@ public abstract class SailConnectionQuery extends AbstractParserQuery {
 	}
 
 	@Override
-	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+	public Explanation explain(Explanation.Level level) {
 		return null;
 	}
 }

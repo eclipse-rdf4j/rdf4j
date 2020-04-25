@@ -37,9 +37,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -439,7 +439,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
 			BindingSet bindings, boolean includeInferred) {
 		return null;
 	}

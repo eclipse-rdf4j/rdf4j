@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
@@ -48,7 +49,7 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 	}
 
 	@Override
-	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+	public Explanation explain(Explanation.Level level) {
 		return null;
 	}
 }

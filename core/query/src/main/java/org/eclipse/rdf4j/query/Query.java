@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 
 /**
  * A query on a repository that can be formulated in one of the supported query languages (for example SeRQL or SPARQL).
@@ -65,23 +67,7 @@ public interface Query extends Operation {
 	// TODO - make default with no-op before merging to develop for backwards compatibility
 	// Also wondering if it makes sense to move this up a level to the Operation interface? Since we will be using a
 	// default no-op implementation we could move it without affecting backwards compatibility.
-	QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel);
-
-	/**
-	 * The different types of queries that RDF4J recognizes: boolean queries, graph queries, and tuple queries.
-	 *
-	 * @since 3.2.0
-	 */
-	enum QueryExplainLevel {
-		Unoptimized,
-		Optimized,
-		Executed
-	}
-
-	interface QueryExplainWrapper {
-
-		String toString();
-		// TupleExpr asTupleExpr(); location in maven hierarchy prevents us from using TupleExpr here
-	}
+	@Experimental
+	Explanation explain(Explanation.Level level);
 
 }

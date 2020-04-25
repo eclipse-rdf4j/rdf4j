@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
@@ -64,7 +65,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 	}
 
 	@Override
-	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+	public Explanation explain(Explanation.Level level) {
 		return null;
 	}
 }

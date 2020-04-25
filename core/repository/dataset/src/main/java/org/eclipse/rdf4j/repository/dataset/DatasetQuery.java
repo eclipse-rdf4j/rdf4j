@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 
 /**
@@ -95,7 +96,7 @@ abstract class DatasetQuery implements Query {
 	}
 
 	@Override
-	public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+	public Explanation explain(Explanation.Level level) {
 		return null;
 	}
 }

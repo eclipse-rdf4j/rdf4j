@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -49,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSpli
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -489,7 +489,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
 			BindingSet bindings, boolean includeInferred) {
 		return null;
 	}

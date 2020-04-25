@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractQuery;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -52,7 +53,7 @@ public class ContextAwareConnectionTest {
 		}
 
 		@Override
-		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		public Explanation explain(Explanation.Level level) {
 			return null;
 		}
 	}
@@ -67,7 +68,7 @@ public class ContextAwareConnectionTest {
 
 	static class QueryStub extends AbstractQuery {
 		@Override
-		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		public Explanation explain(Explanation.Level level) {
 			return null;
 		}
 	}
@@ -96,7 +97,7 @@ public class ContextAwareConnectionTest {
 		}
 
 		@Override
-		public QueryExplainWrapper explain(QueryExplainLevel queryExplainLevel) {
+		public Explanation explain(Explanation.Level level) {
 			return null;
 		}
 	}

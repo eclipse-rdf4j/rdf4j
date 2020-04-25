@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.Test;
@@ -26,7 +26,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Unoptimized).toString();
+			String queryPlan1 = tupleQuery.explain(Explanation.Level.Unoptimized).toString();
 
 			System.out.println(queryPlan1);
 
@@ -45,7 +45,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Optimized).toString();
+			String queryPlan1 = tupleQuery.explain(Explanation.Level.Optimized).toString();
 
 			System.out.println(queryPlan1);
 
@@ -63,7 +63,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery tupleQuery = connection.prepareTupleQuery(TUPLE_QUERY);
 
-			String queryPlan1 = tupleQuery.explain(Query.QueryExplainLevel.Executed).toString();
+			String queryPlan1 = tupleQuery.explain(Explanation.Level.Executed).toString();
 
 			System.out.println(queryPlan1);
 

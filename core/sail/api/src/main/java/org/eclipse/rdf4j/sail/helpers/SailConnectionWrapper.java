@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
@@ -200,9 +201,9 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
 			BindingSet bindings, boolean includeInferred) {
-		return wrappedCon.explain(queryExplainLevel, tupleExpr, activeDataset, bindings, includeInferred);
+		return wrappedCon.explain(level, tupleExpr, activeDataset, bindings, includeInferred);
 	}
 
 	@Override

@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -33,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -260,9 +260,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
 			BindingSet bindings, boolean includeInferred) {
-		switch (queryExplainLevel) {
+		switch (level) {
 		case Executed:
 			this.trackResultSize = true;
 
@@ -289,7 +289,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			return tupleExpr;
 		}
 
-		throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + queryExplainLevel);
+		throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + level);
 	}
 
 	@Override

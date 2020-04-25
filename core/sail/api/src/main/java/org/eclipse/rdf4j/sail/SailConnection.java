@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 
 /**
  * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
@@ -442,6 +443,6 @@ public interface SailConnection extends AutoCloseable {
 	boolean pendingRemovals();
 
 	// TODO - make this a default no-op for backwards compatibility
-	TupleExpr explain(Query.QueryExplainLevel queryExplainLevel, TupleExpr tupleExpr, Dataset activeDataset,
+	TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
 			BindingSet bindings, boolean includeInferred);
 }
