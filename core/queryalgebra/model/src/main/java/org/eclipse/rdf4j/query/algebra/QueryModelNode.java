@@ -113,7 +113,12 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	void setCostEstimate(double costEstimate);
 
-	long getTotalTimeNanos();
+	default long getTotalTimeNanos() {
+		return -1;
+	}
 
-	void setTotalTimeNanos(long totalTime);
+	default void setTotalTimeNanos(long totalTime) {
+		// no-op
+	}
+
 }
