@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -74,7 +75,7 @@ public class QueryPlanRetrievalTest {
 		}
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
+			TupleQuery query = connection.prepareTupleQuery(TUPLE_QUERY);
 
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 			String expected = "Projection\n" +

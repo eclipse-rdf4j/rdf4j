@@ -128,6 +128,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	// Track the result sizes generated when evaluating a query
 	private boolean trackResultSize;
+	private boolean immutableTypleExpr;
 
 	/*--------------*
 	 * Constructors *
@@ -200,6 +201,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
+		if (!immutableTypleExpr) {
+			tupleExpr = tupleExpr.clone();
+		}
+
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
 			// optimizers to modify the actual root node
@@ -265,6 +270,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		switch (level) {
 		case Executed:
 			this.trackResultSize = true;
+			this.immutableTypleExpr = true;
 
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
 					activeDataset, bindings, includeInferred)) {
@@ -273,18 +279,24 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				}
 			} finally {
 				this.trackResultSize = false;
+				this.immutableTypleExpr = false;
+
 			}
 
 			return tupleExpr;
 		case Optimized:
-			SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
-			SailDataset rdfDataset = branch.dataset(getIsolationLevel());
+			this.immutableTypleExpr = true;
+			try {
+				SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+				SailDataset rdfDataset = branch.dataset(getIsolationLevel());
 
-			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
-			EvaluationStrategy strategy = getEvaluationStrategy(activeDataset, tripleSource);
+				TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+				EvaluationStrategy strategy = getEvaluationStrategy(activeDataset, tripleSource);
 
-			return strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
-
+				return strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			} finally {
+				this.immutableTypleExpr = false;
+			}
 		case Unoptimized:
 			return tupleExpr;
 		}
