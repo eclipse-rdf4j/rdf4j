@@ -439,9 +439,9 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 
 }

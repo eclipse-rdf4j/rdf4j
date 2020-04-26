@@ -97,6 +97,6 @@ abstract class DatasetQuery implements Query {
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }

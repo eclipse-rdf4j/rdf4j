@@ -66,6 +66,6 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }

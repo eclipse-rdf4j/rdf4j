@@ -27,7 +27,8 @@ public interface Explanation {
 	enum Level {
 		Unoptimized, // simple parsed
 		Optimized, // parsed and optimized, which includes cost estimated
-		Executed // plan as it was executed, which includes resultSizeActual
+		Executed, // plan as it was executed, which includes resultSizeActual
+		Timed, // plan as it was executed, including resultSizeActual and where each node has been timed
 	}
 
 	// location in maven hierarchy prevents us from using TupleExpr here

@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.query.explanation;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -38,7 +40,9 @@ public class ExplanationImpl implements Explanation {
 	public String toJson() {
 		try {
 			// TODO: Consider removing pretty printer
-			return objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL)
+			return this.objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.PUBLIC_ONLY)
+					.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.NONE)
+					.setSerializationInclusion(JsonInclude.Include.NON_NULL)
 					.writerWithDefaultPrettyPrinter()
 					.writeValueAsString(toGenericPlanNode());
 		} catch (JsonProcessingException e) {

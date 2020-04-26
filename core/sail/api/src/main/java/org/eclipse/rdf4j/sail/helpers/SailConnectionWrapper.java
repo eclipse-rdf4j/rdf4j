@@ -201,9 +201,9 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred) {
-		return wrappedCon.explain(level, tupleExpr, activeDataset, bindings, includeInferred);
+		return wrappedCon.explain(level, tupleExpr, dataset, bindings, includeInferred);
 	}
 
 	@Override

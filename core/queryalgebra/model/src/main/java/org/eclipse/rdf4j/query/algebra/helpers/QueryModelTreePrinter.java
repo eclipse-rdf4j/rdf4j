@@ -98,11 +98,34 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 		return humanReadbleString;
 	}
 
+	/**
+	 *
+	 * @return Human readable time.
+	 */
+	static String toHumanReadableTime(long nanos) {
+		String humanReadbleString;
+
+		if (nanos > 1_000_000_000) {
+			humanReadbleString = nanos / 100_000_000 / 10.0 + "s";
+		} else if (nanos > 1_000_000) {
+			humanReadbleString = nanos / 100_000 / 10.0 + "ms";
+		} else if (nanos >= 1000) {
+			humanReadbleString = nanos / 1000 / 1000.0 + "ms";
+		} else if (nanos >= 0) {
+			humanReadbleString = nanos + "ns";
+		} else {
+			humanReadbleString = "UNKNOWN";
+		}
+
+		return humanReadbleString;
+	}
+
 	private static void appendCostAnnotation(QueryModelNode node, StringBuilder sb) {
 		String costs = Stream.of(
 				"costEstimate=" + toHumanReadableNumber(node.getCostEstimate()),
 				"resultSizeEstimate=" + toHumanReadableNumber(node.getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()))
+				"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()),
+				"totalTime=" + toHumanReadableTime(node.getTotalTimeNanos()))
 				.filter(s -> !s.endsWith("UNKNOWN"))
 				.reduce((a, b) -> a + ", " + b)
 				.orElse("");

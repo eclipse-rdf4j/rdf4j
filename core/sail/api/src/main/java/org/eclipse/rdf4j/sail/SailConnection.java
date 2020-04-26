@@ -442,7 +442,36 @@ public interface SailConnection extends AutoCloseable {
 	@Deprecated
 	boolean pendingRemovals();
 
-	// TODO - make this a default no-op for backwards compatibility
-	TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
-			BindingSet bindings, boolean includeInferred);
+	/**
+	 * <p>
+	 * Explain how the TupleExpr will be (or has been) executed/evaluated by returning a TupleExpr (which may or may not
+	 * be the provided TupleExpr) that has gone through zero or more of the stages prior to and also including execution
+	 * as specified by the provided level.
+	 * </p>
+	 *
+	 * <p>
+	 * This method is used by the Query interface.
+	 * </p>
+	 *
+	 * <p>
+	 * WARNING: This method is experimental and is subject to change or removal without warning. There is currently only
+	 * partial support for this method in RDF4J and and UnsupportedOperationException where support is lacking.
+	 * </p>
+	 *
+	 *
+	 * @param level           the explanation level, eg. OPTIMIZED
+	 * @param tupleExpr       The tuple expression to evaluate. Mutable.
+	 * @param dataset         The dataset to use for evaluating the query, <tt>null</tt> to use the Sail's default
+	 *                        dataset.
+	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
+	 *                        should be bound to the value they map to.
+	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
+	 *                        inferred statements are returned; if true, inferred statements are returned if available
+	 * @return The resulting tuple expression after being run through the specified level
+	 */
+	// with default implementation for backwards compatibility
+	default TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred) {
+		throw new UnsupportedOperationException();
+	}
 }

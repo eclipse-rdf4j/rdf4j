@@ -27,8 +27,4 @@ class DatasetBooleanQuery extends DatasetQuery implements BooleanQuery {
 		return ((BooleanQuery) sailQuery).evaluate();
 	}
 
-	@Override
-	public Explanation explain(Explanation.Level level) {
-		return null;
-	}
 }

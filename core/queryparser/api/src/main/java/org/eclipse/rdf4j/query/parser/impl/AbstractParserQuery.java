@@ -46,7 +46,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 * Gets the "active" dataset for this query. The active dataset is either the dataset that has been specified using
 	 * {@link #setDataset(Dataset)} or the dataset that has been specified in the query, where the former takes
 	 * precedence over the latter.
-	 * 
+	 *
 	 * @return The active dataset, or <tt>null</tt> if there is no dataset.
 	 */
 	public Dataset getActiveDataset() {
@@ -75,4 +75,5 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
+
 }

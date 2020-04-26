@@ -135,10 +135,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 		valueFactory = SimpleValueFactory.getInstance();
 
-		this.members = new ArrayList<>(members.size());
-		for (RepositoryConnection member : members) {
-			this.members.add(member);
-		}
+		this.members = new ArrayList<>(members);
 	}
 
 	public ValueFactory getValueFactory() {
@@ -489,8 +486,8 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	@Override
-	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }

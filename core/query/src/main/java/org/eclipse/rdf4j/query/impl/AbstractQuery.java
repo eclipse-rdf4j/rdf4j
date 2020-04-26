@@ -41,4 +41,5 @@ public abstract class AbstractQuery extends AbstractOperation implements Query {
 	public int getMaxQueryTime() {
 		return getMaxExecutionTime();
 	}
+
 }

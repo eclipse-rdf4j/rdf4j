@@ -54,7 +54,7 @@ public class ContextAwareConnectionTest {
 
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -69,7 +69,7 @@ public class ContextAwareConnectionTest {
 	static class QueryStub extends AbstractQuery {
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -98,7 +98,7 @@ public class ContextAwareConnectionTest {
 
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 

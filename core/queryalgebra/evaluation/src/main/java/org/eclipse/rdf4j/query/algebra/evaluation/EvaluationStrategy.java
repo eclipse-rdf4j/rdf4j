@@ -37,7 +37,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
 	 */
 	@Override
-	public FederatedService getService(String serviceUrl) throws QueryEvaluationException;
+	FederatedService getService(String serviceUrl) throws QueryEvaluationException;
 
 	/**
 	 * Set the {@link QueryOptimizerPipeline} to use for optimizing any incoming queries.
@@ -46,7 +46,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @see #optimize(TupleExpr, EvaluationStatistics, BindingSet)
 	 * @since 3.0
 	 */
-	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
+	void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
 
 	/**
 	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
@@ -58,7 +58,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @see #setOptimizerPipeline(QueryOptimizerPipeline)
 	 * @since 3.0
 	 */
-	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+	TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
 			BindingSet bindings);
 
 	/**
@@ -70,7 +70,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param bindings   The variables bindings iterator to use for evaluating the expression, if applicable.
 	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
+	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
 
 	/**
@@ -81,7 +81,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return A closeable iterator over the variable binding sets that match the tuple expression.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException;
 
 	/**
@@ -91,7 +91,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
 	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
 	 */
-	public Value evaluate(ValueExpr expr, BindingSet bindings)
+	Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
@@ -104,7 +104,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 *                                      two incompatible operands. When thrown, the result of the boolean expression
 	 *                                      is neither <tt>true</tt> nor <tt>false</tt> , but unknown.
 	 */
-	public boolean isTrue(ValueExpr expr, BindingSet bindings)
+	boolean isTrue(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
@@ -124,6 +124,16 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param trackResultSize true to enable tracking.
 	 */
 	default void setTrackResultSize(boolean trackResultSize) {
+		// no-op for backwards compatibility
+	}
+
+	/**
+	 * Enable or disable time tracking for the query plan. Useful to determine which parts of a query plan take the most
+	 * time to evaluate.
+	 *
+	 * @param trackTime true to enable tracking.
+	 */
+	default void setTrackTime(boolean trackTime) {
 		// no-op for backwards compatibility
 	}
 }

@@ -75,6 +75,6 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }

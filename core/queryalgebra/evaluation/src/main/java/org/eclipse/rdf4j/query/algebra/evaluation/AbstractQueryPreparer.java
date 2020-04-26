@@ -130,7 +130,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -189,7 +189,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -298,7 +298,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public Explanation explain(Explanation.Level level) {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 	}
 

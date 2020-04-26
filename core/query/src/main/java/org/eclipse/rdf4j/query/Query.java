@@ -64,10 +64,33 @@ public interface Query extends Operation {
 	@Deprecated
 	int getMaxQueryTime();
 
-	// TODO - make default with no-op before merging to develop for backwards compatibility
-	// Also wondering if it makes sense to move this up a level to the Operation interface? Since we will be using a
-	// default no-op implementation we could move it without affecting backwards compatibility.
+	/**
+	 * <p>
+	 * Explain how the query will be (or has been) executed/evaluated by returning an explanation of the query plan.
+	 * </p>
+	 *
+	 * <p>
+	 * This method is useful for understanding why a particular query is slow. The most useful level is Executed, but
+	 * this takes as long as it takes to execute/evaluate the query.
+	 * </p>
+	 *
+	 * <p>
+	 * WARNING: This method is experimental and is subject to change or removal without warning. Same goes for the
+	 * returned explanation. There is currently only partial support for this method in RDF4J and and
+	 * UnsupportedOperationException where support is lacking.
+	 * </p>
+	 *
+	 * @param level The explanation level that should be used to create the explanation. Choose between: Unoptimized (as
+	 *              parsed without optimizations) , Optimized (as is actually going to be used), Executed (as was
+	 *              executed/evaluated, including some real performance metrics), Timed (as was executed/evaluated
+	 *              including all real performance metrics). Executed and Timed level can potentially be slow.
+	 * @return The explanation that we generated, which can be viewed in a human readable format with toString(), as
+	 *         JSON or as a simplified query plan object structure.
+	 */
 	@Experimental
-	Explanation explain(Explanation.Level level);
+	default Explanation explain(Explanation.Level level) {
+		// with default implementation for backwards compatibility
+		throw new UnsupportedOperationException();
+	}
 
 }

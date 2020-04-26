@@ -39,6 +39,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
+		genericPlanNode.setTotalTime(node.getTotalTimeNanos() / 1000.0);
 
 		if (map.containsKey(node)) {
 			throw new IllegalStateException("Node has been visited twice!");

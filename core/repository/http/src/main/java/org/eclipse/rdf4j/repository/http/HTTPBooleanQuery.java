@@ -50,6 +50,6 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }

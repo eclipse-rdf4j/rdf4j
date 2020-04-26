@@ -185,6 +185,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	// track the results size that each node in the query plan produces during execution
 	private boolean trackResultSize;
 
+	// track the exeution time of each node in the plan
+	private boolean trackTime;
+
 	private final UUID uuid;
 
 	private QueryOptimizerPipeline pipeline;
@@ -296,6 +299,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
 			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
+		}
+
+		if (trackTime) {
+			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+			expr.setTotalTimeNanos(Math.max(0, expr.getTotalTimeNanos()));
+			ret = new TimedIterator(ret, expr);
 		}
 
 		if (trackResultSize) {
@@ -2031,6 +2040,40 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	}
 
+	/**
+	 * This class wraps an iterator and tracks the time used to execute the
+	 */
+	static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+
+		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
+		QueryModelNode queryModelNode;
+
+		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
+				QueryModelNode queryModelNode) {
+			super(iterator);
+			this.iterator = iterator;
+			this.queryModelNode = queryModelNode;
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			long before = System.nanoTime();
+			BindingSet next = iterator.next();
+			long after = System.nanoTime();
+			queryModelNode.setTotalTimeNanos(queryModelNode.getTotalTimeNanos() + (after - before));
+			return next;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			long before = System.nanoTime();
+			boolean hasNext = super.hasNext();
+			long after = System.nanoTime();
+			queryModelNode.setTotalTimeNanos(queryModelNode.getTotalTimeNanos() + (after - before));
+			return hasNext;
+		}
+	}
+
 	@Override
 	public boolean isTrackResultSize() {
 		return trackResultSize;
@@ -2039,5 +2082,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public void setTrackResultSize(boolean trackResultSize) {
 		this.trackResultSize = trackResultSize;
+	}
+
+	@Override
+	public void setTrackTime(boolean trackTime) {
+		this.trackTime = trackTime;
 	}
 }

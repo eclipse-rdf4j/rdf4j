@@ -8,11 +8,14 @@
 
 package org.eclipse.rdf4j.sail.memory;
 
+import static org.junit.Assert.assertTrue;
+
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.junit.Assert;
@@ -107,6 +110,26 @@ public class QueryPlanRetrievalTest {
 					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
+		}
+	}
+
+	@Test
+	public void testTupleQueryTimed() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(TUPLE_QUERY);
+
+			GenericPlanNode genericPlanNode = query.explain(Explanation.Level.Timed).toGenericPlanNode();
+
+			GenericPlanNode filterNode = genericPlanNode.getPlans().get(1).getPlans().get(0);
+
+			assertTrue(filterNode.getSelfTime() > filterNode.getPlans().get(1).getTotalTime());
 		}
 	}
 

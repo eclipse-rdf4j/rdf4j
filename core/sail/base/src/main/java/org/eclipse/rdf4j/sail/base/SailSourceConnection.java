@@ -128,7 +128,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	// Track the result sizes generated when evaluating a query
 	private boolean trackResultSize;
-	private boolean immutableTypleExpr;
+	private boolean immutableTupleExpr;
+	private boolean trackTime;
 
 	/*--------------*
 	 * Constructors *
@@ -201,7 +202,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
-		if (!immutableTypleExpr) {
+		if (!immutableTupleExpr) {
 			tupleExpr = tupleExpr.clone();
 		}
 
@@ -213,8 +214,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iter1 = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iter2 = null;
+		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
 
 		boolean allGood = false;
 		try {
@@ -227,78 +227,91 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				strategy.setTrackResultSize(trackResultSize);
 			}
 
+			if (trackTime) {
+				strategy.setTrackTime(trackTime);
+			}
+
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 
-			iter1 = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance());
-			iter2 = interlock(iter1, rdfDataset, branch);
+			iteration = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance());
+			iteration = interlock(iteration, rdfDataset, branch);
 			allGood = true;
-			return iter2;
+			return iteration;
 		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
 		} finally {
 			if (!allGood) {
+
 				try {
-					if (iter2 != null) {
-						iter2.close();
+					if (iteration != null) {
+						iteration.close();
 					}
 				} finally {
 					try {
-						if (iter1 != null) {
-							iter1.close();
+						if (rdfDataset != null) {
+							rdfDataset.close();
 						}
 					} finally {
-						try {
-							if (rdfDataset != null) {
-								rdfDataset.close();
-							}
-						} finally {
-							if (branch != null) {
-								branch.close();
-							}
+						if (branch != null) {
+							branch.close();
 						}
 					}
+
 				}
 			}
 		}
 	}
 
 	@Override
-	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset activeDataset,
+	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred) {
-		switch (level) {
-		case Executed:
-			this.trackResultSize = true;
-			this.immutableTypleExpr = true;
+		try {
 
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
-					activeDataset, bindings, includeInferred)) {
-				while (evaluate.hasNext()) {
-					evaluate.next();
+			switch (level) {
+			case Timed:
+				this.trackTime = true;
+				this.trackResultSize = true;
+				this.immutableTupleExpr = true;
+
+				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+						dataset, bindings, includeInferred)) {
+					while (evaluate.hasNext()) {
+						evaluate.next();
+					}
 				}
-			} finally {
-				this.trackResultSize = false;
-				this.immutableTypleExpr = false;
 
-			}
+				return tupleExpr;
+			case Executed:
+				this.trackResultSize = true;
+				this.immutableTupleExpr = true;
 
-			return tupleExpr;
-		case Optimized:
-			this.immutableTypleExpr = true;
-			try {
+				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+						dataset, bindings, includeInferred)) {
+					while (evaluate.hasNext()) {
+						evaluate.next();
+					}
+				}
+
+				return tupleExpr;
+			case Optimized:
+				this.immutableTupleExpr = true;
+
 				SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 				SailDataset rdfDataset = branch.dataset(getIsolationLevel());
 
 				TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
-				EvaluationStrategy strategy = getEvaluationStrategy(activeDataset, tripleSource);
+				EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 
 				return strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
-			} finally {
-				this.immutableTypleExpr = false;
+
+			case Unoptimized:
+				return tupleExpr;
 			}
-		case Unoptimized:
-			return tupleExpr;
+		} finally {
+			this.immutableTupleExpr = false;
+			this.trackResultSize = false;
 		}
 
 		throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + level);

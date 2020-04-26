@@ -48,6 +48,6 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 
 	@Override
 	public Explanation explain(Explanation.Level level) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 }
