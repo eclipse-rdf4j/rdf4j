@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
@@ -126,8 +125,8 @@ class MemorySailStore implements SailStore {
 	}
 
 	@Override
-	public EvaluationStatistics getEvaluationStatistics() {
-		return new MemEvaluationStatistics(valueFactory);
+	public MemEvaluationStatistics getEvaluationStatistics() {
+		return new MemEvaluationStatistics(valueFactory, statements);
 	}
 
 	@Override

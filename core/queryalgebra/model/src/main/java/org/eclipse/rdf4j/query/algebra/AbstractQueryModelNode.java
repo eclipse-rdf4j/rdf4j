@@ -30,7 +30,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	private double resultSizeEstimate = -1;
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
-	private long totalTimeNanos = -1;
+	private long totalTimeNanosActual = -1;
 
 	/*---------*
 	 * Methods *
@@ -169,13 +169,13 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	}
 
 	@Override
-	public long getTotalTimeNanos() {
-		return totalTimeNanos;
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
 	}
 
 	@Override
-	public void setTotalTimeNanos(long totalTimeNanos) {
-		this.totalTimeNanos = totalTimeNanos;
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
 	}
 
 	/**

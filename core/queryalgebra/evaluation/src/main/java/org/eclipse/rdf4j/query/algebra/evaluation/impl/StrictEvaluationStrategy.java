@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -151,6 +152,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
+
+import com.google.common.base.Stopwatch;
 
 /**
  * Minimally-conforming SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given
@@ -303,7 +306,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		if (trackTime) {
 			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-			expr.setTotalTimeNanos(Math.max(0, expr.getTotalTimeNanos()));
+			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
 			ret = new TimedIterator(ret, expr);
 		}
 
@@ -2041,12 +2044,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	/**
-	 * This class wraps an iterator and tracks the time used to execute the
+	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
 	static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
+
+		Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
 				QueryModelNode queryModelNode) {
@@ -2057,20 +2062,29 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			long before = System.nanoTime();
+			stopwatch.start();
 			BindingSet next = iterator.next();
-			long after = System.nanoTime();
-			queryModelNode.setTotalTimeNanos(queryModelNode.getTotalTimeNanos() + (after - before));
+			stopwatch.stop();
 			return next;
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			long before = System.nanoTime();
+			stopwatch.start();
 			boolean hasNext = super.hasNext();
-			long after = System.nanoTime();
-			queryModelNode.setTotalTimeNanos(queryModelNode.getTotalTimeNanos() + (after - before));
+			stopwatch.stop();
 			return hasNext;
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				queryModelNode.setTotalTimeNanosActual(
+						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
+			} finally {
+				super.handleClose();
+
+			}
 		}
 	}
 

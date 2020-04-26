@@ -15,8 +15,6 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 /**
  * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
  *
@@ -30,7 +28,7 @@ public class GenericPlanNode {
 	private Double costEstimate;
 	private Double resultSizeEstimate;
 	private Long resultSizeActual;
-	private Double totalTime;
+	private Double totalTimeActual;
 
 	private List<GenericPlanNode> plans = new ArrayList<>();
 
@@ -91,30 +89,38 @@ public class GenericPlanNode {
 		}
 	}
 
-	public Double getTotalTime() {
-		return totalTime;
+	/**
+	 *
+	 * @return the total time used by this node, including sub-nodes, in milliseconds
+	 */
+	public Double getTotalTimeActual() {
+		return totalTimeActual;
 	}
 
-	public void setTotalTime(Double totalTime) {
-		if (totalTime >= 0) {
-			this.totalTime = totalTime;
+	public void setTotalTimeActual(Double totalTimeActual) {
+		if (totalTimeActual >= 0) {
+			this.totalTimeActual = totalTimeActual;
 		}
 	}
 
-	public Double getSelfTime() {
+	/**
+	 *
+	 * @return the time used by this node alone is milliseconds
+	 */
+	public Double getSelfTimeActual() {
 
-		if (totalTime == null) {
+		if (totalTimeActual == null) {
 			return null;
 		}
 
 		double childTime = plans
 				.stream()
-				.map(GenericPlanNode::getTotalTime)
+				.map(GenericPlanNode::getTotalTimeActual)
 				.filter(Objects::nonNull)
 				.mapToDouble(t -> t)
 				.sum();
 
-		return totalTime - childTime;
+		return totalTimeActual - childTime;
 
 	}
 
@@ -194,7 +200,13 @@ public class GenericPlanNode {
 		if (millis == null) {
 			humanReadbleString = "UNKNOWN";
 		} else if (millis > 1_000) {
-			humanReadbleString = millis / 100 / 10.0 + "s";
+			humanReadbleString = Math.round(millis / 100) / 10.0 + "s";
+		} else if (millis >= 100) {
+			humanReadbleString = Math.round(millis) + "ms";
+		} else if (millis >= 10) {
+			humanReadbleString = Math.round(millis * 10) / 10.0 + "ms";
+		} else if (millis >= 1) {
+			humanReadbleString = Math.round(millis * 100) / 100.0 + "ms";
 		} else if (millis >= 0) {
 			humanReadbleString = Math.round(millis * 1000) / 1000.0 + "ms";
 		} else {
@@ -209,8 +221,8 @@ public class GenericPlanNode {
 				"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
 				"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
 				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
-				"totalTime=" + toHumanReadableTime(getTotalTime()),
-				"selfTime=" + toHumanReadableTime(getSelfTime()))
+				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
+				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()))
 				.filter(s -> !s.endsWith("UNKNOWN"))
 				.reduce((a, b) -> a + ", " + b)
 				.orElse("");

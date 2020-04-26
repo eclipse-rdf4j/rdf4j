@@ -75,6 +75,13 @@ public interface Query extends Operation {
 	 * </p>
 	 *
 	 * <p>
+	 * When timing a query you should keep in mind that the query performance will vary based on how much the JIT
+	 * compiler has compiled the code (C1 vs C2) and based on what is or isn't cached in memory. If Timed explanations
+	 * are considerably slower than Executed explanations the overhead with timing the query may be large on your system
+	 * and should not be trusted.
+	 * </p>
+	 *
+	 * <p>
 	 * WARNING: This method is experimental and is subject to change or removal without warning. Same goes for the
 	 * returned explanation. There is currently only partial support for this method in RDF4J and and
 	 * UnsupportedOperationException where support is lacking.

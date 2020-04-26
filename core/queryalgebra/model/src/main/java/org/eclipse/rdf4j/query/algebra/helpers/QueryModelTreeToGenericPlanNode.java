@@ -7,10 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.helpers;
 
-import java.util.IdentityHashMap;
+import java.util.ArrayDeque;
 
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
@@ -31,39 +30,31 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return top;
 	}
 
-	IdentityHashMap<QueryModelNode, GenericPlanNode> map = new IdentityHashMap<>();
+	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
 
+	// node.getParentNode() is not reliable because nodes are reused and parent is not maintained! This is why we use a
+	// queue to maintain the effective parent.
 	@Override
 	protected void meetNode(QueryModelNode node) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
-		genericPlanNode.setTotalTime(node.getTotalTimeNanos() / 1000.0);
-
-		if (map.containsKey(node)) {
-			throw new IllegalStateException("Node has been visited twice!");
-		} else {
-			map.put(node, genericPlanNode);
-		}
-		super.meetNode(node);
+		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0); // convert from nanoseconds to
+																							// milliseconds
 
 		if (node == topTupleExpr) {
 			top = genericPlanNode;
 		}
 
-		QueryModelNode parentNode = node.getParentNode();
-		if (parentNode != null) {
-			GenericPlanNode genericParentNode = map.get(parentNode);
-			if (genericParentNode != null) {
-				genericParentNode.addPlans(genericPlanNode);
-			} else {
-				if (!(parentNode instanceof QueryRoot)) {
-					throw new IllegalStateException(
-							"Node parent is unknown! Maybe reuse of child node between parents?");
-				}
-			}
+		if (!deque.isEmpty()) {
+			GenericPlanNode genericParentNode = deque.getLast();
+			genericParentNode.addPlans(genericPlanNode);
 		}
+
+		deque.addLast(genericPlanNode);
+		super.meetNode(node);
+		deque.removeLast();
 
 	}
 

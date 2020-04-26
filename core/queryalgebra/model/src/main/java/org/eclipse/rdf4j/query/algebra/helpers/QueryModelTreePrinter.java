@@ -125,7 +125,7 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 				"costEstimate=" + toHumanReadableNumber(node.getCostEstimate()),
 				"resultSizeEstimate=" + toHumanReadableNumber(node.getResultSizeEstimate()),
 				"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()),
-				"totalTime=" + toHumanReadableTime(node.getTotalTimeNanos()))
+				"totalTimeActual=" + toHumanReadableTime(node.getTotalTimeNanosActual()))
 				.filter(s -> !s.endsWith("UNKNOWN"))
 				.reduce((a, b) -> a + ", " + b)
 				.orElse("");

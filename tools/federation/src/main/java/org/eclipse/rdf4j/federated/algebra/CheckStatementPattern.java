@@ -44,7 +44,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	private double resultSizeEstimate = -1;
 	private double costEstimate = -1;
 	private long resultSizeActual = -1;
-	private long totalTimeNanos = -1;
+	private long totalTimeNanosActual = -1;
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
@@ -166,13 +166,13 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
-	public long getTotalTimeNanos() {
-		return totalTimeNanos;
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
 	}
 
 	@Override
-	public void setTotalTimeNanos(long totalTimeNanos) {
-		this.totalTimeNanos = totalTimeNanos;
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
 	}
 
 	@Override

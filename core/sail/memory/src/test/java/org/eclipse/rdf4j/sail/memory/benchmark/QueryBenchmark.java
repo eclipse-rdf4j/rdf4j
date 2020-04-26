@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -103,6 +104,10 @@ public class QueryBenchmark {
 	public List<BindingSet> groupByQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String s = connection.prepareTupleQuery(query1).explain(Explanation.Level.Timed).toString();
+
+			System.out.println(s);
+
 			return Iterations.asList(connection
 					.prepareTupleQuery(query1)
 					.evaluate());
