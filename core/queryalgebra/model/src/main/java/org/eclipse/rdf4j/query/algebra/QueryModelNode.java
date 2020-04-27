@@ -125,13 +125,14 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op for backwards compatibility
 	}
 
+	@Experimental
 	default long getTotalTimeNanosActual() {
 		return -1;
 	}
 
+	@Experimental
 	default void setTotalTimeNanosActual(long totalTime) {
 		// no-op
 	}
-
 
 }

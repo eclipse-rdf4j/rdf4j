@@ -9,9 +9,13 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
+@Experimental
+@InternalUseOnly
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
 
 	GenericPlanNode top = null;
