@@ -105,11 +105,23 @@ public interface QueryModelNode extends Cloneable, Serializable {
 		// no-op for backwards compatibility
 	}
 
-	long getResultSizeActual();
+	@Experimental
+	default long getResultSizeActual() {
+		return -1;
+	}
 
-	void setResultSizeActual(long resultSizeActual);
+	@Experimental
+	default void setResultSizeActual(long resultSizeActual) {
+		// no-op for backwards compatibility
+	}
 
-	double getCostEstimate();
+	@Experimental
+	default double getCostEstimate() {
+		return -1;
+	}
 
-	void setCostEstimate(double costEstimate);
+	@Experimental
+	default void setCostEstimate(double costEstimate) {
+		// no-op for backwards compatibility
+	}
 }
