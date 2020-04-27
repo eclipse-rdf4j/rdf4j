@@ -35,18 +35,16 @@ public abstract class SailQuery extends AbstractParserQuery {
 	@Override
 	public Explanation explain(Explanation.Level level) {
 
+		int timeout = DEFAULT_EXPLANATION_TIMEOUT;
+		if (getMaxExecutionTime() > 0) {
+			timeout = getMaxExecutionTime();
+		}
+
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		SailConnection sailCon = getConnection().getSailConnection();
 
-		QueryModelNode explainedTupleExpr = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
-				getIncludeInferred());
-
-		QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
-				explainedTupleExpr);
-		explainedTupleExpr.visit(queryModelTreeToGenericPlanNode);
-
-		return new ExplanationImpl(queryModelTreeToGenericPlanNode.getGenericPlanNode());
+		return sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);
 
 	}
 }

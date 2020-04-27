@@ -25,6 +25,9 @@ public class GenericPlanNode {
 
 	private String type;
 
+	// timed out while retrieving explanation
+	private Boolean timedOut;
+
 	private Double costEstimate;
 	private Double resultSizeEstimate;
 	private Long resultSizeActual;
@@ -94,6 +97,18 @@ public class GenericPlanNode {
 	 * @return the total time used by this node, including sub-nodes, in milliseconds
 	 */
 	public Double getTotalTimeActual() {
+		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
+		// (recursively). We need this value to calculate the selfTimeActual.
+		if (totalTimeActual == null) {
+			double sum = plans.stream()
+					.map(GenericPlanNode::getTotalTimeActual)
+					.filter(Objects::nonNull)
+					.mapToDouble(d -> d)
+					.sum();
+
+			if (sum > 0)
+				return sum;
+		}
 		return totalTimeActual;
 	}
 
@@ -101,6 +116,14 @@ public class GenericPlanNode {
 		if (totalTimeActual >= 0) {
 			this.totalTimeActual = totalTimeActual;
 		}
+	}
+
+	public void setTimedOut(Boolean timedOut) {
+		this.timedOut = timedOut;
+	}
+
+	public Boolean getTimedOut() {
+		return timedOut;
 	}
 
 	/**
@@ -130,6 +153,13 @@ public class GenericPlanNode {
 		StringBuilder sb = new StringBuilder();
 
 		String newLine = System.getProperty("line.separator");
+
+		if (timedOut != null && timedOut) {
+			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
+			sb.append("You can change the timeout by setting .setMaxExecutionTime(...) on your query.")
+					.append(newLine)
+					.append(newLine);
+		}
 
 		sb.append(type);
 		appendCostAnnotation(sb);

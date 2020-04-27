@@ -32,7 +32,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -265,8 +267,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	}
 
 	@Override
-	public TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, boolean includeInferred) {
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		boolean queryTimedOut = false;
+
 		try {
 
 			switch (level) {
@@ -275,26 +279,16 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				this.trackResultSize = true;
 				this.immutableTupleExpr = true;
 
-				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
-						dataset, bindings, includeInferred)) {
-					while (evaluate.hasNext()) {
-						evaluate.next();
-					}
-				}
+				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				break;
 
-				return tupleExpr;
 			case Executed:
 				this.trackResultSize = true;
 				this.immutableTupleExpr = true;
 
-				try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
-						dataset, bindings, includeInferred)) {
-					while (evaluate.hasNext()) {
-						evaluate.next();
-					}
-				}
+				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				break;
 
-				return tupleExpr;
 			case Optimized:
 				this.immutableTupleExpr = true;
 
@@ -304,17 +298,66 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
 				EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 
-				return strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+				tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+				break;
 
 			case Unoptimized:
-				return tupleExpr;
+				break;
+
+			default:
+				throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + level);
+
 			}
+
 		} finally {
 			this.immutableTupleExpr = false;
 			this.trackResultSize = false;
 		}
 
-		throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + level);
+		QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
+				tupleExpr);
+		tupleExpr.visit(queryModelTreeToGenericPlanNode);
+
+		return new ExplanationImpl(queryModelTreeToGenericPlanNode.getGenericPlanNode(), queryTimedOut);
+
+	}
+
+	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+			boolean includeInferred, int timeoutSeconds) {
+
+		Thread currentThread = Thread.currentThread();
+
+		Thread thread = new Thread(() -> {
+			try {
+				Thread.sleep(timeoutSeconds * 1000);
+				currentThread.interrupt();
+			} catch (InterruptedException ignored) {
+
+			}
+		});
+
+		thread.start();
+
+		boolean interrupted = false;
+
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+				dataset, bindings, includeInferred)) {
+			while (evaluate.hasNext()) {
+				if (Thread.interrupted()) {
+					break;
+				}
+				evaluate.next();
+			}
+		} catch (Exception ignored) {
+			interrupted = Thread.interrupted();
+			if (interrupted) {
+			} else {
+				throw ignored;
+			}
+		}
+
+		return interrupted;
+
 	}
 
 	@Override

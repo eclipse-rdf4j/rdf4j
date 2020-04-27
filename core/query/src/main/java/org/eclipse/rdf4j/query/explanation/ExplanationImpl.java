@@ -23,17 +23,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Experimental
 public class ExplanationImpl implements Explanation {
 
-	private final GenericPlanNode genericPlanNodeGenerator;
+	private final GenericPlanNode genericPlanNode;
 
-	public ExplanationImpl(GenericPlanNode genericPlanNodeGenerator) {
-		this.genericPlanNodeGenerator = genericPlanNodeGenerator;
+	public ExplanationImpl(GenericPlanNode genericPlanNode, boolean timedOut) {
+		this.genericPlanNode = genericPlanNode;
+		if (timedOut) {
+			genericPlanNode.setTimedOut(timedOut);
+		}
 	}
 
 	ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
 	public GenericPlanNode toGenericPlanNode() {
-		return genericPlanNodeGenerator;
+		return genericPlanNode;
 	}
 
 	@Override

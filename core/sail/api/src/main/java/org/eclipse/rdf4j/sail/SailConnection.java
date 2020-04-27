@@ -467,11 +467,12 @@ public interface SailConnection extends AutoCloseable {
 	 *                        should be bound to the value they map to.
 	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
 	 *                        inferred statements are returned; if true, inferred statements are returned if available
+	 * @param timeoutSeconds  for explanations that require execution a timeout can be provided in seconds
 	 * @return The resulting tuple expression after being run through the specified level
 	 */
 	// with default implementation for backwards compatibility
-	default TupleExpr explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, boolean includeInferred) {
+	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
 }
