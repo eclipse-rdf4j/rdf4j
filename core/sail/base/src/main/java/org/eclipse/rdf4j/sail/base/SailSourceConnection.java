@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -327,16 +328,18 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		Thread currentThread = Thread.currentThread();
 
-		Thread thread = new Thread(() -> {
+		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
+		// execution
+		Thread selfInterruptOnTimeoutThread = new Thread(() -> {
 			try {
-				Thread.sleep(timeoutSeconds * 1000);
+				TimeUnit.SECONDS.sleep(timeoutSeconds);
 				currentThread.interrupt();
 			} catch (InterruptedException ignored) {
 
 			}
 		});
 
-		thread.start();
+		selfInterruptOnTimeoutThread.start();
 
 		boolean interrupted = false;
 
@@ -348,11 +351,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				}
 				evaluate.next();
 			}
-		} catch (Exception ignored) {
+		} catch (Exception e) {
 			interrupted = Thread.interrupted();
-			if (interrupted) {
-			} else {
-				throw ignored;
+			if (!interrupted) {
+				throw e;
 			}
 		}
 
