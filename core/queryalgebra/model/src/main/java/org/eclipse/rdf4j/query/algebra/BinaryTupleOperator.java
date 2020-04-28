@@ -9,6 +9,10 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+
 /**
  * An abstract superclass for binary tuple operators which, by definition, has two arguments.
  */
@@ -27,6 +31,9 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	 * The operator's right argument.
 	 */
 	protected TupleExpr rightArg;
+
+	// the name of the algorithm used to combine leftArg and rightArg
+	private String algorithmName;
 
 	/*--------------*
 	 * Constructors *
@@ -132,4 +139,12 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 		return clone;
 	}
 
+	public void setAlgorithm(Iteration<BindingSet, QueryEvaluationException> iteration) {
+		this.algorithmName = iteration.getClass().getSimpleName();
+	}
+
+	@Override
+	public String getSignature() {
+		return super.getSignature() + (algorithmName != null ? " (" + algorithmName + ")" : "");
+	}
 }
