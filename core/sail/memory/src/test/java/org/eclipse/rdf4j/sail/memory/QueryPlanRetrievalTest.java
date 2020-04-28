@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -33,8 +34,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import joptsimple.internal.Strings;
 
 public class QueryPlanRetrievalTest {
 
@@ -67,14 +66,14 @@ public class QueryPlanRetrievalTest {
 			connection.add(RDF.PROPERTY, RDF.TYPE, RDFS.RESOURCE);
 			connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
-			connection.add(vf.createBNode(), FOAF.KNOWS, vf.createBNode());
+			connection.add(vf.createBNode("01"), FOAF.KNOWS, vf.createBNode("02"));
+			connection.add(vf.createBNode("03"), FOAF.KNOWS, vf.createBNode("04"));
+			connection.add(vf.createBNode("05"), FOAF.KNOWS, vf.createBNode("06"));
+			connection.add(vf.createBNode("07"), FOAF.KNOWS, vf.createBNode("08"));
+			connection.add(vf.createBNode("09"), FOAF.KNOWS, vf.createBNode("10"));
+			connection.add(vf.createBNode("11"), FOAF.KNOWS, vf.createBNode("12"));
+			connection.add(vf.createBNode("13"), FOAF.KNOWS, vf.createBNode("14"));
+			connection.add(vf.createBNode("15"), FOAF.KNOWS, vf.createBNode("16"));
 		}
 	}
 
@@ -120,6 +119,7 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
 	}
 
 	@Test
@@ -129,13 +129,12 @@ public class QueryPlanRetrievalTest {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(TUPLE_QUERY);
-
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 			String expected = "Projection\n" +
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
-					"   LeftJoin\n" +
-					"      Join\n" +
+					"   LeftJoin (LeftJoinIterator)\n" +
+					"      Join (JoinIterator)\n" +
 					"         StatementPattern (costEstimate=1, resultSizeEstimate=4)\n" +
 					"            Var (name=a)\n" +
 					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -164,6 +163,8 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -189,6 +190,8 @@ public class QueryPlanRetrievalTest {
 			assertThat(genericPlanNode.toString(), containsString("totalTimeActual"));
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -234,6 +237,8 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -278,6 +283,8 @@ public class QueryPlanRetrievalTest {
 					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -382,6 +389,8 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -425,6 +434,8 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Test
@@ -481,6 +492,8 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+		sailRepository.shutDown();
+
 	}
 
 	@Ignore // slow test used for debugging
@@ -503,6 +516,8 @@ public class QueryPlanRetrievalTest {
 			String s = connection.prepareTupleQuery(query1).explain(Explanation.Level.Timed).toString();
 			System.out.println(s);
 		}
+
+		repository.shutDown();
 
 	}
 
@@ -560,6 +575,48 @@ public class QueryPlanRetrievalTest {
 			Assert.assertEquals(expected, actual);
 
 		}
+
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testTimeout() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 1000; i++) {
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i + 1) + ""));
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i - 1) + ""));
+
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i + 2) + ""));
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i - 2) + ""));
+			}
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(String.join("\n", "",
+					"select * where {",
+					"	?a (a|^a)* ?type.   ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"}"));
+
+			query.setMaxExecutionTime(1);
+
+			String actual = query.explain(Explanation.Level.Timed).toString();
+			Assert.assertThat(actual, containsString("Timed out"));
+
+		}
+		sailRepository.shutDown();
+
 	}
 
 }

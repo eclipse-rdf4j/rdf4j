@@ -293,13 +293,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			case Optimized:
 				this.immutableTupleExpr = true;
 
-				SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
-				SailDataset rdfDataset = branch.dataset(getIsolationLevel());
+				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
 
-				TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
-				EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
-
-				tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 				break;
 
 			case Unoptimized:
@@ -339,26 +334,37 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 		});
 
-		selfInterruptOnTimeoutThread.start();
+		try {
+			selfInterruptOnTimeoutThread.start();
+			boolean interrupted = false;
 
-		boolean interrupted = false;
-
-		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
-				dataset, bindings, includeInferred)) {
-			while (evaluate.hasNext()) {
-				if (Thread.interrupted()) {
-					break;
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+					dataset, bindings, includeInferred)) {
+				while (evaluate.hasNext()) {
+					if (Thread.interrupted()) {
+						break;
+					}
+					evaluate.next();
 				}
-				evaluate.next();
+			} catch (Exception e) {
+				interrupted = Thread.interrupted();
+				if (!interrupted) {
+					throw e;
+				}
 			}
-		} catch (Exception e) {
-			interrupted = Thread.interrupted();
-			if (!interrupted) {
-				throw e;
-			}
-		}
 
-		return interrupted;
+			return interrupted;
+
+		} finally {
+			selfInterruptOnTimeoutThread.interrupt();
+			try {
+				selfInterruptOnTimeoutThread.join();
+			} catch (InterruptedException ignored) {
+			}
+
+			// clear interrupted flag;
+			Thread.interrupted();
+		}
 
 	}
 
