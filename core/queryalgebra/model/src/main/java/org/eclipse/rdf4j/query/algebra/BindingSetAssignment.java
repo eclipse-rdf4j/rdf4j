@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.BindingSet;
 
@@ -95,10 +96,12 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 
 	@Override
 	public String getSignature() {
-		String signature = super.getSignature();
+		StringBuilder sb = new StringBuilder(super.getSignature());
 
-		signature += " (" + this.getBindingSets().toString() + ")";
+		sb.append(" (").append(this.getBindingSets().toString()).append(")");
 
-		return signature;
+		appendCostAnnotation(sb);
+
+		return sb.toString();
 	}
 }

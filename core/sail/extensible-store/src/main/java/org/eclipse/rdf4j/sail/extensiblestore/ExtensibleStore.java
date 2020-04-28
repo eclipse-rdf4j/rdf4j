@@ -108,7 +108,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-
+		this.serviceResolver = resolver;
 	}
 
 	@Override
@@ -120,7 +120,8 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		if (evalStratFactory == null) {
 			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
-		evalStratFactory.setQuerySolutionCacheThreshold(0);
+		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
+		evalStratFactory.setTrackResultSize(isTrackResultSize());
 		return evalStratFactory;
 	}
 
@@ -136,7 +137,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	public void setEvaluationStrategyFactory(EvaluationStrategyFactory evalStratFactory) {
 		this.evalStratFactory = evalStratFactory;
-
 	}
 
 	@Override
@@ -149,12 +149,11 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	// override this method to change which evaluation statistics to use
 	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
-		return EvaluationStatisticsEnum.constant;
+		return EvaluationStatisticsEnum.dynamic;
 	}
 
 	public ExtensibleStatementHelper getExtensibleStatementHelper() {
 		return ExtensibleStatementHelper.getDefaultImpl();
-
 	}
 
 }
