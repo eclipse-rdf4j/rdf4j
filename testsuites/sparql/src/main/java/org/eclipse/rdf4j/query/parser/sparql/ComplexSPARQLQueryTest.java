@@ -2312,7 +2312,8 @@ public abstract class ComplexSPARQLQueryTest {
 				"  { BIND (?a AS ?b) } \n" +
 				"}";
 
-		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+		TupleQuery q = conn.prepareTupleQuery(query);
+		List<BindingSet> result = QueryResults.asList(q.evaluate());
 
 		assertEquals(1, result.size());
 
@@ -2338,7 +2339,8 @@ public abstract class ComplexSPARQLQueryTest {
 				"  }\n" +
 				"}";
 
-		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+		TupleQuery q = conn.prepareTupleQuery(query);
+		List<BindingSet> result = QueryResults.asList(q.evaluate());
 
 		assertEquals(2, result.size());
 
