@@ -105,7 +105,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	}
 
 	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		if (expr instanceof Union) {
+		if (expr instanceof Union && ((Union) expr).isNewScope()) {
 			return true;
 		}
 		return TupleExprs.isGraphPatternGroup(expr) && !(expr instanceof Filter);

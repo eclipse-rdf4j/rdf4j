@@ -1187,7 +1187,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		if (altCount > 1) {
 			GraphPattern parentGP = graphPattern;
-			Union union = new Union();
+			Union union = new Union(false);
 			Union currentUnion = union;
 			for (int i = 0; i < altCount - 1; i++) {
 				graphPattern = new GraphPattern(parentGP);
@@ -1200,7 +1200,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					arg = graphPattern.buildTupleExpr();
 					currentUnion.setRightArg(arg);
 				} else {
-					Union newUnion = new Union();
+					Union newUnion = new Union(false);
 					currentUnion.setRightArg(newUnion);
 					currentUnion = newUnion;
 				}
@@ -1595,7 +1595,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// upperbound is fixed-length
 
 					// create set of unions for all path lengths between lower and upper bound.
-					Union union = new Union();
+					Union union = new Union(false);
 					Union currentUnion = union;
 
 					for (long length = lowerBound; length < upperBound; length++) {
@@ -1607,7 +1607,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							path = createPath(scope, subjVar, te, endVar, contextVar, length + 1);
 							currentUnion.setRightArg(path);
 						} else {
-							Union nextUnion = new Union();
+							Union nextUnion = new Union(false);
 							currentUnion.setRightArg(nextUnion);
 							currentUnion = nextUnion;
 						}

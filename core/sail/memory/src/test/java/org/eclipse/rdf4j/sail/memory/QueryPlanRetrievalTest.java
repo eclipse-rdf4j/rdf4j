@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -614,6 +613,96 @@ public class QueryPlanRetrievalTest {
 			String actual = query.explain(Explanation.Level.Timed).toString();
 			Assert.assertThat(actual, containsString("Timed out"));
 
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testAlternatePath() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 10; i++) {
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i + 1) + ""));
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i - 1) + ""));
+
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i + 2) + ""));
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, vf.createBNode((i - 2) + ""));
+			}
+
+			connection.add(vf.createBNode("0"), RDFS.LABEL, vf.createLiteral("label"));
+
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(String.join("\n", "",
+					"PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>",
+					"select * where {",
+					"	?a (a|^a)* ?c. ?c (a|^a) ?b .",
+					"	?b rdfs:label ?type .",
+					"}"));
+
+			query.setMaxExecutionTime(1);
+
+			String actual = query.explain(Explanation.Level.Executed).toString();
+
+			assertEquals("Projection (resultSizeActual=84)\n" +
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"      ProjectionElem \"c\"\n" +
+					"      ProjectionElem \"b\"\n" +
+					"      ProjectionElem \"type\"\n" +
+					"   Join (JoinIterator) (resultSizeActual=84)\n" +
+					"      StatementPattern (costEstimate=1, resultSizeEstimate=1, resultSizeActual=1)\n" +
+					"         Var (name=b)\n" +
+					"         Var (name=_const_9285ccfc_uri, value=http://www.w3.org/2000/01/rdf-schema#label, anonymous)\n"
+					+
+					"         Var (name=type)\n" +
+					"      Union (resultSizeActual=84)\n" +
+					"         Join (JoinIterator) (resultSizeActual=28)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=40, resultSizeActual=2)\n" +
+					"               Var (name=c)\n" +
+					"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"               Var (name=b)\n" +
+					"            ArbitraryLengthPath (costEstimate=9, resultSizeEstimate=82, resultSizeActual=28)\n" +
+					"               Var (name=a)\n" +
+					"               Union\n" +
+					"                  StatementPattern (resultSizeEstimate=40)\n" +
+					"                     Var (name=a)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=c)\n" +
+					"                  StatementPattern (resultSizeEstimate=40)\n" +
+					"                     Var (name=c)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=a)\n" +
+					"               Var (name=c)\n" +
+					"         Join (JoinIterator) (resultSizeActual=56)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=40, resultSizeActual=4)\n" +
+					"               Var (name=b)\n" +
+					"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"               Var (name=c)\n" +
+					"            ArbitraryLengthPath (costEstimate=9, resultSizeEstimate=82, resultSizeActual=56)\n" +
+					"               Var (name=a)\n" +
+					"               Union\n" +
+					"                  StatementPattern (resultSizeEstimate=40)\n" +
+					"                     Var (name=a)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=c)\n" +
+					"                  StatementPattern (resultSizeEstimate=40)\n" +
+					"                     Var (name=c)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=a)\n" +
+					"               Var (name=c)\n", actual);
+
+			System.out.println(actual);
 		}
 		sailRepository.shutDown();
 

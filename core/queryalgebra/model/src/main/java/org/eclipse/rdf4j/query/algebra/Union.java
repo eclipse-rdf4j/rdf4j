@@ -15,21 +15,36 @@ import java.util.Set;
  */
 public class Union extends BinaryTupleOperator {
 
+	// Used to differentiate between Unions introduced by the user that require a new scope and unions introduced for
+	// evaluation or performance purposes that do not introduce a new scope. This means that they can be executed more
+	// efficiently.
+	private boolean newScope;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public Union() {
+		this(true);
+	}
+
+	public Union(boolean newScope) {
+		this.newScope = newScope;
 	}
 
 	/**
 	 * Creates a new union operator that operates on the two specified arguments.
-	 * 
+	 *
 	 * @param leftArg  The left argument of the union operator.
 	 * @param rightArg The right argument of the union operator.
 	 */
 	public Union(TupleExpr leftArg, TupleExpr rightArg) {
+		this(leftArg, rightArg, true);
+	}
+
+	public Union(TupleExpr leftArg, TupleExpr rightArg, boolean newScope) {
 		super(leftArg, rightArg);
+		this.newScope = newScope;
 	}
 
 	/*---------*
@@ -69,6 +84,16 @@ public class Union extends BinaryTupleOperator {
 
 	@Override
 	public Union clone() {
-		return (Union) super.clone();
+		Union clone = (Union) super.clone();
+		clone.newScope = this.newScope;
+		return clone;
+	}
+
+	public boolean isNewScope() {
+		return newScope;
+	}
+
+	public void setNewScope(boolean newScope) {
+		this.newScope = newScope;
 	}
 }

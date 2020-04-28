@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 /**
  * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation does not
  * yet cover all query node types.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
@@ -67,7 +67,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 			Union union = (Union) leftArg;
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
-			Union newUnion = new Union(leftJoin, rightJoin);
+			Union newUnion = new Union(leftJoin, rightJoin, union.isNewScope());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
 		} else if (rightArg instanceof Union) {
@@ -75,7 +75,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 			Union union = (Union) rightArg;
 			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
-			Union newUnion = new Union(leftJoin, rightJoin);
+			Union newUnion = new Union(leftJoin, rightJoin, union.isNewScope());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
 		} else if (leftArg instanceof LeftJoin && isWellDesigned(((LeftJoin) leftArg))) {
