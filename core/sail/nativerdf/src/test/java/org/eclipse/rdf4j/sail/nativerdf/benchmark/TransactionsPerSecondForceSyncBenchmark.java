@@ -42,7 +42,7 @@ import org.openjdk.jmh.annotations.Warmup;
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class TransactionsPerSecondBenchmark {
+public class TransactionsPerSecondForceSyncBenchmark {
 
 	private SailRepository repository;
 	private File file;
@@ -60,7 +60,7 @@ public class TransactionsPerSecondBenchmark {
 		file = Files.newTemporaryFolder();
 
 		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
-		sail.setForceSync(false);
+		sail.setForceSync(true);
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -59,12 +58,16 @@ public class QueryBenchmark {
 	private static final String query1;
 	private static final String query2;
 	private static final String query3;
+	private static final String query4;
+	private static final String query5;
 
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
 			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
+			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
+			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -107,12 +110,38 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> groupByQuery() {
+	public long groupByQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return Iterations.asList(connection
+			return connection
 					.prepareTupleQuery(query1)
-					.evaluate());
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long complexQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query4)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long distinctPredicatesQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query5)
+					.evaluate()
+					.stream()
+					.count();
 		}
 	}
 
