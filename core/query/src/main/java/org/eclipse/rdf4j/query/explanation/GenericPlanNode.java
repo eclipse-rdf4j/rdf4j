@@ -19,20 +19,36 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
  *
  * The interface is used to implement query explanations (query plan)
+ *
+ * @since 3.2.0
  */
 @Experimental
 public class GenericPlanNode {
 
+	public static final String UNKNOWN = "UNKNOWN";
+
+	// The name of the node, eg. "Join" or "Join (HashJoinIteration)".
 	private String type;
 
-	// timed out while retrieving explanation
+	// Retrieving the explanation timed out while the query was executed.
 	private Boolean timedOut;
 
+	// The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
+	// explanation and is only used to compare and order the nodes in the query plan.
 	private Double costEstimate;
+
+	// The number of results that this node was estimated to produce.
 	private Double resultSizeEstimate;
+
+	// The actual number of results that this node produced while the query was executed.
 	private Long resultSizeActual;
+
+	// The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
+	// selfTimeActual is the amount of time that this node used by itself (eg. totalTimeActual - sum of
+	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
+	// Child plans for this node
 	private List<GenericPlanNode> plans = new ArrayList<>();
 
 	public GenericPlanNode() {
@@ -62,6 +78,12 @@ public class GenericPlanNode {
 		this.plans.addAll(Arrays.asList(children));
 	}
 
+	/**
+	 * The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
+	 * explanation and is only used to compare and order the nodes in the query plan.
+	 *
+	 * @return
+	 */
 	public Double getCostEstimate() {
 		return costEstimate;
 	}
@@ -72,6 +94,11 @@ public class GenericPlanNode {
 		}
 	}
 
+	/**
+	 * The number of results that this node was estimated to produce.
+	 *
+	 * @return
+	 */
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
 	}
@@ -82,6 +109,11 @@ public class GenericPlanNode {
 		}
 	}
 
+	/**
+	 * The actual number of results that this node produced while the query was executed.
+	 *
+	 * @return
+	 */
 	public Long getResultSizeActual() {
 		return resultSizeActual;
 	}
@@ -93,8 +125,9 @@ public class GenericPlanNode {
 	}
 
 	/**
+	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
 	 *
-	 * @return the total time used by this node, including sub-nodes, in milliseconds
+	 * @return
 	 */
 	public Double getTotalTimeActual() {
 		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
@@ -106,8 +139,9 @@ public class GenericPlanNode {
 					.mapToDouble(d -> d)
 					.sum();
 
-			if (sum > 0)
+			if (sum > 0) {
 				return sum;
+			}
 		}
 		return totalTimeActual;
 	}
@@ -127,8 +161,9 @@ public class GenericPlanNode {
 	}
 
 	/**
+	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
 	 *
-	 * @return the time used by this node alone is milliseconds
+	 * @return
 	 */
 	public Double getSelfTimeActual() {
 
@@ -147,6 +182,11 @@ public class GenericPlanNode {
 
 	}
 
+	/**
+	 * Human readable string. Do not attempt to parse this.
+	 *
+	 * @return
+	 */
 	@Override
 	public String toString() {
 
@@ -178,10 +218,10 @@ public class GenericPlanNode {
 	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
-	static String toHumanReadableNumber(Double number) {
+	static private String toHumanReadableNumber(Double number) {
 		String humanReadbleString;
 		if (number == null) {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		} else if (number == Double.POSITIVE_INFINITY) {
 			humanReadbleString = "∞";
 		} else if (number > 1_000_000) {
@@ -191,7 +231,7 @@ public class GenericPlanNode {
 		} else if (number >= 0) {
 			humanReadbleString = Math.round(number) + "";
 		} else {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		}
 
 		return humanReadbleString;
@@ -201,10 +241,10 @@ public class GenericPlanNode {
 	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
-	static String toHumanReadableNumber(Long number) {
+	static private String toHumanReadableNumber(Long number) {
 		String humanReadbleString;
 		if (number == null) {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		} else if (number == Double.POSITIVE_INFINITY) {
 			humanReadbleString = "∞";
 		} else if (number > 1_000_000) {
@@ -214,7 +254,7 @@ public class GenericPlanNode {
 		} else if (number >= 0) {
 			humanReadbleString = number + "";
 		} else {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		}
 
 		return humanReadbleString;
@@ -224,11 +264,11 @@ public class GenericPlanNode {
 	 *
 	 * @return Human readable time.
 	 */
-	static String toHumanReadableTime(Double millis) {
+	static private String toHumanReadableTime(Double millis) {
 		String humanReadbleString;
 
 		if (millis == null) {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		} else if (millis > 1_000) {
 			humanReadbleString = Math.round(millis / 100) / 10.0 + "s";
 		} else if (millis >= 100) {
@@ -240,20 +280,20 @@ public class GenericPlanNode {
 		} else if (millis >= 0) {
 			humanReadbleString = Math.round(millis * 1000) / 1000.0 + "ms";
 		} else {
-			humanReadbleString = "UNKNOWN";
+			humanReadbleString = UNKNOWN;
 		}
 
 		return humanReadbleString;
 	}
 
-	protected void appendCostAnnotation(StringBuilder sb) {
+	private void appendCostAnnotation(StringBuilder sb) {
 		String costs = Stream.of(
 				"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
 				"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
 				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
 				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
 				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()))
-				.filter(s -> !s.endsWith("UNKNOWN"))
+				.filter(s -> !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values
 				.reduce((a, b) -> a + ", " + b)
 				.orElse("");
 

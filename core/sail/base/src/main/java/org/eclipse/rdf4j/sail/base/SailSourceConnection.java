@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -327,6 +328,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 
+		AtomicBoolean timedOut = new AtomicBoolean(false);
+
 		Thread currentThread = Thread.currentThread();
 
 		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
@@ -335,6 +338,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			try {
 				TimeUnit.SECONDS.sleep(timeoutSeconds);
 				currentThread.interrupt();
+				timedOut.set(true);
 			} catch (InterruptedException ignored) {
 
 			}
@@ -342,7 +346,6 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		try {
 			selfInterruptOnTimeoutThread.start();
-			boolean interrupted = false;
 
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
 					dataset, bindings, includeInferred)) {
@@ -353,13 +356,12 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 					evaluate.next();
 				}
 			} catch (Exception e) {
-				interrupted = Thread.interrupted();
-				if (!interrupted) {
+				if (!timedOut.get()) {
 					throw e;
 				}
 			}
 
-			return interrupted;
+			return timedOut.get();
 
 		} finally {
 			selfInterruptOnTimeoutThread.interrupt();
