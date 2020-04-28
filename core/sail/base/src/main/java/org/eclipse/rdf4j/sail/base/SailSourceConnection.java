@@ -129,9 +129,14 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	// The context that represents the unnamed graph
 	static final Resource[] NULL_CTX = new Resource[] { null };
 
-	// Track the result sizes generated when evaluating a query
+	// Track the result sizes generated when evaluating a query, used by explain(...)
 	private boolean trackResultSize;
-	private boolean immutableTupleExpr;
+
+	// By default all tuple expressions are cloned before being optimized and executed. We don't want to do this for
+	// .explain(...) since we need to retrieve the optimized or executed plan.
+	private boolean cloneTupleExpression = true;
+
+	// Track the time used when evaluating a query, used by explain(...)
 	private boolean trackTime;
 
 	/*--------------*
@@ -205,7 +210,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
-		if (!immutableTupleExpr) {
+		if (cloneTupleExpression) {
+			// Clone the tuple expression to allow for more aggressive optimizations
 			tupleExpr = tupleExpr.clone();
 		}
 
@@ -278,20 +284,20 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			case Timed:
 				this.trackTime = true;
 				this.trackResultSize = true;
-				this.immutableTupleExpr = true;
+				this.cloneTupleExpression = false;
 
 				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
 				break;
 
 			case Executed:
 				this.trackResultSize = true;
-				this.immutableTupleExpr = true;
+				this.cloneTupleExpression = false;
 
 				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
 				break;
 
 			case Optimized:
-				this.immutableTupleExpr = true;
+				this.cloneTupleExpression = false;
 
 				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
 
@@ -306,7 +312,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 
 		} finally {
-			this.immutableTupleExpr = false;
+			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
 		}
 
