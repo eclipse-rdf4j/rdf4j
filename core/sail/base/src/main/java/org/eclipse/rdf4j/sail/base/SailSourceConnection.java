@@ -366,6 +366,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		} finally {
 			selfInterruptOnTimeoutThread.interrupt();
 			try {
+				// make sure selfInterruptOnTimeoutThread finishes
 				selfInterruptOnTimeoutThread.join();
 			} catch (InterruptedException ignored) {
 			}
