@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -108,21 +109,12 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
-	 * Returns the status of the result size tracking for the query plan. Useful to determine which parts of a query
-	 * plan generated the most data.
-	 *
-	 * @return true if result size tracking is enabled.
-	 */
-	default boolean isTrackResultSize() {
-		return false;
-	}
-
-	/**
 	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
 	 * generated the most data.
 	 *
 	 * @param trackResultSize true to enable tracking.
 	 */
+	@Experimental
 	default void setTrackResultSize(boolean trackResultSize) {
 		// no-op for backwards compatibility
 	}
@@ -133,6 +125,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 *
 	 * @param trackTime true to enable tracking.
 	 */
+	@Experimental
 	default void setTrackTime(boolean trackTime) {
 		// no-op for backwards compatibility
 	}

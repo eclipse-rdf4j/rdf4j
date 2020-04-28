@@ -308,20 +308,20 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 				break;
 
 			default:
-				throw new UnsupportedOperationException("Unsupported queryExplainLevel: " + level);
+				throw new UnsupportedOperationException("Unsupported query explanation level: " + level);
 
 			}
 
 		} finally {
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
+			this.trackTime = false;
 		}
 
-		QueryModelTreeToGenericPlanNode queryModelTreeToGenericPlanNode = new QueryModelTreeToGenericPlanNode(
-				tupleExpr);
-		tupleExpr.visit(queryModelTreeToGenericPlanNode);
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		tupleExpr.visit(converter);
 
-		return new ExplanationImpl(queryModelTreeToGenericPlanNode.getGenericPlanNode(), queryTimedOut);
+		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut);
 
 	}
 

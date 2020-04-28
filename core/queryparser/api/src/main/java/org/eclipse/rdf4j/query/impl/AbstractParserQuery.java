@@ -22,7 +22,8 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 public abstract class AbstractParserQuery extends AbstractQuery {
 
 	private final ParsedQuery parsedQuery;
-	protected static final int DEFAULT_EXPLANATION_TIMEOUT = 60;
+
+	protected static final int DEFAULT_EXPLANATION_EXECUTION_TIMEOUT = 60;
 
 	protected AbstractParserQuery(ParsedQuery parsedQuery) {
 		this.parsedQuery = parsedQuery;

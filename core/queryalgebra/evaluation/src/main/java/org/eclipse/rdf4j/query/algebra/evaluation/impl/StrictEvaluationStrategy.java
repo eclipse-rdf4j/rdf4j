@@ -2023,7 +2023,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -2046,7 +2046,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
-	static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -2086,11 +2086,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			}
 		}
-	}
-
-	@Override
-	public boolean isTrackResultSize() {
-		return trackResultSize;
 	}
 
 	@Override

@@ -79,10 +79,10 @@ public interface Operation {
 	 * the time limit. Any consecutive requests to fetch query results will result in {@link QueryInterruptedException}s
 	 * or {@link UpdateExecutionException}s (depending on whether the operation is a query or an update).
 	 *
-	 * @param maxExecTime The maximum query time, measured in seconds. A negative or zero value indicates an unlimited
-	 *                    execution time (which is the default).
+	 * @param maxExecutionTimeSeconds The maximum query time, measured in seconds. A negative or zero value indicates an
+	 *                                unlimited execution time (which is the default).
 	 */
-	void setMaxExecutionTime(int maxExecTime);
+	void setMaxExecutionTime(int maxExecutionTimeSeconds);
 
 	/**
 	 * Returns the maximum operation execution time.

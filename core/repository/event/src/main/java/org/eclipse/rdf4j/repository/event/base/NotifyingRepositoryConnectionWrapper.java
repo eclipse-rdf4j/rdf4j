@@ -339,8 +339,8 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 				}
 
 				@Override
-				public void setMaxExecutionTime(int maxExecTime) {
-					delegate.setMaxExecutionTime(maxExecTime);
+				public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+					delegate.setMaxExecutionTime(maxExecutionTimeSeconds);
 				}
 
 				@Override

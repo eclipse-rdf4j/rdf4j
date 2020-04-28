@@ -14,38 +14,36 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
+/**
+ * Convert TupleExpr (QueryModelNode) to GenericPlanNode for the Query.explain(...) feature.
+ */
 @Experimental
 @InternalUseOnly
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
 
 	GenericPlanNode top = null;
 	QueryModelNode topTupleExpr;
+	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this.topTupleExpr = topTupleExpr;
-
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	public GenericPlanNode getGenericPlanNode() {
 		return top;
 	}
 
-	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
-
 	// node.getParentNode() is not reliable because nodes are reused and parent is not maintained! This is why we use a
-	// queue to maintain the effective parent.
+	// queue to maintain the effective parent stack.
 	@Override
 	protected void meetNode(QueryModelNode node) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
-		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0); // convert from nanoseconds to
-																							// milliseconds
+
+		// convert from nanoseconds to milliseconds
+		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0);
 
 		if (node == topTupleExpr) {
 			top = genericPlanNode;
