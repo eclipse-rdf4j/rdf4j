@@ -103,8 +103,6 @@ public class Slice extends UnaryTupleOperator {
 
 		sb.append(")");
 
-		appendCostAnnotation(sb);
-
 		return sb.toString();
 	}
 

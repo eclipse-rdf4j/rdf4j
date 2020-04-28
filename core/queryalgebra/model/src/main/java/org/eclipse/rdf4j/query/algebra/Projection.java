@@ -134,13 +134,4 @@ public class Projection extends UnaryTupleOperator {
 		this.subquery = subquery;
 	}
 
-	@Override
-	public String getSignature() {
-		StringBuilder sb = new StringBuilder(super.getSignature());
-
-		appendCostAnnotation(sb);
-
-		return sb.toString();
-	}
-
 }

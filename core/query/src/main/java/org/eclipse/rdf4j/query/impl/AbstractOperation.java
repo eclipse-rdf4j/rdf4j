@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.Operation;
 
 /**
  * Abstract super class of all operation types.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class AbstractOperation implements Operation {
@@ -29,7 +29,7 @@ public abstract class AbstractOperation implements Operation {
 
 	protected boolean includeInferred = true;
 
-	private int maxExecutionTime = 0;
+	private int maxExecutionTimeSeconds = 0;
 
 	/*--------------*
 	 * Constructors *
@@ -86,12 +86,12 @@ public abstract class AbstractOperation implements Operation {
 	}
 
 	@Override
-	public void setMaxExecutionTime(int maxExecutionTime) {
-		this.maxExecutionTime = maxExecutionTime;
+	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+		this.maxExecutionTimeSeconds = maxExecutionTimeSeconds;
 	}
 
 	@Override
 	public int getMaxExecutionTime() {
-		return maxExecutionTime;
+		return maxExecutionTimeSeconds;
 	}
 }

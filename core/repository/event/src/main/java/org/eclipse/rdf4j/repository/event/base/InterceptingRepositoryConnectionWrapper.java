@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
  * the operation by returning true from the relevant notification method. To do so will also cause the notification
  * process to stop, i.e. no other interceptors will be notified. The order in which interceptors are notified is
  * unspecified.
- * 
+ *
  * @author Herko ter Horst
  * @see InterceptingRepositoryWrapper
  */
@@ -336,8 +336,8 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 				}
 
 				@Override
-				public void setMaxExecutionTime(int maxExecTime) {
-					delegate.setMaxExecutionTime(maxExecTime);
+				public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+					delegate.setMaxExecutionTime(maxExecutionTimeSeconds);
 				}
 
 				@Override

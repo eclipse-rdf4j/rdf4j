@@ -111,7 +111,6 @@ public class Filter extends UnaryTupleOperator {
 
 		sb.append(super.getSignature());
 
-		appendCostAnnotation(sb);
 		return sb.toString();
 	}
 
