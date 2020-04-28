@@ -24,6 +24,13 @@ To get help for a specific command, type ‘help’ followed by the command name
 
 The Console has a built-in history, use the `Up` and `Down` arrows to cycle through the history of commands.
 
+By default all commands will be saved to the history.txt file in the Console's application directory, and this file will be loaded when the Console is started again.
+To prevent newly entered commands from being saved to file, set the `savehistory` setting to false:
+
+   set savehistory=false
+
+To re-enable, simply set `savehistory` to true.
+
 ### Connecting to a set of repositories
 
 As indicated in the previous section, the Console connects to its own set of repositories by default. Using the `connect` command you can make the console connect to a Rdf4j Server or to a set of repositories on your file system. For example, to connect to a Rdf4j Server that is listening to port 8080 on localhost, enter the following command:
