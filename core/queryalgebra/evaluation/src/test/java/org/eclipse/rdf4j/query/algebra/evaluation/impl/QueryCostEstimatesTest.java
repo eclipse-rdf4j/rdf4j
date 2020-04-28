@@ -53,7 +53,7 @@ public class QueryCostEstimatesTest {
 				"                  Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
 				"                  Var (name=v)\n" +
 				"               LeftJoin (costEstimate=1000, resultSizeEstimate=1000)\n" +
-				"                  StatementPattern\n" +
+				"                  StatementPattern (resultSizeEstimate=1000)\n" +
 				"                     Var (name=s)\n" +
 				"                     Var (name=p)\n" +
 				"                     Var (name=o)\n" +

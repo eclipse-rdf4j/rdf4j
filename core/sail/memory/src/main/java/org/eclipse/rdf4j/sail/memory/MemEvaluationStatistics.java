@@ -19,22 +19,25 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
+import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 
 /**
  * Uses the MemoryStore's statement sizes to give cost estimates based on the size of the expected results. This process
  * could be improved with repository statistics about size and distribution of statements.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
 class MemEvaluationStatistics extends EvaluationStatistics {
 
 	private final MemValueFactory valueFactory;
+	private final MemStatementList memStatementList;
 
-	MemEvaluationStatistics(MemValueFactory valueFactory) {
+	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList) {
 		this.valueFactory = valueFactory;
+		this.memStatementList = memStatementList;
 	}
 
 	@Override
@@ -101,7 +104,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 			if (listSizes.isEmpty()) {
 				// all wildcards
-				cardinality = Integer.MAX_VALUE;
+				cardinality = memStatementList.size();
 			} else {
 				cardinality = (double) Collections.min(listSizes);
 

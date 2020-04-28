@@ -12,5 +12,5 @@ package org.eclipse.rdf4j.sail.config;
  */
 public interface DelegatingSailImplConfig extends SailImplConfig {
 
-	public SailImplConfig getDelegate();
+	SailImplConfig getDelegate();
 }

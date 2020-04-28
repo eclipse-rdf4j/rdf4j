@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 
 /**
  * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
@@ -41,20 +43,20 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @see SailConnection#close
 	 */
-	public boolean isOpen() throws SailException;
+	boolean isOpen() throws SailException;
 
 	/**
 	 * Closes the connection. Any updates that haven't been committed yet will be rolled back. The connection can no
 	 * longer be used once it is closed.
 	 */
 	@Override
-	public void close() throws SailException;
+	void close() throws SailException;
 
 	/**
 	 * Allows the SailConnection to bypass the standard query parser and provide its own internal {@link TupleExpr}
 	 * implementation. By default this method returns an empty result, signaling that it will rely on the RDF4J query
 	 * parser.
-	 * 
+	 *
 	 * @param ql      the query language.
 	 * @param type    indicates if the supplied query is a graph, tuple, or boolean query
 	 * @param query   the unparsed query string
@@ -63,7 +65,7 @@ public interface SailConnection extends AutoCloseable {
 	 *         process. Returns {@link Optional#empty()} if the Sail does not provide its own query processing.
 	 * @since 3.2.0
 	 */
-	public default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+	default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
 			String baseURI) {
 		return Optional.empty();
 	}
@@ -83,7 +85,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
+	CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	/**
@@ -92,7 +94,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
+	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
@@ -111,7 +113,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
 
 	/**
@@ -161,7 +163,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return The number of explicit statements in this store, or in the specified context(s).
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public long size(Resource... contexts) throws SailException;
+	long size(Resource... contexts) throws SailException;
 
 	/**
 	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()} to be called to close the transaction.
@@ -171,7 +173,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException If the connection could not start a transaction or if a transaction is already active on
 	 *                       this connection.
 	 */
-	public void begin() throws SailException;
+	void begin() throws SailException;
 
 	/**
 	 * Begins a transaction with the specified {@link IsolationLevel} level, requiring {@link #commit()} or
@@ -183,7 +185,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                                              transaction isolation level is not supported, or if a transaction is
 	 *                                              already active on this connection.
 	 */
-	public void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
+	void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
 
 	/**
 	 * Flushes any pending updates and notify changes to listeners as appropriate. This is an optional call; calling or
@@ -195,7 +197,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void flush() throws SailException;
+	void flush() throws SailException;
 
 	/**
 	 * Checks for an error state in the active transaction that would force the transaction to be rolled back. This is
@@ -214,7 +216,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException                If the connection has been closed or prepare was already called by
 	 *                                              another thread.
 	 */
-	public void prepare() throws SailException;
+	void prepare() throws SailException;
 
 	/**
 	 * Commits any updates that have been performed since the last time {@link #commit()} or {@link #rollback()} was
@@ -227,7 +229,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException                        If the SailConnection could not be committed.
 	 * @throws IllegalStateException                If the connection has been closed.
 	 */
-	public void commit() throws SailException;
+	void commit() throws SailException;
 
 	/**
 	 * Rolls back the transaction, discarding any uncommitted changes that have been made in this SailConnection.
@@ -239,7 +241,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException                        If the SailConnection could not be rolled back.
 	 * @throws IllegalStateException                If the connection has been closed.
 	 */
-	public void rollback() throws SailException;
+	void rollback() throws SailException;
 
 	/**
 	 * Indicates if a transaction is currently active on the connection. A transaction is active if {@link #begin()} has
@@ -250,7 +252,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                                              instance when communication between client and server fails or times
 	 *                                              out).
 	 */
-	public boolean isActive() throws UnknownSailTransactionStateException;
+	boolean isActive() throws UnknownSailTransactionStateException;
 
 	/**
 	 * Adds a statement to the store.
@@ -263,7 +265,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
+	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
 	 * @deprecated since 4.0. Use {@link #addStatement(Resource, IRI, Value, Resource...)} instead.
@@ -287,7 +289,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
+	void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
 	 * @deprecated since 4.0. Use {@link #removeStatements(Resource, IRI, Value, Resource...)} instead.
@@ -305,7 +307,7 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @throws SailException
 	 */
-	public void startUpdate(UpdateContext op) throws SailException;
+	void startUpdate(UpdateContext op) throws SailException;
 
 	/**
 	 * Adds a statement to the store. Called when adding statements through a {@link UpdateExpr} operation.
@@ -319,7 +321,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+	void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
 
 	/**
@@ -347,7 +349,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
 
 	/**
@@ -366,7 +368,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @param op
 	 * @throws SailException
 	 */
-	public void endUpdate(UpdateContext op) throws SailException;
+	void endUpdate(UpdateContext op) throws SailException;
 
 	/**
 	 * Removes all statements from the specified/all contexts. If no contexts are specified the method operates on the
@@ -378,7 +380,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the statements could not be removed.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void clear(Resource... contexts) throws SailException;
+	void clear(Resource... contexts) throws SailException;
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this Sail object.
@@ -387,7 +389,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
+	CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
@@ -399,7 +401,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws NullPointerException  In case <tt>prefix</tt> is <tt>null</tt>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public String getNamespace(String prefix) throws SailException;
+	String getNamespace(String prefix) throws SailException;
 
 	/**
 	 * Sets the prefix for a namespace.
@@ -410,7 +412,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws NullPointerException  In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void setNamespace(String prefix, String name) throws SailException;
+	void setNamespace(String prefix, String name) throws SailException;
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
@@ -420,7 +422,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws NullPointerException  In case <tt>prefix</tt> is <tt>null</tt>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void removeNamespace(String prefix) throws SailException;
+	void removeNamespace(String prefix) throws SailException;
 
 	/**
 	 * Removes all namespace declarations from the repository.
@@ -428,7 +430,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
-	public void clearNamespaces() throws SailException;
+	void clearNamespaces() throws SailException;
 
 	/**
 	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
@@ -441,4 +443,38 @@ public interface SailConnection extends AutoCloseable {
 	@Deprecated
 	boolean pendingRemovals();
 
+	/**
+	 * <p>
+	 * Explain how the TupleExpr will be (or has been) executed/evaluated by returning a TupleExpr (which may or may not
+	 * be the provided TupleExpr) that has gone through zero or more of the stages prior to and also including execution
+	 * as specified by the provided level.
+	 * </p>
+	 *
+	 * <p>
+	 * This method is used by the Query interface.
+	 * </p>
+	 *
+	 * <p>
+	 * WARNING: This method is experimental and is subject to change or removal without warning. There is currently only
+	 * partial support for this method in RDF4J and and UnsupportedOperationException where support is lacking.
+	 * </p>
+	 *
+	 *
+	 * @param level           the explanation level, eg. OPTIMIZED
+	 * @param tupleExpr       The tuple expression to evaluate. Mutable.
+	 * @param dataset         The dataset to use for evaluating the query, <tt>null</tt> to use the Sail's default
+	 *                        dataset.
+	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
+	 *                        should be bound to the value they map to.
+	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
+	 *                        inferred statements are returned; if true, inferred statements are returned if available
+	 * @param timeoutSeconds  for explanations that require execution a timeout can be provided in seconds
+	 * @return The resulting tuple expression after being run through the specified level
+	 */
+	// with default implementation for backwards compatibility
+	@Experimental
+	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		throw new UnsupportedOperationException();
+	}
 }

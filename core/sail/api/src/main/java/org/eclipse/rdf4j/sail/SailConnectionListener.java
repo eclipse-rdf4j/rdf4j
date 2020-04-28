@@ -13,15 +13,15 @@ public interface SailConnectionListener {
 
 	/**
 	 * Notifies the listener that a statement has been added in a transaction that it has registered itself with.
-	 * 
+	 *
 	 * @param st The statement that was added.
 	 */
-	public void statementAdded(Statement st);
+	void statementAdded(Statement st);
 
 	/**
 	 * Notifies the listener that a statement has been removed in a transaction that it has registered itself with.
-	 * 
+	 *
 	 * @param st The statement that was removed.
 	 */
-	public void statementRemoved(Statement st);
+	void statementRemoved(Statement st);
 }
