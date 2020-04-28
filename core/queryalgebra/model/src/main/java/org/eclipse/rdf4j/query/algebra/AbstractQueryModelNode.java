@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.List;
 import java.util.ListIterator;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 
@@ -31,6 +30,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	private double resultSizeEstimate = -1;
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
+	private long totalTimeNanosActual = -1;
 
 	/*---------*
 	 * Methods *
@@ -168,6 +168,16 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		this.costEstimate = costEstimate;
 	}
 
+	@Override
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
+	}
+
+	@Override
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
+	}
+
 	/**
 	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
@@ -187,19 +197,5 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		}
 
 		return humanReadbleString;
-	}
-
-	protected void appendCostAnnotation(StringBuilder sb) {
-		String costs = Stream.of(
-				"costEstimate=" + toHumanReadbleNumber(getCostEstimate()),
-				"resultSizeEstimate=" + toHumanReadbleNumber(getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadbleNumber(getResultSizeActual()))
-				.filter(s -> !s.endsWith("UNKNOWN"))
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
-
-		if (!costs.isEmpty()) {
-			sb.append(" (").append(costs).append(")");
-		}
 	}
 }

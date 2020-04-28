@@ -76,6 +76,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(StatementPattern node) throws RuntimeException {
+			super.meet(node);
+			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
+		}
+
+		@Override
 		public void meet(Join node) {
 
 			Set<String> origBoundVars = boundVars;
@@ -110,7 +116,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					for (TupleExpr tupleExpr : joinArgs) {
 						double cardinality = statistics.getCardinality(tupleExpr);
-						tupleExpr.setResultSizeEstimate(cardinality);
+						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
 						cardinalityMap.put(tupleExpr, cardinality);
 						if (tupleExpr instanceof ZeroLengthPath) {
 							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());

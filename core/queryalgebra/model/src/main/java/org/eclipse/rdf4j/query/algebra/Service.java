@@ -302,12 +302,4 @@ public class Service extends UnaryTupleOperator {
 		return baseURI;
 	}
 
-	@Override
-	public String getSignature() {
-		StringBuilder sb = new StringBuilder(super.getSignature());
-
-		appendCostAnnotation(sb);
-
-		return sb.toString();
-	}
 }

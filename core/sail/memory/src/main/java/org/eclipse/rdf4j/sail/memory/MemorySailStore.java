@@ -127,7 +127,7 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new MemEvaluationStatistics(valueFactory);
+		return new MemEvaluationStatistics(valueFactory, statements);
 	}
 
 	@Override

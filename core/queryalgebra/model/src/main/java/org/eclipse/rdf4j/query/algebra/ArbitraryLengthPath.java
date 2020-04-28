@@ -223,8 +223,6 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 			sb.append(" FROM NAMED CONTEXT");
 		}
 
-		appendCostAnnotation(sb);
-
 		return sb.toString();
 	}
 

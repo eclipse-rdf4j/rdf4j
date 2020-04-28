@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -152,6 +153,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
+import com.google.common.base.Stopwatch;
+
 /**
  * Minimally-conforming SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given
  * {@link TripleSource}, optionally using the given {@link Dataset}.
@@ -183,7 +186,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	private final long iterationCacheSyncThreshold;
 
 	// track the results size that each node in the query plan produces during execution
-	private final boolean trackResultSize;
+	private boolean trackResultSize;
+
+	// track the exeution time of each node in the plan
+	private boolean trackTime;
 
 	private final UUID uuid;
 
@@ -296,6 +302,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
 			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
+		}
+
+		if (trackTime) {
+			// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
+			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+			ret = new TimedIterator(ret, expr);
 		}
 
 		if (trackResultSize) {
@@ -2011,7 +2023,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -2031,4 +2043,58 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	}
 
+	/**
+	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
+	 */
+	private static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+
+		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
+		QueryModelNode queryModelNode;
+
+		Stopwatch stopwatch = Stopwatch.createUnstarted();
+
+		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
+				QueryModelNode queryModelNode) {
+			super(iterator);
+			this.iterator = iterator;
+			this.queryModelNode = queryModelNode;
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			stopwatch.start();
+			BindingSet next = iterator.next();
+			stopwatch.stop();
+			return next;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			stopwatch.start();
+			boolean hasNext = super.hasNext();
+			stopwatch.stop();
+			return hasNext;
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				queryModelNode.setTotalTimeNanosActual(
+						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
+			} finally {
+				super.handleClose();
+
+			}
+		}
+	}
+
+	@Override
+	public void setTrackResultSize(boolean trackResultSize) {
+		this.trackResultSize = trackResultSize;
+	}
+
+	@Override
+	public void setTrackTime(boolean trackTime) {
+		this.trackTime = trackTime;
+	}
 }

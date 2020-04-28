@@ -15,5 +15,5 @@ public interface SailChangedListener {
 	/**
 	 * Notifies the listener of a change to the data of a specific Sail.
 	 */
-	public void sailChanged(SailChangedEvent event);
+	void sailChanged(SailChangedEvent event);
 }
