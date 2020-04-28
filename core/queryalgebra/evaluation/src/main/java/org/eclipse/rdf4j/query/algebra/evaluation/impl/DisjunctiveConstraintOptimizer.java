@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * A query optimizer that optimize disjunctive constraints on tuple expressions. Currently, this optimizer {@link Union
  * unions} a clone of the underlying tuple expression with the original expression for each {@link SameTerm} operator,
  * moving the SameTerm to the cloned tuple expression.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -53,7 +53,7 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 
 				Filter leftFilter = new Filter(node.clone(), leftConstraint);
 				Filter rightFilter = new Filter(node.clone(), rightConstraint);
-				Union union = new Union(leftFilter, rightFilter);
+				Union union = new Union(leftFilter, rightFilter, false);
 				node.replaceWith(union);
 
 				filter.getParentNode().visit(this);
