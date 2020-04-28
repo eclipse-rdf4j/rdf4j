@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -471,6 +472,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @return The resulting tuple expression after being run through the specified level
 	 */
 	// with default implementation for backwards compatibility
+	@Experimental
 	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();

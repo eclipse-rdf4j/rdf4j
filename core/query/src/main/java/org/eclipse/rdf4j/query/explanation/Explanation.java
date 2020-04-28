@@ -24,6 +24,7 @@ public interface Explanation {
 	 *
 	 * @since 3.2.0
 	 */
+	@Experimental
 	enum Level {
 		Unoptimized, // simple parsed
 		Optimized, // parsed and optimized, which includes cost estimated
