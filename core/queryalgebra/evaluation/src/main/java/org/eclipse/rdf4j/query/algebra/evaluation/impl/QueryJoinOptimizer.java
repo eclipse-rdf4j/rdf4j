@@ -393,6 +393,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return result;
 		}
 
+		@Deprecated
+		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			return getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
+		}
+
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double cost = cardinalityMap.get(tupleExpr);

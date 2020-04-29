@@ -32,8 +32,13 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
 	 * 
 	 * @return an optional OutputStream
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+	 *           implementations are expected to override.
+	 * @since 3.2.0
 	 */
-	Optional<OutputStream> getOutputStream();
+	default Optional<OutputStream> getOutputStream() {
+		return Optional.empty();
+	}
 
 	/**
 	 * Handles a namespace prefix declaration. If this is called, it should be called before {@link #startDocument()} to
