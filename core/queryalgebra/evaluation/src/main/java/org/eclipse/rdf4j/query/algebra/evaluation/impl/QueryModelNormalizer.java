@@ -68,6 +68,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
 			Union newUnion = new Union(leftJoin, rightJoin);
+			newUnion.setGraphPatternGroup(union.isGraphPatternGroup());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
 		} else if (rightArg instanceof Union) {
@@ -76,6 +77,7 @@ public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeExcep
 			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
 			Union newUnion = new Union(leftJoin, rightJoin);
+			newUnion.setGraphPatternGroup(union.isGraphPatternGroup());
 			join.replaceWith(newUnion);
 			newUnion.visit(this);
 		} else if (leftArg instanceof LeftJoin && isWellDesigned(((LeftJoin) leftArg))) {
