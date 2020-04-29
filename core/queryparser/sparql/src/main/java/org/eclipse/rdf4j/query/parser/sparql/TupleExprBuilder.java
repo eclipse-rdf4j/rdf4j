@@ -1189,6 +1189,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			}
 
+			// when using union to execute path expressions, the scope does not not change
+			union.setGraphPatternGroup(false);
 			parentGP.addRequiredTE(union);
 			graphPattern = parentGP;
 		} else {
