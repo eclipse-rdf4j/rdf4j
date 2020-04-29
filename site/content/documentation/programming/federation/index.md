@@ -383,7 +383,7 @@ Federation members can be added to a federation either directly as a list of end
 
 ```
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix fedx: <http://www.fluidops.com/config/fedx#> .
+@prefix fedx: <http://rdf4j.org/config/federation#> .
 
 <http://DBpedia> a sd:Service ;
 	fedx:store "SPARQLEndpoint";
@@ -406,7 +406,7 @@ DBpedia. Moreover note that for convenience the public DBpedia endpoint is autom
 
 ```
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix fedx: <http://www.fluidops.com/config/fedx#> .
+@prefix fedx: <http://rdf4j.org/config/federation#> .
 
 <http://dbpedia> a sd:Service ;
 	fedx:store "RemoteRepository";
@@ -418,7 +418,7 @@ DBpedia. Moreover note that for convenience the public DBpedia endpoint is autom
 
 ```
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix fedx: <http://www.fluidops.com/config/fedx#> .
+@prefix fedx: <http://rdf4j.org/config/federation#> .
 
 <http://DBpedia> a sd:Service ;
 	fedx:store "NativeStore";
@@ -432,11 +432,12 @@ DBpedia. Moreover note that for convenience the public DBpedia endpoint is autom
 
 ### Example 4: Federation with resolvable endpoints:
 
-FedX supports to use resolvable endpoints as federation members. These resolvable repositories are not managed by FedX, but are resolved using a provided _RepositoryResolver_. An example use case is to reference a repository managed by the rdf4j-server (i.e. from within the RDF4J workbench). Alternatively, any custom resolver can be provided to FedX during the initialization using the _FedXFactory_, e.g. a `LocalRepositoryManager`.
+
+FedX supports to use resolvable endpoints as federation members. These resolvable repositories are not managed by FedX, but are resolved using a provided _RepositoryResolver_. An example use case is to reference a repository managed by the RDF4J Server (i.e. from within the RDF4J workbench). Alternatively, any custom resolver can be provided to FedX during the initialization using the _FedXFactory_, e.g. a `LocalRepositoryManager`.
 
 ```
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix fedx: <http://www.fluidops.com/config/fedx#> .
+@prefix fedx: <http://rdf4j.org/config/federation#> .
 
 <http://myNativeStore> a sd:Service ;
 	fedx:store "ResolvableRepository" ;
@@ -445,6 +446,31 @@ FedX supports to use resolvable endpoints as federation members. These resolvabl
 
 Note that also hybrid combinations are possible.
 
+### Example 5: Federation with writable endpoint:
+
+(new in RDF4J 3.2.0) 
+
+FedX supports nominating a single federation member as being able to receive updates. If enabled, any statement add/remove operations, including SPARQL updates, will be forwarded on top of the nominated member:
+
+```
+@prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
+@prefix fedx: <http://rdf4j.org/config/federation#> .
+
+<http://myNativeStore> a sd:Service ;
+	fedx:store "NativeStore";
+	fedx:repositoryLocation "repositories\\my-native-store" ;
+	fedx:writable true .
+
+<http://DBpedia> a sd:Service ;
+	fedx:store "SPARQLEndpoint";
+	sd:endpoint "http://dbpedia.org/sparql";
+	fedx:supportsASKQueries false .
+```
+
+Notes:
+
+* If more than one endpoint is configured to be writable, FedX will select any at random for write operations
+* Any type of endpoint can be configured to be writable. For production settings it is best practice to use external repositories accessed as _ResolvableRepository_ or _SPARQLEndpoint_.
 
 ## Monitoring & Logging
 
