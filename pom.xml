@@ -285,7 +285,7 @@
 		<httpcore.version>4.4.12</httpcore.version>
 		<jackson.version>2.9.9</jackson.version>
 		<jsonldjava.version>0.12.5</jsonldjava.version>
-		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
+		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<solr.version>7.5.0</solr.version>
 		<elasticsearch.version>6.5.4</elasticsearch.version>
@@ -805,7 +805,7 @@
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.14.0</version>
+					<version>0.14.3</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
@@ -821,9 +821,25 @@
 							</file>
 						</newVersion>
 						<parameter>
-							<ignoreMissingClasses>true</ignoreMissingClasses>
-							<!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
+							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+							<breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+							<excludes>
+								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
+								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+							</excludes>
+							<overrideCompatibilityChangeParameters>
+								<overrideCompatibilityChangeParameter>
+									<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+									<binaryCompatible>true</binaryCompatible>
+									<sourceCompatible>true</sourceCompatible>
+								</overrideCompatibilityChangeParameter>
+								<overrideCompatibilityChangeParameter>
+									<compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+									<binaryCompatible>true</binaryCompatible>
+									<sourceCompatible>true</sourceCompatible>
+								</overrideCompatibilityChangeParameter>
+							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
 					<executions>
