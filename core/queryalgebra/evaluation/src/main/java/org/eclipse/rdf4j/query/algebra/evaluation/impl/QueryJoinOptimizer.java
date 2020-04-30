@@ -56,6 +56,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new JoinVisitor());
 	}
 
+	/**
+	 * 
+	 * @deprecated This class is protected for historic reasons only, and will be made private in a future major
+	 *             release.
+	 */
+	@Deprecated
 	protected class JoinVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		Set<String> boundVars = new HashSet<>();
@@ -397,6 +403,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			result.setCostEstimate(lowestCost);
 
 			return result;
+		}
+
+		@Deprecated
+		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			return getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,

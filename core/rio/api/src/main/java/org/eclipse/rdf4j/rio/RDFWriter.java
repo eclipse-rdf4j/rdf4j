@@ -28,8 +28,13 @@ public interface RDFWriter extends RDFHandler {
 	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
 	 * 
 	 * @return an optional OutputStream
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+	 *           implementations are expected to override.
+	 * @since 3.2.0
 	 */
-	public Optional<OutputStream> getOutputStream();
+	public default Optional<OutputStream> getOutputStream() {
+		return Optional.empty();
+	}
 
 	/**
 	 * Sets all supplied writer configuration options.
