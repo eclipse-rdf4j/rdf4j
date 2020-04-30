@@ -49,8 +49,6 @@ public class HashFile implements Closeable {
 	 */
 	private static final long HEADER_LENGTH = 16;
 
-	private static final int INIT_BUCKET_COUNT = 64;
-
 	private static final int INIT_BUCKET_SIZE = 8;
 
 	/*-----------*
@@ -91,6 +89,10 @@ public class HashFile implements Closeable {
 	}
 
 	public HashFile(File file, boolean forceSync) throws IOException {
+		this(file, forceSync, 512); // 512 is default initial size
+	}
+
+	public HashFile(File file, boolean forceSync, int initialSize) throws IOException {
 		this.nioFile = new NioFile(file);
 		this.forceSync = forceSync;
 		loadFactor = 0.75f;
@@ -99,7 +101,9 @@ public class HashFile implements Closeable {
 			if (nioFile.size() == 0L) {
 				// Empty file, insert bucket count, bucket size
 				// and item count at the start of the file
-				bucketCount = INIT_BUCKET_COUNT;
+
+				// the bucket count handles sizes not divisible by INIT_BUCKET_SIZE
+				bucketCount = (int) Math.ceil(initialSize * 1.0 / INIT_BUCKET_SIZE);
 				bucketSize = INIT_BUCKET_SIZE;
 				itemCount = 0;
 				recordSize = ITEM_SIZE * bucketSize + 4;
@@ -253,6 +257,11 @@ public class HashFile implements Closeable {
 		if (forceSync) {
 			nioFile.force(false);
 		}
+	}
+
+	public void sync(boolean force) throws IOException {
+		sync();
+		nioFile.force(force);
 	}
 
 	@Override
