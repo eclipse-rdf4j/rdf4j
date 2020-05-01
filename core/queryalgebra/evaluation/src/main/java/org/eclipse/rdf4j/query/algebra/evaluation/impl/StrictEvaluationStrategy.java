@@ -883,11 +883,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
 		}
 
-		if (TupleExprs.containsSubquery(join.getRightArg())) {
+		if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			return new HashJoinIteration(this, join, bindings);
 		} else {
 			return new JoinIterator(this, join, bindings);
 		}
+	}
+
+	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
+		return (TupleExprs.isGraphPatternGroup(expr) || TupleExprs.containsSubquery(expr));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
