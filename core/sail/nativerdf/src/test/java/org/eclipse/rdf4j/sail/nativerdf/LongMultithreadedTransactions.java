@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class LongMultithreadedTransactions {
@@ -43,6 +44,7 @@ public class LongMultithreadedTransactions {
 	}
 
 	@Test
+	@Ignore
 	public void test() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -73,6 +75,7 @@ public class LongMultithreadedTransactions {
 	}
 
 	@Test
+	@Ignore
 	public void test1() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
