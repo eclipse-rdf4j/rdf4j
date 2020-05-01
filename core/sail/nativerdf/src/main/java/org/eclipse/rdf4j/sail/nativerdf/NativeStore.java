@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -76,6 +74,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	private volatile int namespaceIDCacheSize = ValueStore.NAMESPACE_ID_CACHE_SIZE;
 
 	private SailStore store;
+
+	// used to decide if store is writable, is true if the store was writable during initialization
+	private boolean isWritable;
 
 	/**
 	 * Data directory lock.
@@ -299,6 +300,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			throw new SailException(e);
 		}
 
+		isWritable = getDataDir().canWrite();
+
 		logger.debug("NativeStore initialized");
 	}
 
@@ -321,7 +324,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	public boolean isWritable() {
-		return getDataDir().canWrite();
+		return isWritable;
 	}
 
 	@Override
