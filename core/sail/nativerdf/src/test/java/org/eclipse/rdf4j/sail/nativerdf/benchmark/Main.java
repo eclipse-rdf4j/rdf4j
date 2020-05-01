@@ -22,7 +22,8 @@ public class Main {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("")
-//				.include("HashFileBenchmark.fillHashfileKnownSize$").forks(0)
+//				.include("DataFileBenchmark.write$")
+//				.forks(0)
 				.build();
 
 		new Runner(opt).run();

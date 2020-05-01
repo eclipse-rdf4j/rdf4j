@@ -37,10 +37,10 @@ import org.openjdk.jmh.annotations.Warmup;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms256M", "-Xmx256M", "-XX:+UseG1GC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G",  "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = {"-Xms256M", "-Xmx256M", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class HashFileBenchmark {
@@ -52,10 +52,6 @@ public class HashFileBenchmark {
 	private static List<Integer> hashes;
 	private File tempFolder;
 	private HashFile hashFile;
-
-	private static InputStream getResourceAsStream(String name) {
-		return HashFileBenchmark.class.getClassLoader().getResourceAsStream(name);
-	}
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {

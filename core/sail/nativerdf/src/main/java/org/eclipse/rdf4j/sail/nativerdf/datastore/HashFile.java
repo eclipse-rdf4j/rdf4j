@@ -190,10 +190,9 @@ public class HashFile implements Closeable {
 	}
 
 	private void storeID(long bucketOffset, int hash, int id) throws IOException {
-		boolean idStored = false;
 		ByteBuffer bucket = ByteBuffer.allocate(recordSize);
 
-		while (!idStored) {
+		while (true) {
 			nioFile.read(bucket, bucketOffset);
 
 			// Find first empty slot in bucket
@@ -205,7 +204,7 @@ public class HashFile implements Closeable {
 				bucket.putInt(ITEM_SIZE * slotID + 4, id);
 				bucket.rewind();
 				nioFile.write(bucket, bucketOffset);
-				idStored = true;
+				break;
 			} else {
 				// No empty slot found, check if bucket has an overflow bucket
 				int overflowID = bucket.getInt(ITEM_SIZE * bucketSize);
