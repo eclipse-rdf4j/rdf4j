@@ -49,6 +49,9 @@ public class DataFile implements Closeable {
 
 	private final boolean forceSync;
 
+	// cached file size
+	private volatile long nioFileSize;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -89,6 +92,9 @@ public class DataFile implements Closeable {
 			this.nioFile.close();
 			throw e;
 		}
+
+		this.nioFileSize = nioFile.size();
+
 	}
 
 	/*---------*
@@ -108,7 +114,7 @@ public class DataFile implements Closeable {
 	public long storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
-		long offset = nioFile.size();
+		long offset = nioFileSize;
 
 		// TODO: two writes could be more efficient since it prevent array copies
 		ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
@@ -117,6 +123,8 @@ public class DataFile implements Closeable {
 		buf.rewind();
 
 		nioFile.write(buf, offset);
+
+		nioFileSize += buf.array().length;
 
 		return offset;
 	}
@@ -180,6 +188,7 @@ public class DataFile implements Closeable {
 	 */
 	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
+		nioFileSize = HEADER_LENGTH;
 	}
 
 	/**
@@ -222,7 +231,7 @@ public class DataFile implements Closeable {
 		private long position = HEADER_LENGTH;
 
 		public boolean hasNext() throws IOException {
-			return position < nioFile.size();
+			return position < nioFileSize;
 		}
 
 		public byte[] next() throws IOException {
