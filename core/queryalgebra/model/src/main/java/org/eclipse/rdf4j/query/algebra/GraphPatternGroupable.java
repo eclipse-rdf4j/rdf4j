@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.query.algebra;
  * evaluation strategy implementations on how they can optimize join patterns wrt variable scope.
  * 
  * @author Jeen Broekstra
- *
  */
 public interface GraphPatternGroupable {
 

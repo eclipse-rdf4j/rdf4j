@@ -109,7 +109,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	@Override
 	public AbstractQueryModelNode clone() {
 		try {
-			return (AbstractQueryModelNode) super.clone();
+			AbstractQueryModelNode clone = (AbstractQueryModelNode) super.clone();
+			clone.setGraphPatternGroup(this.isGraphPatternGroup());
+			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
 		}

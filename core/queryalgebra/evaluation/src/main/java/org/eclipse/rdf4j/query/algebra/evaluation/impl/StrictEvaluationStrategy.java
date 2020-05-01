@@ -335,9 +335,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		Var serviceRef = service.getServiceRef();
 
 		String serviceUri;
-		if (serviceRef.hasValue())
+		if (serviceRef.hasValue()) {
 			serviceUri = serviceRef.getValue().stringValue();
-		else {
+		} else {
 			if (bindings != null && bindings.getValue(serviceRef.getName()) != null) {
 				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();
 			} else {
@@ -374,10 +374,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				boolean exists = fs.ask(service, bindings, baseUri);
 
 				// check if triples are available (with inserted bindings)
-				if (exists)
+				if (exists) {
 					return new SingletonIteration<>(bindings);
-				else
+				} else {
 					return new EmptyIteration<>();
+				}
 
 			}
 
@@ -840,11 +841,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
 		}
 
-		if (TupleExprs.containsSubquery(join.getRightArg())) {
+		if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			return new HashJoinIteration(this, join, bindings);
 		} else {
 			return new JoinIterator(this, join, bindings);
 		}
+	}
+
+	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
+		return (TupleExprs.isGraphPatternGroup(expr) || TupleExprs.containsSubquery(expr));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,

@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -1031,7 +1032,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
 
-		((GraphPatternGroupable) te).setGraphPatternGroup(true);
+		// filter conditions and left-joins do not form a new scope despite being parsed as a group graph pattern
+		if (!(te instanceof Filter || te instanceof LeftJoin)) {
+			((GraphPatternGroupable) te).setGraphPatternGroup(true);
+		}
 
 		parentGP.addRequiredTE(te);
 
@@ -1111,7 +1115,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.jjtGetChild(1).jjtAccept(this, null);
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
-		parentGP.addRequiredTE(new Union(leftArg, rightArg));
+		Union union = new Union(leftArg, rightArg);
+		((GraphPatternGroupable) union).setGraphPatternGroup(true);
+		parentGP.addRequiredTE(union);
 		graphPattern = parentGP;
 
 		return null;
@@ -1183,6 +1189,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			}
 
+			// when using union to execute path expressions, the scope does not not change
+			union.setGraphPatternGroup(false);
 			parentGP.addRequiredTE(union);
 			graphPattern = parentGP;
 		} else {
