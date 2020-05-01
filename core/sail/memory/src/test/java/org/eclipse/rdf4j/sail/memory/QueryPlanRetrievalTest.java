@@ -223,7 +223,7 @@ public class QueryPlanRetrievalTest {
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (LeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=72)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
 					+
 					"                  SingletonSet (resultSizeActual=6)\n" +
 					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
@@ -270,7 +270,7 @@ public class QueryPlanRetrievalTest {
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (LeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=72)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
 					+
 					"                  SingletonSet (resultSizeActual=6)\n" +
 					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
@@ -350,10 +350,10 @@ public class QueryPlanRetrievalTest {
 					"              \"type\" : \"Var (name=c)\"\n" +
 					"            } ]\n" +
 					"          }, {\n" +
-					"            \"type\" : \"LeftJoin (LeftJoinIterator)\",\n" +
+					"            \"type\" : \"LeftJoin (BadlyDesignedLeftJoinIterator)\",\n" +
 					"            \"costEstimate\" : 5.241482788417793,\n" +
 					"            \"resultSizeEstimate\" : 12.0,\n" +
-					"            \"resultSizeActual\" : 72,\n" +
+					"            \"resultSizeActual\" : 6,\n" +
 					"            \"plans\" : [ {\n" +
 					"              \"type\" : \"SingletonSet\",\n" +
 					"              \"resultSizeActual\" : 6\n" +
@@ -420,7 +420,7 @@ public class QueryPlanRetrievalTest {
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (LeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=38)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
 					+
 					"                  SingletonSet (resultSizeActual=4)\n" +
 					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=38)\n" +
@@ -478,7 +478,7 @@ public class QueryPlanRetrievalTest {
 					"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                        Var (name=c)\n" +
-					"                     LeftJoin (LeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=72)\n"
+					"                     LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
 					+
 					"                        SingletonSet (resultSizeActual=6)\n" +
 					"                        StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
