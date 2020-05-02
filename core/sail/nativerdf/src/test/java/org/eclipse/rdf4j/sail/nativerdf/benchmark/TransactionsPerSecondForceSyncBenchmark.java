@@ -50,7 +50,7 @@ public class TransactionsPerSecondForceSyncBenchmark {
 	SailRepositoryConnection connection;
 	int i;
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Iteration)
 	public void beforeClass() {
 		if (connection != null) {
 			connection.close();
@@ -68,7 +68,7 @@ public class TransactionsPerSecondForceSyncBenchmark {
 
 	}
 
-	@TearDown(Level.Invocation)
+	@TearDown(Level.Iteration)
 	public void afterClass() throws IOException {
 		if (connection != null) {
 			connection.close();
