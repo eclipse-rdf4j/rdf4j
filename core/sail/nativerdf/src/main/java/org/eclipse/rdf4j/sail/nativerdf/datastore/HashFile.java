@@ -14,6 +14,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.io.NioFile;
@@ -73,6 +74,11 @@ public class HashFile implements Closeable {
 
 	// recordSize = ITEM_SIZE * bucketSize + 4
 	private final int recordSize;
+
+	// first prime > 5MB
+	private final BitSet poorMansBloomFilter;
+
+	boolean loadedHashFileFromDisk = false;
 
 	/**
 	 * A read/write lock that is used to prevent structural changes to the hash file while readers are active in order
@@ -140,6 +146,19 @@ public class HashFile implements Closeable {
 				}
 
 				recordSize = ITEM_SIZE * bucketSize + 4;
+				loadedHashFileFromDisk = itemCount > 0;
+			}
+
+			if (!loadedHashFileFromDisk) {
+				// 41943049 is ~5MB, and a prime
+				if (initialSize > 41943049) {
+					// initialSize < Integer.MAX_VALUE and Integer.MAX_VALUE = ~250 MB
+					poorMansBloomFilter = new BitSet(initialSize);
+				} else {
+					poorMansBloomFilter = new BitSet(41943049);
+				}
+			} else {
+				poorMansBloomFilter = null;
 			}
 		} catch (IOException e) {
 			this.nioFile.close();
@@ -163,7 +182,15 @@ public class HashFile implements Closeable {
 	 * Gets an iterator that iterates over the IDs with hash codes that match the specified hash code.
 	 */
 	public IDIterator getIDIterator(int hash) throws IOException {
-		return new IDIterator(hash);
+		if (!loadedHashFileFromDisk && !poorMansBloomFilter.get(getBloomFilterIndex(hash))) {
+			return emptyIDIterator;
+		} else {
+			return new IDIterator(hash);
+		}
+	}
+
+	private int getBloomFilterIndex(int hash) {
+		return Math.abs(hash) % poorMansBloomFilter.size();
 	}
 
 	/**
@@ -171,6 +198,8 @@ public class HashFile implements Closeable {
 	 */
 	public void storeID(int hash, int id) throws IOException {
 		structureLock.readLock().lock();
+		if (!loadedHashFileFromDisk)
+			poorMansBloomFilter.set(getBloomFilterIndex(hash), true);
 		try {
 			// Calculate bucket offset for initial bucket
 			long bucketOffset = getBucketOffset(hash);
@@ -228,6 +257,7 @@ public class HashFile implements Closeable {
 
 	public void clear() throws IOException {
 		structureLock.writeLock().lock();
+		poorMansBloomFilter.clear();
 		try {
 			// Truncate the file to remove any overflow buffers
 			nioFile.truncate(HEADER_LENGTH + (long) bucketCount * recordSize);
@@ -463,6 +493,18 @@ public class HashFile implements Closeable {
 	 * Inner class IDIterator *
 	 *------------------------*/
 
+	private final IDIterator emptyIDIterator = new IDIterator() {
+		@Override
+		public void close() {
+
+		}
+
+		@Override
+		public int next() throws IOException {
+			return -1;
+		}
+	};
+
 	public class IDIterator {
 
 		private final int queryHash;
@@ -486,6 +528,10 @@ public class HashFile implements Closeable {
 				structureLock.readLock().unlock();
 				throw e;
 			}
+		}
+
+		IDIterator() {
+			queryHash = 0;
 		}
 
 		public void close() {
@@ -524,5 +570,6 @@ public class HashFile implements Closeable {
 
 			return -1;
 		}
+
 	} // End inner class IDIterator
 } // End class HashFile
