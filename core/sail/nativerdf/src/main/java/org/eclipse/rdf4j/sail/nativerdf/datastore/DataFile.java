@@ -49,8 +49,11 @@ public class DataFile implements Closeable {
 
 	private final boolean forceSync;
 
-	// cached file size
+	// cached file size, also reflects buffer usage
 	private volatile long nioFileSize;
+
+	// 4KB write buffer that is flushed on sync, close and any read operations
+	private final ByteBuffer buffer = ByteBuffer.allocate(4 * 1024);
 
 	/*--------------*
 	 * Constructors *
@@ -116,17 +119,53 @@ public class DataFile implements Closeable {
 
 		long offset = nioFileSize;
 
-		// TODO: two writes could be more efficient since it prevent array copies
-		ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
-		buf.putInt(data.length);
-		buf.put(data);
-		buf.rewind();
+		if (data.length + 4 > buffer.capacity()) {
+			// direct write because we are writing more data than the buffer can hold
 
-		nioFile.write(buf, offset);
+			flush();
 
-		nioFileSize += buf.array().length;
+			// TODO: two writes could be more efficient since it prevent array copies
+			ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
+			buf.putInt(data.length);
+			buf.put(data);
+			buf.rewind();
+
+			nioFile.write(buf, offset);
+
+			nioFileSize += buf.array().length;
+
+		} else {
+			if (data.length + 4 > remainingBufferCapacity()) {
+				flush();
+			}
+
+			buffer.putInt(data.length);
+			buffer.put(data);
+			nioFileSize += data.length + 4;
+		}
 
 		return offset;
+
+	}
+
+	synchronized private void flush() throws IOException {
+		int position = buffer.position();
+		if (position == 0) {
+			return;
+		}
+		buffer.position(0);
+
+		byte[] byteToWrite = new byte[position];
+		buffer.get(byteToWrite, 0, position);
+
+		nioFile.write(ByteBuffer.wrap(byteToWrite), nioFileSize - byteToWrite.length);
+
+		buffer.position(0);
+
+	}
+
+	private int remainingBufferCapacity() {
+		return buffer.capacity() - buffer.position();
 	}
 
 	// This variable is used for predicting the number of bytes to read in getData(long offset). This helps us to only
@@ -142,6 +181,7 @@ public class DataFile implements Closeable {
 	 */
 	public byte[] getData(long offset) throws IOException {
 		assert offset > 0 : "offset must be larger than 0, is: " + offset;
+		flush();
 
 		// Read in twice the average length because multiple small read operations take more time than one single larger
 		// operation even if that larger operation is unnecessarily large (within sensible limits).
@@ -189,18 +229,23 @@ public class DataFile implements Closeable {
 	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 		nioFileSize = HEADER_LENGTH;
+		buffer.clear();
 	}
 
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
 	public void sync() throws IOException {
+		flush();
+
 		if (forceSync) {
 			nioFile.force(false);
 		}
 	}
 
 	public void sync(boolean force) throws IOException {
+		flush();
+
 		nioFile.force(force);
 	}
 
@@ -211,6 +256,8 @@ public class DataFile implements Closeable {
 	 */
 	@Override
 	public void close() throws IOException {
+		flush();
+
 		nioFile.close();
 	}
 
@@ -220,6 +267,12 @@ public class DataFile implements Closeable {
 	 * @return a DataIterator.
 	 */
 	public DataIterator iterator() {
+		try {
+			flush();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
 		return new DataIterator();
 	}
 
