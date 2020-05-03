@@ -628,26 +628,26 @@ TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 
 > New in RDF4J 3.2.0 - Experimental feature
 
-SPARQL queries are translated to query plans, then run through an optimization pipeline before they get evaluated and 
-the results are returned. The query explain feature gives a peek into what decisions are being made and how they affect
-the performance of you query.
+SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and 
+the results returned. The query explain feature gives a peek into what decisions are being made and how they affect
+the performance of your query.
 
 This feature is currently released as an experimental feature, which means that it may change, be moved or even removed in the future. 
 Explaining queries only works if you are using one of the built in stores directly in your Java code. 
 If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an 
 UnsupportedException. 
 
-In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` for how the query will be, or has been, evaluated.
+In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
 
  {{< highlight java  >}}
  try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-    Query query = connection.prepareTupleQuery("select * where .... ");
+    TupleQuery query = connection.prepareTupleQuery("select * where .... ");
     String explain = query.explain(Explanation.Level.Timed).toString();
     System.out.println(explain);
 }
 {{< / highlight >}}
 
-There are 4 levels to choose between:
+There are 4 explanation levels to choose between:
 
 |             | Parsed | Optimized | Cost and Estimates | Fully evaluated | Real result sizes | Performance timing |
 |-------------|--------|-----------|--------------------|-----------------|-------------------|--------------------|
@@ -659,10 +659,10 @@ There are 4 levels to choose between:
 
 First try to use the `Timed` level, since this is the richest and gives the clearest understanding about 
 which part of the query is the slowest. `Timed` and `Executed` both fully evaluate the query and iterate 
-over all the result sets. Seeing as how this can be very time consuming there is a default best-effort 
+over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort 
 timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
 
-The lower levels `Unoptimized` and `Optimized` are useful to undestand how RDF4J reorders queries in 
+The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in 
 order to optimize them.
 
 The following query intends to get everyone in Peter's extended friend graph who is at least 18 years old 
@@ -683,7 +683,7 @@ SELECT ?friend ?name WHERE
 }
 {{< / highlight >}}
 
-For our test data the query return the following results:
+For our test data the query returns the following results:
 
 ```
 [ friend=http://example.com/steve; name="Steve" ]
@@ -692,52 +692,50 @@ For our test data the query return the following results:
 
 Our test data also contains other people, so the query has to evaluate a lot more data than the results lead us to believe.
 
-Explaining the query at the `Timed` level gives us the following plan.
+Explaining the query at the `Timed` level gives us the following plan:
 
 ```
-Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
-   ProjectionElemList
-      ProjectionElem "friend"
-      ProjectionElem "name"
-   LeftJoin (LeftJoinIterator) (resultSizeActual=2, totalTimeActual=27.2ms, selfTimeActual=0.425ms)
-      Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.4ms, selfTimeActual=0.355ms)
-         Extension (resultSizeActual=1, totalTimeActual=0.115ms, selfTimeActual=0.09ms)
-            ExtensionElem (person)
-               ValueConstant (value=http://example.com/peter)
-            SingletonSet (resultSizeActual=1, totalTimeActual=0.026ms, selfTimeActual=0.026ms)
-         Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.0ms, selfTimeActual=0.72ms)
-            Filter (resultSizeActual=4, totalTimeActual=3.76ms, selfTimeActual=2.42ms)
-               Compare (>=)
-                  Var (name=age)
-                  ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
-               StatementPattern (costEstimate=4, resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=1.34ms, selfTimeActual=1.34ms)
-                  Var (name=friend)
-                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
-                  Var (name=age)
-            Join (JoinIterator) (resultSizeActual=2, totalTimeActual=21.5ms, selfTimeActual=0.697ms)
-               ArbitraryLengthPath (costEstimate=24, resultSizeEstimate=2.2K, resultSizeActual=2, totalTimeActual=20.3ms, selfTimeActual=20.3ms)
-                  Var (name=person)
-                  Union
-                     StatementPattern (resultSizeEstimate=1.0K)
-                        Var (name=person)
-                        Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                        Var (name=friend)
-                     StatementPattern (resultSizeEstimate=1.0K)
-                        Var (name=friend)
-                        Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                        Var (name=person)
-                  Var (name=friend)
-               StatementPattern (costEstimate=1, resultSizeEstimate=101, resultSizeActual=2, totalTimeActual=0.461ms, selfTimeActual=0.461ms)
-                  Var (name=person)
-                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-                  Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
-      StatementPattern (resultSizeEstimate=5, resultSizeActual=1, totalTimeActual=0.295ms, selfTimeActual=0.295ms)
-         Var (name=friend)
-         Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
-         Var (name=name)
+01 Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
+02    ProjectionElemList
+03       ProjectionElem "friend"
+04       ProjectionElem "name"
+05    LeftJoin (LeftJoinIterator) (resultSizeActual=2, totalTimeActual=27.2ms, selfTimeActual=0.425ms)
+06       Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.4ms, selfTimeActual=0.355ms)
+07          Extension (resultSizeActual=1, totalTimeActual=0.115ms, selfTimeActual=0.09ms)
+08             ExtensionElem (person)
+09                ValueConstant (value=http://example.com/peter)
+10             SingletonSet (resultSizeActual=1, totalTimeActual=0.026ms, selfTimeActual=0.026ms)
+11          Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.0ms, selfTimeActual=0.72ms)
+12             Filter (resultSizeActual=4, totalTimeActual=3.76ms, selfTimeActual=2.42ms)
+13                Compare (>=)
+14                   Var (name=age)
+15                   ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+16                StatementPattern (costEstimate=4, resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=1.34ms, selfTimeActual=1.34ms)
+17                   Var (name=friend)
+18                   Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+19                   Var (name=age)
+20             Join (JoinIterator) (resultSizeActual=2, totalTimeActual=21.5ms, selfTimeActual=0.697ms)
+31                ArbitraryLengthPath (costEstimate=24, resultSizeEstimate=2.2K, resultSizeActual=2, totalTimeActual=20.3ms, selfTimeActual=20.3ms)
+32                   Var (name=person)
+33                   Union
+34                      StatementPattern (resultSizeEstimate=1.0K)
+35                         Var (name=person)
+36                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+37                         Var (name=friend)
+38                      StatementPattern (resultSizeEstimate=1.0K)
+39                         Var (name=friend)
+40                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+41                         Var (name=person)
+42                   Var (name=friend)
+43                StatementPattern (costEstimate=1, resultSizeEstimate=101, resultSizeActual=2, totalTimeActual=0.461ms, selfTimeActual=0.461ms)
+44                   Var (name=person)
+45                   Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+46                   Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+47       StatementPattern (resultSizeEstimate=5, resultSizeActual=1, totalTimeActual=0.295ms, selfTimeActual=0.295ms)
+48          Var (name=friend)
+49          Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
+40          Var (name=name)
 ```
-
-Although this query seems daunting, it's actually fairly simple and straightforward.
 
 We start by reading the query top to bottom. The first node we encounter is:
 
@@ -746,29 +744,31 @@ Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
 ``` 
 
 The node name is "Projection", which represents the `SELECT` keyword. The values in parentheses 
-are cost estimates and actual measured output and timing. You may encounter:
+are cost-estimates and actual measured output and timing. You may encounter:
 
- - costEstimate: an internal value that represents the cost for executing this node and is used for ordering the nodes
- - resultSizeEstimate: the cardinality of a node, essentially how many results this node would return if it were executed alone
- - resultSizeActual: the actual number of results that this node produced
- - totalTimeActual: the total time that this node to return its results, including the time for its children
- - selfTimeActual: the time that this node took all on its own to produce its results
+ - **costEstimate**: an internal value that represents the cost for executing this node and is used for ordering the nodes
+ - **resultSizeEstimate**: the cardinality estimate of a node, essentially how many results this node would return if it were executed alone
+ - **resultSizeActual**: the actual number of results that this node produced
+ - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
+ - **selfTimeActual**: the time this node took all on its own to produce its results
  
  In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 20.3ms (75% of the overall time). 
- This node repsents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.
+ This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.
  
  Joins in RDF4J have a left, and a right node. The join algorithms will first retrieve a result from the left node before it gets a result 
- from the right node. The left node is the first node displayed under the join node.`Executed` and `Timed` plans will typically show the 
- algorithm for all join and left join nodes. Our fastest algorithm is usually `JoinIterator`, it will retrieve a result from the left node 
- and use the results to "query" the right node for the next relevant result. 
+ from the right node. The left node is the first node displayed under the join node. For the `Join` on line 06 we have the left node 
+ being line 07 and the right being line 11.`Executed` and `Timed` plans will typically show the algorithm for all join and left join nodes. 
+Our fastest algorithm is usually `JoinIterator`, it will retrieve a result from the left node and use the results to "query" the right node 
+for the next relevant result. 
  
 In our plan above we can see how `Extension` node and the `Filter` node can "tell" the `ArbitraryLengthPath` which values for 
 `person` and `friend` are relevant because the `Extension` node binds exactly one value for `person` and `Filter` node binds exactly 
 four values for`friend`. This is why `ArbitraryLengthPath` has a `resultSizeActual` of two, meaning that it only produced two results.
 
-The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes up a lot of memory.
+The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes 
+up a lot of memory.
 
-The following query is a typical example of a scoping issue.
+The following query is a typical example of a scoping issue. A very common issue to have in a slow SPARQL query.
 
 {{< highlight sparql  >}}
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -788,7 +788,8 @@ SELECT ?friend ?name WHERE
 The issue with this query is that each of the union clauses introduce a new scope. It's quite easy to see in this example. Both unions define a new 
 variable `?friend`, however the results should not be the intersection of common values but rather union between "everyone that knows or is known by someone" 
 and "everyone 18 or older". The only exception here is that `?person` is used in the outer scope, so results from the inner union would be filtered to match 
-with bindings for `?person` from the outer scope.
+with bindings for `?person` from the outer scope. SPARQL is designed with bottom-up semantics, which means that inner sections should be evaluated before
+outer sections. This precisley so as to make scoping issues unambiguous.
 
 The query plan for the query gives us a lot of hints about how this becomes problematic.
 
@@ -865,7 +866,8 @@ SELECT ?friend ?name WHERE
 }
 {{< / highlight >}}
 
-This forces the inner union to only consider ex:peter as `?person` meaning that we can only need to find his friends. The query plan also agrees that this is better.
+This forces the inner union to only consider ex:peter as `?person` meaning we only need to find his friends and not everyone elses friends. 
+The query plan also agrees that this is better.
 
  ```
 Projection (resultSizeActual=9, totalTimeActual=1.79ms, selfTimeActual=0.047ms)
@@ -923,7 +925,7 @@ Projection (resultSizeActual=9, totalTimeActual=1.79ms, selfTimeActual=0.047ms)
 
 Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 1.79ms instead of 871ms.
 
-If you want to practice with these examples, the code below produces these three same plans.
+If you want to practice with these examples, the code below produces these three plans.
 
 {{< highlight java  >}}
 public class QueryExplainExample {
