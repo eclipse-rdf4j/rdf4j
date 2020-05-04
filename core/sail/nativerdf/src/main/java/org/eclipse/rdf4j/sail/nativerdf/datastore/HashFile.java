@@ -200,10 +200,13 @@ public class HashFile implements Closeable {
 
 			if (slotID >= 0) {
 				// Empty slot found, store dataOffset in it
-				bucket.putInt(ITEM_SIZE * slotID, hash);
-				bucket.putInt(ITEM_SIZE * slotID + 4, id);
-				bucket.rewind();
-				nioFile.write(bucket, bucketOffset);
+
+				ByteBuffer diff = ByteBuffer.allocate(8);
+				diff.putInt(hash);
+				diff.putInt(id);
+				diff.rewind();
+
+				nioFile.write(diff, bucketOffset + ITEM_SIZE * slotID);
 				break;
 			} else {
 				// No empty slot found, check if bucket has an overflow bucket
