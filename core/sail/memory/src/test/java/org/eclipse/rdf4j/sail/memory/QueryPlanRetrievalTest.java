@@ -58,6 +58,8 @@ public class QueryPlanRetrievalTest {
 	public static final String SUB_QUERY = "select ?a where {{select ?a where {?a a ?type}} {SELECT ?a WHERE "
 			+ MAIN_QUERY + "}}";
 
+	public static final String UNION_QUERY = "select ?a where {?a a ?type. {?a ?b ?c, ?c2. {?c2 a ?type1}UNION{?c2 a ?type2}} UNION {?type ?d ?c}}";
+
 	ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private void addData(SailRepository sailRepository) {
@@ -534,15 +536,15 @@ public class QueryPlanRetrievalTest {
 					"   ProjectionElemList\n" +
 					"      ProjectionElem \"a\"\n" +
 					"   Join (HashJoinIteration) (resultSizeActual=4)\n" +
-					"      Projection (resultSizeActual=4)\n" +
+					"      Projection (new scope) (resultSizeActual=4)\n" +
 					"         ProjectionElemList\n" +
 					"            ProjectionElem \"a\"\n" +
-					"         StatementPattern (resultSizeActual=4)\n" +
+					"         StatementPattern (new scope) (resultSizeActual=4)\n" +
 					"            Var (name=a)\n" +
 					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"            Var (name=type)\n" +
-					"      Projection (resultSizeActual=2)\n" +
+					"      Projection (new scope) (resultSizeActual=2)\n" +
 					"         ProjectionElemList\n" +
 					"            ProjectionElem \"a\"\n" +
 					"         LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
@@ -572,6 +574,68 @@ public class QueryPlanRetrievalTest {
 					"               Var (name=d)\n" +
 					"               Var (name=e)\n" +
 					"               Var (name=f)\n";
+			Assert.assertEquals(expected, actual);
+
+		}
+
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testUnionQuery() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(UNION_QUERY);
+
+			String actual = query.explain(Explanation.Level.Executed).toString();
+			String expected = "Projection (resultSizeActual=0)\n" +
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   Join (HashJoinIteration) (resultSizeActual=0)\n" +
+					"      StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"         Var (name=a)\n" +
+					"         Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"         Var (name=type)\n" +
+					"      Union (new scope) (resultSizeActual=24)\n" +
+					"         Join (HashJoinIteration) (resultSizeActual=12)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=12)\n" +
+					"               Var (name=a)\n" +
+					"               Var (name=b)\n" +
+					"               Var (name=c2)\n" +
+					"            Union (new scope) (resultSizeActual=96)\n" +
+					"               Join (JoinIterator) (resultSizeActual=48)\n" +
+					"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
+					+
+					"                     Var (name=c2)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=type1)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
+					+
+					"                     Var (name=a)\n" +
+					"                     Var (name=b)\n" +
+					"                     Var (name=c)\n" +
+					"               Join (JoinIterator) (resultSizeActual=48)\n" +
+					"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
+					+
+					"                     Var (name=c2)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=type2)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
+					+
+					"                     Var (name=a)\n" +
+					"                     Var (name=b)\n" +
+					"                     Var (name=c)\n" +
+					"         StatementPattern (new scope) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=12)\n"
+					+
+					"            Var (name=type)\n" +
+					"            Var (name=d)\n" +
+					"            Var (name=c)\n";
 			Assert.assertEquals(expected, actual);
 
 		}

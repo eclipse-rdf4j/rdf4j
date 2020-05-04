@@ -101,6 +101,9 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	 */
 	@Override
 	public String getSignature() {
+		if (isGraphPatternGroup) {
+			return this.getClass().getSimpleName() + " (new scope)";
+		}
 		return this.getClass().getSimpleName();
 	}
 
