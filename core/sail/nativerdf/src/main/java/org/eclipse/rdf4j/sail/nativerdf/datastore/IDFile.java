@@ -76,7 +76,7 @@ public class IDFile implements Closeable {
 	private Long[] gcReducingCache;
 
 	// cached file size
-	private long nioFileSize;
+	private volatile long nioFileSize;
 
 	/*--------------*
 	 * Constructors *
