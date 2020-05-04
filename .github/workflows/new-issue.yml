@@ -10,5 +10,5 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_PROJECT_URL: https://github.com/eclipse/rdf4j/projects/19
-        GITHUB_PROJECT_COLUMN_NAME: Inbox
+        GITHUB_PROJECT_COLUMN_NAME: 📥 Inbox
  
