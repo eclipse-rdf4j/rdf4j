@@ -191,6 +191,10 @@ public class DataFile implements Closeable {
 		}
 	}
 
+	public void sync(boolean force) throws IOException {
+		nioFile.force(force);
+	}
+
 	/**
 	 * Closes the data file, releasing any file locks that it might have.
 	 *
