@@ -3,7 +3,7 @@ QueryRoot
       ProjectionElemList
          ProjectionElem "person"
       NUnion
-         Extension
+         Extension (new scope)
             ExtensionElem (nameOut)
                Var (name=name)
             EmptyNJoin
