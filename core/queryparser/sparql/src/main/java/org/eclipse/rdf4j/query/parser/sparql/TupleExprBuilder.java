@@ -62,7 +62,6 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -243,9 +242,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
 		}
 
-		// process bindings clause
+		// process external VALUES clause
 		final ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
+			// values clause should be treated as scoped to the where clause
+			((GraphPatternGroupable) tupleExpr).setGraphPatternGroup(false);
 			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 		}
 
@@ -1028,15 +1029,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		// Filters are scoped to the graph pattern group and do not affect
-		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
-
-		// filter conditions and left-joins do not form a new scope despite being parsed as a group graph pattern
-		if (!(te instanceof Filter || te instanceof LeftJoin)) {
+		if (node.isScopeChange()) {
 			((GraphPatternGroupable) te).setGraphPatternGroup(true);
 		}
-
 		parentGP.addRequiredTE(te);
 
 		graphPattern = parentGP;

@@ -2424,6 +2424,33 @@ public abstract class ComplexSPARQLQueryTest {
 		assertEquals("http://subj1", result.get(0).getValue("s").stringValue());
 	}
 
+	@Test
+	public void testValuesClauseNamedGraph() throws Exception {
+		String ex = "http://example.org/";
+		String data = "@prefix foaf: <" + FOAF.NAMESPACE + "> .\n"
+				+ "@prefix ex: <" + ex + "> .\n"
+				+ "ex:graph1 {\n" +
+				"	ex:Person1 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 1\" .	ex:Person2 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 2\" .	ex:Person3 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 3\" .\n" +
+				"}";
+
+		conn.add(new StringReader(data), "", RDFFormat.TRIG);
+
+		String query = "SELECT  ?person ?name ?__index \n"
+				+ "WHERE { "
+				+ "        VALUES (?person ?name  ?__index) { \n"
+				+ "                  (<http://example.org/Person1> UNDEF \"0\") \n"
+				+ "                  (<http://example.org/Person3> UNDEF \"2\")  } \n"
+				+ "        GRAPH <http://example.org/graph1> { ?person <http://xmlns.com/foaf/0.1/name> ?name .   } }";
+
+		TupleQuery q = conn.prepareTupleQuery(query);
+
+		List<BindingSet> result = QueryResults.asList(q.evaluate());
+		assertThat(result).hasSize(2);
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */

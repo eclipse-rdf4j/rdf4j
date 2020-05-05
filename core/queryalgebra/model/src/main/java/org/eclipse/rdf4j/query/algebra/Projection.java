@@ -132,5 +132,4 @@ public class Projection extends UnaryTupleOperator {
 	public void setSubquery(boolean subquery) {
 		this.subquery = subquery;
 	}
-
 }
