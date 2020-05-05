@@ -91,6 +91,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
@@ -246,7 +247,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		final ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
 			// values clause should be treated as scoped to the where clause
-			((GraphPatternGroupable) tupleExpr).setGraphPatternGroup(false);
+			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
 			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 		}
 
