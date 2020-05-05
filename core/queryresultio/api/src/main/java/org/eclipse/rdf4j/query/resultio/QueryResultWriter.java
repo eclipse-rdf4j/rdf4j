@@ -11,6 +11,8 @@ import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -32,10 +34,14 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
 	 * 
 	 * @return an optional OutputStream
-	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
-	 *           implementations are expected to override.
+	 * @implNote This temporary default method is only supplied for backward compatibility. Concrete implementations are
+	 *           expected to override.
+	 * @apiNote This method is currently considered experimental / for internal use only, and is likely to change in a
+	 *          future release without guarantees for backward compatibility. Use at your own risk.
 	 * @since 3.2.0
 	 */
+	@InternalUseOnly
+	@Experimental
 	default Optional<OutputStream> getOutputStream() {
 		return Optional.empty();
 	}
