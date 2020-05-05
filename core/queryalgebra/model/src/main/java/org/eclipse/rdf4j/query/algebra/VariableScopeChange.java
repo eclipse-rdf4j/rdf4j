@@ -8,27 +8,23 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
+ * {@link QueryModelNode}s that can constitute a variable scope change (such as group graph patterns, subselects, etc).
  * 
- * @author jeen
- *
- * @deprecated since 3.2. Use {@link VariableScopeChange} instead.
+ * @author Jeen Broekstra
  */
-@Deprecated
-public interface GraphPatternGroupable {
+public interface VariableScopeChange {
 
 	/**
-	 * indicates if the node represents the root of a graph pattern group.
+	 * indicates if the node represents a variable scope change.
 	 * 
-	 * @return true iff the node represents the node of a graph pattern group.
+	 * @return true iff the node represents a variable scope change.
 	 *
 	 */
-	@Deprecated
-	boolean isGraphPatternGroup();
+	public boolean isVariableScopeChange();
 
 	/**
-	 * Set the value of {@link #isGraphPatternGroup()} to true or false.
+	 * Set the value of {@link #isVariableScopeChange()} to true or false.
 	 */
-	@Deprecated
-	void setGraphPatternGroup(boolean isGraphPatternGroup);
+	public void setVariableScopeChange(boolean isVariableScopeChange);
 
 }
