@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.federated.optimizer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
@@ -38,7 +39,7 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 
 	protected boolean hasFilter = false;
 	protected boolean hasUnion = false;
-	protected boolean hasService = false;
+	protected List<Service> services = null;
 	protected long limit = -1; // set to a positive number if the main query has a limit
 	protected List<StatementPattern> stmts = new ArrayList<>();
 
@@ -99,7 +100,10 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 
 	@Override
 	public void meet(Service service) {
-		hasService = true;
+		if (services == null) {
+			services = new ArrayList<Service>();
+		}
+		services.add(service);
 	}
 
 	@Override
@@ -149,6 +153,10 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 	}
 
 	public boolean hasService() {
-		return hasService;
+		return services != null && services.size() > 0;
+	}
+
+	public List<Service> getServices() {
+		return services == null ? Collections.emptyList() : services;
 	}
 }

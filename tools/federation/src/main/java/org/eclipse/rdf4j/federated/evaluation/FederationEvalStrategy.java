@@ -80,6 +80,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -188,7 +189,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		info.optimize(query);
 
 		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService()
+		if (members.size() == 1 && queryInfo.getQuery() != null && propagateServices(info.getServices())
 				&& queryInfo.getQueryType() != QueryType.UPDATE)
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 
@@ -196,7 +197,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			log.trace("Query before Optimization: " + query);
 		}
 
-		/* original sesame optimizers */
+		/* original RDF4J optimizers */
 		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
 
 		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);
@@ -208,11 +209,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		/* custom optimizers, execute only when needed */
 
-		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
+		// if the query has a single relevant source (and if it is not a SERVICE query), evaluate at this source only
 		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
 		// write strategy
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
-		if (relevantSources.size() == 1 && !info.hasService() && queryInfo.getQueryType() != QueryType.UPDATE)
+		if (relevantSources.size() == 1 && propagateServices(info.getServices())
+				&& queryInfo.getQueryType() != QueryType.UPDATE)
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
 
 		if (info.hasService())
@@ -269,6 +271,25 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
 		// optimize statement groups and join order
 		new StatementGroupAndJoinOptimizer(queryInfo, DefaultFedXCostModel.INSTANCE).optimize(query);
+	}
+
+	/**
+	 * Whether to propagate a {@link SingleSourceQuery} containing SERVICE clauses. By default, the query is always
+	 * evaluated within the FedX engine if it contains a SERVICE clause.
+	 * <p>
+	 * Customized implementation may propagate a {@link SingleSourceQuery} including the SERVICE clause (e.g. for
+	 * Wikidata the Label service can only be accessed in the wikidata endpoint.
+	 * </p>
+	 * 
+	 * @param serviceNodes
+	 * @return if <code>true</code>, a {@link SingleSourceQuery} containing SERVICE clauses is propagated as-is
+	 */
+	protected boolean propagateServices(List<Service> serviceNodes) {
+		boolean hasServices = serviceNodes != null && !serviceNodes.isEmpty();
+		if (hasServices) {
+			return false;
+		}
+		return true;
 	}
 
 	/**

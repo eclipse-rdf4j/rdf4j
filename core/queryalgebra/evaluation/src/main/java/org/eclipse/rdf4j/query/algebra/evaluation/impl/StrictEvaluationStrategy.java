@@ -891,7 +891,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return (TupleExprs.isGraphPatternGroup(expr) || TupleExprs.containsSubquery(expr));
+		return (TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
