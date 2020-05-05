@@ -14,9 +14,11 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.Ignore;
 
 import junit.framework.Test;
 
+@Ignore("replaced by org.eclipse.rdf4j.sail.memory.MemorySPARQL11QueryComplianceTest")
 public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
