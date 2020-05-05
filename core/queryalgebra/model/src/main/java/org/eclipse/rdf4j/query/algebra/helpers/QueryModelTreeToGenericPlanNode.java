@@ -24,6 +24,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	GenericPlanNode top = null;
 	QueryModelNode topTupleExpr;
 	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
+	ArrayDeque<QueryModelNode> deque2 = new ArrayDeque<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this.topTupleExpr = topTupleExpr;
@@ -52,11 +53,14 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (!deque.isEmpty()) {
 			GenericPlanNode genericParentNode = deque.getLast();
 			genericParentNode.addPlans(genericPlanNode);
+			assert node.getParentNode() == deque2.getLast();
 		}
 
 		deque.addLast(genericPlanNode);
+		deque2.addLast(node);
 		super.meetNode(node);
 		deque.removeLast();
+		deque2.removeLast();
 
 	}
 
