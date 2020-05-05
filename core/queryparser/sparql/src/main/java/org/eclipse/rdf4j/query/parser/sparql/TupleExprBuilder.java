@@ -425,8 +425,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				aliasesInProjection.add(alias);
 
 				ValueExpr valueExpr = castToValueExpr(child.jjtAccept(this, null));
-				if (valueExpr == null)
+				if (valueExpr == null) {
 					throw new VisitorException("Either TripleRef or Expression expected in projection.");
+				}
 
 				String targetName = alias;
 				String sourceName = alias;
@@ -933,8 +934,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	protected ValueExpr castToValueExpr(Object node) {
-		if (node instanceof ValueExpr)
+		if (node instanceof ValueExpr) {
 			return (ValueExpr) node;
+		}
 		if (node instanceof TripleRef) {
 			TripleRef t = (TripleRef) node;
 			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar(), t.getPredicateVar(),
@@ -1056,7 +1058,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		TupleExpr te = graphPattern.buildTupleExpr();
 		if (node.isScopeChange()) {
-			((GraphPatternGroupable) te).setGraphPatternGroup(true);
+			((VariableScopeChange) te).setVariableScopeChange(true);
 		}
 		parentGP.addRequiredTE(te);
 
@@ -1790,10 +1792,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		for (int i = 0; i < childCount; i++) {
 			Object obj = node.jjtGetChild(i).jjtAccept(this, null);
-			if (obj instanceof ValueExpr)
+			if (obj instanceof ValueExpr) {
 				result.add((ValueExpr) obj);
-			else if (obj instanceof TripleRef) {
-				result.add((ValueExpr) ((TripleRef) obj).getExprVar());
+			} else if (obj instanceof TripleRef) {
+				result.add(((TripleRef) obj).getExprVar());
 			}
 		}
 
