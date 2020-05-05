@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
+import java.util.IdentityHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -25,6 +26,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	QueryModelNode topTupleExpr;
 	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
 	ArrayDeque<QueryModelNode> deque2 = new ArrayDeque<>();
+	IdentityHashMap<QueryModelNode, QueryModelNode> visited = new IdentityHashMap<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this.topTupleExpr = topTupleExpr;
@@ -38,6 +40,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	// queue to maintain the effective parent stack.
 	@Override
 	protected void meetNode(QueryModelNode node) {
+		assert !visited.containsKey(node);
+		visited.put(node, node);
+
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
