@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 /**
  * Base implementation of {@link QueryModelNode}.
  */
-public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPatternGroupable {
+public abstract class AbstractQueryModelNode implements QueryModelNode, VariableScopeChange, GraphPatternGroupable {
 
 	/*-----------*
 	 * Variables *
@@ -25,7 +25,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private QueryModelNode parent;
 
-	private boolean isGraphPatternGroup;
+	private boolean isVariableScopeChange;
 
 	/*---------*
 	 * Methods *
@@ -41,24 +41,26 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		this.parent = parent;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#isGraphPatternGroup()
-	 */
 	@Override
-	public boolean isGraphPatternGroup() {
-		return isGraphPatternGroup;
+	public boolean isVariableScopeChange() {
+		return isVariableScopeChange;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#setGraphPatternGroup(boolean)
-	 */
 	@Override
+	public void setVariableScopeChange(boolean isVariableScopeChange) {
+		this.isVariableScopeChange = isVariableScopeChange;
+	}
+
+	@Override
+	@Deprecated
+	public boolean isGraphPatternGroup() {
+		return isVariableScopeChange();
+	}
+
+	@Override
+	@Deprecated
 	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
-		this.isGraphPatternGroup = isGraphPatternGroup;
+		setVariableScopeChange(isGraphPatternGroup);
 	}
 
 	/**
@@ -110,7 +112,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	public AbstractQueryModelNode clone() {
 		try {
 			AbstractQueryModelNode clone = (AbstractQueryModelNode) super.clone();
-			clone.setGraphPatternGroup(this.isGraphPatternGroup());
+			clone.setVariableScopeChange(this.isVariableScopeChange());
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
