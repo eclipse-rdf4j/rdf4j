@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +40,13 @@ public class QueryInfo {
 
 	private final BigInteger queryID;
 	private final String query;
+	private final String baseURI;
+
 	private final QueryType queryType;
 	private final long maxExecutionTimeMs;
 	private final long start;
 	private final boolean includeInferred;
+	private final Dataset dataset;
 
 	private final FederationContext federationContext;
 
@@ -51,8 +55,8 @@ public class QueryInfo {
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
 
 	public QueryInfo(String query, QueryType queryType, boolean incluedInferred,
-			FederationContext federationContext) {
-		this(query, queryType, 0, incluedInferred, federationContext);
+			FederationContext federationContext, Dataset dataset) {
+		this(query, null, queryType, 0, incluedInferred, federationContext, dataset);
 	}
 
 	/**
@@ -63,16 +67,19 @@ public class QueryInfo {
 	 *                          {@link org.eclipse.rdf4j.federated.FedXConfig#getEnforceMaxQueryTime()}
 	 * @param includeInferred   whether to include inferred statements
 	 * @param federationContext the {@link FederationContext}
+	 * @param dataset           the {@link Dataset}
 	 */
-	public QueryInfo(String query, QueryType queryType, int maxExecutionTime, boolean includeInferred,
-			FederationContext federationContext) {
+	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
+			FederationContext federationContext, Dataset dataset) {
 		super();
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
 		this.federationContext = federationContext;
 
 		this.query = query;
+		this.baseURI = baseURI;
 		this.queryType = queryType;
+		this.dataset = dataset;
 
 		int _maxExecutionTime = maxExecutionTime <= 0 ? federationContext.getConfig().getEnforceMaxQueryTime()
 				: maxExecutionTime;
@@ -82,9 +89,9 @@ public class QueryInfo {
 	}
 
 	public QueryInfo(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			FederationContext federationContext) {
-		this(QueryStringUtil.toString(subj, (IRI) pred, obj), QueryType.GET_STATEMENTS, includeInferred,
-				federationContext);
+			FederationContext federationContext, Dataset dataset) {
+		this(QueryStringUtil.toString(subj, pred, obj), QueryType.GET_STATEMENTS, includeInferred,
+				federationContext, dataset);
 	}
 
 	public BigInteger getQueryID() {
@@ -101,6 +108,17 @@ public class QueryInfo {
 
 	public boolean getIncludeInferred() {
 		return includeInferred;
+	}
+
+	public Dataset getDataset() {
+		return dataset;
+	}
+
+	/**
+	 * @return the baseURI
+	 */
+	public String getBaseURI() {
+		return baseURI;
 	}
 
 	/**
@@ -194,18 +212,23 @@ public class QueryInfo {
 
 	@Override
 	public boolean equals(Object obj) {
-		if (this == obj)
+		if (this == obj) {
 			return true;
-		if (obj == null)
+		}
+		if (obj == null) {
 			return false;
-		if (getClass() != obj.getClass())
+		}
+		if (getClass() != obj.getClass()) {
 			return false;
+		}
 		QueryInfo other = (QueryInfo) obj;
 		if (queryID == null) {
-			if (other.queryID != null)
+			if (other.queryID != null) {
 				return false;
-		} else if (!queryID.equals(other.queryID))
+			}
+		} else if (!queryID.equals(other.queryID)) {
 			return false;
+		}
 		return true;
 	}
 

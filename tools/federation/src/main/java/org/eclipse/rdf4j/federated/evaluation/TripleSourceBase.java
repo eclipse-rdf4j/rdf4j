@@ -65,10 +65,11 @@ public abstract class TripleSourceBase implements TripleSource {
 			QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
+			final String baseURI = queryInfo.getBaseURI();
 			switch (queryType) {
 			case SELECT:
 				monitorRemoteRequest();
-				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery);
+				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 				applyBindings(tQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(tQuery);
 				configureInference(tQuery, queryInfo);
@@ -76,7 +77,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				return;
 			case CONSTRUCT:
 				monitorRemoteRequest();
-				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery);
+				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 				applyBindings(gQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(gQuery);
 				configureInference(gQuery, queryInfo);
@@ -86,7 +87,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				monitorRemoteRequest();
 				boolean hasResults = false;
 				try (RepositoryConnection _conn = conn) {
-					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery);
+					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 					applyBindings(bQuery, queryBindings);
 					applyMaxExecutionTimeUpperBound(bQuery);
 					configureInference(bQuery, queryInfo);
@@ -123,7 +124,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			QueryEvaluationException {
 
 		monitorRemoteRequest();
-		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings);
+		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getQueryInfo().getDataset());
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedAskQuery);
 			configureInference(query, group.getQueryInfo());
@@ -137,8 +138,9 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> booleanToBindingSetIteration(boolean hasResult) {
-		if (hasResult)
+		if (hasResult) {
 			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());
+		}
 		return new EmptyIteration<>();
 	}
 

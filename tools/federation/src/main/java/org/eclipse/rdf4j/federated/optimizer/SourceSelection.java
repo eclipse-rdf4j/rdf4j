@@ -91,7 +91,7 @@ public class SourceSelection {
 
 			stmtToSources.put(stmt, new ArrayList<>());
 
-			SubQuery q = new SubQuery(stmt);
+			SubQuery q = new SubQuery(stmt, queryInfo.getDataset());
 
 			// check for each current federation member (cache or remote ASK)
 			for (Endpoint e : endpoints) {
@@ -312,10 +312,11 @@ public class SourceSelection {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = false;
-				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo);
+				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo, queryInfo.getDataset());
 
 				SourceSelection sourceSelection = control.sourceSelection;
-				sourceSelection.cache.updateInformation(new SubQuery(stmt), endpoint, hasResults);
+				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,
+						hasResults);
 
 				if (hasResults)
 					sourceSelection.addSource(stmt, new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));
