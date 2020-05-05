@@ -873,4 +873,18 @@ public class QueryPlanRetrievalTest {
 
 	}
 
+	@Test
+	public void temp() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c. ?c <http://a>* ?d}");
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+
+		}
+		sailRepository.shutDown();
+
+	}
+
 }
