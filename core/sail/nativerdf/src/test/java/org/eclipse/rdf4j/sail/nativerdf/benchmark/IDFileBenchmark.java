@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 

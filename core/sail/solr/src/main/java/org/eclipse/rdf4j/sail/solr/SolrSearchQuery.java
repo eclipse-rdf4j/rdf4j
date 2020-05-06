@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.lucene.SearchQuery;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
 /**

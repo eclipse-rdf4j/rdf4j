@@ -11,7 +11,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
