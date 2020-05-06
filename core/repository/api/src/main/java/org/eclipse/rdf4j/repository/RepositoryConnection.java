@@ -483,7 +483,8 @@ public interface RepositoryConnection extends AutoCloseable {
 
 	/**
 	 * Exports all statements with a specific subject, predicate and/or object from the repository, optionally from the
-	 * specified contexts.
+	 * specified contexts. This method supplies the RDFHandler with all namespace declarations available in the
+	 * repository.
 	 * 
 	 * @param subj            The subject, or null if the subject doesn't matter.
 	 * @param pred            The predicate, or null if the predicate doesn't matter.
@@ -499,7 +500,8 @@ public interface RepositoryConnection extends AutoCloseable {
 			Resource... contexts) throws RepositoryException, RDFHandlerException;
 
 	/**
-	 * Exports all explicit statements in the specified contexts to the supplied RDFHandler.
+	 * Exports all explicit statements in the specified contexts to the supplied RDFHandler. This method supplies the
+	 * RDFHandler with all namespace declarations available in the repository.
 	 * 
 	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on the entire repository.
