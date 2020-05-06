@@ -702,8 +702,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 	public ParsedIRI relativize(ParsedIRI absolute) {
 		// identity URI reference
 		String _frag = absolute.getFragment();
-		if (iri.equals(absolute.iri) && _frag == null)
+		if (iri.equals(absolute.iri) && _frag == null) {
 			return new ParsedIRI(null, null, null, -1, "", null, null);
+		}
 		// different scheme or authority
 		if (absolute.getScheme() != null && !absolute.getScheme().equalsIgnoreCase(this.getScheme())) {
 			return absolute;
@@ -732,8 +733,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 			}
 		}
 		// opaque IRI
-		if (this.isOpaque() || absolute.isOpaque())
+		if (this.isOpaque() || absolute.isOpaque()) {
 			return absolute;
+		}
 		// query string URI reference
 		String _query = absolute.getQuery();
 		if (_query != null) {
@@ -913,11 +915,13 @@ public class ParsedIRI implements Cloneable, Serializable {
 				pos = startPos;
 				String host = parsePctEncoded(hchar, ':', '/');
 
-				if (isTLDValid(start) || scheme.equalsIgnoreCase("bundle")) {
-					return host;
-				} else {
-					throw parsingException;
+				// http(s) scheme requires a valid top-level domain
+				if (isScheme("http") || isScheme("https")) {
+					if (!isTLDValid(start)) {
+						throw parsingException;
+					}
 				}
+				return host;
 			}
 		} else {
 			return parsePctEncoded(hchar, ':', '/');
@@ -1292,8 +1296,9 @@ public class ParsedIRI implements Cloneable, Serializable {
 		while (same < paths.length && same < seg.length - 1 && paths[same].equals(seg[same])) {
 			same++;
 		}
-		if (same < 2) // no path segments in common
+		if (same < 2) {
 			return absolute;
+		}
 		StringBuilder sb = new StringBuilder();
 		// last segment is empty or file name
 		for (int i = same; i < paths.length - 1; i++) {
