@@ -170,9 +170,10 @@ In simple rule cases, such as this one, an empty string could have been provided
 
 The CustomGraphQueryInferencer used here is fairly limited: it effectively only allows a single inference rule. For more complex custom inferencing or validation needs, RDF4J offers the SPIN Sail or the SHACL Sail.
 
-## Server-side repository
+## Access over HTTP
+### Server-side RDF4J repositories
 
-Working with remote repositories is just as easy as working with local ones. We use a different Repository object, the `HTTPRepository`, instead of the SailRepository class.
+Working with remote RDF4J repositories is just as easy as working with local ones. We use a different Repository object, the `HTTPRepository`, instead of the SailRepository class.
 
 A requirement is that there is a RDF4J Server running on some remote system, which is accessible over HTTP. For example, suppose that at `http://example.org/rdf4j-server/` a RDF4J Server is running, which has a repository with the identification `example-db`. We can access this repository in our code as follows:
 
@@ -185,9 +186,7 @@ String repositoryID = "example-db";
 Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
 {{< / highlight >}}
 
-Note: some OpenJDK 8 JVMs have a ScheduledThreadPoolExecutor bug, causing high processor load even when idling. Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug` will use 1 core thread (instead of 0) for clients to remediate this.  
-
-## Accessing a SPARQL endpoint
+### SPARQL endpoints
 
 We can use the Repository interface to access any SPARQL endpoint as well. This is done as follows:
 
@@ -200,6 +199,23 @@ Repository repo = new SPARQLRepository(sparqlEndpoint);
 {{< / highlight >}}
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
+
+### Configuring the HTTP session thread pool
+
+Both the HTTPRepository and the SPARQLRepository use the SPARQL Protocol over
+HTTP under the hood (in the case of the HTTPRepository, it uses the extended
+RDF4J REST API). The HTTP client session is managed by the {{< javadoc
+"HttpClientSessionManager"
+"http/client/HttpClientSessionManager.html" >}}, which in turn depends
+on the Apache HttpClient.
+
+The session uses a scheduled thread pool executor to handle multithreaded
+access to a remote endpoint, defined by default to use a thread pool with a
+core size of 1.
+
+To configure this to use a different core size, you can specify the
+`org.eclipse.rdf4j.client.executors.corePoolSize` system property with a
+different number.
 
 ## The RepositoryManager and RepositoryProvider
 
