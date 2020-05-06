@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -217,16 +216,16 @@ public class QueryPlanRetrievalTest {
 					"            Compare (!=)\n" +
 					"               Var (name=c)\n" +
 					"               Var (name=d)\n" +
-					"            Join (JoinIterator) (resultSizeActual=6)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
 					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
 					"                  Var (name=a)\n" +
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
 					+
-					"                  SingletonSet (resultSizeActual=6)\n" +
-					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
+					"                  SingletonSet (resultSizeActual=4)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
 					"                     Var (name=d)\n" +
 					"                     Var (name=e)\n" +
 					"                     Var (name=f)\n" +
@@ -264,16 +263,16 @@ public class QueryPlanRetrievalTest {
 					"            Compare (!=)\n" +
 					"               Var (name=c)\n" +
 					"               Var (name=d)\n" +
-					"            Join (JoinIterator) (resultSizeActual=6)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
 					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
 					"                  Var (name=a)\n" +
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
 					+
-					"                  SingletonSet (resultSizeActual=6)\n" +
-					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
+					"                  SingletonSet (resultSizeActual=4)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
 					"                     Var (name=d)\n" +
 					"                     Var (name=e)\n" +
 					"                     Var (name=f)\n" +
@@ -334,7 +333,7 @@ public class QueryPlanRetrievalTest {
 					"            \"type\" : \"Var (name=d)\"\n" +
 					"          } ]\n" +
 					"        }, {\n" +
-					"          \"type\" : \"Join (JoinIterator)\",\n" +
+					"          \"type\" : \"Join (HashJoinIteration)\",\n" +
 					"          \"resultSizeActual\" : 6,\n" +
 					"          \"plans\" : [ {\n" +
 					"            \"type\" : \"StatementPattern\",\n" +
@@ -353,14 +352,14 @@ public class QueryPlanRetrievalTest {
 					"            \"type\" : \"LeftJoin (BadlyDesignedLeftJoinIterator)\",\n" +
 					"            \"costEstimate\" : 5.241482788417793,\n" +
 					"            \"resultSizeEstimate\" : 12.0,\n" +
-					"            \"resultSizeActual\" : 6,\n" +
+					"            \"resultSizeActual\" : 4,\n" +
 					"            \"plans\" : [ {\n" +
 					"              \"type\" : \"SingletonSet\",\n" +
-					"              \"resultSizeActual\" : 6\n" +
+					"              \"resultSizeActual\" : 4\n" +
 					"            }, {\n" +
 					"              \"type\" : \"StatementPattern\",\n" +
 					"              \"resultSizeEstimate\" : 12.0,\n" +
-					"              \"resultSizeActual\" : 72,\n" +
+					"              \"resultSizeActual\" : 48,\n" +
 					"              \"plans\" : [ {\n" +
 					"                \"type\" : \"Var (name=d)\"\n" +
 					"              }, {\n" +
@@ -414,16 +413,16 @@ public class QueryPlanRetrievalTest {
 					"            Compare (!=)\n" +
 					"               Var (name=c)\n" +
 					"               Var (name=d)\n" +
-					"            Join (JoinIterator) (resultSizeActual=4)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=4)\n" +
 					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n" +
 					"                  Var (name=a)\n" +
 					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                  Var (name=c)\n" +
-					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
+					"               LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=3)\n"
 					+
-					"                  SingletonSet (resultSizeActual=4)\n" +
-					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=38)\n" +
+					"                  SingletonSet (resultSizeActual=3)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=36)\n" +
 					"                     Var (name=d)\n" +
 					"                     Var (name=e)\n" +
 					"                     Var (name=f)\n" +
@@ -471,17 +470,17 @@ public class QueryPlanRetrievalTest {
 					"                  Compare (!=)\n" +
 					"                     Var (name=c)\n" +
 					"                     Var (name=d)\n" +
-					"                  Join (JoinIterator) (resultSizeActual=6)\n" +
+					"                  Join (HashJoinIteration) (resultSizeActual=6)\n" +
 					"                     StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n"
 					+
 					"                        Var (name=a)\n" +
 					"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"                        Var (name=c)\n" +
-					"                     LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=6)\n"
+					"                     LeftJoin (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
 					+
-					"                        SingletonSet (resultSizeActual=6)\n" +
-					"                        StatementPattern (resultSizeEstimate=12, resultSizeActual=72)\n" +
+					"                        SingletonSet (resultSizeActual=4)\n" +
+					"                        StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
 					"                           Var (name=d)\n" +
 					"                           Var (name=e)\n" +
 					"                           Var (name=f)\n" +
