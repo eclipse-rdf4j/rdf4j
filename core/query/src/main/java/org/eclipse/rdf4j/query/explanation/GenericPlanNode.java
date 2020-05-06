@@ -206,7 +206,7 @@ public class GenericPlanNode {
 
 	/**
 	 * Join nodes can use various algorithms for joining data.
-	 * 
+	 *
 	 * @return the name of the algorithm.
 	 */
 	public String getAlgorithm() {
@@ -246,9 +246,7 @@ public class GenericPlanNode {
 		}
 		appendCostAnnotation(sb);
 		sb.append(newLine);
-		plans.forEach(child -> sb.append(Arrays.stream(
-				child.toString()
-						.split(newLine))
+		plans.forEach(child -> sb.append(Arrays.stream(child.toString().split(newLine))
 				.map(c -> "   " + c)
 				.reduce((a, b) -> a + newLine + b)
 				.orElse("") + newLine));
