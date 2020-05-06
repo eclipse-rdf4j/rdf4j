@@ -43,6 +43,10 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	@Override
 	public void setParentNode(QueryModelNode parent) {
+		if (this.parent != null && this.parent != parent) {
+			// debug here
+			System.out.println();
+		}
 		this.parent = parent;
 	}
 
