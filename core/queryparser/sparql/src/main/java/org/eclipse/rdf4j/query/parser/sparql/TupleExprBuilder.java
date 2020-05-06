@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -1139,7 +1138,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
 		Union union = new Union(leftArg, rightArg);
-		((GraphPatternGroupable) union).setGraphPatternGroup(true);
+		union.setVariableScopeChange(true);
 		parentGP.addRequiredTE(union);
 		graphPattern = parentGP;
 
@@ -1212,7 +1211,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 
 			// when using union to execute path expressions, the scope does not not change
-			union.setGraphPatternGroup(false);
+			union.setVariableScopeChange(false);
 			parentGP.addRequiredTE(union);
 			graphPattern = parentGP;
 		} else {
