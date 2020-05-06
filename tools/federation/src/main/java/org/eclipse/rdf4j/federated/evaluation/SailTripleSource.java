@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
-import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
@@ -30,8 +29,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -55,42 +52,6 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	SailTripleSource(Endpoint endpoint, FederationContext federationContext) {
 		super(federationContext, endpoint);
-	}
-
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, final BindingSet bindings, final FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
-
-		return withConnection((conn, resultHolder) -> {
-
-			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
-			configureInference(query, queryInfo);
-			applyMaxExecutionTimeUpperBound(query);
-
-			// evaluate the query
-			CloseableIteration<BindingSet, QueryEvaluationException> res = query.evaluate();
-			resultHolder.set(res);
-
-			// apply filter and/or insert original bindings
-			if (filterExpr != null) {
-				if (bindings.size() > 0)
-					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-							SailTripleSource.this.strategy);
-				else
-					res = new FilteringIteration(filterExpr, res, SailTripleSource.this.strategy);
-				if (!res.hasNext()) {
-					Iterations.closeCloseable(res);
-					resultHolder.set(new EmptyIteration<>());
-					return;
-				}
-			} else if (bindings.size() > 0) {
-				res = new InsertBindingsIteration(res, bindings);
-			}
-
-			resultHolder.set(res);
-		});
 	}
 
 	@Override
@@ -176,7 +137,22 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 	}
 
 	@Override
-	public boolean usePreparedQuery() {
+	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo) {
+		// we use a prepared query for variable GRAPH patterns (=> cannot be done
+		// using the Repository API).
+		if (stmt.getContextVar() != null && !stmt.getContextVar().hasValue()) {
+			return true;
+		}
+		Dataset ds = queryInfo.getDataset();
+		if (ds != null) {
+
+			// if FROM NAMED is used we rely on a prepared query
+			if (!ds.getNamedGraphs().isEmpty()) {
+				return true;
+			}
+		}
+
+		// in all other cases: try to use the Repository API
 		return false;
 	}
 
@@ -223,5 +199,4 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			resultHolder.set(res);
 		});
 	}
-
 }

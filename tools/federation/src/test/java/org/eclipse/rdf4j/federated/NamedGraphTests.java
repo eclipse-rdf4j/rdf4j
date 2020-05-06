@@ -168,6 +168,10 @@ public class NamedGraphTests extends SPARQLBaseTest {
 		assertThat(values(res, "person"))
 				.containsExactlyInAnyOrder(NS_1.iri("Person_1"), NS_1.iri("Person_2"));
 
+		res = runQuery("SELECT ?person FROM NAMED <http://namespace1.org/graph1> "
+				+ "WHERE { ?person a foaf:Person }");
+		assertThat(values(res, "person")).isEmpty();
+
 		// 3. graph is available in multiple endpoints
 		res = runQuery("SELECT ?person FROM NAMED <http://namespace3.org/sharedGraph> "
 				+ " WHERE { GRAPH <http://namespace3.org/sharedGraph> { ?person a foaf:Person } }");
@@ -288,6 +292,35 @@ public class NamedGraphTests extends SPARQLBaseTest {
 		assertThat(values(res, "name"))
 				.containsExactlyInAnyOrder(l("Person 1"), l("Person 2"), l("Person 3"), l("Person 4"),
 						l("Person 11"), l("Person 12"), l("Person 13"), l("Person 14"));
+	}
+
+	@Test
+	public void testVariableGraph() throws Exception {
+
+		prepareTest(Arrays.asList("/tests/named-graphs/data1.trig", "/tests/named-graphs/data2.trig",
+				"/tests/named-graphs/data3.trig", "/tests/named-graphs/data4.trig"));
+
+		List<BindingSet> res;
+
+		res = runQuery(
+				"SELECT DISTINCT ?g WHERE { GRAPH ?g { ?person a foaf:Person } }");
+
+		assertThat(values(res, "g"))
+				.containsExactlyInAnyOrder(NS_1.GRAPH_1, NS_1.GRAPH_2, NS_2.GRAPH_1, NS_2.GRAPH_2, NS_3.SHARED_GRAPH);
+
+		res = runQuery(
+				"SELECT DISTINCT ?g WHERE { GRAPH ?g { ?person a foaf:Person . ?person foaf:age ?age } }");
+
+		System.out.println(res);
+
+		assertThat(values(res, "g"))
+				.containsExactlyInAnyOrder(NS_1.GRAPH_1, NS_1.GRAPH_2, NS_2.GRAPH_1);
+
+		res = runQuery(
+				"SELECT ?person WHERE { BIND (<http://namespace1.org/graph1> AS ?g) . GRAPH ?g { ?person a foaf:Person } }");
+
+		assertThat(values(res, "person"))
+				.containsExactlyInAnyOrder(NS_1.iri("Person_1"), NS_1.iri("Person_2"));
 	}
 
 	private List<Value> values(List<BindingSet> result, String bindingName) {

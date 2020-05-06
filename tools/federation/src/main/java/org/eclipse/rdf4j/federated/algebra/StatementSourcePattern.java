@@ -75,7 +75,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 				 * efficient to use getStatements(subj, pred, obj) instead of evaluating a prepared query.
 				 */
 
-				if (t.usePreparedQuery()) {
+				if (t.usePreparedQuery(this, queryInfo)) {
 
 					// queryString needs to be constructed only once for a given bindingset
 					if (preparedQuery == null) {

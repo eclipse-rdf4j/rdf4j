@@ -62,7 +62,7 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 			 */
 
 			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
-			if (t.usePreparedQuery()) {
+			if (t.usePreparedQuery(this, queryInfo)) {
 
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated
 				String preparedQuery;
