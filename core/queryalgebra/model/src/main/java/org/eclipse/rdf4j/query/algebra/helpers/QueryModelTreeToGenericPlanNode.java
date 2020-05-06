@@ -11,7 +11,10 @@ import java.util.ArrayDeque;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
 /**
@@ -41,6 +44,15 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());
+		if (node instanceof VariableScopeChange) {
+			boolean newScope = ((VariableScopeChange) node).isVariableScopeChange();
+			genericPlanNode.setNewScope(newScope);
+		}
+
+		if (node instanceof BinaryTupleOperator) {
+			String algorithmName = ((BinaryTupleOperator) node).getAlgorithmName();
+			genericPlanNode.setAlgorithm(algorithmName);
+		}
 
 		// convert from nanoseconds to milliseconds
 		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0);
