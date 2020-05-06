@@ -46,6 +46,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
 		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
+		setScope(node.getScope());
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 		initFreeVars();

@@ -371,15 +371,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
-		if (contexts.length != 0)
-			log.warn("Context queries are not yet supported by FedX.");
-
 		List<Endpoint> members = federationContext.getFederation().getMembers();
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
 		if (subj != null && pred != null && obj != null) {
-			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo)) {
+			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo, contexts)) {
 				return new SingletonIteration<>(
 						FedXUtil.valueFactory().createStatement(subj, pred, obj));
 			}
@@ -388,7 +385,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// form the union of results from relevant endpoints
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
-				obj, queryInfo);
+				obj, queryInfo, contexts);
 
 		if (sources.isEmpty())
 			return new EmptyIteration<>();
@@ -582,7 +579,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
 			String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr, bindings,
 					filterValueExpr,
-					isEvaluated);
+					isEvaluated, expr.getQueryInfo().getDataset());
 			return t.getStatements(preparedQuery, bindings,
 					(isEvaluated.get() ? null : filterValueExpr), expr.getQueryInfo());
 		} catch (IllegalQueryException e) {

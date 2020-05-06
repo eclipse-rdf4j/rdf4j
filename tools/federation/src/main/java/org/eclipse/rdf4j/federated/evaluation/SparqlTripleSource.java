@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -122,8 +124,9 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 		if (!useASKQueries) {
 			StatementPattern st = new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj));
+			Dataset dataset = FedXUtil.toDataset(contexts);
 			try {
-				return hasStatements(st, EmptyBindingSet.getInstance(), queryInfo);
+				return hasStatements(st, EmptyBindingSet.getInstance(), queryInfo, dataset);
 			} catch (Exception e) {
 				throw new RepositoryException(e);
 			}
@@ -133,13 +136,13 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public boolean hasStatements(StatementPattern stmt,
-			BindingSet bindings, QueryInfo queryInfo) throws RepositoryException,
+			BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
 		// decide whether to use ASK queries or a SELECT query
 		if (useASKQueries) {
 			/* remote boolean query */
-			String queryString = QueryStringUtil.askQueryString(stmt, bindings);
+			String queryString = QueryStringUtil.askQueryString(stmt, bindings, dataset);
 
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, queryString, null);
@@ -157,7 +160,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 		} else {
 			/* remote select limit 1 query */
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings);
+				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, queryInfo);
 				applyMaxExecutionTimeUpperBound(query);
@@ -186,7 +189,8 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 			/* remote select limit 1 query */
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings);
+				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
+						expr.getQueryInfo().getDataset());
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, expr.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
@@ -227,11 +231,10 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 			Resource... contexts) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
-		// TODO add handling for contexts
 		return withConnection((conn, resultHolder) -> {
 			monitorRemoteRequest();
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
-					queryInfo.getIncludeInferred());
+					queryInfo.getIncludeInferred(), contexts);
 
 			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
 				@Override

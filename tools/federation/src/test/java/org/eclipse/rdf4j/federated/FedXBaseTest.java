@@ -61,8 +61,9 @@ public abstract class FedXBaseTest {
 	@BeforeAll
 	public static void initLogging() throws Exception {
 
-		if (System.getProperty("log4j.configurationFile") == null)
+		if (System.getProperty("log4j.configurationFile") == null) {
 			System.setProperty("log4j.configurationFile", "file:build/test/log4j-debug.properties");
+		}
 
 		log = LoggerFactory.getLogger(FedXBaseTest.class);
 	}
@@ -164,8 +165,12 @@ public abstract class FedXBaseTest {
 		return iri(defaultNamespace, localName);
 	}
 
-	protected IRI iri(String namespace, String localName) {
+	protected static IRI iri(String namespace, String localName) {
 		return vf.createIRI(namespace, localName);
+	}
+
+	protected static IRI fullIri(String fullIri) {
+		return vf.createIRI(fullIri);
 	}
 
 	/**
@@ -209,8 +214,9 @@ public abstract class FedXBaseTest {
 
 		if (tqrFormat != null) {
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			if (in == null)
+			if (in == null) {
 				throw new IOException("File could not be opened: " + resultFile);
+			}
 
 			try {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
@@ -443,10 +449,11 @@ public abstract class FedXBaseTest {
 		public SimpleTupleQueryResultBuilder add(BindingSet b) throws IllegalArgumentException {
 
 			// check if the binding names are a subset of defined binding names
-			if (!bindingNames.containsAll(b.getBindingNames()))
+			if (!bindingNames.containsAll(b.getBindingNames())) {
 				throw new IllegalArgumentException(
 						"Provided binding set does must be a subset of defined binding names: " + bindingNames
 								+ ". Was: " + b.getBindingNames());
+			}
 			this.bindings.add(b);
 			return this;
 		}

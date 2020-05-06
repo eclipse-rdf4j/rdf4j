@@ -46,6 +46,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	 * endpoint if there is only a single federation member is relevant for this query.
 	 */
 	public static final String BINDING_ORIGINAL_QUERY = "__originalQuery";
+	public static final String BINDING_ORIGINAL_BASE_URI = "__originalBaseURI";
 	public static final String BINDING_ORIGINAL_QUERY_TYPE = "__originalQueryType";
 	public static final String BINDING_ORIGINAL_MAX_EXECUTION_TIME = "__originalQueryMaxExecutionTime";
 
@@ -57,7 +58,8 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	 * @see #BINDING_ORIGINAL_MAX_EXECUTION_TIME
 	 */
 	public static final Set<String> FEDX_BINDINGS = Collections.unmodifiableSet(
-			Sets.newHashSet(BINDING_ORIGINAL_QUERY, BINDING_ORIGINAL_QUERY_TYPE, BINDING_ORIGINAL_MAX_EXECUTION_TIME));
+			Sets.newHashSet(BINDING_ORIGINAL_QUERY, BINDING_ORIGINAL_BASE_URI, BINDING_ORIGINAL_QUERY_TYPE,
+					BINDING_ORIGINAL_MAX_EXECUTION_TIME));
 
 	private final FederationContext federationContext;
 
@@ -72,13 +74,13 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 			String baseURI) throws MalformedQueryException {
 		SailQuery q = super.prepareQuery(ql, queryString, baseURI);
 		if (q instanceof SailTupleQuery) {
-			insertOriginalQueryString(q, queryString, QueryType.SELECT);
+			insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);
 			q = new FedXTupleQuery((SailTupleQuery) q);
 		} else if (q instanceof GraphQuery) {
-			insertOriginalQueryString(q, queryString, QueryType.CONSTRUCT);
+			insertOriginalQueryString(q, queryString, baseURI, QueryType.CONSTRUCT);
 			q = new FedXGraphQuery((SailGraphQuery) q);
 		} else if (q instanceof SailBooleanQuery) {
-			insertOriginalQueryString(q, queryString, QueryType.ASK);
+			insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);
 			q = new FedXBooleanQuery((SailBooleanQuery) q);
 		}
 		setIncludeInferredDefault(q);
@@ -89,7 +91,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	public FedXTupleQuery prepareTupleQuery(QueryLanguage ql,
 			String queryString, String baseURI) throws MalformedQueryException {
 		SailTupleQuery q = super.prepareTupleQuery(ql, queryString, baseURI);
-		insertOriginalQueryString(q, queryString, QueryType.SELECT);
+		insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);
 		setIncludeInferredDefault(q);
 		return new FedXTupleQuery(q);
 	}
@@ -98,7 +100,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	public FedXGraphQuery prepareGraphQuery(QueryLanguage ql,
 			String queryString, String baseURI) throws MalformedQueryException {
 		SailGraphQuery q = super.prepareGraphQuery(ql, queryString, baseURI);
-		insertOriginalQueryString(q, queryString, QueryType.CONSTRUCT);
+		insertOriginalQueryString(q, queryString, baseURI, QueryType.CONSTRUCT);
 		setIncludeInferredDefault(q);
 		return new FedXGraphQuery(q);
 	}
@@ -107,7 +109,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
 			String queryString, String baseURI) throws MalformedQueryException {
 		SailBooleanQuery q = super.prepareBooleanQuery(ql, queryString, baseURI);
-		insertOriginalQueryString(q, queryString, QueryType.ASK);
+		insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);
 		setIncludeInferredDefault(q);
 		return new FedXBooleanQuery(q);
 	}
@@ -116,7 +118,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	public Update prepareUpdate(QueryLanguage ql, String updateString, String baseURI)
 			throws RepositoryException, MalformedQueryException {
 		Update update = super.prepareUpdate(ql, updateString, baseURI);
-		insertOriginalQueryString(update, updateString, QueryType.UPDATE);
+		insertOriginalQueryString(update, updateString, baseURI, QueryType.UPDATE);
 		return update;
 	}
 
@@ -124,7 +126,10 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 		query.setIncludeInferred(federationContext.getConfig().getIncludeInferredDefault());
 	}
 
-	private void insertOriginalQueryString(Operation query, String queryString, QueryType qt) {
+	private void insertOriginalQueryString(Operation query, String queryString, String baseURI, QueryType qt) {
+		if (baseURI != null) {
+			query.setBinding(BINDING_ORIGINAL_BASE_URI, FedXUtil.literal(baseURI));
+		}
 		query.setBinding(BINDING_ORIGINAL_QUERY, FedXUtil.literal(queryString));
 		query.setBinding(BINDING_ORIGINAL_QUERY_TYPE, FedXUtil.literal(qt.name()));
 	}

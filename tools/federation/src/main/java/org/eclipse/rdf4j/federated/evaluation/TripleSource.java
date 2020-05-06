@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -146,15 +147,17 @@ public interface TripleSource {
 	 * Check if the provided statement can return results.
 	 * 
 	 * @param stmt
-	 * @param bindings a binding set. in case no bindings are present, an {@link EmptyBindingSet} can be used (i.e.
-	 *                 never null)
+	 * @param bindings  a binding set. in case no bindings are present, an {@link EmptyBindingSet} can be used (i.e.
+	 *                  never null)
+	 * @param queryInfo
+	 * @param dataset
 	 * 
 	 * @return whether the source can return results
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	public boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo)
+	public boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
