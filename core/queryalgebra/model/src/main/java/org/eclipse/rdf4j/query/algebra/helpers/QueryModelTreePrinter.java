@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 /**
@@ -67,6 +68,10 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 		}
 
 		sb.append(node.getSignature());
+		if (node instanceof AbstractQueryModelNode) {
+			if (((AbstractQueryModelNode) node).isVariableScopeChange())
+				sb.append(" (new scope)");
+		}
 		appendCostAnnotation(node, sb);
 		sb.append(LINE_SEPARATOR);
 

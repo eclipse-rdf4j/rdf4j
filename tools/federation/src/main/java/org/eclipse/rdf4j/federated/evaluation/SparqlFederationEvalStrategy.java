@@ -74,7 +74,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated);
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = null;
 		try {
@@ -116,7 +116,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		Boolean isEvaluated = false;
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundUnion((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated);
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
@@ -142,7 +142,8 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		if (bindings.size() == 1)
 			return stmt.evaluate(bindings.get(0));
 
-		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
+		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings,
+				stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
@@ -174,7 +175,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		try {
 			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
-					isEvaluated);
+					isEvaluated, group.getQueryInfo().getDataset());
 			return tripleSource.getStatements(preparedQuery, bindings,
 					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {

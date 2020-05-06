@@ -143,8 +143,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 		this.algorithmName = iteration.getClass().getSimpleName();
 	}
 
-	@Override
-	public String getSignature() {
-		return super.getSignature() + (algorithmName != null ? " (" + algorithmName + ")" : "");
+	public String getAlgorithmName() {
+		return algorithmName;
 	}
 }

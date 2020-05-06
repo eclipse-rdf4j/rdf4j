@@ -80,7 +80,8 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					// queryString needs to be constructed only once for a given bindingset
 					if (preparedQuery == null) {
 						try {
-							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated);
+							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
+									queryInfo.getDataset());
 						} catch (IllegalQueryException e1) {
 							/* all vars are bound, this must be handled as a check query, can occur in joins */
 							CloseableIteration<BindingSet, QueryEvaluationException> res = handleStatementSourcePatternCheck(
@@ -127,7 +128,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					.getEndpointManager()
 					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			if (t.hasStatements(this, bindings, queryInfo))
+			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset()))
 				return new SingleBindingSetIteration(bindings);
 		}
 

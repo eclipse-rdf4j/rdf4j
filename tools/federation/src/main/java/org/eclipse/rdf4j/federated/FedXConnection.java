@@ -14,12 +14,12 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
-import org.eclipse.rdf4j.federated.evaluation.iterator.RepositoryExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.StopRemainingExecutionsOnCloseIteration;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
@@ -42,8 +43,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
@@ -99,8 +102,8 @@ public class FedXConnection extends AbstractSailConnection {
 			if (queryString == null) {
 				log.warn("Query string is null. Please check your FedX setup.");
 			}
-			queryInfo = new QueryInfo(queryString, getOriginalQueryType(bindings),
-					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext);
+			queryInfo = new QueryInfo(queryString, getOriginalBaseURI(bindings), getOriginalQueryType(bindings),
+					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext, dataset);
 
 			if (log.isDebugEnabled()) {
 				log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
@@ -135,8 +138,10 @@ public class FedXConnection extends AbstractSailConnection {
 
 		try {
 			// make sure to apply any external bindings
+			// Note: we use a conditional check for performance reasons.
+			// Further note that we subtract -1 from the size as the baseUri is optional
 			BindingSet queryBindings = EmptyBindingSet.getInstance();
-			if (bindings.size() > FedXRepositoryConnection.FEDX_BINDINGS.size()) {
+			if (bindings.size() > FedXRepositoryConnection.FEDX_BINDINGS.size() - 1) {
 				MapBindingSet actualQueryBindings = new MapBindingSet();
 				bindings.forEach(binding -> {
 					if (!FedXRepositoryConnection.FEDX_BINDINGS.contains(binding.getName())) {
@@ -165,7 +170,11 @@ public class FedXConnection extends AbstractSailConnection {
 
 	@Override
 	protected void clearNamespacesInternal() throws SailException {
-		throw new UnsupportedOperationException("Operation is not yet supported.");
+		try {
+			getWriteStrategyInternal().clearNamespaces();
+		} catch (RepositoryException e) {
+			throw new SailException(e);
+		}
 	}
 
 	@Override
@@ -200,15 +209,19 @@ public class FedXConnection extends AbstractSailConnection {
 
 		FederationEvalStrategy strategy = federationContext.getStrategy();
 		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(strategy,
-				new QueryInfo("getContextIDsInternal", QueryType.UNKNOWN, 0,
-						federationContext.getConfig().getIncludeInferredDefault(), federationContext));
+				new QueryInfo("getContextIDsInternal", null, QueryType.UNKNOWN, 0,
+						federationContext.getConfig().getIncludeInferredDefault(), federationContext,
+						new SimpleDataset()));
 
 		for (final Endpoint e : federation.getMembers()) {
 			union.addTask(new ParallelTask<Resource>() {
 				@Override
 				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
 					try (RepositoryConnection conn = e.getConnection()) {
-						return new RepositoryExceptionConvertingIteration<>(conn.getContextIDs());
+						// we need to materialize the contexts as they are only accessible
+						// while the connection is open
+						return new CollectionIteration<Resource, QueryEvaluationException>(
+								Iterations.asList(conn.getContextIDs()));
 					}
 				}
 
@@ -257,7 +270,8 @@ public class FedXConnection extends AbstractSailConnection {
 
 		try {
 			FederationEvalStrategy strategy = federationContext.getStrategy();
-			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, includeInferred, federationContext);
+			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, includeInferred, federationContext,
+					new SimpleDataset());
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,
 					obj, contexts);
@@ -368,6 +382,13 @@ public class FedXConnection extends AbstractSailConnection {
 			return q.stringValue();
 		}
 		return null;
+	}
+
+	private static String getOriginalBaseURI(BindingSet b) {
+		if (b == null) {
+			return null;
+		}
+		return Literals.getLabel(b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_BASE_URI), null);
 	}
 
 	private static QueryType getOriginalQueryType(BindingSet b) {

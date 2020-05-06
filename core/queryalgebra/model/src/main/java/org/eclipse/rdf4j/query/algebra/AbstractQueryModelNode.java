@@ -103,9 +103,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	 */
 	@Override
 	public String getSignature() {
-		if (isVariableScopeChange()) {
-			return this.getClass().getSimpleName() + " (new scope)";
-		}
 		return this.getClass().getSimpleName();
 	}
 

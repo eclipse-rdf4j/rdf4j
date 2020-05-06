@@ -61,21 +61,33 @@ public class FedXDataset implements Dataset {
 
 	@Override
 	public Set<IRI> getDefaultGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getDefaultGraphs();
 	}
 
 	@Override
 	public IRI getDefaultInsertGraph() {
+		if (delegate == null) {
+			return null;
+		}
 		return delegate.getDefaultInsertGraph();
 	}
 
 	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getDefaultRemoveGraphs();
 	}
 
 	@Override
 	public Set<IRI> getNamedGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getNamedGraphs();
 	}
 

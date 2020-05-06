@@ -188,7 +188,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 						.getEndpointManager()
 						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
-				if (t.hasStatements(st, bindings, queryInfo)) {
+				if (t.hasStatements(st, bindings, queryInfo, queryInfo.getDataset())) {
 					return new SingleBindingSetIteration(bindings);
 				}
 			}

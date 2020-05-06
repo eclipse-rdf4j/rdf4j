@@ -296,7 +296,8 @@ public class QueryManager {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		// we use a dummy query info object here
 		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				federationContext.getConfig().getIncludeInferredDefault(), federationContext);
+				federationContext.getConfig().getIncludeInferredDefault(), federationContext,
+				((ParsedQuery) query).getDataset());
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
