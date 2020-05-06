@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 /**
  * QueryModelVisitor implementation that "prints" a tree representation of a query model. The tree representations is
@@ -70,8 +71,8 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 
 		sb.append(node.getSignature());
 
-		if (node instanceof AbstractQueryModelNode) {
-			if (((AbstractQueryModelNode) node).isVariableScopeChange()) {
+		if (node instanceof VariableScopeChange) {
+			if (((VariableScopeChange) node).isVariableScopeChange()) {
 				sb.append(" (new scope)");
 			}
 		}
