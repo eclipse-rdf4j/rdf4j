@@ -8,18 +8,13 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
@@ -69,44 +64,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 		}
 	}
 
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
 
-		return withConnection((conn, resultHolder) -> {
-
-			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
-			applyMaxExecutionTimeUpperBound(query);
-			configureInference(query, queryInfo);
-
-			// evaluate the query
-			monitorRemoteRequest();
-			CloseableIteration<BindingSet, QueryEvaluationException> res = query.evaluate();
-			resultHolder.set(res);
-
-			// apply filter and/or insert original bindings
-			if (filterExpr != null) {
-				if (bindings.size() > 0)
-					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-							SparqlTripleSource.this.strategy);
-				else
-					res = new FilteringIteration(filterExpr, res, SparqlTripleSource.this.strategy);
-				if (!res.hasNext()) {
-					Iterations.closeCloseable(res);
-					conn.close();
-					resultHolder.set(new EmptyIteration<>());
-					return;
-				}
-			} else if (bindings.size() > 0) {
-				res = new InsertBindingsIteration(res, bindings);
-			}
-
-			resultHolder.set(new ConsumingIteration(res));
-
-		});
-	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(

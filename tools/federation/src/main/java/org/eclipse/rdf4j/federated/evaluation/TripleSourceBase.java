@@ -14,9 +14,14 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GraphToBindingSetConversionIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
@@ -108,6 +113,46 @@ public abstract class TripleSourceBase implements TripleSource {
 		for (Binding b : queryBindings) {
 			operation.setBinding(b.getName(), b.getValue());
 		}
+	}
+
+	@Override
+	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException,
+			QueryEvaluationException {
+
+		return withConnection((conn, resultHolder) -> {
+
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
+			applyMaxExecutionTimeUpperBound(query);
+			configureInference(query, queryInfo);
+
+			// evaluate the query
+			monitorRemoteRequest();
+			CloseableIteration<BindingSet, QueryEvaluationException> res = query.evaluate();
+			resultHolder.set(res);
+
+			// apply filter and/or insert original bindings
+			if (filterExpr != null) {
+				if (bindings.size() > 0) {
+					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+							this.strategy);
+				} else {
+					res = new FilteringIteration(filterExpr, res, this.strategy);
+				}
+				if (!res.hasNext()) {
+					Iterations.closeCloseable(res);
+					conn.close();
+					resultHolder.set(new EmptyIteration<>());
+					return;
+				}
+			} else if (bindings.size() > 0) {
+				res = new InsertBindingsIteration(res, bindings);
+			}
+
+			resultHolder.set(new ConsumingIteration(res));
+
+		});
 	}
 
 	@Override
