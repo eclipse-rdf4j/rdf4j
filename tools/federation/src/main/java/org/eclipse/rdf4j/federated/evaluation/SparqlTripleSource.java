@@ -64,8 +64,6 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 		}
 	}
 
-
-
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
 			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
@@ -170,7 +168,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 	}
 
 	@Override
-	public boolean usePreparedQuery() {
+	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo) {
 		return true;
 	}
 

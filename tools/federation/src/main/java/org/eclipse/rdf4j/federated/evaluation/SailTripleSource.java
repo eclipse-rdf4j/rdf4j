@@ -137,7 +137,22 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 	}
 
 	@Override
-	public boolean usePreparedQuery() {
+	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo) {
+		// we use a prepared query for variable GRAPH patterns (=> cannot be done
+		// using the Repository API).
+		if (stmt.getContextVar() != null && !stmt.getContextVar().hasValue()) {
+			return true;
+		}
+		Dataset ds = queryInfo.getDataset();
+		if (ds != null) {
+
+			// if FROM NAMED is used we rely on a prepared query
+			if (!ds.getNamedGraphs().isEmpty()) {
+				return true;
+			}
+		}
+
+		// in all other cases: try to use the Repository API
 		return false;
 	}
 
@@ -184,5 +199,4 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			resultHolder.set(res);
 		});
 	}
-
 }

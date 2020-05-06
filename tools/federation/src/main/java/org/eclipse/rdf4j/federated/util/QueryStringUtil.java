@@ -167,7 +167,7 @@ public class QueryStringUtil {
 	 * @return the SELECT query
 	 * @throws IllegalQueryException if the query does not have any free variables
 	 */
-	public static String selectQueryString(FedXStatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
+	public static String selectQueryString(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
@@ -202,10 +202,13 @@ public class QueryStringUtil {
 
 		res.append(" }");
 
-		long upperLimit = stmt.getUpperLimit();
-		if (upperLimit > 0) {
-			res.append(" LIMIT ").append(upperLimit);
+		if (stmt instanceof FedXStatementPattern) {
+			long upperLimit = ((FedXStatementPattern) stmt).getUpperLimit();
+			if (upperLimit > 0) {
+				res.append(" LIMIT ").append(upperLimit);
+			}
 		}
+
 		return res.toString();
 	}
 

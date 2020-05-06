@@ -189,7 +189,19 @@ public interface TripleSource {
 	/**
 	 * 
 	 * @return true if a prepared query is to be used preferably, false otherwise
+	 * @deprecated replaced with {@link #usePreparedQuery(StatementPattern, QueryInfo)}, to be removed in 4.0
 	 */
-	public boolean usePreparedQuery();
+	@Deprecated
+	public default boolean usePreparedQuery() {
+		return true;
+	}
+
+	/**
+	 * 
+	 * @param stmt
+	 * @param queryInfo
+	 * @return true if a prepared query is to be used preferably, false otherwise
+	 */
+	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo);
 
 }
