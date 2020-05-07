@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.impl.AbstractQuery;
 
 /**
  * Base class for any {@link Query} operation over HTTP.
- * 
+ *
  * @author Andreas Schwarte
  */
 public abstract class AbstractHTTPQuery extends AbstractQuery {
@@ -65,8 +65,8 @@ public abstract class AbstractHTTPQuery extends AbstractQuery {
 	}
 
 	@Override
-	public void setMaxExecutionTime(int maxExecutionTime) {
-		super.setMaxExecutionTime(maxExecutionTime);
+	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+		super.setMaxExecutionTime(maxExecutionTimeSeconds);
 		this.httpClient.setConnectionTimeout(1000L * this.getMaxExecutionTime());
 	}
 

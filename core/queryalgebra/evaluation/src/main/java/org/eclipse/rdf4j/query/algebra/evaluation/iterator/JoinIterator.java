@@ -54,6 +54,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
+
+		join.setAlgorithm(this);
 	}
 
 	/*---------*

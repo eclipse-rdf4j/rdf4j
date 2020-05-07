@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.stream.Stream;
+
 /**
  * @author Jeen Broekstra
  */

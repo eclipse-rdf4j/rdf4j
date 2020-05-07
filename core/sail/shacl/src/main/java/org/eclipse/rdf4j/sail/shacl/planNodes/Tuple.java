@@ -54,7 +54,12 @@ public class Tuple implements Comparable<Tuple> {
 	public Tuple(BindingSet bindingset, String[] bindingnames) {
 
 		for (String bindingname : bindingnames) {
-			Value value = bindingset.getValue(bindingname.replace("?", ""));
+			Value value;
+			if (bindingname.startsWith("?")) {
+				value = bindingset.getValue(bindingname.substring(1));
+			} else {
+				value = bindingset.getValue(bindingname);
+			}
 			if (value != null) {
 				line.add(value);
 			}

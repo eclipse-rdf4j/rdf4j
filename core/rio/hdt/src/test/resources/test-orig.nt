@@ -1,0 +1,43 @@
+<http://data.gov.be/catalog/fodbosadt> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/dcat#Catalog> .
+<http://data.gov.be/catalog/fodbosadt> <http://www.w3.org/ns/dcat#dataset> <http://data.gov.be/dataset/fodbosadt/best> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/dcat#Dataset> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/description> "FOD BOSA DG Digitale Transformatie stelt een geconsolideerd bestand van de adresgegevens uit de 3 regio’s ter beschikking als open data. Dit project kwam tot stand dankzij een intense samenwerking tussen de verschillende regionale en federale overheidsdiensten. Deze XML-bestanden bevatten de officiële adressen (straatnamen + huisnummers en postcodes) met hun bijhorende geografische coördinaten, en mogen door burgers, bedrijven en andere geïnteresseerden gratis hergebruikt worden mits bronvermelding."@nl .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/description> "SPF BOSA DG Transformation digitale met à disposition sous forme de données ouvertes un fichier consolidé des données d'adresses des 3 Régions. Ce projet est le fruit d'une intense collaboration entre les différents services publics régionaux et fédéraux. Ces fichiers XML contiennent les adresses officielles (noms de rues + numéros de rues et codes postaux) avec leurs coordonnées géographiques correspondantes, et peuvent être réutilisés gratuitement par les citoyens, les entreprises et autres parties intéressées, à condition que la source soit mentionnée."@fr .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/title> "BeSt adressen"@nl .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/title> "Adresses BeSt"@fr .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/identifier> "c646365c4441f53426a72e2f1b14b9d6e63e0756" .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/publisher> <http://org.belgif.be/id/cbe/org/0671_516_647> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/language> <http://publications.europa.eu/resource/authority/language/NLD> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/language> <http://publications.europa.eu/resource/authority/language/FRA> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://www.w3.org/ns/dcat#contactPoint> <http://opendata.bosa.be/contact> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/spatial> <http://sws.geonames.org/2802361/> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://www.w3.org/ns/dcat#distribution> <http://data.gov.be/dist/fodbosadt/best/nl> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://www.w3.org/ns/dcat#distribution> <http://data.gov.be/dist/fodbosadt/best/fr> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://purl.org/dc/terms/accrualPeriodicity> <http://publications.europa.eu/resource/authority/frequency/WEEKLY> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://data.gov.be#freq> <http://data.gov.be/en/taxonomy/term/23> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://www.w3.org/ns/dcat#theme> <http://publications.europa.eu/resource/authority/data-theme/GOVE> .
+<http://data.gov.be/dataset/fodbosadt/best> <http://data.gov.be#theme> <http://data.gov.be/en/taxonomy/term/41> .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/dcat#Distribution> .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://purl.org/dc/terms/language> <http://publications.europa.eu/resource/authority/language/NLD> .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://purl.org/dc/terms/title> "ZIP bestand"@nl .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://www.w3.org/ns/dcat#mediaType> "text/xml" .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://purl.org/dc/terms/format> <http://publications.europa.eu/resource/authority/file-type/XML> .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://www.w3.org/ns/dcat#accessURL> <https://opendata.bosa.be/index.nl.html> .
+<http://data.gov.be/dist/fodbosadt/best/nl> <http://www.w3.org/ns/dcat#downloadURL> <https://opendata.bosa.be/download/best/best-full-latest.zip> .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/dcat#Distribution> .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://purl.org/dc/terms/language> <http://publications.europa.eu/resource/authority/language/FRA> .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://purl.org/dc/terms/title> "Fichier ZIP"@fr .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://www.w3.org/ns/dcat#mediaType> "text/xml" .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://purl.org/dc/terms/format> <http://publications.europa.eu/resource/authority/file-type/XML> .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://www.w3.org/ns/dcat#accessURL> <https://opendata.bosa.be/index.fr.html> .
+<http://data.gov.be/dist/fodbosadt/best/fr> <http://www.w3.org/ns/dcat#downloadURL> <https://opendata.bosa.be/download/best/best-full-latest.zip> .
+<http://org.belgif.be/id/cbe/org/0671_516_647> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://xmlns.com/foaf/0.1/foaf/Organization> .
+<http://org.belgif.be/id/cbe/org/0671_516_647> <http://xmlns.com/foaf/0.1/foaf/name> "FPS BOSA"@en .
+<http://org.belgif.be/id/cbe/org/0671_516_647> <http://xmlns.com/foaf/0.1/foaf/name> "FOD BOSA"@nl .
+<http://org.belgif.be/id/cbe/org/0671_516_647> <http://xmlns.com/foaf/0.1/foaf/name> "SPF BOSA"@fr .
+<http://opendata.bosa.be/contact> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2006/vcard/ns#Organization> .
+<http://opendata.bosa.be/contact> <http://www.w3.org/2006/vcard/ns#fn> "Open Data FPS BOSA DG DT"@en .
+<http://opendata.bosa.be/contact> <http://www.w3.org/2006/vcard/ns#fn> "Open Data FOD BOSA DG DT"@nl .
+<http://opendata.bosa.be/contact> <http://www.w3.org/2006/vcard/ns#fn> "Open Data SPF BOSA DG DT"@fr .
+<http://opendata.bosa.be/contact> <http://www.w3.org/2006/vcard/ns#hasURL> <https://opendata.bosa.be> .
+<http://opendata.bosa.be/contact> <http://www.w3.org/2006/vcard/ns#hasEmail> <mailto:opendata@belgium.be> .

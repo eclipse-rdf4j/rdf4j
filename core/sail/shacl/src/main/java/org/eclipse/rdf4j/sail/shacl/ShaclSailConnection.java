@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -37,7 +36,6 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
-import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
@@ -582,9 +580,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			List<NodeShape> nodeShapesAfterRefresh = this.nodeShapes;
 
+			stats.setEmpty(isEmpty());
+
 			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !shapesModifiedInCurrentTransaction) {
-				boolean currentBaseSailEmpty = isEmpty();
-				if (!(stats.isBaseSailEmpty() && !currentBaseSailEmpty)) {
+				if (!(stats.isBaseSailEmpty() && !stats.isEmpty())) {
 					logger.debug("Nothing has changed, nothing to validate.");
 					return;
 				}

@@ -11,10 +11,10 @@ package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.IntStream;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -26,7 +26,6 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
-import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -38,33 +37,43 @@ import org.openjdk.jmh.annotations.Warmup;
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
-@BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@BenchmarkMode({ Mode.Throughput })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmark {
 
 	private SailRepository repository;
 	private File file;
 
-	@Param({ "100", "1000", "10000" })
-	public String numberOfTransactions;
+	SailRepositoryConnection connection;
+	int i;
 
-	@Setup(Level.Invocation)
-	public void beforeClass() throws IOException, InterruptedException {
-
+	@Setup(Level.Iteration)
+	public void beforeClass() {
+		if (connection != null) {
+			connection.close();
+			connection = null;
+		}
+		i = 0;
 		file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
+		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
+		sail.setForceSync(false);
+		repository = new SailRepository(sail);
+		connection = repository.getConnection();
 
 		System.gc();
 
 	}
 
-	@TearDown(Level.Invocation)
+	@TearDown(Level.Iteration)
 	public void afterClass() throws IOException {
-
+		if (connection != null) {
+			connection.close();
+			connection = null;
+		}
 		repository.shutDown();
 		FileUtils.deleteDirectory(file);
 
@@ -72,15 +81,51 @@ public class TransactionsPerSecondBenchmark {
 
 	@Benchmark
 	public void transactions() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			IntStream.range(0, Integer.parseInt(numberOfTransactions)).forEach(i -> {
-				connection.begin();
-				connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i));
-				connection.commit();
-			});
-		}
-
+		connection.begin();
+		connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++));
+		connection.commit();
 	}
 
+	@Benchmark
+	public void transactionsLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++));
+		connection.commit();
+	}
+
+	@Benchmark
+	public void mediumTransactionsLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		for (int k = 0; k < 10; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
+
+	@Benchmark
+	public void largerTransaction() {
+		connection.begin();
+		for (int k = 0; k < 10000; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
+
+	@Benchmark
+	public void largerTransactionLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		for (int k = 0; k < 10000; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
+
+	@Benchmark
+	public void veryLargerTransactionLevelNone() {
+		connection.begin(IsolationLevels.NONE);
+		for (int k = 0; k < 1000000; k++) {
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral(i++ + "_" + k));
+		}
+		connection.commit();
+	}
 }

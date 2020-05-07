@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -144,6 +145,13 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(StatementPattern sp) {
 			cardinality = getCardinality(sp);
+		}
+
+		@Override
+		public void meet(TripleRef tripleRef) {
+			cardinality = getSubjectCardinality(tripleRef.getSubjectVar())
+					* getPredicateCardinality(tripleRef.getPredicateVar())
+					* getObjectCardinality(tripleRef.getObjectVar());
 		}
 
 		protected double getCardinality(StatementPattern sp) {

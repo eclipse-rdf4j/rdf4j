@@ -7,11 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
+import static org.eclipse.rdf4j.model.util.Models.getPropertyLiteral;
+import static org.eclipse.rdf4j.model.util.Models.getPropertyString;
+
 import java.io.File;
 
 import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.util.Vocabulary;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
@@ -65,12 +69,15 @@ public class NativeRepositoryInformation extends RepositoryInformation {
 		// name: the node's value
 		setProperty("name", repNode.stringValue());
 
+		setWritable(getPropertyLiteral(graph, repNode, Vocabulary.FEDX.WRITABLE)
+				.map(Literal::booleanValue)
+				.orElse(false));
+
 		// location
-		Model location = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_LOCATION, null);
-		String repoLocation = location.iterator().next().getObject().stringValue();
-		setProperty("location", repoLocation);
+		String location = getPropertyString(graph, repNode, Vocabulary.FEDX.REPOSITORY_LOCATION).orElse(null);
+		setProperty("location", location);
 
 		// id: the name of the location
-		setProperty("id", new File(repoLocation).getName());
+		setProperty("id", new File(location).getName());
 	}
 }

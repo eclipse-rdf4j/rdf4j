@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractQuery;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -50,6 +51,11 @@ public class ContextAwareConnectionTest {
 		@Override
 		public void evaluate(RDFHandler arg0) {
 		}
+
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
+		}
 	}
 
 	static class InvocationHandlerStub implements InvocationHandler {
@@ -61,6 +67,10 @@ public class ContextAwareConnectionTest {
 	}
 
 	static class QueryStub extends AbstractQuery {
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
+		}
 	}
 
 	static class RepositoryStub extends RepositoryWrapper {
@@ -84,6 +94,11 @@ public class ContextAwareConnectionTest {
 
 		@Override
 		public void evaluate(TupleQueryResultHandler arg0) {
+		}
+
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
 		}
 	}
 

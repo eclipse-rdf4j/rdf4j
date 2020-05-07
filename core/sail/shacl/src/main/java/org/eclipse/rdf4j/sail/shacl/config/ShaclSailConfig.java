@@ -64,6 +64,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		super(ShaclSailFactory.SAIL_TYPE);
 	}
 
+	public ShaclSailConfig(SailImplConfig delegate) {
+		super(ShaclSailFactory.SAIL_TYPE, delegate);
+	}
+
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return undefinedTargetValidatesAllSubjects;
 	}
@@ -177,27 +181,27 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		super.parse(m, implNode);
 
 		try {
-			Models.objectLiteral(m.filter(implNode, PARALLEL_VALIDATION, null))
+			Models.objectLiteral(m.getStatements(implNode, PARALLEL_VALIDATION, null))
 					.ifPresent(l -> setParallelValidation(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null))
+			Models.objectLiteral(m.getStatements(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null))
 					.ifPresent(l -> setUndefinedTargetValidatesAllSubjects(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, LOG_VALIDATION_PLANS, null))
+			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_PLANS, null))
 					.ifPresent(l -> setLogValidationPlans(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, LOG_VALIDATION_VIOLATIONS, null))
+			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_VIOLATIONS, null))
 					.ifPresent(l -> setLogValidationViolations(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null))
+			Models.objectLiteral(m.getStatements(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null))
 					.ifPresent(l -> setIgnoreNoShapesLoadedException(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, VALIDATION_ENABLED, null))
+			Models.objectLiteral(m.getStatements(implNode, VALIDATION_ENABLED, null))
 					.ifPresent(l -> setValidationEnabled(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, CACHE_SELECT_NODES, null))
+			Models.objectLiteral(m.getStatements(implNode, CACHE_SELECT_NODES, null))
 					.ifPresent(l -> setCacheSelectNodes(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null))
+			Models.objectLiteral(m.getStatements(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null))
 					.ifPresent(l -> setGlobalLogValidationExecution(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, RDFS_SUB_CLASS_REASONING, null))
+			Models.objectLiteral(m.getStatements(implNode, RDFS_SUB_CLASS_REASONING, null))
 					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, PERFORMANCE_LOGGING, null))
+			Models.objectLiteral(m.getStatements(implNode, PERFORMANCE_LOGGING, null))
 					.ifPresent(l -> setPerformanceLogging(l.booleanValue()));
-			Models.objectLiteral(m.filter(implNode, SERIALIZABLE_VALIDATION, null))
+			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

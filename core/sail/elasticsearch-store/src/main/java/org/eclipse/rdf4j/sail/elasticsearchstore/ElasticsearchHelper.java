@@ -17,6 +17,9 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.sort.FieldSortBuilder;
+import org.elasticsearch.search.sort.SortBuilders;
+import org.elasticsearch.search.sort.SortOrder;
 
 class ElasticsearchHelper {
 
@@ -33,6 +36,7 @@ class ElasticsearchHelper {
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
+						.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
 						.setScroll(new TimeValue(scrollTimeout))
 						.setQuery(queryBuilder)
 						.setSize(size)

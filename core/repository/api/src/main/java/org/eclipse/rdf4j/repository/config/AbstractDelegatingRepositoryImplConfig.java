@@ -77,7 +77,7 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		super.parse(model, resource);
 
-		Models.objectResource(model.filter(resource, DELEGATE, null))
+		Models.objectResource(model.getStatements(resource, DELEGATE, null))
 				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }

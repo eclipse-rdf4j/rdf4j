@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
@@ -24,5 +26,19 @@ public abstract class SailConnectionQuery extends AbstractParserQuery {
 
 	protected SailConnection getSailConnection() {
 		return con;
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+
+		int timeout = DEFAULT_EXPLANATION_EXECUTION_TIMEOUT;
+		if (getMaxExecutionTime() > 0) {
+			timeout = getMaxExecutionTime();
+		}
+
+		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+
+		return con.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);
+
 	}
 }

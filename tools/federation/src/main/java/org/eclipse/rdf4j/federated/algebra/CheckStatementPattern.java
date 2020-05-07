@@ -28,9 +28,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * A statement pattern with no free variables when provided with some particular BindingSet in evaluate. For evaluation
  * a boolean ASK query is performed.
- * 
+ *
  * Wraps a StatementTupleExpr
- * 
+ *
  * @author Andreas Schwarte
  */
 public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTupleExpr {
@@ -40,6 +40,11 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	protected final StatementTupleExpr stmt;
 	protected final String id;
 	protected final QueryInfo queryInfo;
+
+	private double resultSizeEstimate = -1;
+	private double costEstimate = -1;
+	private long resultSizeActual = -1;
+	private long totalTimeNanosActual = -1;
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
@@ -131,6 +136,46 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
+	public double getResultSizeEstimate() {
+		return resultSizeEstimate;
+	}
+
+	@Override
+	public void setResultSizeEstimate(double resultSizeEstimate) {
+		this.resultSizeEstimate = resultSizeEstimate;
+	}
+
+	@Override
+	public long getResultSizeActual() {
+		return resultSizeActual;
+	}
+
+	@Override
+	public void setResultSizeActual(long resultSizeActual) {
+		this.resultSizeActual = resultSizeActual;
+	}
+
+	@Override
+	public double getCostEstimate() {
+		return costEstimate;
+	}
+
+	@Override
+	public void setCostEstimate(double costEstimate) {
+		this.costEstimate = costEstimate;
+	}
+
+	@Override
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
+	}
+
+	@Override
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
+	}
+
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {
 
@@ -143,8 +188,9 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 						.getEndpointManager()
 						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
-				if (t.hasStatements(st, bindings, queryInfo))
+				if (t.hasStatements(st, bindings, queryInfo, queryInfo.getDataset())) {
 					return new SingleBindingSetIteration(bindings);
+				}
 			}
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);

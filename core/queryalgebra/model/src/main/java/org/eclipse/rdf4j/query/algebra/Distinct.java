@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.stream.Stream;
+
 public class Distinct extends UnaryTupleOperator {
 
 	/*--------------*
@@ -43,4 +45,5 @@ public class Distinct extends UnaryTupleOperator {
 	public Distinct clone() {
 		return (Distinct) super.clone();
 	}
+
 }

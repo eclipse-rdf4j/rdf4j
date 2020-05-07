@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.util.Models;
 
 /**
  * Base implementation of {@link SailImplConfig}
- * 
+ *
  * @author Herko ter Horst
  */
 public abstract class AbstractSailImplConfig implements SailImplConfig {
@@ -83,10 +83,10 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		try {
-			Models.objectLiteral(m.filter(implNode, SAILTYPE, null)).ifPresent(lit -> setType(lit.getLabel()));
-			Models.objectLiteral(m.filter(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null))
+			Models.objectLiteral(m.getStatements(implNode, SAILTYPE, null)).ifPresent(lit -> setType(lit.getLabel()));
+			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null))
 					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
-			Models.objectLiteral(m.filter(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null))
+			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null))
 					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
@@ -110,7 +110,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	/**
 	 * Get the connection timeout (in ms).
-	 * 
+	 *
 	 * @return connection timeout (in ms)
 	 */
 	public long getConnectionTimeOut() {
@@ -119,7 +119,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 	/**
 	 * Set the connection timeout (in ms).
-	 * 
+	 *
 	 * @param connectionTimeOut timeout (in ms)
 	 */
 	public void setConnectionTimeOut(long connectionTimeOut) {

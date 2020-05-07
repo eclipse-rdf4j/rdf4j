@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
@@ -42,6 +43,12 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<MemIRI> uriRegistry = new WeakObjectRegistry<>();
+
+	/**
+	 * Registry containing the set of MemTriple objects as used by a MemoryStore. This registry enables the reuse of
+	 * objects, minimizing the number of objects in main memory.
+	 */
+	private final WeakObjectRegistry<MemTriple> tripleRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the reuse of
@@ -100,6 +107,8 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getMemURI((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return getMemBNode((BNode) resource);
+		} else if (resource instanceof Triple) {
+			return getMemTriple((Triple) resource);
 		} else if (resource == null) {
 			return null;
 		} else {
@@ -210,6 +219,8 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getOrCreateMemURI((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return getOrCreateMemBNode((BNode) resource);
+		} else if (resource instanceof Triple) {
+			return getOrCreateMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -380,6 +391,31 @@ public class MemValueFactory extends AbstractValueFactory {
 		}
 
 		return sharedLiteral;
+	}
+
+	/**
+	 * See {@link #getOrCreateMemValue(Value)} for description.
+	 */
+	private synchronized MemTriple getOrCreateMemTriple(Triple triple) {
+		MemTriple memTriple = getMemTriple(triple);
+
+		if (memTriple == null) {
+			// Create a MemTriple and add it to the registry
+			memTriple = new MemTriple(this, getOrCreateMemResource(triple
+					.getSubject()),
+					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+			boolean wasNew = tripleRegistry.add(memTriple);
+		}
+
+		return memTriple;
+	}
+
+	private synchronized MemTriple getMemTriple(Triple triple) {
+		if (isOwnMemValue(triple)) {
+			return (MemTriple) triple;
+		} else {
+			return tripleRegistry.get(triple);
+		}
 	}
 
 }

@@ -9,10 +9,11 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * An order operator that can be used to order bindings as specified by a set of value expressions.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Order extends UnaryTupleOperator {
@@ -120,4 +121,5 @@ public class Order extends UnaryTupleOperator {
 
 		return clone;
 	}
+
 }

@@ -85,4 +85,5 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 			return false;
 		}
 	}
+
 }

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
  * Write query results to console
@@ -34,6 +35,8 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
+	private TupleQueryResultFormat queryResultFormat = new TupleQueryResultFormat("Console query result format",
+			"application/x-dummy", "dummy", true);
 
 	/**
 	 * Constructor
@@ -48,8 +51,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public QueryResultFormat getQueryResultFormat() {
-		throw new UnsupportedOperationException("Not supported yet."); // To change body of generated methods, choose
-																		// Tools | Templates.
+		return queryResultFormat;
 	}
 
 	@Override
@@ -91,6 +93,8 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		this.bindingNames = bindingNames;
 		int columns = bindingNames.size();
 		columnWidth = (consoleWidth - 1) / columns - 3;
@@ -121,7 +125,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		StringBuilder builder = new StringBuilder(512);
 
 		for (String bindingName : bindingNames) {

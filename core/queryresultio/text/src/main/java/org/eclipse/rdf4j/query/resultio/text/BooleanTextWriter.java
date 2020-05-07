@@ -119,7 +119,7 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle tuple results");
 	}
 

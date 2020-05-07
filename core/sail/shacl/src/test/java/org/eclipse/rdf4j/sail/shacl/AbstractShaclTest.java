@@ -11,11 +11,13 @@ package org.eclipse.rdf4j.sail.shacl;
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertFalse;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -26,10 +28,10 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -60,6 +62,8 @@ import org.slf4j.LoggerFactory;
 abstract public class AbstractShaclTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractShaclTest.class);
+
+	private static final String[] FILENAME_EXTENSION = { "rq" };
 
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
@@ -184,8 +188,18 @@ abstract public class AbstractShaclTest {
 
 		List<String> ret = new ArrayList<>();
 
-		for (int i = 0; i < 100; i++) {
-			String path = testCase + "/" + baseCase + "/case" + i;
+		URL resource = AbstractShaclTest.class.getClassLoader().getResource(testCase + "/" + baseCase + "/");
+		if (resource == null) {
+			return ret;
+		}
+
+		String[] list = new File(resource.getFile()).list();
+		Arrays.sort(list);
+
+		for (String caseName : list) {
+			if (caseName.startsWith("."))
+				continue;
+			String path = testCase + "/" + baseCase + "/" + caseName;
 			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(path);
 			if (resourceAsStream != null) {
 				ret.add(path);
@@ -195,6 +209,7 @@ abstract public class AbstractShaclTest {
 					throw new RuntimeException(e);
 				}
 			}
+
 		}
 
 		return ret;
@@ -274,21 +289,23 @@ abstract public class AbstractShaclTest {
 
 		}
 
-		for (int j = 0; j < 100; j++) {
+		URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+		List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+				.stream()
+				.sorted()
+				.collect(Collectors.toList());
 
-			String name = dataPath + "query" + j + ".rq";
-			try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(name)) {
-				if (resourceAsStream == null) {
-					continue;
-				}
+		for (File queryFile : queries) {
+			try {
+				String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+
 				printCurrentState(shaclRepository);
 
 				ran = true;
-				printFile(name);
+				printFile(queryFile.getName());
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);
-					String query = IOUtil.readString(resourceAsStream);
 					connection.prepareUpdate(query).execute();
 					connection.commit();
 				} catch (RepositoryException sailException) {
@@ -400,19 +417,19 @@ abstract public class AbstractShaclTest {
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
 			shaclSailConnection.begin(isolationLevel);
 
-			for (int j = 0; j < 100; j++) {
+			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+					.stream()
+					.sorted()
+					.collect(Collectors.toList());
 
-				String name = dataPath + "query" + j + ".rq";
-				InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(name);
-				if (resourceAsStream == null) {
-					continue;
-				}
-
-				ran = true;
-				logger.debug(name);
-
+			for (File queryFile : queries) {
 				try {
-					String query = IOUtil.readString(resourceAsStream);
+					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+
+					ran = true;
+					logger.debug(queryFile.getName());
+
 					shaclSailConnection.prepareUpdate(query).execute();
 
 				} catch (IOException e) {
@@ -471,22 +488,22 @@ abstract public class AbstractShaclTest {
 			((ShaclSail) shaclRepository.getSail()).disableValidation();
 			shaclSailConnection.begin(isolationLevel);
 
-			for (int j = 0; j < 100; j++) {
+			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+					.stream()
+					.sorted()
+					.collect(Collectors.toList());
 
-				String name = dataPath + "query" + j + ".rq";
-				InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(name);
-				if (resourceAsStream == null) {
-					continue;
-				}
-
+			for (File queryFile : queries) {
 				try {
-					String query = IOUtil.readString(resourceAsStream);
+					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
 					shaclSailConnection.prepareUpdate(query).execute();
 
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 			}
+
 			shaclSailConnection.commit();
 
 			((ShaclSail) shaclRepository.getSail()).enableValidation();

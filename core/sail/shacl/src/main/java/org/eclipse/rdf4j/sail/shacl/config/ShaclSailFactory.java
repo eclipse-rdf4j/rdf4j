@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
 /**
  * Factory class for creation of {@link ShaclSail}s as part of a Sail stack.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ShaclSailFactory implements SailFactory {
 
 	/**
 	 * The type of Sails that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "rdf4j:ShaclSail";

@@ -62,8 +62,9 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		// check if we can infer something from other cached entries
 		// if endpoint does not have data for {?s foaf:name ?o}, it does also not have data for {?s foaf:name "Alan" }
 		if (subQuery.object() != null) {
-			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null), endpoint)
-					.equals(StatementSourceAssurance.NONE)) {
+			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null, subQuery.contexts()),
+					endpoint)
+							.equals(StatementSourceAssurance.NONE)) {
 				return StatementSourceAssurance.NONE;
 			}
 		}

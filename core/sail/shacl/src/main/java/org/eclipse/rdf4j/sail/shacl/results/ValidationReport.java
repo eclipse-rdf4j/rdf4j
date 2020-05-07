@@ -14,11 +14,19 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-public class ValidationReport implements ModelInterface {
+/**
+ * The ValidationReport represents the report from a SHACL validation in an easy-to-use Java API.
+ *
+ * @deprecated The ValidationReport is deprecated because it is planned moved to a new package to allow it to be used
+ *             with remote validation reports.
+ */
+@Deprecated
+public class ValidationReport {
 
 	private Resource id = SimpleValueFactory.getInstance().createBNode();
 
@@ -34,7 +42,6 @@ public class ValidationReport implements ModelInterface {
 		this.validationResult.add(validationResult);
 	}
 
-	@Override
 	public Model asModel(Model model) {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -50,7 +57,10 @@ public class ValidationReport implements ModelInterface {
 		return model;
 	}
 
-	@Override
+	public Model asModel() {
+		return asModel(new DynamicModelFactory().createEmptyModel());
+	}
+
 	public Resource getId() {
 		return id;
 	}
@@ -69,7 +79,6 @@ public class ValidationReport implements ModelInterface {
 		return validationResult;
 	}
 
-	@Override
 	public String toString() {
 		return "ValidationReport{" +
 				"conforms=" + conforms +

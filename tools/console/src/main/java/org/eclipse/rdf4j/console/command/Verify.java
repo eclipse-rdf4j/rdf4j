@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.console.VerificationListener;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 import org.eclipse.rdf4j.console.setting.WorkDir;
+import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -43,7 +44,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 
 /**
  * Verify command
- * 
+ *
  * @author Dale Visser
  * @author Bart Hanssens
  */
@@ -73,7 +74,7 @@ public class Verify extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param settings
 	 */
@@ -101,7 +102,7 @@ public class Verify extends ConsoleCommand {
 
 	/**
 	 * Get working dir setting.
-	 * 
+	 *
 	 * @return path of working dir
 	 */
 	private Path getWorkDir() {
@@ -110,7 +111,7 @@ public class Verify extends ConsoleCommand {
 
 	/**
 	 * Verify an RDF file, either a local file or URL.
-	 * 
+	 *
 	 * @param tokens parameters
 	 */
 	private void verify(String dataPath) {
@@ -166,7 +167,7 @@ public class Verify extends ConsoleCommand {
 
 	/**
 	 * Validate an RDF data source using a SHACL file or URL, writing the report to a file.
-	 * 
+	 *
 	 * @param dataPath   file or URL of the data to be validated
 	 * @param shaclPath  file or URL of the SHACL
 	 * @param reportFile file to write validation report to
@@ -223,9 +224,9 @@ public class Verify extends ConsoleCommand {
 			writeError("Failed to load data", e);
 		} catch (RepositoryException e) {
 			Throwable cause = e.getCause();
-			if (cause instanceof ShaclSailValidationException) {
+			if (cause instanceof ValidationException) {
 				writeError("SHACL validation failed, writing report to " + reportFile);
-				ShaclSailValidationException sv = (ShaclSailValidationException) cause;
+				ValidationException sv = (ValidationException) cause;
 				writeReport(sv.validationReportAsModel(), reportFile);
 			}
 		}
@@ -234,7 +235,7 @@ public class Verify extends ConsoleCommand {
 
 	/**
 	 * Parse URL or path to local file. Files will be prefixed with "file:" scheme
-	 * 
+	 *
 	 * @param str
 	 * @return URL path as string
 	 */
@@ -253,7 +254,7 @@ public class Verify extends ConsoleCommand {
 	/**
 	 * Write SHACL validation report to a file. File extension is used to select the serialization format, TTL is used
 	 * as default.
-	 * 
+	 *
 	 * @param model      report
 	 * @param reportFile file name
 	 */

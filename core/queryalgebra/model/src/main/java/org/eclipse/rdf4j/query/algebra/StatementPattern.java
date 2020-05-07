@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * A tuple expression that matches a statement pattern against an RDF graph. Statement patterns can be targeted at one
@@ -289,6 +290,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPredicateVar(getPredicateVar().clone());
 		clone.setObjectVar(getObjectVar().clone());
+		clone.setResultSizeEstimate(getResultSizeEstimate());
 
 		if (getContextVar() != null) {
 			clone.setContextVar(getContextVar().clone());
@@ -296,4 +298,5 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		return clone;
 	}
+
 }

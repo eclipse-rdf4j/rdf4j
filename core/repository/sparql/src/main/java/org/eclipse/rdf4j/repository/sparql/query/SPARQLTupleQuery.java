@@ -18,11 +18,12 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Parses tuple results in the background.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
@@ -61,5 +62,10 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	private String getQueryString() {
 		return QueryStringUtil.getTupleQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+		throw new UnsupportedOperationException();
 	}
 }

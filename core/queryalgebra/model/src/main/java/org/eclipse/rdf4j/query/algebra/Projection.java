@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * A generalized projection (allowing the bindings to be renamed) on a tuple expression.

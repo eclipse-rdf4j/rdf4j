@@ -23,7 +23,14 @@ import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.AST.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
-public class ValidationResult implements ModelInterface {
+/**
+ * The ValidationResult represents the results from a SHACL validation in an easy-to-use Java API.
+ *
+ * @deprecated The ValidationResult is deprecated because it is planned moved to a new package to allow it to be used
+ *             with remote validation results.
+ */
+@Deprecated
+public class ValidationResult {
 
 	private Resource id = SimpleValueFactory.getInstance().createBNode();
 
@@ -71,7 +78,6 @@ public class ValidationResult implements ModelInterface {
 
 	}
 
-	@Override
 	public Model asModel(Model model) {
 
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
@@ -113,7 +119,6 @@ public class ValidationResult implements ModelInterface {
 		return focusNode;
 	}
 
-	@Override
 	public Resource getId() {
 		return id;
 	}

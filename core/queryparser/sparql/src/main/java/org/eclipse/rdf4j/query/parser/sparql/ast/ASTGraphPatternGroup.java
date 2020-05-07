@@ -28,7 +28,8 @@ public class ASTGraphPatternGroup extends SimpleNode {
 	public boolean isScopeChange() {
 		if (!(this.parent instanceof ASTExistsFunc
 				|| this.parent instanceof ASTNotExistsFunc
-				|| this.parent instanceof ASTGraphGraphPattern)) {
+				|| this.parent instanceof ASTGraphGraphPattern
+				|| this.parent instanceof ASTWhereClause)) {
 			return true;
 		}
 		return super.isScopeChange();

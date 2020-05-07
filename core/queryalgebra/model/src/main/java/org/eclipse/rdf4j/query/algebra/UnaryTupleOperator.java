@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * An abstract superclass for unary tuple operators which, by definition, has one argument.
@@ -32,7 +33,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 
 	/**
 	 * Creates a new unary tuple operator.
-	 * 
+	 *
 	 * @param arg The operator's argument, must not be <tt>null</tt>.
 	 */
 	protected UnaryTupleOperator(TupleExpr arg) {
@@ -45,7 +46,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 
 	/**
 	 * Gets the argument of this unary tuple operator.
-	 * 
+	 *
 	 * @return The operator's argument.
 	 */
 	public TupleExpr getArg() {
@@ -54,7 +55,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 
 	/**
 	 * Sets the argument of this unary tuple operator.
-	 * 
+	 *
 	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setArg(TupleExpr arg) {
@@ -109,4 +110,5 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 		clone.setArg(getArg().clone());
 		return clone;
 	}
+
 }

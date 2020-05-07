@@ -1,5 +1,5 @@
 QueryRoot
-   Slice ( limit=1 )
+   Slice (limit=1)
       Projection
          ProjectionElemList
             ProjectionElem "person"

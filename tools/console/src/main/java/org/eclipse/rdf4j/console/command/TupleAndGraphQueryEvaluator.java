@@ -7,12 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -140,15 +142,16 @@ public class TupleAndGraphQueryEvaluator {
 	 * 
 	 * @param queryLn     query language
 	 * @param queryString query string
-	 * @param writer
+	 * @param writer      RDFWriter to write the results to
+	 * @param namespaces  namespaces to write to the RDFWriter
 	 * @throws UnsupportedQueryLanguageException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 * @throws RepositoryException
 	 */
-	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer)
-			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-			RepositoryException {
+	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer,
+			Collection<Namespace> namespaces) throws UnsupportedQueryLanguageException, MalformedQueryException,
+			QueryEvaluationException, RepositoryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
@@ -161,6 +164,8 @@ public class TupleAndGraphQueryEvaluator {
 			con.setParserConfig(nonVerifyingParserConfig);
 
 			writer.startRDF();
+
+			namespaces.forEach(ns -> writer.handleNamespace(ns.getPrefix(), ns.getName()));
 
 			while (res.hasNext()) {
 				writer.handleStatement(res.next());
