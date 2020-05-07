@@ -4,7 +4,8 @@ layout: "doc"
 ---
 # 3.2.0
 
-RDF4J 3.2.0 is a minor release, fixing 42 issues. Some of the highlights include:
+RDF4J 3.2.0 is a minor release, fixing 42 issues. It is backward compatible with older RDF4J releases. 
+Some of the highlights include:
 
 - Experimental support for [RDF\* and SPARQL\*](/documentation/programming/rdfstar/)
 - Remote SHACL Validation reports in the Workbench

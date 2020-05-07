@@ -9,26 +9,14 @@ hide_page_title: "true"
 
 You can either retrieve RDF4J via Apache Maven, or download the SDK or onejar directly.
 
-# RDF4J 3.1.4 (latest)
+# RDF4J 3.2.0 (latest)
 
-RDF4J 3.1.4 is our latest stable release. It requires Java 8. For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/#3-1-4).
+RDF4J 3.2.0 is our latest stable release. It requires Java 8. For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/#3-2-0).
 
-- [RDF4J 3.1.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.1.4-sdk.zip)<br/>
+- [RDF4J 3.2.0 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [RDF4J 3.1.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.1.4-onejar.jar)<br/>
-  Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
-
-- [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
-
-# RDF4J 3.2.0 Milestone 2
-
-RDF4J 3.2.0-M2 is the second milestone build for the upcoming 3.2.0 release. It requires Java 8.
-
-- [RDF4J 3.2.0-M2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-M2-sdk.zip)<br/>
-  Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
-
-- [RDF4J 3.2.0-M2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-M2-onejar.jar)<br/>
+- [RDF4J 3.2.0 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.2.0-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
@@ -42,7 +30,7 @@ You can include RDF4J as a Maven dependency in your Java project by including th
             <dependency>
                 <groupId>org.eclipse.RDF4J</groupId>
                 <artifactId>rdf4j-bom</artifactId>
-                <version>3.1.4</version>
+                <version>3.2.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -62,6 +50,11 @@ See the [Setup instructions](/documentation/programming/setup) in the
 which artifacts RDF4J provides.
 
 # Older releases
+
+## RDF4J 3.0
+
+- [RDF4J 3.1.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.1.4-sdk.zip)
+- [RDF4J 3.1.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.1.4-onejar.jar)
 
 ## RDF4J 3.0
 
@@ -92,7 +85,7 @@ To include nightly snapshot builds in your project, add this repository to your 
         </repository>
      </repositories>
 
-Then use RDF4J dependencies as normal, using 3.1.5-SNAPSHOT as the version number.
+Then use RDF4J dependencies as normal, using 3.2.1-SNAPSHOT as the version number.
 
 # Archives
 
