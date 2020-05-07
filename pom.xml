@@ -287,6 +287,7 @@
 		<jsonldjava.version>0.12.5</jsonldjava.version>
 		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
+		<lucene.version>7.7.2</lucene.version>
 		<solr.version>7.7.2</solr.version>
 		<elasticsearch.version>6.8.8</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>

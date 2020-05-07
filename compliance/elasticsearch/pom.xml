@@ -9,10 +9,6 @@
 	<artifactId>rdf4j-elasticsearch-compliance</artifactId>
 	<name>RDF4J Elasticsearch Sail Tests</name>
 	<description>Tests for Elasticsearch.</description>
-	<properties>
-		<lucene.version>7.7.2</lucene.version>
-		<elasticsearch.version>6.8.8</elasticsearch.version>
-	</properties>
 	<!-- disable the Java security manager for elasticsearch tests -->
 	<build>
 		<plugins>
