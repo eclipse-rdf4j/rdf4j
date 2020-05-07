@@ -19,6 +19,11 @@
   padding-bottom: 6px;
 }
 
+td,th {
+  border: 1px solid #ccc;
+  padding: 0.6rem;
+}
+
 .featured-jumbotron h1:after {
   /* divider */
   border-bottom: 3px solid white;

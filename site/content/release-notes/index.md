@@ -2,6 +2,18 @@
 title: "Eclipse RDF4J release notes"
 layout: "doc"
 ---
+# 3.2.0
+
+RDF4J 3.2.0 is a minor release, fixing 42 issues. It is backward compatible with older RDF4J releases. 
+Some of the highlights include:
+
+- Experimental support for [RDF\* and SPARQL\*](/documentation/programming/rdfstar/)
+- Remote SHACL Validation reports in the Workbench
+- Query plan inspection through the new [explain feature](/documentation/programming/repository/#explaining-queries)
+- Various significant performance and scalability improvements in the Native Store
+
+For a complete overview, see [all issues fixed in 3.2.0](https://github.com/eclipse/rdf4j/milestone/42?closed=1).
+
 # 3.1.4 
 
 RDF4J 3.1.4 is a patch release, fixing 2 issues:

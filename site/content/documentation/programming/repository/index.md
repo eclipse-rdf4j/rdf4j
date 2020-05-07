@@ -170,9 +170,10 @@ In simple rule cases, such as this one, an empty string could have been provided
 
 The CustomGraphQueryInferencer used here is fairly limited: it effectively only allows a single inference rule. For more complex custom inferencing or validation needs, RDF4J offers the SPIN Sail or the SHACL Sail.
 
-## Server-side repository
+## Access over HTTP
+### Server-side RDF4J repositories
 
-Working with remote repositories is just as easy as working with local ones. We use a different Repository object, the `HTTPRepository`, instead of the SailRepository class.
+Working with remote RDF4J repositories is just as easy as working with local ones. We use a different Repository object, the `HTTPRepository`, instead of the SailRepository class.
 
 A requirement is that there is a RDF4J Server running on some remote system, which is accessible over HTTP. For example, suppose that at `http://example.org/rdf4j-server/` a RDF4J Server is running, which has a repository with the identification `example-db`. We can access this repository in our code as follows:
 
@@ -185,9 +186,7 @@ String repositoryID = "example-db";
 Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
 {{< / highlight >}}
 
-Note: some OpenJDK 8 JVMs have a ScheduledThreadPoolExecutor bug, causing high processor load even when idling. Setting the property `-Dorg.eclipse.rdf4j.client.executors.jdkbug` will use 1 core thread (instead of 0) for clients to remediate this.  
-
-## Accessing a SPARQL endpoint
+### SPARQL endpoints
 
 We can use the Repository interface to access any SPARQL endpoint as well. This is done as follows:
 
@@ -200,6 +199,23 @@ Repository repo = new SPARQLRepository(sparqlEndpoint);
 {{< / highlight >}}
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
+
+### Configuring the HTTP session thread pool
+
+Both the HTTPRepository and the SPARQLRepository use the SPARQL Protocol over
+HTTP under the hood (in the case of the HTTPRepository, it uses the extended
+RDF4J REST API). The HTTP client session is managed by the {{< javadoc
+"HttpClientSessionManager"
+"http/client/HttpClientSessionManager.html" >}}, which in turn depends
+on the Apache HttpClient.
+
+The session uses a scheduled thread pool executor to handle multithreaded
+access to a remote endpoint, defined by default to use a thread pool with a
+core size of 1.
+
+To configure this to use a different core size, you can specify the
+`org.eclipse.rdf4j.client.executors.corePoolSize` system property with a
+different number.
 
 ## The RepositoryManager and RepositoryProvider
 
@@ -623,6 +639,478 @@ keywordQuery.setBinding("keyword", factory.createLiteral(keyword));
 // We then evaluate the prepared query and can process the result:
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 {{< / highlight >}}
+
+### Explaining queries
+
+> New in RDF4J 3.2.0 - Experimental feature
+
+SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and 
+the results returned. The query explain feature gives a peek into what decisions are being made and how they affect
+the performance of your query.
+
+This feature is currently released as an experimental feature, which means that it may change, be moved or even removed in the future. 
+Explaining queries currently only works if you are using one of the built in stores directly in your Java code. 
+If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an 
+UnsupportedException. 
+
+In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
+
+ {{< highlight java  >}}
+ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+    TupleQuery query = connection.prepareTupleQuery("select * where .... ");
+    String explanation = query.explain(Explanation.Level.Timed).toString();
+    System.out.println(explanation);
+}
+{{< / highlight >}}
+
+There are 4 explanation levels to choose between:
+
+|             | Parsed | Optimized | Cost and Estimates | Fully evaluated | Real result sizes | Performance timing |
+|-------------|--------|-----------|--------------------|-----------------|-------------------|--------------------|
+| Unoptimized | ✓      |           |                    |                 |                   |                    |
+| Optimized   | ✓      | ✓         | ✓                  |                 |                   |                    |
+| Executed    | ✓      | ✓         | ✓                  | ✓               | ✓                 |                    |
+| Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 | ✓                  |
+
+
+First try to use the `Timed` level, since this is the richest and gives the clearest understanding about 
+which part of the query is the slowest. `Timed` and `Executed` both fully evaluate the query and iterate 
+over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort 
+timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
+
+The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in 
+order to optimize them.
+
+As an example, the following query intends to get everyone in Peter's extended friend graph who is at least 18 years old 
+and return their node and optionally their name.
+
+{{< highlight sparql  >}}
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT ?friend ?name WHERE 
+{
+	BIND(<http://example.com/peter> as ?person)
+	?person a foaf:Person ;
+		(foaf:knows | ^foaf:knows)* ?friend.
+	?friend foaf:age ?age
+	OPTIONAL {
+		?friend foaf:name ?name
+	}
+	FILTER(?age >= 18) 
+}
+{{< / highlight >}}
+
+For our test data the query returns the following results:
+
+```
+[ friend=http://example.com/steve; name="Steve" ]
+[ friend=http://example.com/mary ]
+```
+
+Our test data also contains other people, so the query has to evaluate a lot more data than the results lead us to believe.
+
+Explaining the query at the `Timed` level gives us the following plan:
+
+```
+01 Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
+02    ProjectionElemList
+03       ProjectionElem "friend"
+04       ProjectionElem "name"
+05    LeftJoin (LeftJoinIterator) (resultSizeActual=2, totalTimeActual=27.2ms, selfTimeActual=0.425ms)
+06       Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.4ms, selfTimeActual=0.355ms)
+07          Extension (resultSizeActual=1, totalTimeActual=0.115ms, selfTimeActual=0.09ms)
+08             ExtensionElem (person)
+09                ValueConstant (value=http://example.com/peter)
+10             SingletonSet (resultSizeActual=1, totalTimeActual=0.026ms, selfTimeActual=0.026ms)
+11          Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.0ms, selfTimeActual=0.72ms)
+12             Filter (resultSizeActual=4, totalTimeActual=3.76ms, selfTimeActual=2.42ms)
+13                Compare (>=)
+14                   Var (name=age)
+15                   ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+16                StatementPattern (costEstimate=4, resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=1.34ms, selfTimeActual=1.34ms)
+17                   Var (name=friend)
+18                   Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+19                   Var (name=age)
+20             Join (JoinIterator) (resultSizeActual=2, totalTimeActual=21.5ms, selfTimeActual=0.697ms)
+31                ArbitraryLengthPath (costEstimate=24, resultSizeEstimate=2.2K, resultSizeActual=2, totalTimeActual=20.3ms, selfTimeActual=20.3ms)
+32                   Var (name=person)
+33                   Union
+34                      StatementPattern (resultSizeEstimate=1.0K)
+35                         Var (name=person)
+36                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+37                         Var (name=friend)
+38                      StatementPattern (resultSizeEstimate=1.0K)
+39                         Var (name=friend)
+40                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+41                         Var (name=person)
+42                   Var (name=friend)
+43                StatementPattern (costEstimate=1, resultSizeEstimate=101, resultSizeActual=2, totalTimeActual=0.461ms, selfTimeActual=0.461ms)
+44                   Var (name=person)
+45                   Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+46                   Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+47       StatementPattern (resultSizeEstimate=5, resultSizeActual=1, totalTimeActual=0.295ms, selfTimeActual=0.295ms)
+48          Var (name=friend)
+49          Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
+50          Var (name=name)
+```
+
+We start by reading the query top to bottom. The first node we encounter is:
+
+```
+Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
+``` 
+
+The node name is "Projection", which represents the `SELECT` keyword. The values in parentheses 
+are cost-estimates and actual measured output and timing. You may encounter:
+
+ - **costEstimate**: an internal value that represents the cost for executing this node and is used for ordering the nodes
+ - **resultSizeEstimate**: the cardinality estimate of a node, essentially how many results this node would return if it were executed alone
+ - **resultSizeActual**: the actual number of results that this node produced
+ - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
+ - **selfTimeActual**: the time this node took all on its own to produce its results
+ 
+ In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 20.3ms (75% of the overall time). 
+ This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.
+ 
+ Joins in RDF4J have a left, and a right node. The join algorithms will first retrieve a result from the left node before it gets a result 
+ from the right node. The left node is the first node displayed under the join node. For the `Join` on line 06 we have the left node 
+ being line 07 and the right being line 11.`Executed` and `Timed` plans will typically show the algorithm for all join and left join nodes. 
+Our fastest algorithm is usually `JoinIterator`, it will retrieve a result from the left node and use the results to "query" the right node 
+for the next relevant result. 
+ 
+In our plan above we can see how `Extension` node and the `Filter` node can "tell" the `ArbitraryLengthPath` which values for 
+`person` and `friend` are relevant because the `Extension` node binds exactly one value for `person` and `Filter` node binds exactly 
+four values for`friend`. This is why `ArbitraryLengthPath` has a `resultSizeActual` of two, meaning that it only produced two results.
+
+The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes 
+up a lot of memory.
+
+The following query is a typical example of a scoping issue, which is a very common cause of slow SPARQL queries.
+
+{{< highlight sparql  >}}
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT * WHERE 
+{
+    BIND(<http://example.com/peter> as ?person)
+	?person a foaf:Person .
+	{
+		?person	(foaf:knows | ^foaf:knows)* ?friend.
+	} UNION {
+		?friend foaf:age ?age.
+		FILTER(?age >= 18)
+	}
+}
+{{< / highlight >}}
+
+The issue with this query is that each of the union clauses introduces a new scope. It's quite easy to see in this example. Both unions define a new 
+variable `?friend`, however the results should not be the intersection of common values but rather the union between "everyone that knows or is known by someone" 
+and "everyone 18 or older". The only exception here is that `?person` is used in the outer scope, so results from the inner union would be filtered to match 
+with bindings for `?person` from the outer scope. SPARQL is designed with bottom-up semantics, which means that inner sections should be evaluated before
+outer sections. This precisely so as to make scoping issues unambiguous.
+
+The query plan for the query gives us a lot of hints about how this becomes problematic.
+
+```
+Projection (resultSizeActual=9, totalTimeActual=1.1s, selfTimeActual=0.134ms)
+   ProjectionElemList
+      ProjectionElem "person"
+      ProjectionElem "friend"
+      ProjectionElem "age"
+   Join (HashJoinIteration) (resultSizeActual=9, totalTimeActual=1.1s, selfTimeActual=4.67ms)
+      Extension (resultSizeActual=1, totalTimeActual=0.046ms, selfTimeActual=0.036ms)
+         ExtensionElem (person)
+            ValueConstant (value=http://example.com/peter)
+         SingletonSet (resultSizeActual=1, totalTimeActual=0.011ms, selfTimeActual=0.011ms)
+      Union (new scope) (resultSizeActual=10.5K, totalTimeActual=1.1s, selfTimeActual=4.68ms)
+         Join (HashJoinIteration) (resultSizeActual=10.1K, totalTimeActual=1.1s, selfTimeActual=41.5ms)
+            StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=101, totalTimeActual=1.14ms, selfTimeActual=1.14ms)
+               Var (name=person)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+            ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.0s, selfTimeActual=1.0s)
+               Var (name=person)
+               Union
+                  StatementPattern (resultSizeEstimate=1.0K)
+                     Var (name=person)
+                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+                     Var (name=friend)
+                  StatementPattern (resultSizeEstimate=1.0K)
+                     Var (name=friend)
+                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+                     Var (name=person)
+               Var (name=friend)
+         Join (JoinIterator) (resultSizeActual=404, totalTimeActual=1.26ms, selfTimeActual=0.275ms)
+            Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.555ms, selfTimeActual=0.463ms)
+               Compare (>=)
+                  Var (name=age)
+                  ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+               StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.092ms, selfTimeActual=0.092ms)
+                  Var (name=friend)
+                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+                  Var (name=age)
+            StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=404, totalTimeActual=0.428ms, selfTimeActual=0.428ms)
+               Var (name=person)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+```
+
+The biggest time use and largest result size is produced at line:
+
+```
+ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.0s, selfTimeActual=1.0s)
+```
+
+This tells us that the query is probably producing all possible results for `?person (foaf:knows | ^foaf:knows)* ?friend.`. In fact running this fragment in a new query
+shows that it produces ~102,000 results.
+
+Taking a look at the unoptimized plan we can see where the issue lies:
+
+```
+01 Projection
+02    ProjectionElemList
+03       ProjectionElem "person"
+04       ProjectionElem "friend"
+05       ProjectionElem "age"
+06    Join
+07       Join
+08          Extension
+09             ExtensionElem (person)
+10                ValueConstant (value=http://example.com/peter)
+11             SingletonSet
+12          StatementPattern
+13             Var (name=person)
+14             Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+15             Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+16       Union (new scope)
+17          ArbitraryLengthPath (new scope)
+18             Var (name=person)
+19             Union
+20                StatementPattern
+31                   Var (name=person)
+32                   Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+33                   Var (name=friend)
+34                StatementPattern
+35                   Var (name=friend)
+36                   Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+37                   Var (name=person)
+38             Var (name=friend)
+39          Filter (new scope)
+40             Compare (>=)
+41                Var (name=age)
+42                ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+43             StatementPattern
+44                Var (name=friend)
+45                Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+46                Var (name=age)
+```
+
+The problem is that the `Union` on line 16 introduces a new scope. This means that the `Join` above it (line 6) can't push its binding for `?person` into the `Union`. 
+This is the reason that the execution of the query was done with the `HashJoinIteration` rather than with the `JoinIterator`.
+
+One way to solve this issue is to copy the `BIND` into all relevant unions.
+
+{{< highlight sparql  >}}
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT ?friend ?name WHERE 
+{
+    BIND(<http://example.com/peter> as ?person)
+	?person a foaf:Person .
+	{
+	    BIND(<http://example.com/peter> as ?person)
+		?person	(foaf:knows | ^foaf:knows)* ?friend.
+	} UNION {
+		?friend foaf:age ?age.
+		FILTER(?age >= 18)
+	}
+}
+{{< / highlight >}}
+
+This forces the inner union to only consider ex:peter as `?person` meaning we only need to find his friends and not everyone elses friends. 
+The query plan also agrees that this is better.
+
+ ```
+Projection (resultSizeActual=9, totalTimeActual=1.16ms, selfTimeActual=0.029ms)
+   ProjectionElemList
+      ProjectionElem "person"
+      ProjectionElem "friend"
+      ProjectionElem "age"
+   Union (new scope) (resultSizeActual=9, totalTimeActual=1.13ms, selfTimeActual=0.041ms)
+      Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.411ms, selfTimeActual=0.039ms)
+         Join (JoinIterator) (resultSizeActual=1, totalTimeActual=0.056ms, selfTimeActual=0.039ms)
+            Extension (resultSizeActual=1, totalTimeActual=0.012ms, selfTimeActual=0.009ms)
+               ExtensionElem (person)
+                  ValueConstant (value=http://example.com/peter)
+               SingletonSet (resultSizeActual=1, totalTimeActual=0.003ms, selfTimeActual=0.003ms)
+            Extension (resultSizeActual=1, totalTimeActual=0.005ms, selfTimeActual=0.003ms)
+               ExtensionElem (person)
+                  ValueConstant (value=http://example.com/peter)
+               SingletonSet (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.002ms)
+         Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.316ms, selfTimeActual=0.058ms)
+            StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=1, totalTimeActual=0.007ms, selfTimeActual=0.007ms)
+               Var (name=person)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+            ArbitraryLengthPath (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=5, totalTimeActual=0.251ms, selfTimeActual=0.251ms)
+               Var (name=person)
+               Union
+                  StatementPattern (resultSizeEstimate=1.0K)
+                     Var (name=person)
+                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+                     Var (name=friend)
+                  StatementPattern (resultSizeEstimate=1.0K)
+                     Var (name=friend)
+                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+                     Var (name=person)
+               Var (name=friend)
+      Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.68ms, selfTimeActual=0.015ms)
+         Extension (resultSizeActual=1, totalTimeActual=0.005ms, selfTimeActual=0.003ms)
+            ExtensionElem (person)
+               ValueConstant (value=http://example.com/peter)
+            SingletonSet (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.002ms)
+         Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.659ms, selfTimeActual=0.062ms)
+            Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.581ms, selfTimeActual=0.566ms)
+               Compare (>=)
+                  Var (name=age)
+                  ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+               StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.014ms, selfTimeActual=0.014ms)
+                  Var (name=friend)
+                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+                  Var (name=age)
+            StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=4, totalTimeActual=0.017ms, selfTimeActual=0.017ms)
+               Var (name=person)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+```
+
+Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 1.16ms instead of 1.1s.
+
+If you want to practice with these examples, the code below produces these three plans.
+
+{{< highlight java  >}}
+public class QueryExplainExample {
+
+	public static void main(String[] args) {
+
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			ValueFactory vf = connection.getValueFactory();
+			String ex = "http://example.com/";
+
+			IRI peter = vf.createIRI(ex, "peter");
+			IRI steve = vf.createIRI(ex, "steve");
+			IRI mary = vf.createIRI(ex, "mary");
+			IRI patricia = vf.createIRI(ex, "patricia");
+			IRI linda = vf.createIRI(ex, "linda");
+
+			connection.add(peter, RDF.TYPE, FOAF.PERSON);
+
+			connection.add(peter, FOAF.KNOWS, patricia);
+			connection.add(patricia, FOAF.KNOWS, linda);
+			connection.add(patricia, FOAF.KNOWS, steve);
+			connection.add(mary, FOAF.KNOWS, linda);
+
+			connection.add(steve, FOAF.AGE, vf.createLiteral(18));
+			connection.add(mary, FOAF.AGE, vf.createLiteral(18));
+
+			connection.add(steve, FOAF.NAME, vf.createLiteral("Steve"));
+
+			// Add some dummy data
+			for (int i = 0; i < 100; i++) {
+				connection.add(vf.createBNode(i + ""), RDF.TYPE, FOAF.PERSON);
+			}
+
+			for (int i = 0; i < 1000; i++) {
+				connection.add(vf.createBNode(i % 150 + ""), FOAF.KNOWS, vf.createBNode(i + 10 + ""));
+			}
+
+			for (int i = 0; i < 10; i++) {
+				connection.add(vf.createBNode(i + 3 + ""), FOAF.AGE, vf.createLiteral(i + 10));
+			}
+
+			for (int i = 0; i < 4; i++) {
+				connection.add(vf.createBNode(i + ""), FOAF.NAME, vf.createLiteral("name" + i));
+			}
+
+		}
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(String.join("\n", "",
+				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>",
+				"SELECT ?friend ?name WHERE ",
+				"{",
+				"	BIND(<http://example.com/peter> as ?person)",
+				"	?person a foaf:Person ;",
+				"		(foaf:knows | ^foaf:knows)* ?friend.",
+				"	OPTIONAL {",
+				"		?friend foaf:name ?name",
+				"	}",
+				"	?friend foaf:age ?age",
+				"	FILTER(?age >= 18) ",
+
+				"}"));
+
+			Explanation explain = query.explain(Explanation.Level.Timed);
+			System.out.println(explain);
+
+		}
+
+		System.out.println("\n\n");
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(String.join("\n", "",
+				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>",
+				"SELECT * WHERE ",
+				"{",
+				"  BIND(<http://example.com/peter> as ?person)",
+				"	?person a foaf:Person .",
+				"	{",
+				"		?person	(foaf:knows | ^foaf:knows)* ?friend.",
+				"	} UNION {",
+				"		?friend foaf:age ?age",
+				"		FILTER(?age >= 18) ",
+				"	}",
+				"}"));
+
+			Explanation explainUnoptimized = query.explain(Explanation.Level.Unoptimized);
+			System.out.println(explainUnoptimized);
+			System.out.println("\n\n");
+
+			Explanation explain = query.explain(Explanation.Level.Timed);
+			System.out.println(explain);
+
+		}
+
+		System.out.println("\n\n");
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(String.join("\n", "",
+				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>",
+				"SELECT * WHERE ",
+				"{",
+				"  BIND(<http://example.com/peter> as ?person)",
+				"	?person a foaf:Person .",
+				"	{",
+				"  		BIND(<http://example.com/peter> as ?person)",
+				"		?person	(foaf:knows | ^foaf:knows)* ?friend.",
+				"	} UNION {",
+				"		?friend foaf:age ?age",
+				"		FILTER(?age >= 18) ",
+				"	}",
+				"}"));
+
+			Explanation explain = query.explain(Explanation.Level.Timed);
+			System.out.println(explain);
+
+		}
+
+		sailRepository.shutDown();
+
+	}
+	
+}	
+{{< / highlight >}}
+
 
 ## Creating, retrieving, removing individual statements
 

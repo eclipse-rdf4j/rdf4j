@@ -44,6 +44,7 @@ hide_page_title: "true"
 # Javadoc
 
 - <a href="/javadoc/latest">RDF4J API Javadoc</a>
+- older release: <a href="/javadoc/3.1.0">3.1.0</a>
 - older release: <a href="/javadoc/2.5.4">2.5.4</a>
 
 # Info for RDF4J Developers
