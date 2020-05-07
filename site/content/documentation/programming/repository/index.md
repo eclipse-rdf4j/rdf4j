@@ -649,7 +649,7 @@ the results returned. The query explain feature gives a peek into what decisions
 the performance of your query.
 
 This feature is currently released as an experimental feature, which means that it may change, be moved or even removed in the future. 
-Explaining queries only works if you are using one of the built in stores directly in your Java code. 
+Explaining queries currently only works if you are using one of the built in stores directly in your Java code. 
 If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an 
 UnsupportedException. 
 
@@ -658,8 +658,8 @@ In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` 
  {{< highlight java  >}}
  try (SailRepositoryConnection connection = sailRepository.getConnection()) {
     TupleQuery query = connection.prepareTupleQuery("select * where .... ");
-    String explain = query.explain(Explanation.Level.Timed).toString();
-    System.out.println(explain);
+    String explanation = query.explain(Explanation.Level.Timed).toString();
+    System.out.println(explanation);
 }
 {{< / highlight >}}
 
@@ -681,7 +681,7 @@ timeout of 60 seconds. A different timeout can be set by changing the timeout fo
 The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in 
 order to optimize them.
 
-The following query intends to get everyone in Peter's extended friend graph who is at least 18 years old 
+As an example, the following query intends to get everyone in Peter's extended friend graph who is at least 18 years old 
 and return their node and optionally their name.
 
 {{< highlight sparql  >}}
@@ -784,7 +784,7 @@ four values for`friend`. This is why `ArbitraryLengthPath` has a `resultSizeActu
 The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes 
 up a lot of memory.
 
-The following query is a typical example of a scoping issue. A very common issue to have in a slow SPARQL query.
+The following query is a typical example of a scoping issue, which is a very common cause of slow SPARQL queries.
 
 {{< highlight sparql  >}}
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
@@ -801,8 +801,8 @@ SELECT * WHERE
 }
 {{< / highlight >}}
 
-The issue with this query is that each of the union clauses introduce a new scope. It's quite easy to see in this example. Both unions define a new 
-variable `?friend`, however the results should not be the intersection of common values but rather union between "everyone that knows or is known by someone" 
+The issue with this query is that each of the union clauses introduces a new scope. It's quite easy to see in this example. Both unions define a new 
+variable `?friend`, however the results should not be the intersection of common values but rather the union between "everyone that knows or is known by someone" 
 and "everyone 18 or older". The only exception here is that `?person` is used in the outer scope, so results from the inner union would be filtered to match 
 with bindings for `?person` from the outer scope. SPARQL is designed with bottom-up semantics, which means that inner sections should be evaluated before
 outer sections. This precisely so as to make scoping issues unambiguous.
@@ -860,7 +860,7 @@ ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resul
 ```
 
 This tells us that the query is probably producing all possible results for `?person (foaf:knows | ^foaf:knows)* ?friend.`. In fact running this fragment in a new query
-shows that produces ~102 000 results.
+shows that it produces ~102,000 results.
 
 Taking a look at the unoptimized plan we can see where the issue lies:
 
