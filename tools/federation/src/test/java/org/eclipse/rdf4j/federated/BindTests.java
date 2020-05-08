@@ -2,17 +2,10 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.util.Repositories;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -68,16 +61,4 @@ public class BindTests extends SPARQLBaseTest {
 		return Repositories.tupleQueryNoTransaction(this.fedxRule.repository, query, it -> QueryResults.asList(it));
 	}
 
-	protected void assertContainsAll(List<BindingSet> res, String bindingName, Set<Value> expected) {
-		Assertions.assertEquals(expected,
-				res.stream().map(bs -> bs.getValue(bindingName)).collect(Collectors.toSet()));
-	}
-
-	protected IRI fullIri(String iri) {
-		return SimpleValueFactory.getInstance().createIRI(iri);
-	}
-
-	protected Literal l(String literal) {
-		return SimpleValueFactory.getInstance().createLiteral(literal);
-	}
 }

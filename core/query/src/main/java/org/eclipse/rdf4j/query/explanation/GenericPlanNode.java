@@ -48,6 +48,12 @@ public class GenericPlanNode {
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
+	// true if this node introduces a new scope
+	private Boolean newScope;
+
+	// the name of the algorithm used as an annotation to the node type
+	private String algorithm;
+
 	// Child plans for this node
 	private List<GenericPlanNode> plans = new ArrayList<>();
 
@@ -183,6 +189,35 @@ public class GenericPlanNode {
 	}
 
 	/**
+	 *
+	 * @return true if this node introduces a new scope
+	 */
+	public Boolean isNewScope() {
+		return newScope;
+	}
+
+	public void setNewScope(boolean newScope) {
+		if (newScope) {
+			this.newScope = true;
+		} else {
+			this.newScope = null;
+		}
+	}
+
+	/**
+	 * Join nodes can use various algorithms for joining data.
+	 *
+	 * @return the name of the algorithm.
+	 */
+	public String getAlgorithm() {
+		return algorithm;
+	}
+
+	public void setAlgorithm(String algorithm) {
+		this.algorithm = algorithm;
+	}
+
+	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
 	 * @return
@@ -202,11 +237,16 @@ public class GenericPlanNode {
 		}
 
 		sb.append(type);
+		if (newScope != null && newScope) {
+			sb.append(" (new scope)");
+		}
+
+		if (algorithm != null) {
+			sb.append(" (").append(algorithm).append(")");
+		}
 		appendCostAnnotation(sb);
 		sb.append(newLine);
-		plans.forEach(child -> sb.append(Arrays.stream(
-				child.toString()
-						.split(newLine))
+		plans.forEach(child -> sb.append(Arrays.stream(child.toString().split(newLine))
 				.map(c -> "   " + c)
 				.reduce((a, b) -> a + newLine + b)
 				.orElse("") + newLine));

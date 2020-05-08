@@ -86,4 +86,10 @@ public class RepositoryWriteStrategy implements WriteStrategy {
 			connection = writeRepository.getConnection();
 		}
 	}
+
+	@Override
+	public void clearNamespaces() throws RepositoryException {
+		createConnection();
+		connection.clearNamespaces();
+	}
 }

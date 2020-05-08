@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -95,6 +94,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
@@ -248,9 +248,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
 		}
 
-		// process bindings clause
+		// process external VALUES clause
 		final ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
+			// values clause should be treated as scoped to the where clause
+			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
 			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 		}
 
@@ -422,8 +424,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				aliasesInProjection.add(alias);
 
 				ValueExpr valueExpr = castToValueExpr(child.jjtAccept(this, null));
-				if (valueExpr == null)
+				if (valueExpr == null) {
 					throw new VisitorException("Either TripleRef or Expression expected in projection.");
+				}
 
 				String targetName = alias;
 				String sourceName = alias;
@@ -930,8 +933,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	protected ValueExpr castToValueExpr(Object node) {
-		if (node instanceof ValueExpr)
+		if (node instanceof ValueExpr) {
 			return (ValueExpr) node;
+		}
 		if (node instanceof TripleRef) {
 			TripleRef t = (TripleRef) node;
 			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar(), t.getPredicateVar(),
@@ -1051,12 +1055,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		// Filters are scoped to the graph pattern group and do not affect
-		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
-
-		((GraphPatternGroupable) te).setGraphPatternGroup(true);
-
+		if (node.isScopeChange()) {
+			((VariableScopeChange) te).setVariableScopeChange(true);
+		}
 		parentGP.addRequiredTE(te);
 
 		graphPattern = parentGP;
@@ -1135,7 +1137,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.jjtGetChild(1).jjtAccept(this, null);
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
-		parentGP.addRequiredTE(new Union(leftArg, rightArg));
+		Union union = new Union(leftArg, rightArg);
+		union.setVariableScopeChange(true);
+		parentGP.addRequiredTE(union);
 		graphPattern = parentGP;
 
 		return null;
@@ -1206,6 +1210,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			}
 
+			// when using union to execute path expressions, the scope does not not change
+			union.setVariableScopeChange(false);
 			parentGP.addRequiredTE(union);
 			graphPattern = parentGP;
 		} else {
@@ -1785,10 +1791,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		for (int i = 0; i < childCount; i++) {
 			Object obj = node.jjtGetChild(i).jjtAccept(this, null);
-			if (obj instanceof ValueExpr)
+			if (obj instanceof ValueExpr) {
 				result.add((ValueExpr) obj);
-			else if (obj instanceof TripleRef) {
-				result.add((ValueExpr) ((TripleRef) obj).getExprVar());
+			} else if (obj instanceof TripleRef) {
+				result.add(((TripleRef) obj).getExprVar());
 			}
 		}
 

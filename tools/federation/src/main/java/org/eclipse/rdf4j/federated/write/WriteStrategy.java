@@ -78,4 +78,5 @@ public interface WriteStrategy extends AutoCloseable {
 
 	void clear(Resource... contexts) throws RepositoryException;
 
+	void clearNamespaces() throws RepositoryException;
 }

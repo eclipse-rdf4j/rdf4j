@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
+import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.write.ReadOnlyWriteStrategy;
 import org.eclipse.rdf4j.federated.write.RepositoryWriteStrategy;
@@ -98,14 +99,17 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	 * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
 	 * 
 	 * @return the {@link WriteStrategy}
+	 * @throws FedXRuntimeException if the {@link WriteStrategy} could not be created
 	 */
 	public WriteStrategy getWriteStrategy() {
-		for (Endpoint e : members) {
-			if (e.isWritable()) {
-				return new RepositoryWriteStrategy(e.getRepository());
-			}
+		try {
+			return federationContext.getConfig()
+					.getWriteStrategyFactory()
+					.newInstance()
+					.create(members, federationContext);
+		} catch (Exception e) {
+			throw new FedXRuntimeException("Failed to instantiate write strategy: " + e.getMessage(), e);
 		}
-		return ReadOnlyWriteStrategy.INSTANCE;
 	}
 
 	@Override

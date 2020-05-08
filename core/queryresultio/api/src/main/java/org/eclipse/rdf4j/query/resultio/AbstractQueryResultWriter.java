@@ -34,6 +34,7 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 
 	/**
 	 * Default constructor.
+	 * 
 	 */
 	protected AbstractQueryResultWriter() {
 		this(null);
@@ -43,6 +44,7 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 		this.outputStream = out;
 	}
 
+	@Override
 	public Optional<OutputStream> getOutputStream() {
 		return Optional.ofNullable(outputStream);
 	}
@@ -85,8 +87,14 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 	 *
 	 * @param bindings the solution to handle
 	 * @throws TupleQueryResultHandlerException
+	 * 
+	 * @implNote this temporary implementation throws an {@link UnsupportedOperationException} and is only provided for
+	 *           backward compatility.
+	 * @since 3.2.0
 	 */
-	protected abstract void handleSolutionImpl(BindingSet bindings) throws TupleQueryResultHandlerException;
+	protected void handleSolutionImpl(BindingSet bindings) throws TupleQueryResultHandlerException {
+		throw new UnsupportedOperationException();
+	}
 
 	protected boolean xsdStringToPlainLiteral() {
 		return getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);

@@ -58,29 +58,76 @@ public class Models {
 	}
 
 	/**
+	 * Retrieves an object {@link Value} from the supplied statements. If more than one possible object value exists,
+	 * any one value is picked and returned.
+	 *
+	 * @param statements the {@link Statement } {@link Iterable} from which to retrieve an object value.
+	 * @return an object value from the given statement collection, or {@link Optional#empty()} if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #object(Model)}.
+	 */
+	public static Optional<Value> object(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false).map(st -> st.getObject()).findAny();
+	}
+
+	/**
 	 * Retrieves an object {@link Value} from the statements in the given model. If more than one possible object value
 	 * exists, any one value is picked and returned.
 	 *
 	 * @param m the model from which to retrieve an object value.
 	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #object(Iterable)}. This method signature kept for binary
+	 *          compatibility.
+	 * 
 	 */
-	public static Optional<Value> object(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject()).findAny();
+	public static Optional<Value> object(Model m) {
+		return object((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves an object {@link Literal} value from the supplied statements. If more than one possible Literal value
+	 * exists, any one Literal value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object Literal value.
+	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectLiteral(Model)}.
+	 */
+	public static Optional<Literal> objectLiteral(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.findAny();
 	}
 
 	/**
 	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one possible
 	 * Literal value exists, any one Literal value is picked and returned.
 	 *
-	 * @param m the model from which to retrieve an object Literal value.
+	 * @param m the {@link Model} from which to retrieve an object Literal value.
 	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectLiteral(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<Literal> objectLiteral(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Optional<Literal> objectLiteral(Model m) {
+		return objectLiteral((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves all object {@link Literal} values from the supplied statements.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object {@link Literal}
+	 *                   values.
+	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be empty if no
+	 *         such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectLiterals(Model)}.
+	 * @see Model#objects()
+	 */
+	public static Set<Literal> objectLiterals(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Literal)
 				.map(l -> (Literal) l)
-				.findAny();
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -89,14 +136,30 @@ public class Models {
 	 * @param m the model from which to retrieve all object {@link Literal} values.
 	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be empty if no
 	 *         such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectLiterals(Iterable)}. This method signature kept
+	 *          for binary compatibility.
+	 * 
 	 * @see Model#objects()
 	 */
-	public static Set<Literal> objectLiterals(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Set<Literal> objectLiterals(Model m) {
+		return objectLiterals((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves an object {@link Resource} value from the supplied statements. If more than one possible Resource value
+	 * exists, any one Resource value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object Resource value.
+	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectResource(Model)}.
+	 */
+	public static Optional<Resource> objectResource(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getObject())
-				.filter(o -> o instanceof Literal)
-				.map(l -> (Literal) l)
-				.collect(Collectors.toSet());
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.findAny();
 	}
 
 	/**
@@ -106,25 +169,25 @@ public class Models {
 	 * @param m the model from which to retrieve an object Resource value.
 	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectResource(Iterable)}. This method signature kept
+	 *          for binary compatibility.
 	 */
-	public static Optional<Resource> objectResource(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
-				.map(st -> st.getObject())
-				.filter(o -> o instanceof Resource)
-				.map(r -> (Resource) r)
-				.findAny();
+	public static Optional<Resource> objectResource(Model m) {
+		return objectResource((Iterable<Statement>) m);
 	}
 
 	/**
-	 * Retrieves all object {@link Resource} values from the statements in the given model.
+	 * Retrieves all object {@link Resource} values from the supplied statements.
 	 *
-	 * @param m the model from which to retrieve all object {@link Resource} values.
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object {@link Resource}
+	 *                   values.
 	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be empty if no
 	 *         such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectResources(Model)}.
 	 * @see Model#objects()
 	 */
-	public static Set<Resource> objectResources(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Set<Resource> objectResources(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof Resource)
 				.map(r -> (Resource) r)
@@ -132,35 +195,92 @@ public class Models {
 	}
 
 	/**
-	 * Retrieves an object {@link IRI} value from the statements in the given model. If more than one possible IRI value
-	 * exists, any one value is picked and returned.
+	 * Retrieves all object {@link Resource} values from the supplied model.
 	 *
-	 * @param m the model from which to retrieve an object IRI value.
+	 * @param m the {@link Model} from which to retrieve all object {@link Resource} values.
+	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be empty if no
+	 *         such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectResources(Iterable)}. This method signature kept
+	 *          for binary compatibility.
+	 * @see Model#objects()
+	 */
+	public static Set<Resource> objectResources(Model m) {
+		return objectResources((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves an object {@link IRI} value from the supplied statements. If more than one possible IRI value exists,
+	 * any one value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object IRI value.
 	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectIRI(Model)}.
 	 */
-	public static Optional<IRI> objectIRI(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Optional<IRI> objectIRI(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getObject())
 				.filter(o -> o instanceof IRI)
 				.map(r -> (IRI) r)
 				.findAny();
+	}
+
+	/**
+	 * Retrieves an object {@link IRI} value from the supplied statements in the given model. If more than one possible
+	 * IRI value exists, any one value is picked and returned.
+	 *
+	 * @param m the model from which to retrieve an object IRI value.
+	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectIRI(Iterable)}. This method signature kept for
+	 *          binary compatibility.
+	 */
+	public static Optional<IRI> objectIRI(Model m) {
+		return objectIRI((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves all object {@link IRI} values from the supplied statements.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object IRI values.
+	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no such value
+	 *         exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectIRIs(Model)}.
+	 * @see Model#objects()
+	 */
+	public static Set<IRI> objectIRIs(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
 	 * Retrieves all object {@link IRI} values from the statements in the given model.
 	 *
-	 * @param m the model from which to retrieve all object IRI values.
+	 * @param m the {@link Model} from which to retrieve all object IRI values.
 	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no such value
 	 *         exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectIRIs(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 * @see Model#objects()
 	 */
-	public static Set<IRI> objectIRIs(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
-				.map(st -> st.getObject())
-				.filter(o -> o instanceof IRI)
-				.map(r -> (IRI) r)
-				.collect(Collectors.toSet());
+	public static Set<IRI> objectIRIs(Model m) {
+		return objectIRIs((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves an object value as a String from the supplied statements. If more than one possible object value
+	 * exists, any one value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object String value.
+	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectString(Model)}.
+	 */
+	public static Optional<String> objectString(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false).map(st -> st.getObject().stringValue()).findAny();
 	}
 
 	/**
@@ -170,9 +290,26 @@ public class Models {
 	 * @param m the model from which to retrieve an object String value.
 	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectString(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<String> objectString(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getObject().stringValue()).findAny();
+	public static Optional<String> objectString(Model m) {
+		return objectString((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves all object String values from the supplied statements.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object String values.
+	 * @return a {@link Set} containing object String values from the given model, which will be empty if no such value
+	 *         exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectStrings(Model)}.
+	 * @see Model#objects()
+	 */
+	public static Set<String> objectStrings(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
+				.map(st -> st.getObject().stringValue())
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -181,12 +318,25 @@ public class Models {
 	 * @param m the model from which to retrieve all object String values.
 	 * @return a {@link Set} containing object String values from the given model, which will be empty if no such value
 	 *         exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectStrings(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 * @see Model#objects()
 	 */
-	public static Set<String> objectStrings(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
-				.map(st -> st.getObject().stringValue())
-				.collect(Collectors.toSet());
+	public static Set<String> objectStrings(Model m) {
+		return objectStrings((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves a subject {@link Resource} from the supplied statements. If more than one possible resource value
+	 * exists, any one resource value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject Resource.
+	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subject(Model)}.
+	 */
+	public static Optional<Resource> subject(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false).map(st -> st.getSubject()).findAny();
 	}
 
 	/**
@@ -196,9 +346,28 @@ public class Models {
 	 * @param m the model from which to retrieve a subject Resource.
 	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #subject(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<Resource> subject(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getSubject()).findAny();
+	public static Optional<Resource> subject(Model m) {
+		return subject((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves a subject {@link IRI} from the supplied statements. If more than one possible IRI value exists, any one
+	 * IRI value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
+	 *         if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectIRI(Model)}.
+	 */
+	public static Optional<IRI> subjectIRI(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof IRI)
+				.map(s -> (IRI) s)
+				.findAny();
 	}
 
 	/**
@@ -208,13 +377,26 @@ public class Models {
 	 * @param m the model from which to retrieve a subject IRI value.
 	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
 	 *         if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectIRI(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<IRI> subjectIRI(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Optional<IRI> subjectIRI(Model m) {
+		return subjectIRI((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves all subject {@link IRI}s from the supplied statements.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+	 * @return a {@link Set} of subject IRI values from the given model. The returned Set may be empty.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectIRIs(Model)}.
+	 */
+	public static Set<IRI> subjectIRIs(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getSubject())
-				.filter(s -> s instanceof IRI)
-				.map(s -> (IRI) s)
-				.findAny();
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -222,9 +404,28 @@ public class Models {
 	 *
 	 * @param m the model from which to retrieve a subject IRI value.
 	 * @return a {@link Set} of subject IRI values from the given model. The returned Set may be empty.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectIRIs(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
 	public static Set<IRI> subjectIRIs(Model m) {
-		return m.subjects().stream().filter(s -> s instanceof IRI).map(s -> (IRI) s).collect(Collectors.toSet());
+		return subjectIRIs((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves a subject {@link BNode} from the supplied statements. If more than one possible blank node value
+	 * exists, any one blank node value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject BNode value.
+	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
+	 *         empty} if no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectBNode(Model)}.
+	 */
+	public static Optional<BNode> subjectBNode(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof BNode)
+				.map(s -> (BNode) s)
+				.findAny();
 	}
 
 	/**
@@ -234,13 +435,26 @@ public class Models {
 	 * @param m the model from which to retrieve a subject BNode value.
 	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
 	 *         empty} if no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectBNode(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<BNode> subjectBNode(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false)
+	public static Optional<BNode> subjectBNode(Model m) {
+		return subjectBNode((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves all subject {@link BNode}s from the supplied statements.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+	 * @return a {@link Set} of subject {@link BNode} values from the given model. The returned Set may be empty.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectBNodes(Model)}.
+	 */
+	public static Set<BNode> subjectBNodes(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false)
 				.map(st -> st.getSubject())
-				.filter(s -> s instanceof BNode)
-				.map(s -> (BNode) s)
-				.findAny();
+				.filter(o -> o instanceof BNode)
+				.map(r -> (BNode) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -248,9 +462,24 @@ public class Models {
 	 *
 	 * @param m the model from which to retrieve a subject IRI value.
 	 * @return a {@link Set} of subject {@link BNode} values from the given model. The returned Set may be empty.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectBNodes(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
 	public static Set<BNode> subjectBNodes(Model m) {
-		return m.subjects().stream().filter(s -> s instanceof BNode).map(s -> (BNode) s).collect(Collectors.toSet());
+		return subjectBNodes((Iterable<Statement>) m);
+	}
+
+	/**
+	 * Retrieves a predicate from the supplied statements. If more than one possible predicate value exists, any one
+	 * value is picked and returned.
+	 *
+	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a predicate value.
+	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
+	 *         no such value exists.
+	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #predicate(Model)}.
+	 */
+	public static Optional<IRI> predicate(Iterable<Statement> statements) {
+		return StreamSupport.stream(statements.spliterator(), false).map(st -> st.getPredicate()).findAny();
 	}
 
 	/**
@@ -260,9 +489,11 @@ public class Models {
 	 * @param m the model from which to retrieve a predicate value.
 	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
 	 *         no such value exists.
+	 * @apiNote replaced in 3.2.0 with the more generic {@link #predicate(Iterable)}. This method signature kept for
+	 *          binary compatibility.
 	 */
-	public static Optional<IRI> predicate(Iterable<Statement> m) {
-		return StreamSupport.stream(m.spliterator(), false).map(st -> st.getPredicate()).findAny();
+	public static Optional<IRI> predicate(Model m) {
+		return predicate((Iterable<Statement>) m);
 	}
 
 	/**

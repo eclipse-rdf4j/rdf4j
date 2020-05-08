@@ -76,7 +76,7 @@ public class IDFile implements Closeable {
 	private Long[] gcReducingCache;
 
 	// cached file size
-	private long nioFileSize;
+	private volatile long nioFileSize;
 
 	/*--------------*
 	 * Constructors *
@@ -237,7 +237,7 @@ public class IDFile implements Closeable {
 	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
 		nioFileSize = nioFile.size();
-		cache.clear();
+		clearCache();
 	}
 
 	/**
@@ -247,6 +247,10 @@ public class IDFile implements Closeable {
 		if (forceSync) {
 			nioFile.force(false);
 		}
+	}
+
+	public void sync(boolean force) throws IOException {
+		nioFile.force(false);
 	}
 
 	/**
@@ -284,4 +288,11 @@ public class IDFile implements Closeable {
 		}
 		return cacheLine;
 	}
+
+	synchronized public void clearCache() {
+		cache.clear();
+		gcReducingCacheIndex = -1;
+		gcReducingCache = null;
+	}
+
 }

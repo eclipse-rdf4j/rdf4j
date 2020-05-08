@@ -24,6 +24,8 @@ public class SimpleNode implements Node {
 
 	protected SyntaxTreeBuilder parser;
 
+	private boolean isScopeChange = false;
+
 	public SimpleNode(int id) {
 		this.id = id;
 		children = new ArrayList<>();
@@ -195,5 +197,21 @@ public class SimpleNode implements Node {
 		} catch (IOException e) {
 			throw new RuntimeException("Unexpected I/O error while writing to StringWriter", e);
 		}
+	}
+
+	/**
+	 * Check if this AST node constitutes a variable scope change.
+	 * 
+	 * @return the isScopeChange
+	 */
+	public boolean isScopeChange() {
+		return isScopeChange;
+	}
+
+	/**
+	 * @param isScopeChange the isScopeChange to set
+	 */
+	public void setScopeChange(boolean isScopeChange) {
+		this.isScopeChange = isScopeChange;
 	}
 }
