@@ -687,4 +687,19 @@ public class QueryPlanRetrievalTest {
 
 	}
 
+	@Test
+	public void testDot() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			Query query = connection.prepareTupleQuery(SUB_QUERY);
+
+			String actual = query.explain(Explanation.Level.Timed).toDot();
+
+			// TODO figure out how to make a test for this
+		}
+		sailRepository.shutDown();
+
+	}
 }
