@@ -1,10 +1,9 @@
 ---
 title: "Squashing Commits"
-layout: "doc"
-hide_page_title: "false"
 ---
 
-When submitting a pull request to RDF4J, we sometimes ask that you squash your commits before we merge.
+When submitting a pull request to RDF4J, we sometimes ask that you squash your commits before we merge. Here we explain a simple way to do that.
+<!--more-->
 
 On the command line, the process is as follows:
 

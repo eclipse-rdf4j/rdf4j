@@ -13,6 +13,12 @@
   color: black;
 }
 
+.shadowed {
+   padding: 6px;
+   border: 1px solid grey;
+   box-shadow: 5px 5px 2px grey;
+}
+
 .logo-vendor {
   float: right;
   padding-left: 6px;
@@ -29,3 +35,25 @@ td,th {
   border-bottom: 3px solid white;
 }
 
+div.doc-section {
+  float: left;
+  width: 400px;
+  margin: 10px;
+}
+
+.doc-section-header a:link, .doc-section-header a:visited {
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  font-weight: medium;
+  font-size: larger;
+  background: #DA5800;
+  padding-left: 20px;
+  padding-right: 20px;
+  color: black;
+}
+
+.doc-section-content {
+  background: white;
+  padding: 6px;
+  box-shadow: 5px 5px 4px #888888;
+}

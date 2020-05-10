@@ -1,9 +1,10 @@
 ---
 title: "RDF4J merge strategy"
-layout: "doc"
+toc: true
 ---
 
 RDF4J values a clean, linear commit history on our main branches. To achieve this, we default to using [Squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits) as our merge strategy for all new features, improvements, or bug fixes. 
+<!--more-->
 
 See also: [developer workflow](/documentation/developer/workflow/)
 

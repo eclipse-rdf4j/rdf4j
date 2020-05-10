@@ -1,0 +1,69 @@
+<!-- 
+  Copyright (c) 2018 Eclipse Foundation, Inc.
+
+  This program and the accompanying materials are made available under the
+  terms of the Eclipse Public License v. 2.0 which is available at
+  http://www.eclipse.org/legal/epl-2.0.
+
+  Contributors:
+    Christopher Guindon <chris.guindon@eclipse-foundation.org>
+
+  SPDX-License-Identifier: EPL-2.0
+-->
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Site Title, Description, Author, and Favicon -->
+{{- with .Params.seo_title | default (.Params.headline | plainify) | default (.Title | plainify) | default .Site.Title }}
+<title>{{ .  | title }}{{- with $.Page.Params.seo_title_suffix | default $.Site.Params.seo_title_suffix }}{{ . }}{{- end }}</title>
+<meta property="og:title" content="{{ .  | title }}{{- with $.Page.Params.seo_title_suffix | default $.Site.Params.seo_title_suffix }}{{ . }}{{- end }}" />
+<meta name="twitter:title" content="{{ . | truncate 70 | title }}{{- with $.Page.Params.seo_title_suffix | default $.Site.Params.seo_title_suffix }}{{ . }}{{- end }}" />
+{{- end }}
+{{ if isset .Page.Params "redirect_url" }}
+<link rel="canonical" href="{{ .Page.Params.redirect_url }}"/>
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0; url={{ .Page.Params.redirect_url }}" />
+{{ end }}
+{{- with .Description | default .Summary  | default .Site.Params.description }}
+<meta name="description" content="{{ . }}">
+<meta property="og:description" content="{{ . }}">
+<meta name="twitter:description" content="{{ . | truncate 200 }}">
+{{- end }}
+<meta name="author" content="{{ .Site.Author.name }}"/>
+ {{- with  .Params.page_favicon | default .Site.Params.favicon | default "https://www.eclipse.org/favicon.ico"}}
+<link href='{{ . | absURL }}' rel='icon' type='image/x-icon'/>
+{{- end -}}
+<!-- Social Media Tags -->
+{{- with .Params.share_img | default .Params.image  | default .Site.Params.share_img | default .Site.Params.logo }}
+<meta property="og:image" content="{{ . | absURL }}" />
+<meta name="twitter:image" content="{{ . | absURL }}" />
+{{- end }}
+<meta name="twitter:card" content="summary" />
+{{- with .Site.Author.twitter }}
+<meta name="twitter:site" content="@{{ . }}" />
+<meta name="twitter:creator" content="@{{ . }}" />
+{{- end }}
+{{- with .Site.Params.fb_app_id }}
+<meta property="fb:app_id" content="{{ . }}" />
+{{- end }}
+<meta property="og:url" content="{{ .Permalink | absLangURL }}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="{{ .Site.Title }}" />
+{{- with .Keywords | default .Site.Params.keywords }}
+<meta name="keywords" content="{{ range $i, $e := . }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}">
+{{ end }}
+<!-- Hugo Version number -->
+{{ hugo.Generator -}}
+<!-- Links and stylesheets -->
+<link rel="canonical" href="{{ .Permalink | absLangURL }}" />
+{{ with .OutputFormats.Get "RSS" }}
+<link rel="alternate" href="{{ .RelPermalink }}" type="application/rss+xml" title="">
+{{ end }}
+{{ if ne .Page.Params.disable_css "true" }}
+{{- with .Site.Params.styles | default "https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css" }}
+<link rel="stylesheet" href="{{ . | absURL }}">
+<link rel="stylesheet" href="css/rdf4j.css">
+{{- end }}
+{{- end }}
+{{- partial "google_tag_manager.html" . }}
+{{- partial "head_variables.html" . }}

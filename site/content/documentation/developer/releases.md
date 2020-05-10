@@ -1,9 +1,10 @@
 ---
 title: "Release management"
-layout: "doc"
+toc: true
 ---
 
 This document outlines how to create a new release of RDF4J.
+<!--more-->
 
 # The simple way: using the release script
 

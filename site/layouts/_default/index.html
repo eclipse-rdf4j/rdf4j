@@ -1,0 +1,27 @@
+{{ define "jumbotron"}}{{ partial "jumbotron.html" . }}{{end}}
+{{ define "main" }}
+<main>
+  <div class="{{ if (and (isset .Page.Params "container") (ne .Page.Params ""))}}{{ .Page.Params.container }}{{else}}container{{end}}">
+  {{ if ne .Page.Params.hide_sidebar "true" }}
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+  {{ end }}
+  <h2>News</h2>
+  {{ range first 3 (.Site.Taxonomies.categories.news) }}
+    <div class="news_item">
+      <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
+      <div class="news_item_title">
+        <h4><a href="{{.Permalink}}">{{ .Title }}</a></h4>
+      </div>
+      <div class="news_item_description">
+        {{ .Summary }}
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="{{.Permalink}}">[read more]</a>
+      </div>
+      <hr>
+    </div>
+  {{ end }}
+<div class="news_view_all"><a href="{{ .Site.BaseURL }}/news">View all news</a></div>
+</main>
+{{ end }}

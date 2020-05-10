@@ -4,9 +4,9 @@ layout: "doc"
 hide_page_title: "true"
 ---
 
-# Developer Workflow
-
-In this document the Eclipse RDF4J project workflow and developer best practices are explained. It contains information on how to create branches, tag releases, manage pull requests, create and schedule issues, and so on. Some of this information is targeted specifically at the project lead(s), other information is relevant to every committer.
+In this document the Eclipse RDF4J project workflow and developer best practices are explained. It contains information on how to create branches, tag releases, manage pull requests, create and schedule issues, and so on.
+<!--more-->
+Some of this information is targeted specifically at the project lead(s), other information is relevant to every committer.
 
 # Semantic Versioning
 

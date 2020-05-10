@@ -1,7 +1,12 @@
-<h3>Welcome</h3>
+{{ if isset .Params "toc" }}
+  <h3>Table of Contents</h3>
+  {{ .TableOfContents }}
+{{ else }}
+  <h3>About</h3>
 
-<p>
-<strong>Eclipse rdf<span style="color: #DA5800;">4</span>j</strong> is a powerful Java framework for processing and handling RDF data. This includes creating, parsing, scalable storage, reasoning and querying with RDF and Linked Data. It offers an easy-to-use API that can be connected to all leading RDF database solutions. It allows you to connect with SPARQL endpoints and create applications that leverage the power of linked data and Semantic Web.
-<p>
-<hr>
-<a href="/about"><img src="/images/rdf4j-architecture.svg" alt="RDF4J Architecture"></a>
+  <p>
+  <strong>Eclipse rdf<span style="color: #DA5800;">4</span>j</strong> is a powerful Java framework for processing and handling RDF data. This includes creating, parsing, scalable storage, reasoning and querying with RDF and Linked Data. It offers an easy-to-use API that can be connected to all leading RDF database solutions. It allows you to connect with SPARQL endpoints and create applications that leverage the power of linked data and Semantic Web.
+  <p>
+  <hr>
+  <a href="/about"><img src="/images/rdf4j-architecture.svg" alt="RDF4J Architecture"></a>
+{{ end }}
