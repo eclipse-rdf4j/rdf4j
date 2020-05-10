@@ -21,7 +21,7 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	@Parameterized.Parameters
 	public static Object[] params() {
-		return new Object[1000];
+		return new Object[100];
 	}
 
 	public MultithreadedNativeStoreTest(Object o) {
@@ -43,6 +43,8 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	@Override
 	NotifyingSail getBaseSail() {
+		if (failed)
+			return null;
 		NativeStore nativeStore = new NativeStore(file);
 		try (NotifyingSailConnection connection = nativeStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

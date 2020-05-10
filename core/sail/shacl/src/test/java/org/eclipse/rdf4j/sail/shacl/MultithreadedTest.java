@@ -358,8 +358,12 @@ public abstract class MultithreadedTest {
 
 	}
 
+	public static boolean failed = false;
+
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
+		if (failed)
+			return;
 		System.out.println("testLotsOfValidationFailuresSerializable");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
@@ -369,8 +373,12 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 50);
-
+		try {
+			runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 50);
+		} catch (Throwable t) {
+			failed = true;
+			throw t;
+		}
 	}
 
 	@Test
