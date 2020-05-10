@@ -148,8 +148,8 @@ The SPARQL engine in RDF4J has been extended to allow for SPARQL\* queries. Exec
 
 SPARQL\* allows accessing the RDF\* triple patterns directly in the query. For example, after you have uploaded the above simple RDF\* model to a MemoryStore, you can execute a query like this:
 
-    PREFIX foaf: <http://xmlns.com/foaf/0.1/> 
-    PREFIX ex: <http://example.org/> .
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX ex: <http://example.org/>
     SELECT ?p ?a ?c WHERE {
        <<?p foaf:age ?a>> ex:certainty ?c .
     }
