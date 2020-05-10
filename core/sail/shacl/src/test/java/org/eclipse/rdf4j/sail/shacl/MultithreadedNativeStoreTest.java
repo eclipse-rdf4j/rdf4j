@@ -11,10 +11,21 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	File file;
+
+	@Parameterized.Parameters
+	public static Object[] params() {
+		return new Object[1000];
+	}
+
+	public MultithreadedNativeStoreTest(Object o) {
+	}
 
 	@After
 	public void after() {
@@ -40,4 +51,5 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 		}
 		return nativeStore;
 	}
+
 }
