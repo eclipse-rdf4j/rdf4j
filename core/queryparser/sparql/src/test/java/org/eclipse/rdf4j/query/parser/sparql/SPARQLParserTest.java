@@ -347,17 +347,22 @@ public class SPARQLParserTest {
 		Slice slice = (Slice) tupleExpr;
 
 		ArbitraryLengthPath path = (ArbitraryLengthPath) slice.getArg();
-		Join pathExpression = (Join) path.getPathExpression();
-		Join innerJoin = (Join) pathExpression.getLeftArg();
+		Var pathStart = path.getSubjectVar();
+		Var pathEnd = path.getObjectVar();
+
+		assertThat(pathStart.getName()).isEqualTo("a");
+		assertThat(pathEnd.getName()).isEqualTo("b");
+
+		Join pathSequence = (Join) path.getPathExpression();
+		Join innerJoin = (Join) pathSequence.getLeftArg();
 		Var commentObjectVar = ((StatementPattern) innerJoin.getLeftArg()).getObjectVar();
 
 		Union union = (Union) innerJoin.getRightArg();
 		Var subClassOfSubjectVar = ((StatementPattern) union.getLeftArg()).getSubjectVar();
-
-		assertThat(subClassOfSubjectVar).isEqualTo(commentObjectVar);
+		assertThat(subClassOfSubjectVar).isNotEqualTo(commentObjectVar);
 
 		Var subClassOfObjectVar = ((StatementPattern) union.getLeftArg()).getObjectVar();
 
-		assertThat(subClassOfSubjectVar).isNotEqualTo(subClassOfObjectVar);
+		assertThat(subClassOfObjectVar).isEqualTo(commentObjectVar);
 	}
 }
