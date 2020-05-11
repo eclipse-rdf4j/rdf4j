@@ -169,6 +169,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	@Ignore
 	public void testTupleQueryTimed() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
