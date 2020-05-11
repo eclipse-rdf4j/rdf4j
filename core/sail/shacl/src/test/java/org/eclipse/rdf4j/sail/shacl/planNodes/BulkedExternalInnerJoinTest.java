@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import static org.junit.Assert.assertEquals;
 
@@ -14,9 +14,6 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.junit.Test;
 
 public class BulkedExternalInnerJoinTest {

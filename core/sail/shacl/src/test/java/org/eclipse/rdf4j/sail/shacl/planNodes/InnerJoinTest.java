@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import static junit.framework.TestCase.assertTrue;
 
@@ -18,11 +18,9 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.LeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -30,7 +28,7 @@ import org.junit.Test;
 /**
  * @author Håvard Ottestad
  */
-public class LeftOuterJoinTest {
+public class InnerJoinTest {
 
 	@BeforeClass
 	public static void beforeClass() {
@@ -49,9 +47,9 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "b"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -65,13 +63,13 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1", "b"), Arrays.asList("a2"));
+		verify(tuples, Arrays.asList("a1", "b"));
 
 	}
 
@@ -81,13 +79,13 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b"));
+		verify(tuples, Arrays.asList("a2", "b"));
 
 	}
 
@@ -97,13 +95,13 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList());
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2"));
+		verify(tuples);
 
 	}
 
@@ -113,9 +111,9 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode();
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -131,9 +129,9 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"),
 				Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -148,9 +146,9 @@ public class LeftOuterJoinTest {
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a1"), Arrays.asList("a2"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -165,9 +163,9 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"),
 				Arrays.asList("a3", "b3"));
 
-		PlanNode leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -183,9 +181,9 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"),
 				Arrays.asList("a2", "b22"), Arrays.asList("a3", "b3"), Arrays.asList("a4", "b4"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
@@ -202,14 +200,14 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"),
 				Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
 		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),
-				Arrays.asList("a3"), Arrays.asList("a4", "b4"));
+				Arrays.asList("a4", "b4"));
 
 	}
 
@@ -221,14 +219,13 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"),
 				Arrays.asList("a4", "b4"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"),
-				Arrays.asList("a4", "b4"));
+		verify(tuples, Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a4", "b4"));
 
 	}
 
@@ -239,14 +236,13 @@ public class LeftOuterJoinTest {
 				Arrays.asList("a4"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
-		verify(tuples, Arrays.asList("a1"), Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"), Arrays.asList("a3"),
-				Arrays.asList("a4"));
+		verify(tuples, Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
 
 	}
 
@@ -258,14 +254,14 @@ public class LeftOuterJoinTest {
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"),
 				Arrays.asList("a2", "b2"), Arrays.asList("a2", "b22"));
 
-		LeftOuterJoin leftOuterJoin = new LeftOuterJoin(left, right);
+		PlanNode innerJoin = new InnerJoin(left, right).getJoined(BufferedPlanNode.class);
 
-		List<Tuple> tuples = new MockConsumePlanNode(leftOuterJoin).asList();
+		List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 		tuples.forEach(System.out::println);
 
 		verify(tuples, Arrays.asList("a1", "b1"), Arrays.asList("a1", "b11"), Arrays.asList("a2", "b2"),
-				Arrays.asList("a2", "b22"), Arrays.asList("a3"), Arrays.asList("a4"));
+				Arrays.asList("a2", "b22"));
 
 	}
 

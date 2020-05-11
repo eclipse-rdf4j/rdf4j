@@ -15,7 +15,6 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -239,7 +238,7 @@ public abstract class MultithreadedTest {
 						})
 						.map(executorService::submit)
 						.collect(Collectors.toList()) // this terminates lazy evalutation, so that we can submit all our
-														// runnables before we start collecting them
+						// runnables before we start collecting them
 						.forEach(f -> {
 							try {
 								f.get();

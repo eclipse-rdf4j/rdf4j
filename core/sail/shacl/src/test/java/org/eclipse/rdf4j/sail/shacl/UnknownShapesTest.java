@@ -87,7 +87,7 @@ public class UnknownShapesTest {
 		assertEquals(expected, relevantLog);
 	}
 
-	class MyAppender extends AppenderBase<ILoggingEvent> {
+	static class MyAppender extends AppenderBase<ILoggingEvent> {
 
 		List<String> logged = new ArrayList<>();
 

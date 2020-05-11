@@ -197,8 +197,9 @@ abstract public class AbstractShaclTest {
 		Arrays.sort(list);
 
 		for (String caseName : list) {
-			if (caseName.startsWith("."))
+			if (caseName.startsWith(".")) {
 				continue;
+			}
 			String path = testCase + "/" + baseCase + "/" + caseName;
 			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(path);
 			if (resourceAsStream != null) {

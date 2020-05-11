@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.mock;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;

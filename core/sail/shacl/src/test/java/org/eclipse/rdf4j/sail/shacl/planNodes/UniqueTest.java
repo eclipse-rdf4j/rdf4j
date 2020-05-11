@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import static org.junit.Assert.assertEquals;
 
@@ -7,20 +7,17 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
-/**
- * ****************************************************************************
- *  Copyright (c) 2019 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- * *****************************************************************************
- */
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.junit.Test;
+
+/**
+ * **************************************************************************** Copyright (c) 2019 Eclipse RDF4J
+ * contributors. All rights reserved. This program and the accompanying materials are made available under the terms of
+ * the Eclipse Distribution License v1.0 which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ * *****************************************************************************
+ */
 
 public class UniqueTest {
 
