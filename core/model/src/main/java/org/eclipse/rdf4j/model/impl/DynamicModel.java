@@ -9,9 +9,11 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -29,10 +31,16 @@ import org.eclipse.rdf4j.util.iterators.SingletonIterator;
 
 /**
  * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The DynamicModel
- * postpones this cost until such access is actually needed. It stores all data in a LinkedHashSet and supports adding,
+ * postpones this cost until such access is actually needed. It stores all data in a LinkedHashMap and supports adding,
  * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
  * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
  * predicate).
+ *
+ * DynamicModel is thread safe to the extent that the underlying LinkedHashMap or Model is. The upgrade path is
+ * protected by the actual upgrade method being synchronized and any writes being synchronized too. This means that
+ * writes can safely assume that their underlying storage will not change while writing. The LinkedHashMap storage is
+ * not removed once upgraded, so concurrent reads that have started reading from the LinkedHashMap can continue to read
+ * even during an upgrade. We do make the LinkedHashMap unmodifiable to reduce the chance of there being a bug.
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -42,7 +50,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private LinkedHashMap<Statement, Statement> statements = new LinkedHashMap<>();
+	private Map<Statement, Statement> statements = new LinkedHashMap<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -54,7 +62,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public Model unmodifiable() {
+	synchronized public Model unmodifiable() {
 		upgrade();
 		return model.unmodifiable();
 	}
@@ -75,7 +83,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public Namespace setNamespace(String prefix, String name) {
+	synchronized public Namespace setNamespace(String prefix, String name) {
 		removeNamespace(prefix);
 		Namespace result = new SimpleNamespace(prefix, name);
 		namespaces.add(result);
@@ -83,13 +91,13 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public void setNamespace(Namespace namespace) {
+	synchronized public void setNamespace(Namespace namespace) {
 		removeNamespace(namespace.getPrefix());
 		namespaces.add(namespace);
 	}
 
 	@Override
-	public Optional<Namespace> removeNamespace(String prefix) {
+	synchronized public Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> result = getNamespace(prefix);
 		result.ifPresent(namespaces::remove);
 		return result;
@@ -102,7 +110,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	synchronized public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (contexts.length == 0) {
 			contexts = NULL_CTX;
 		}
@@ -121,13 +129,13 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean clear(Resource... context) {
+	synchronized public boolean clear(Resource... context) {
 		upgrade();
 		return model.clear(context);
 	}
 
 	@Override
-	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	synchronized public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (subj == null || pred == null || obj == null || contexts.length == 0) {
 			upgrade();
 		}
@@ -225,7 +233,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean add(Statement statement) {
+	synchronized public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
 			return statements.put(statement, statement) == null;
@@ -234,7 +242,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean remove(Object o) {
+	synchronized public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
 			return statements.remove(o) != null;
@@ -252,7 +260,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean addAll(Collection<? extends Statement> c) {
+	synchronized public boolean addAll(Collection<? extends Statement> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
 			return c.stream()
@@ -267,7 +275,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean retainAll(Collection<?> c) {
+	synchronized public boolean retainAll(Collection<?> c) {
 		if (model == null) {
 			return statements.keySet().retainAll(c);
 		}
@@ -275,7 +283,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public boolean removeAll(Collection<?> c) {
+	synchronized public boolean removeAll(Collection<?> c) {
 		if (model == null) {
 			return c
 					.stream()
@@ -288,7 +296,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	public void clear() {
+	synchronized public void clear() {
 		if (model == null) {
 			statements.clear();
 		} else {
@@ -304,8 +312,7 @@ public class DynamicModel implements Model {
 					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
 			if (foundStatement == null) {
-				return () -> new EmptyIterator<>();
-
+				return EmptyIterator::new;
 			}
 			return () -> new SingletonIterator<>(foundStatement);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
@@ -319,14 +326,16 @@ public class DynamicModel implements Model {
 
 	private void upgrade() {
 		if (model == null) {
-			synchronized (this) {
-				if (model == null) {
-					Model tempModel = modelFactory.createEmptyModel();
-					tempModel.addAll(statements.values());
-					statements = null;
-					model = tempModel;
-				}
-			}
+			synchronizedUpgrade();
+		}
+	}
+
+	synchronized private void synchronizedUpgrade() {
+		if (model == null) {
+			Model tempModel = modelFactory.createEmptyModel();
+			tempModel.addAll(statements.values());
+			statements = Collections.unmodifiableMap(statements);
+			model = tempModel;
 		}
 	}
 
