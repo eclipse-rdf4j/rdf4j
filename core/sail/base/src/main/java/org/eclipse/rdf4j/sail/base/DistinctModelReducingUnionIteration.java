@@ -1,7 +1,8 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Iterator;
-import java.util.function.Function;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -29,21 +30,21 @@ import org.eclipse.rdf4j.sail.SailException;
  * There is no overflow to disk for this cache.
  * </p>
  **/
-public class DistinctChangesetApprovedReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
+public class DistinctModelReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
 
-	private final Changeset changes;
 	private final CloseableIteration<? extends Statement, SailException> iterator;
-	private final Function<Changeset, Iterable<Statement>> filterable;
+	private final Consumer<Statement> approvedRemover;
+	private final Supplier<Iterable<Statement>> approvedSupplier;
 
-	DistinctChangesetApprovedReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator,
-			Changeset changes,
-			Function<Changeset, Iterable<Statement>> filterable) {
+	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator,
+			Consumer<Statement> approvedRemover,
+			Supplier<Iterable<Statement>> approvedSupplier) {
 		this.iterator = iterator;
-		this.changes = changes;
-		this.filterable = filterable;
+		this.approvedRemover = approvedRemover;
+		this.approvedSupplier = approvedSupplier;
 	}
 
-	private Iterator<Statement> filteredStatementsIterator;
+	private Iterator<? extends Statement> filteredStatementsIterator;
 
 	@Override
 	protected Statement getNextElement() throws SailException {
@@ -51,11 +52,11 @@ public class DistinctChangesetApprovedReducingUnionIteration extends LookAheadIt
 
 		if (iterator.hasNext()) {
 			next = iterator.next();
-			changes.removeApproved(next);
+			approvedRemover.accept(next);
 		} else {
 
 			if (filteredStatementsIterator == null) {
-				filteredStatementsIterator = filterable.apply(changes).iterator();
+				filteredStatementsIterator = approvedSupplier.get().iterator();
 			}
 
 			if (filteredStatementsIterator.hasNext()) {

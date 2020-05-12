@@ -267,13 +267,15 @@ class SailDatasetImpl implements SailDataset {
 			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
 		}
 		if (changes.hasDeprecated() && iter != null) {
-			iter = difference(iter, changes::isDeprecated);
+			iter = difference(iter, changes::hasDeprecated);
 		}
 
 		if (changes.hasApproved() && iter != null) {
 
-			return new DistinctChangesetApprovedReducingUnionIteration(iter, changes,
-					(changes) -> changes.getApprovedStatements(subj, pred, obj, contexts));
+			return new DistinctModelReducingUnionIteration(
+					iter,
+					changes::removeApproved,
+					() -> changes.getApprovedStatements(subj, pred, obj, contexts));
 
 		} else if (changes.hasApproved()) {
 			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();

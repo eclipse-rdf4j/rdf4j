@@ -9,12 +9,15 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -114,9 +117,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 					contexts = new Resource[] { (Resource) ctxVar.getValue() };
 				}
 				for (Changeset changeset : prepend) {
-
-					if (changeset.isApproved(subj, pred, obj, contexts)
-							|| (changeset.isDeprecated(subj, pred, obj, contexts))) {
+					if (changeset.hasApproved(subj, pred, obj, contexts)
+							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}
@@ -124,16 +126,18 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	synchronized protected boolean isApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		if (approved == null)
+	synchronized protected boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (approved == null) {
 			return false;
+		}
 
 		return approved.contains(subj, pred, obj, contexts);
 	}
 
-	synchronized protected boolean isDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		if (deprecated == null)
+	synchronized protected boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (deprecated == null) {
 			return false;
+		}
 
 		return deprecated.contains(subj, pred, obj, contexts);
 	}
@@ -393,7 +397,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return new ArrayList<>(approved);
 	}
 
-	synchronized public boolean isDeprecated(Statement statement) {
+	synchronized public boolean hasDeprecated(Statement statement) {
 		if (deprecated == null) {
 			return false;
 		}
@@ -411,8 +415,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 			return Collections.emptyList();
 		}
 
-		// TODO use getStatements here instead!
-		return new ArrayList<>(approved.filter(subj, pred, obj, contexts));
+		Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+
+		// This is a synchronized context, users of this method will be allowed to use the results at their leisure. We
+		// provide a copy of the data so that there will be no concurrent modification exceptions!
+		if (statements instanceof Collection) {
+			return new ArrayList<>((Collection<? extends Statement>) statements);
+		} else {
+			return StreamSupport
+					.stream(statements.spliterator(), false)
+					.collect(Collectors.toList());
+		}
 	}
 
 	synchronized public void removeApproved(Statement next) {
