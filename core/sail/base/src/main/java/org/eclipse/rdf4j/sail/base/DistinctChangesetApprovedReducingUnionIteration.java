@@ -1,12 +1,10 @@
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -31,18 +29,19 @@ import org.eclipse.rdf4j.sail.SailException;
  * There is no overflow to disk for this cache.
  * </p>
  **/
-public class DistinctModelReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
+public class DistinctChangesetApprovedReducingUnionIteration extends LookAheadIteration<Statement, SailException> {
 
-	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator, Model model,
-			Function<Model, Iterator<Statement>> filterable) {
+	private final Changeset changes;
+	private final CloseableIteration<? extends Statement, SailException> iterator;
+	private final Function<Changeset, Iterable<Statement>> filterable;
+
+	DistinctChangesetApprovedReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator,
+			Changeset changes,
+			Function<Changeset, Iterable<Statement>> filterable) {
 		this.iterator = iterator;
-		this.model = model;
+		this.changes = changes;
 		this.filterable = filterable;
 	}
-
-	private final CloseableIteration<? extends Statement, SailException> iterator;
-	private final Model model;
-	private final Function<Model, Iterator<Statement>> filterable;
 
 	private Iterator<Statement> filteredStatementsIterator;
 
@@ -52,18 +51,11 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 
 		if (iterator.hasNext()) {
 			next = iterator.next();
-			synchronized (model) {
-				model.remove(next);
-			}
+			changes.removeApproved(next);
 		} else {
 
 			if (filteredStatementsIterator == null) {
-				synchronized (model) {
-					Iterator<Statement> iterator = filterable.apply(model);
-					ArrayList<Statement> list = new ArrayList<>();
-					iterator.forEachRemaining(list::add);
-					filteredStatementsIterator = list.iterator();
-				}
+				filteredStatementsIterator = filterable.apply(changes).iterator();
 			}
 
 			if (filteredStatementsIterator.hasNext()) {

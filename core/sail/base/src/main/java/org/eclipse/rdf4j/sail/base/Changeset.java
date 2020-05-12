@@ -7,9 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -111,15 +114,28 @@ abstract class Changeset implements SailSink, ModelFactory {
 					contexts = new Resource[] { (Resource) ctxVar.getValue() };
 				}
 				for (Changeset changeset : prepend) {
-					Model approved = changeset.getApproved();
-					Model deprecated = changeset.getDeprecated();
-					if (approved != null && approved.contains(subj, pred, obj, contexts)
-							|| deprecated != null && deprecated.contains(subj, pred, obj, contexts)) {
+
+					if (changeset.isApproved(subj, pred, obj, contexts)
+							|| (changeset.isDeprecated(subj, pred, obj, contexts))) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}
 			}
 		}
+	}
+
+	synchronized protected boolean isApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (approved == null)
+			return false;
+
+		return approved.contains(subj, pred, obj, contexts);
+	}
+
+	synchronized protected boolean isDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (deprecated == null)
+			return false;
+
+		return deprecated.contains(subj, pred, obj, contexts);
 	}
 
 	public synchronized void addRefback(SailDatasetImpl dataset) {
@@ -328,14 +344,6 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return observations;
 	}
 
-	public synchronized Model getApproved() {
-		return approved;
-	}
-
-	public synchronized Model getDeprecated() {
-		return deprecated;
-	}
-
 	public synchronized Set<Resource> getApprovedContexts() {
 		return approvedContexts;
 	}
@@ -362,5 +370,54 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	public boolean hasDeprecated() {
 		return deprecated != null && !deprecated.isEmpty();
+	}
+
+	public boolean isChanged() {
+		return approved != null || deprecated != null || getApprovedContexts() != null
+				|| getDeprecatedContexts() != null || getAddedNamespaces() != null
+				|| getRemovedPrefixes() != null || isStatementCleared() || isNamespaceCleared()
+				|| getObservations() != null;
+	}
+
+	synchronized public List<Statement> getDeprecatedStatements() {
+		if (deprecated == null) {
+			return Collections.emptyList();
+		}
+		return new ArrayList<>(deprecated);
+	}
+
+	synchronized public List<Statement> getApprovedStatements() {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+		return new ArrayList<>(approved);
+	}
+
+	synchronized public boolean isDeprecated(Statement statement) {
+		if (deprecated == null) {
+			return false;
+		}
+		return deprecated.contains(statement);
+	}
+
+	synchronized public boolean hasApproved() {
+		return approved != null && !approved.isEmpty();
+	}
+
+	synchronized public Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+
+		// TODO use getStatements here instead!
+		return new ArrayList<>(approved.filter(subj, pred, obj, contexts));
+	}
+
+	synchronized public void removeApproved(Statement next) {
+		if (approved != null) {
+			approved.remove(next);
+		}
 	}
 }
