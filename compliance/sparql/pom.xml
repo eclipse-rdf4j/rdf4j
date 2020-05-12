@@ -10,9 +10,6 @@
 	<packaging>war</packaging>
 	<name>RDF4J SPARQL query parser compliance tests</name>
 	<description>Tests for the SPARQL query language implementation</description>
-	<properties>
-		<jetty.version>9.4.19.v20190610</jetty.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
