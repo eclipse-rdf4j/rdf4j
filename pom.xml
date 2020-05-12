@@ -822,8 +822,8 @@
 						</newVersion>
 						<parameter>
 							<onlyModified>true</onlyModified>
-							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-							<breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+							<breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
+							<breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
