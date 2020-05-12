@@ -50,10 +50,15 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 	protected Statement getNextElement() throws SailException {
 		Statement next = null;
 
+		// first run through the statements from the base store
 		if (iterator.hasNext()) {
 			next = iterator.next();
+
+			// remove the statement from the approved model in the Changeset, in case the approved model has a duplicate
 			approvedRemover.accept(next);
 		} else {
+			// we have now exhausted the base store and will start returning data added in this transaction but not yet
+			// committed, eg. approved model in the Changeset
 
 			if (filteredStatementsIterator == null) {
 				filteredStatementsIterator = approvedSupplier.get().iterator();
