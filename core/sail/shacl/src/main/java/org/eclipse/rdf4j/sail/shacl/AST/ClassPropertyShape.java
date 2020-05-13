@@ -96,11 +96,11 @@ public class ClassPropertyShape extends PathPropertyShape {
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in
 			// the same transaction
 			PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(addedStatements,
-					Collections.singleton(classResource), planNode, 1, false);
+				RDF.TYPE, Collections.singleton(classResource), planNode, 1, false);
 
 			// filter by type against the base sail
 			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalTypeFilterNode(
-					connectionsGroup.getBaseConnection(), Collections.singleton(classResource),
+					connectionsGroup.getBaseConnection(), RDF.TYPE, Collections.singleton(classResource),
 					addedStatementsTypeFilter, 1, false);
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTuplesDueToDataAddedThatMatchesTargetOrPath,
@@ -138,12 +138,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 			// in
 			// the same transaction
 			PlanNode filteredAgainstAdded = new ExternalTypeFilterNode(addedStatements,
-					Collections.singleton(classResource), targets, 1,
+				RDF.TYPE, Collections.singleton(classResource), targets, 1,
 					false);
 
 			// filter by type against the base sail
 			PlanNode filteredAgainsteBaseSail = new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
-					Collections.singleton(classResource),
+				RDF.TYPE, Collections.singleton(classResource),
 					filteredAgainstAdded, 1, false);
 
 			if (connectionsGroup.getStats().hasRemoved()) {
@@ -204,12 +204,12 @@ public class ClassPropertyShape extends PathPropertyShape {
 		// filter by type against addedStatements, this is an optimization for when you add the type statement in
 		// the same transaction
 		PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(addedStatements,
-				Collections.singleton(classResource), joined, 1, false);
+			RDF.TYPE, Collections.singleton(classResource), joined, 1, false);
 
 		// filter by type against the base sail
 		PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalTypeFilterNode(
 				connectionsGroup.getBaseConnection(),
-				Collections.singleton(classResource),
+			RDF.TYPE, Collections.singleton(classResource),
 				addedStatementsTypeFilter, 1, false);
 
 		if (connectionsGroup.getStats().hasRemoved()) {
@@ -273,7 +273,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			// filter by type against the base sail
 			planNode = new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
-					Collections.singleton(classResource),
+				RDF.TYPE, Collections.singleton(classResource),
 					planNode, 1, true);
 
 			return planNode;
@@ -356,7 +356,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			innerJoin = new Unique(innerJoin);
 
 			return new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
-					Collections.singleton(classResource),
+				RDF.TYPE, Collections.singleton(classResource),
 					innerJoin, 1,
 					true);
 

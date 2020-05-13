@@ -13,6 +13,7 @@ import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -27,17 +28,19 @@ import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 public class ExternalTypeFilterNode implements PlanNode {
 
 	private SailConnection connection;
-	private Set<Resource> filterOnType;
+	private Set<Resource> filterOnObject;
+	private final IRI filterOnPredicate;
 	PlanNode parent;
 	int index = 0;
 	private final boolean returnMatching;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index,
-			boolean returnMatching) {
+	public ExternalTypeFilterNode(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject, PlanNode parent, int index,
+								  boolean returnMatching) {
 		this.connection = connection;
-		this.filterOnType = filterOnType;
+		this.filterOnPredicate = filterOnPredicate;
+		this.filterOnObject = filterOnObject;
 		this.parent = parent;
 		this.index = index;
 		this.returnMatching = returnMatching;
@@ -64,7 +67,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 					if (returnMatching) {
 						if (matchedType != null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, RDF.TYPE, matchedType)));
+							next.addHistory(new Tuple(Arrays.asList(subject, filterOnPredicate, matchedType)));
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
@@ -90,8 +93,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
-					return filterOnType.stream()
-							.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
+					return filterOnObject.stream()
+							.filter(type -> connection.hasStatement((Resource) subject, filterOnPredicate, type, true))
 							.findFirst()
 							.orElse(null);
 				}
@@ -155,7 +158,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ExternalTypeFilterNode{" + "filterOnType="
-				+ Arrays.toString(filterOnType.stream().map(Formatter::prefix).toArray()) + '}';
+				+ Arrays.toString(filterOnObject.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override

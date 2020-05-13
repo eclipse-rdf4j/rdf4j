@@ -180,6 +180,11 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated,
 								shaclProperties.targetObjectsOf));
 					}
+					if (!shaclProperties.compoundTarget.isEmpty()) {
+						shaclProperties.compoundTarget.forEach(compoundTarget -> propertyShapes.add(new CompoundTarget(shapeId, connection, shaclProperties.deactivated,
+							compoundTarget)));
+
+					}
 
 					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
 						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target

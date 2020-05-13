@@ -126,7 +126,7 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
+		return new ExternalTypeFilterNode(shaclSailConnection, RDF.TYPE, targetClass, parent, 0, true);
 	}
 
 	@Override
