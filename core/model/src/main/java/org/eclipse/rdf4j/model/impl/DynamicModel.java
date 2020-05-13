@@ -62,7 +62,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public Model unmodifiable() {
+	public Model unmodifiable() {
 		upgrade();
 		return model.unmodifiable();
 	}
@@ -83,7 +83,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public Namespace setNamespace(String prefix, String name) {
+	public Namespace setNamespace(String prefix, String name) {
 		removeNamespace(prefix);
 		Namespace result = new SimpleNamespace(prefix, name);
 		namespaces.add(result);
@@ -91,13 +91,13 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public void setNamespace(Namespace namespace) {
+	public void setNamespace(Namespace namespace) {
 		removeNamespace(namespace.getPrefix());
 		namespaces.add(namespace);
 	}
 
 	@Override
-	synchronized public Optional<Namespace> removeNamespace(String prefix) {
+	public Optional<Namespace> removeNamespace(String prefix) {
 		Optional<Namespace> result = getNamespace(prefix);
 		result.ifPresent(namespaces::remove);
 		return result;
@@ -110,7 +110,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (contexts.length == 0) {
 			contexts = NULL_CTX;
 		}
@@ -129,13 +129,13 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean clear(Resource... context) {
+	public boolean clear(Resource... context) {
 		upgrade();
 		return model.clear(context);
 	}
 
 	@Override
-	synchronized public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		if (subj == null || pred == null || obj == null || contexts.length == 0) {
 			upgrade();
 		}
@@ -233,7 +233,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean add(Statement statement) {
+	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
 			return statements.put(statement, statement) == null;
@@ -242,7 +242,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean remove(Object o) {
+	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
 			return statements.remove(o) != null;
@@ -260,7 +260,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean addAll(Collection<? extends Statement> c) {
+	public boolean addAll(Collection<? extends Statement> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
 			return c.stream()
@@ -275,7 +275,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean retainAll(Collection<?> c) {
+	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
 			return statements.keySet().retainAll(c);
 		}
@@ -283,7 +283,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public boolean removeAll(Collection<?> c) {
+	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
 			return c
 					.stream()
@@ -296,7 +296,7 @@ public class DynamicModel implements Model {
 	}
 
 	@Override
-	synchronized public void clear() {
+	public void clear() {
 		if (model == null) {
 			statements.clear();
 		} else {
