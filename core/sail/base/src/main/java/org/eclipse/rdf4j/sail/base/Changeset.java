@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -59,11 +58,15 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	/**
 	 * Statements that have been added as part of a transaction, but has not yet been committed.
+	 *
+	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
 	private Model approved;
 
 	/**
 	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
+	 *
+	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
 	private Model deprecated;
 
@@ -126,7 +129,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	synchronized protected boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	synchronized boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		if (approved == null) {
 			return false;
 		}
@@ -134,7 +137,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return approved.contains(subj, pred, obj, contexts);
 	}
 
-	synchronized protected boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	synchronized boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		if (deprecated == null) {
 			return false;
 		}
@@ -142,24 +145,24 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return deprecated.contains(subj, pred, obj, contexts);
 	}
 
-	public synchronized void addRefback(SailDatasetImpl dataset) {
+	synchronized void addRefback(SailDatasetImpl dataset) {
 		if (refbacks == null) {
 			refbacks = new HashSet<>();
 		}
 		refbacks.add(dataset);
 	}
 
-	public synchronized void removeRefback(SailDatasetImpl dataset) {
+	synchronized void removeRefback(SailDatasetImpl dataset) {
 		if (refbacks != null) {
 			refbacks.remove(dataset);
 		}
 	}
 
-	public synchronized boolean isRefback() {
+	synchronized boolean isRefback() {
 		return refbacks != null && !refbacks.isEmpty();
 	}
 
-	public synchronized void prepend(Changeset changeset) {
+	synchronized void prepend(Changeset changeset) {
 		if (prepend == null) {
 			prepend = new HashSet<>();
 		}
@@ -249,7 +252,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(subj, pred, obj, ctx);
 		}
 		if (approved == null) {
-			approved = new DynamicModel(this);
+			approved = createEmptyModel();
 		}
 		approved.add(subj, pred, obj, ctx);
 		if (ctx != null) {
@@ -266,7 +269,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			deprecated.remove(statement);
 		}
 		if (approved == null) {
-			approved = new DynamicModel(this);
+			approved = createEmptyModel();
 		}
 		approved.add(statement);
 		if (statement.getContext() != null) {
@@ -283,7 +286,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 			approved.remove(statement);
 		}
 		if (deprecated == null) {
-			deprecated = new DynamicModel(this);
+			deprecated = createEmptyModel();
 		}
 		deprecated.add(statement);
 		Resource ctx = statement.getContext();
@@ -344,71 +347,71 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
-	public synchronized Set<StatementPattern> getObservations() {
+	synchronized Set<StatementPattern> getObservations() {
 		return observations;
 	}
 
-	public synchronized Set<Resource> getApprovedContexts() {
+	synchronized Set<Resource> getApprovedContexts() {
 		return approvedContexts;
 	}
 
-	public synchronized Set<Resource> getDeprecatedContexts() {
+	synchronized Set<Resource> getDeprecatedContexts() {
 		return deprecatedContexts;
 	}
 
-	public synchronized boolean isStatementCleared() {
+	synchronized boolean isStatementCleared() {
 		return statementCleared;
 	}
 
-	public synchronized Map<String, String> getAddedNamespaces() {
+	synchronized Map<String, String> getAddedNamespaces() {
 		return addedNamespaces;
 	}
 
-	public synchronized Set<String> getRemovedPrefixes() {
+	synchronized Set<String> getRemovedPrefixes() {
 		return removedPrefixes;
 	}
 
-	public synchronized boolean isNamespaceCleared() {
+	synchronized boolean isNamespaceCleared() {
 		return namespaceCleared;
 	}
 
-	public boolean hasDeprecated() {
+	boolean hasDeprecated() {
 		return deprecated != null && !deprecated.isEmpty();
 	}
 
-	public boolean isChanged() {
+	boolean isChanged() {
 		return approved != null || deprecated != null || getApprovedContexts() != null
 				|| getDeprecatedContexts() != null || getAddedNamespaces() != null
 				|| getRemovedPrefixes() != null || isStatementCleared() || isNamespaceCleared()
 				|| getObservations() != null;
 	}
 
-	synchronized public List<Statement> getDeprecatedStatements() {
+	synchronized List<Statement> getDeprecatedStatements() {
 		if (deprecated == null) {
 			return Collections.emptyList();
 		}
 		return new ArrayList<>(deprecated);
 	}
 
-	synchronized public List<Statement> getApprovedStatements() {
+	synchronized List<Statement> getApprovedStatements() {
 		if (approved == null) {
 			return Collections.emptyList();
 		}
 		return new ArrayList<>(approved);
 	}
 
-	synchronized public boolean hasDeprecated(Statement statement) {
+	synchronized boolean hasDeprecated(Statement statement) {
 		if (deprecated == null) {
 			return false;
 		}
 		return deprecated.contains(statement);
 	}
 
-	synchronized public boolean hasApproved() {
+	synchronized boolean hasApproved() {
 		return approved != null && !approved.isEmpty();
 	}
 
-	synchronized public Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
+	synchronized Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
 
 		if (approved == null) {
@@ -428,7 +431,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	synchronized public void removeApproved(Statement next) {
+	synchronized void removeApproved(Statement next) {
 		if (approved != null) {
 			approved.remove(next);
 		}
