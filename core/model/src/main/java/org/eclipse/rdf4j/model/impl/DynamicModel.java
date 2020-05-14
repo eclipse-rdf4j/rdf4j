@@ -37,10 +37,9 @@ import org.eclipse.rdf4j.util.iterators.SingletonIterator;
  * predicate).
  *
  * DynamicModel is thread safe to the extent that the underlying LinkedHashMap or Model is. The upgrade path is
- * protected by the actual upgrade method being synchronized and any writes being synchronized too. This means that
- * writes can safely assume that their underlying storage will not change while writing. The LinkedHashMap storage is
- * not removed once upgraded, so concurrent reads that have started reading from the LinkedHashMap can continue to read
- * even during an upgrade. We do make the LinkedHashMap unmodifiable to reduce the chance of there being a bug.
+ * protected by the actual upgrade method being synchronized. The LinkedHashMap storage is not removed once upgraded, so
+ * concurrent reads that have started reading from the LinkedHashMap can continue to read even during an upgrade. We do
+ * make the LinkedHashMap unmodifiable to reduce the chance of there being a bug.
  *
  * @author Håvard Mikkelsen Ottestad
  */
