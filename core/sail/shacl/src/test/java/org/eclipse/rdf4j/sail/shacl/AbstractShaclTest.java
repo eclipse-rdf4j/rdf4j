@@ -69,89 +69,91 @@ abstract public class AbstractShaclTest {
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 
 	private static final List<String> testCasePaths = Stream.of(
-//		"test-cases/and-or/datatypeNodeShape",
-//		"test-cases/class/and",
-//		"test-cases/class/and2",
-//		"test-cases/class/multipleClass",
-//		"test-cases/class/not",
-//		"test-cases/class/not2",
-//		"test-cases/class/notAnd",
-//		"test-cases/class/notNotSimple",
+		"test-cases/and-or/datatypeNodeShape",
+		"test-cases/class/and",
+		"test-cases/class/and2",
+		"test-cases/class/multipleClass",
+		"test-cases/class/not",
+		"test-cases/class/not2",
+		"test-cases/class/notAnd",
+		"test-cases/class/notNotSimple",
 		"test-cases/class/predicateObjectTarget",
-//		"test-cases/class/simple",
-//		"test-cases/class/subclass",
-//		"test-cases/class/targetNode",
-//		"test-cases/class/validateTarget",
-//		"test-cases/class/validateTargetNot",
-//		"test-cases/complex/dcat",
-//		"test-cases/complex/foaf",
-//		"test-cases/datatype/not",
-//		"test-cases/datatype/notNodeShape",
-//		"test-cases/datatype/notNot",
-//		"test-cases/datatype/notTargetNode",
-//		"test-cases/datatype/simple",
-//		"test-cases/datatype/targetNode",
-//		"test-cases/datatype/targetNode2",
-//		"test-cases/datatype/targetNodeLang",
-//		"test-cases/datatype/targetObjectsOf",
-//		"test-cases/datatype/targetSubjectsOf",
-//		"test-cases/datatype/targetSubjectsOfSingle",
+		"test-cases/class/sparqlTarget",
+		"test-cases/class/simple",
+		"test-cases/class/subclass",
+		"test-cases/class/targetNode",
+		"test-cases/class/validateTarget",
+		"test-cases/class/validateTargetNot",
+		"test-cases/complex/dcat",
+		"test-cases/complex/foaf",
+		"test-cases/complex/sparqlTarget",
+		"test-cases/datatype/not",
+		"test-cases/datatype/notNodeShape",
+		"test-cases/datatype/notNot",
+		"test-cases/datatype/notTargetNode",
+		"test-cases/datatype/simple",
+		"test-cases/datatype/targetNode",
+		"test-cases/datatype/targetNode2",
+		"test-cases/datatype/targetNodeLang",
+		"test-cases/datatype/targetObjectsOf",
+		"test-cases/datatype/targetSubjectsOf",
+		"test-cases/datatype/targetSubjectsOfSingle",
 		"test-cases/datatype/predicateObjectTarget",
 		"test-cases/datatype/sparqlTarget",
-//		"test-cases/deactivated/nodeshape",
-//		"test-cases/deactivated/or",
-//		"test-cases/deactivated/propertyshape",
-//		"test-cases/implicitTargetClass/simple",
-//		"test-cases/in/notAnd",
-//		"test-cases/in/notOr",
-//		"test-cases/in/simple",
-//		"test-cases/languageIn/simple",
-//		"test-cases/maxCount/not",
-//		"test-cases/maxCount/not2",
-//		"test-cases/maxCount/notNot",
-//		"test-cases/maxCount/simple",
-//		"test-cases/maxCount/targetNode",
-//		"test-cases/maxExclusive/simple",
-//		"test-cases/maxExclusiveMinLength/not",
-//		"test-cases/maxExclusiveMinLength/simple",
-//		"test-cases/maxInclusive/simple",
-//		"test-cases/maxLength/simple",
-//		"test-cases/minCount/not",
-//		"test-cases/minCount/simple",
-		"test-cases/minCount/predicateObjectTarget"
-//		"test-cases/minCount/targetNode",
-//		"test-cases/minExclusive/dateVsTime",
-//		"test-cases/minExclusive/simple",
-//		"test-cases/minInclusive/simple",
-//		"test-cases/minLength/simple",
-//		"test-cases/nodeKind/not",
-//		"test-cases/nodeKind/simple",
-//		"test-cases/nodeKind/validateTarget",
-//		"test-cases/or/class",
-//		"test-cases/or/class2",
-//		"test-cases/or/classValidateTarget",
-//		"test-cases/or/datatype",
-//		"test-cases/or/datatype2",
-//		"test-cases/or/datatype2",
-//		"test-cases/or/datatypeDifferentPaths",
-//		"test-cases/or/datatypeNodeShape",
-//		"test-cases/or/datatypeTargetNode",
-//		"test-cases/or/implicitAnd",
-//		"test-cases/or/inheritance",
-//		"test-cases/or/inheritance-deep",
-//		"test-cases/or/inheritanceNodeShape",
-//		"test-cases/or/maxCount",
-//		"test-cases/or/minCount",
-//		"test-cases/or/minCountDifferentPath",
-//		"test-cases/or/minCountMaxCount",
-//		"test-cases/or/multiple",
-//		"test-cases/or/nodeKindMinLength",
-//		"test-cases/or/nodeKindValidateTarget",
-//		"test-cases/pattern/multiple",
-//		"test-cases/pattern/simple",
-//		"test-cases/propertyShapeWithTarget/simple",
-//		"test-cases/uniqueLang/not",
-//		"test-cases/uniqueLang/simple"
+		"test-cases/deactivated/nodeshape",
+		"test-cases/deactivated/or",
+		"test-cases/deactivated/propertyshape",
+		"test-cases/implicitTargetClass/simple",
+		"test-cases/in/notAnd",
+		"test-cases/in/notOr",
+		"test-cases/in/simple",
+		"test-cases/languageIn/simple",
+		"test-cases/maxCount/not",
+		"test-cases/maxCount/not2",
+		"test-cases/maxCount/notNot",
+		"test-cases/maxCount/simple",
+		"test-cases/maxCount/targetNode",
+		"test-cases/maxExclusive/simple",
+		"test-cases/maxExclusiveMinLength/not",
+		"test-cases/maxExclusiveMinLength/simple",
+		"test-cases/maxInclusive/simple",
+		"test-cases/maxLength/simple",
+		"test-cases/minCount/not",
+		"test-cases/minCount/simple",
+		"test-cases/minCount/predicateObjectTarget",
+		"test-cases/minCount/targetNode",
+		"test-cases/minExclusive/dateVsTime",
+		"test-cases/minExclusive/simple",
+		"test-cases/minInclusive/simple",
+		"test-cases/minLength/simple",
+		"test-cases/nodeKind/not",
+		"test-cases/nodeKind/simple",
+		"test-cases/nodeKind/validateTarget",
+		"test-cases/or/class",
+		"test-cases/or/class2",
+		"test-cases/or/classValidateTarget",
+		"test-cases/or/datatype",
+		"test-cases/or/datatype2",
+		"test-cases/or/datatype2",
+		"test-cases/or/datatypeDifferentPaths",
+		"test-cases/or/datatypeNodeShape",
+		"test-cases/or/datatypeTargetNode",
+		"test-cases/or/implicitAnd",
+		"test-cases/or/inheritance",
+		"test-cases/or/inheritance-deep",
+		"test-cases/or/inheritanceNodeShape",
+		"test-cases/or/maxCount",
+		"test-cases/or/minCount",
+		"test-cases/or/minCountDifferentPath",
+		"test-cases/or/minCountMaxCount",
+		"test-cases/or/multiple",
+		"test-cases/or/nodeKindMinLength",
+		"test-cases/or/nodeKindValidateTarget",
+		"test-cases/pattern/multiple",
+		"test-cases/pattern/simple",
+		"test-cases/propertyShapeWithTarget/simple",
+		"test-cases/uniqueLang/not",
+		"test-cases/uniqueLang/simple"
 	)
 		.distinct()
 		.sorted()
@@ -201,8 +203,9 @@ abstract public class AbstractShaclTest {
 		Arrays.sort(list);
 
 		for (String caseName : list) {
-			if (caseName.startsWith("."))
+			if (caseName.startsWith(".")) {
 				continue;
+			}
 			String path = testCase + "/" + baseCase + "/" + caseName;
 			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(path);
 			if (resourceAsStream != null) {
@@ -382,18 +385,37 @@ abstract public class AbstractShaclTest {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
 					"utf-8");
-			s = Arrays
-					.stream(s.split("\n"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@prefix"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@base"))
-					.filter(a -> !a.trim().toUpperCase().startsWith("PREFIX "))
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
+
+			s = removeLeadingPrefixStatements(s);
+
 			System.out.println(s);
 			System.out.println("################################################\n");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private static String removeLeadingPrefixStatements(String s) {
+		String[] split = s.split("\n");
+		s = "";
+		boolean skippingPrefixes = true;
+
+		for (String s1 : split) {
+			if (skippingPrefixes) {
+				if (!(s1.trim().equals("") ||
+						s1.trim().toLowerCase().startsWith("@prefix") ||
+						s1.trim().toLowerCase().startsWith("@base") ||
+						s1.trim().toLowerCase().startsWith("prefix"))) {
+					skippingPrefixes = false;
+				}
+			}
+
+			if (!skippingPrefixes) {
+				s += s1 + "\n";
+			}
+
+		}
+		return s;
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,

@@ -8,11 +8,20 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.parser.sparql.PrefixDeclProcessor;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -88,7 +97,7 @@ public class SparqlTarget extends NodeShape {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		// THIS IS A HACK. It's ok for the prototype, but needs to be fixed before we merge/release.
-		return sparqlQuery.replace("?this", subjectVariable);
+		return "\n{\n" + sparqlQuery.replace("?this", subjectVariable) + "\n}\n";
 
 //		return " BIND(<" + targetPredicate + "> as ?b1) \n " +
 //				"BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable

@@ -41,7 +41,23 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 
-		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
+		// HACKY PREFIX SUPPORT!!!!
+		String prefixes = "";
+		if (query.toLowerCase().contains("prefix")) {
+			String tempQuery = "";
+			String[] split = query.split("\n");
+			for (String s : split) {
+				if (s.toLowerCase().trim().startsWith("prefix")) {
+					prefixes += s.trim() + "\n";
+				} else {
+					tempQuery += s + "\n";
+				}
+			}
+
+			query = tempQuery;
+		}
+
+		String completeQuery = prefixes + "select * where { VALUES (?a) {}" + query + "} order by ?a";
 		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
 
 		this.connection = connection;
@@ -55,13 +71,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			ArrayDeque<Tuple> left = new ArrayDeque<>();
+			final ArrayDeque<Tuple> left = new ArrayDeque<>();
 
-			ArrayDeque<Tuple> right = new ArrayDeque<>();
+			final ArrayDeque<Tuple> right = new ArrayDeque<>();
 
-			ArrayDeque<Tuple> joined = new ArrayDeque<>();
+			final ArrayDeque<Tuple> joined = new ArrayDeque<>();
 
-			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
+			final CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
