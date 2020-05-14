@@ -25,6 +25,12 @@ import org.junit.Test;
 
 public class DynamicModelConcurrentModificationAndUpgradeTest {
 
+	/**
+	 * Add multiple statements while forcing an upgrade to make sure we then get an exception because the underlying
+	 * storage was upgraded
+	 * 
+	 * @throws InterruptedException
+	 */
 	@Test
 	public void testConcurrentAddAndUpgrade() throws InterruptedException {
 
