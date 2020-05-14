@@ -331,9 +331,11 @@ public class DynamicModel implements Model {
 
 	synchronized private void synchronizedUpgrade() {
 		if (model == null) {
+			// make statements unmodifiable first, to increase chance of an early failure if the user is doing
+			// concurrent write with reads
+			statements = Collections.unmodifiableMap(statements);
 			Model tempModel = modelFactory.createEmptyModel();
 			tempModel.addAll(statements.values());
-			statements = Collections.unmodifiableMap(statements);
 			model = tempModel;
 		}
 	}

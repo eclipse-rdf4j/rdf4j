@@ -64,7 +64,7 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 					public Iterator<Statement> iterator() {
 						return new Iterator<Statement>() {
 
-							Iterator<Statement> iterator = statements.iterator();
+							final Iterator<Statement> iterator = statements.iterator();
 
 							@Override
 							public boolean hasNext() {
