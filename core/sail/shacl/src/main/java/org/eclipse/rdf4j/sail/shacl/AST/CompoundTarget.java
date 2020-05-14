@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -27,11 +31,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Objects;
-
-
 public class CompoundTarget extends NodeShape {
 
 	private IRI targetPredicate;
@@ -46,36 +45,34 @@ public class CompoundTarget extends NodeShape {
 		IRI targetClass = vf.createIRI("http://rdf4j.org/schema/rdf4j-shacl#", "targetClass");
 
 		for (Statement statement : connection.getStatements(compoundTarget, null, null)) {
-			if(statement.getPredicate().equals(targetClass)){
+			if (statement.getPredicate().equals(targetClass)) {
 				this.targetClass = (IRI) statement.getObject();
 			}
-			if(statement.getPredicate().equals(targetPredicate)){
+			if (statement.getPredicate().equals(targetPredicate)) {
 				this.targetPredicate = (IRI) statement.getObject();
 			}
 		}
-
 
 	}
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-							PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
 		PlanNode parent = connectionsGroup.getCachedNodeFor(new Select(connectionsGroup.getBaseConnection(),
-			getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
+				getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-										   PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode = connectionsGroup
 				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-					targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
-
+						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
 
@@ -83,36 +80,33 @@ public class CompoundTarget extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-											 PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode = connectionsGroup
-			.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-				targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
-
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
+						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
 	}
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
-		return true;
-
+		return addedStatements.hasStatement(null, targetPredicate, targetClass, false);
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-						   RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
-		return
-			 "{ BIND(<"+targetPredicate+"> as ?b1) \n " +
-				 "BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable
-				+ " ?b1 " + objectVariable + ". } \n";
+		return " BIND(<" + targetPredicate + "> as ?b1) \n " +
+				"BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable
+				+ " ?b1 " + objectVariable + ".  \n";
 
 	}
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-
-		return new ExternalTypeFilterNode(shaclSailConnection, targetPredicate, new HashSet<>(Arrays.asList(targetClass)), parent, 0, true);
+		return new ExternalTypeFilterNode(shaclSailConnection, targetPredicate,
+				new HashSet<>(Arrays.asList(targetClass)), parent, 0, true);
 	}
 
 	@Override
@@ -128,7 +122,7 @@ public class CompoundTarget extends NodeShape {
 		}
 		CompoundTarget that = (CompoundTarget) o;
 		return Objects.equals(targetPredicate, that.targetPredicate) &&
-			Objects.equals(targetClass, that.targetClass);
+				Objects.equals(targetClass, that.targetClass);
 	}
 
 	@Override
@@ -139,9 +133,9 @@ public class CompoundTarget extends NodeShape {
 	@Override
 	public String toString() {
 		return "CompoundTarget{" +
-			"targetPredicate=" + targetPredicate +
-			", targetClass=" + targetClass +
-			", id=" + id +
-			'}';
+				"targetPredicate=" + targetPredicate +
+				", targetClass=" + targetClass +
+				", id=" + id +
+				'}';
 	}
 }

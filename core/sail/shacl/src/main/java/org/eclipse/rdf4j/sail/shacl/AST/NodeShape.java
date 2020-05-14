@@ -181,8 +181,9 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 								shaclProperties.targetObjectsOf));
 					}
 					if (!shaclProperties.compoundTarget.isEmpty()) {
-						shaclProperties.compoundTarget.forEach(compoundTarget -> propertyShapes.add(new CompoundTarget(shapeId, connection, shaclProperties.deactivated,
-							compoundTarget)));
+						shaclProperties.compoundTarget.forEach(compoundTarget -> propertyShapes
+								.add(new CompoundTarget(shapeId, connection, shaclProperties.deactivated,
+										compoundTarget)));
 
 					}
 

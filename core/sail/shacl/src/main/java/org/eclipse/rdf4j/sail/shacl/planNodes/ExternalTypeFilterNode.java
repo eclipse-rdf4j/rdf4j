@@ -36,8 +36,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ExternalTypeFilterNode(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject, PlanNode parent, int index,
-								  boolean returnMatching) {
+	public ExternalTypeFilterNode(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
+			PlanNode parent, int index,
+			boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnPredicate = filterOnPredicate;
 		this.filterOnObject = filterOnObject;

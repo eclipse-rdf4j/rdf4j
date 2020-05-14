@@ -12,7 +12,7 @@ delete {
 
         ex:validPerson1
                 ex:age 234 ;
-                a ex:Person .
+                ex:type ex:Person .
 
 } where {
         ?a ?b ?c.

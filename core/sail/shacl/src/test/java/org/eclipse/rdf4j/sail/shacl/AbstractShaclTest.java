@@ -77,6 +77,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/class/not2",
 //		"test-cases/class/notAnd",
 //		"test-cases/class/notNotSimple",
+		"test-cases/class/predicateObjectTarget",
 //		"test-cases/class/simple",
 //		"test-cases/class/subclass",
 //		"test-cases/class/targetNode",
@@ -95,7 +96,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/datatype/targetObjectsOf",
 //		"test-cases/datatype/targetSubjectsOf",
 //		"test-cases/datatype/targetSubjectsOfSingle",
-		"test-cases/datatype/predicateObjectTarget"
+		"test-cases/datatype/predicateObjectTarget",
 //		"test-cases/deactivated/nodeshape",
 //		"test-cases/deactivated/or",
 //		"test-cases/deactivated/propertyshape",
@@ -116,6 +117,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/maxLength/simple",
 //		"test-cases/minCount/not",
 //		"test-cases/minCount/simple",
+		"test-cases/minCount/predicateObjectTarget"
 //		"test-cases/minCount/targetNode",
 //		"test-cases/minExclusive/dateVsTime",
 //		"test-cases/minExclusive/simple",
@@ -303,7 +305,7 @@ abstract public class AbstractShaclTest {
 				printCurrentState(shaclRepository);
 
 				ran = true;
-				printFile(queryFile.getName());
+				printFile(dataPath + queryFile.getName());
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);

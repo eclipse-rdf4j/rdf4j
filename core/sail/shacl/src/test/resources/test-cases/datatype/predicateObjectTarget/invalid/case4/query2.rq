@@ -9,6 +9,6 @@ INSERT DATA {
 
 ex:validPerson1
         ex:age 234 ;
-        a ex:Person .
+        ex:type ex:Person .
 
 }
