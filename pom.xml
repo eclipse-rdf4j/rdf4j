@@ -517,21 +517,21 @@
 				<plugin>
 					<groupId>com.github.spotbugs</groupId>
 					<artifactId>spotbugs-maven-plugin</artifactId>
-					<version>3.1.12</version>
+					<version>4.0.0</version>
 					<configuration>
 						<effort>Max</effort>
 						<threshold>Low</threshold>
 						<failOnError>false</failOnError>
 						<plugins>
 							<plugin>
-								<groupId>com.mebigfatguy.fb-contrib</groupId>
-								<artifactId>fb-contrib</artifactId>
+								<groupId>com.mebigfatguy.sb-contrib</groupId>
+								<artifactId>sb-contrib</artifactId>
 								<version>7.4.7</version>
 							</plugin>
 							<plugin>
 								<groupId>com.h3xstream.findsecbugs</groupId>
 								<artifactId>findsecbugs-plugin</artifactId>
-								<version>1.9.0</version>
+								<version>1.10.1</version>
 							</plugin>
 						</plugins>
 					</configuration>
