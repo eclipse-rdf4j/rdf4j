@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +54,7 @@ public class ShaclProperties {
 	Set<IRI> targetObjectsOf = new HashSet<>();
 
 	List<Resource> compoundTarget = new ArrayList<>();
+	List<Resource> target = new ArrayList<>();
 
 	boolean deactivated = false;
 
@@ -188,6 +188,9 @@ public class ShaclProperties {
 					break;
 				case "http://rdf4j.org/schema/rdf4j-shacl#compoundTarget":
 					compoundTarget.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#target":
+					target.add((Resource) object);
 					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {

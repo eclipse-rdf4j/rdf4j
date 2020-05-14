@@ -62,9 +62,12 @@ public class CompoundTarget extends NodeShape {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
-		PlanNode parent = connectionsGroup.getCachedNodeFor(new Select(connectionsGroup.getBaseConnection(),
-				getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
-		return new Unique(new TrimTuple(parent, 0, 1));
+		PlanNode planNode = connectionsGroup
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
+						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+
+		return new Unique(new TrimTuple(planNode, 0, 1));
+
 	}
 
 	@Override
@@ -82,7 +85,7 @@ public class CompoundTarget extends NodeShape {
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode = connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));

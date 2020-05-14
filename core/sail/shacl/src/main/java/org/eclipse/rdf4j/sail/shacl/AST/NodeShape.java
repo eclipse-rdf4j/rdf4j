@@ -187,6 +187,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					}
 
+					if (!shaclProperties.target.isEmpty()) {
+						shaclProperties.target.forEach(sparqlTarget -> propertyShapes
+								.add(new SparqlTarget(shapeId, connection, shaclProperties.deactivated,
+										sparqlTarget)));
+
+					}
+
 					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
 						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target
 						// class

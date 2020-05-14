@@ -97,6 +97,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/datatype/targetSubjectsOf",
 //		"test-cases/datatype/targetSubjectsOfSingle",
 		"test-cases/datatype/predicateObjectTarget",
+		"test-cases/datatype/sparqlTarget",
 //		"test-cases/deactivated/nodeshape",
 //		"test-cases/deactivated/or",
 //		"test-cases/deactivated/propertyshape",
