@@ -323,6 +323,7 @@ public class DynamicModel implements Model {
 				if (model == null) {
 					Model tempModel = modelFactory.createEmptyModel();
 					tempModel.addAll(statements.values());
+					statements = null;
 					model = tempModel;
 				}
 			}

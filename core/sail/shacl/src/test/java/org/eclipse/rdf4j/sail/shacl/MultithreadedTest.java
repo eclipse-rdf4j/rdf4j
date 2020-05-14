@@ -15,7 +15,6 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,7 +26,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -39,7 +37,6 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.AfterClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public abstract class MultithreadedTest {
@@ -51,7 +48,6 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
-	@Ignore
 	public void testDataAndShapes() {
 		System.out.println("testDataAndShapes");
 
@@ -243,7 +239,7 @@ public abstract class MultithreadedTest {
 						})
 						.map(executorService::submit)
 						.collect(Collectors.toList()) // this terminates lazy evalutation, so that we can submit all our
-														// runnables before we start collecting them
+						// runnables before we start collecting them
 						.forEach(f -> {
 							try {
 								f.get();
@@ -327,7 +323,6 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
-	@Ignore
 	public void testLotsOfValidationFailuresSnapshot() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSnapshot");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -343,7 +338,6 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
-	@Ignore
 	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializableValidation");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -358,12 +352,8 @@ public abstract class MultithreadedTest {
 
 	}
 
-	public static boolean failed = false;
-
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
-		if (failed)
-			return;
 		System.out.println("testLotsOfValidationFailuresSerializable");
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
@@ -373,16 +363,11 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 
-		try {
-			runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 50);
-		} catch (Throwable t) {
-			failed = true;
-			throw t;
-		}
+		runValidationFailuresTest(sail, IsolationLevels.SERIALIZABLE, 200);
+
 	}
 
 	@Test
-	@Ignore
 	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadCommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -398,7 +383,6 @@ public abstract class MultithreadedTest {
 	}
 
 	@Test
-	@Ignore
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadUncommitted");
 		ShaclSail sail = new ShaclSail(getBaseSail());
@@ -436,7 +420,6 @@ public abstract class MultithreadedTest {
 			parse3 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
 		}
 
-		Random r = new Random();
 		ExecutorService executorService = null;
 		try {
 
@@ -449,7 +432,6 @@ public abstract class MultithreadedTest {
 					.mapToObj(transaction -> (Runnable) () -> {
 
 						try (SailRepositoryConnection connection = repository.getConnection()) {
-							ValueFactory vf = connection.getValueFactory();
 
 							connection.begin(isolationLevels);
 							connection.add(parse);

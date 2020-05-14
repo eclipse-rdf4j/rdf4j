@@ -200,9 +200,7 @@ public class LinkedHashModel extends AbstractModel {
 
 	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		ModelIterator modelIterator = matchPattern(subj, pred, obj, contexts);
-		Thread.yield();
-		return modelIterator.hasNext();
+		return matchPattern(subj, pred, obj, contexts).hasNext();
 	}
 
 	@Override

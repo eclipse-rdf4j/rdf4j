@@ -14,18 +14,9 @@ import org.junit.Before;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-@RunWith(Parameterized.class)
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	File file;
-
-	@Parameterized.Parameters
-	public static Object[] params() {
-		return new Object[100];
-	}
-
-	public MultithreadedNativeStoreTest(Object o) {
-	}
 
 	@After
 	public void after() {
@@ -43,8 +34,6 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	@Override
 	NotifyingSail getBaseSail() {
-		if (failed)
-			return null;
 		NativeStore nativeStore = new NativeStore(file);
 		try (NotifyingSailConnection connection = nativeStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
