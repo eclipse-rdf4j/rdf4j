@@ -145,24 +145,24 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return deprecated.contains(subj, pred, obj, contexts);
 	}
 
-	synchronized void addRefback(SailDatasetImpl dataset) {
+	public synchronized void addRefback(SailDatasetImpl dataset) {
 		if (refbacks == null) {
 			refbacks = new HashSet<>();
 		}
 		refbacks.add(dataset);
 	}
 
-	synchronized void removeRefback(SailDatasetImpl dataset) {
+	public synchronized void removeRefback(SailDatasetImpl dataset) {
 		if (refbacks != null) {
 			refbacks.remove(dataset);
 		}
 	}
 
-	synchronized boolean isRefback() {
+	public synchronized boolean isRefback() {
 		return refbacks != null && !refbacks.isEmpty();
 	}
 
-	synchronized void prepend(Changeset changeset) {
+	public synchronized void prepend(Changeset changeset) {
 		if (prepend == null) {
 			prepend = new HashSet<>();
 		}
@@ -347,43 +347,43 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
-	synchronized Set<StatementPattern> getObservations() {
-		return observations;
+	public synchronized Set<StatementPattern> getObservations() {
+		return new HashSet<>(observations);
 	}
 
-	synchronized Set<Resource> getApprovedContexts() {
-		return approvedContexts;
+	public synchronized Set<Resource> getApprovedContexts() {
+		return new HashSet<>(approvedContexts);
 	}
 
-	synchronized Set<Resource> getDeprecatedContexts() {
-		return deprecatedContexts;
+	public synchronized Set<Resource> getDeprecatedContexts() {
+		return new HashSet<>(deprecatedContexts);
 	}
 
-	synchronized boolean isStatementCleared() {
+	public synchronized boolean isStatementCleared() {
 		return statementCleared;
 	}
 
-	synchronized Map<String, String> getAddedNamespaces() {
+	public synchronized Map<String, String> getAddedNamespaces() {
 		return addedNamespaces;
 	}
 
-	synchronized Set<String> getRemovedPrefixes() {
+	public synchronized Set<String> getRemovedPrefixes() {
 		return removedPrefixes;
 	}
 
-	synchronized boolean isNamespaceCleared() {
+	public synchronized boolean isNamespaceCleared() {
 		return namespaceCleared;
 	}
 
-	boolean hasDeprecated() {
+	public synchronized boolean hasDeprecated() {
 		return deprecated != null && !deprecated.isEmpty();
 	}
 
 	boolean isChanged() {
-		return approved != null || deprecated != null || getApprovedContexts() != null
-				|| getDeprecatedContexts() != null || getAddedNamespaces() != null
-				|| getRemovedPrefixes() != null || isStatementCleared() || isNamespaceCleared()
-				|| getObservations() != null;
+		return approved != null || deprecated != null || approvedContexts != null
+				|| deprecatedContexts != null || addedNamespaces != null
+				|| removedPrefixes != null || statementCleared || namespaceCleared
+				|| observations != null;
 	}
 
 	synchronized List<Statement> getDeprecatedStatements() {
