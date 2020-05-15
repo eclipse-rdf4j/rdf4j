@@ -348,15 +348,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<StatementPattern> getObservations() {
-		return new HashSet<>(observations);
+
+		return cloneSet(observations);
+
 	}
 
 	public synchronized Set<Resource> getApprovedContexts() {
-		return new HashSet<>(approvedContexts);
+		return cloneSet(approvedContexts);
 	}
 
 	public synchronized Set<Resource> getDeprecatedContexts() {
-		return new HashSet<>(deprecatedContexts);
+		return cloneSet(deprecatedContexts);
 	}
 
 	public synchronized boolean isStatementCleared() {
@@ -368,7 +370,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<String> getRemovedPrefixes() {
-		return removedPrefixes;
+		return cloneSet(removedPrefixes);
 	}
 
 	public synchronized boolean isNamespaceCleared() {
@@ -435,5 +437,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 		if (approved != null) {
 			approved.remove(next);
 		}
+	}
+
+	private <T> Set<T> cloneSet(Set<T> deprecatedContexts) {
+		if (deprecatedContexts == null) {
+			return null;
+		}
+		return new HashSet<>(deprecatedContexts);
 	}
 }
