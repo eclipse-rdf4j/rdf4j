@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.dataset;
 
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
 
 /**

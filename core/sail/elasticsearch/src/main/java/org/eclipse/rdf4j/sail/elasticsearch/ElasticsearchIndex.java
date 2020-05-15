@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.AbstractSearchIndex;
 import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;

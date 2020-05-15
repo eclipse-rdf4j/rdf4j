@@ -8,10 +8,8 @@
 package org.eclipse.rdf4j.query;
 
 import java.util.Iterator;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
 
 /**
@@ -24,7 +22,7 @@ public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationExc
 
 	@Override
 	default Iterator<T> iterator() {
-		return new CloseableIterationIterator<T>(this);
+		return new CloseableIterationIterator<>(this);
 	}
 
 }

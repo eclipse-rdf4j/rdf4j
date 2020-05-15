@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleStatement;
-import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementImpl;
 
 /**
@@ -26,6 +24,7 @@ class ElasticsearchStatement extends ExtensibleStatementImpl implements Elastics
 		this.elasticsearchId = elasticsearchId;
 	}
 
+	@Override
 	public String getElasticsearchId() {
 		return elasticsearchId;
 	}

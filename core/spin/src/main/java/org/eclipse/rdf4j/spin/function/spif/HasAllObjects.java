@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.BooleanLiteralImpl;
 import org.eclipse.rdf4j.model.vocabulary.SPIF;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;

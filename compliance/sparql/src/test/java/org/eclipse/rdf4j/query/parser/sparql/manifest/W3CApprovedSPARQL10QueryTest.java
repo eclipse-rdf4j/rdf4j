@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
@@ -27,12 +26,14 @@ public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 	public static Test suite() throws Exception {
 		return SPARQL10ManifestTest.suite(new Factory() {
 
+			@Override
 			public W3CApprovedSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
 						false);
 			}
 
+			@Override
 			public W3CApprovedSPARQL10QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
 					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
@@ -60,6 +61,7 @@ public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 
+	@Override
 	protected Repository newRepository() {
 		return new DatasetRepository(new SailRepository(new MemoryStore()));
 	}

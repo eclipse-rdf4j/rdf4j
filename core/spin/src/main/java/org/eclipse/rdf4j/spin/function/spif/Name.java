@@ -7,12 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function.spif;
 
-import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;

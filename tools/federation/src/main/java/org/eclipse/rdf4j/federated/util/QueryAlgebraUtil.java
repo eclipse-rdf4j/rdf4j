@@ -576,7 +576,7 @@ public class QueryAlgebraUtil {
 
 		if (tupleExpr instanceof Extension) {
 			// for a BIND extension in our cost model we work with 0 free vars
-			return new ArrayList<String>();
+			return new ArrayList<>();
 		}
 
 		if (tupleExpr instanceof ArbitraryLengthPath) {
@@ -593,6 +593,6 @@ public class QueryAlgebraUtil {
 
 		log.debug("Type " + tupleExpr.getClass().getSimpleName()
 				+ " not supported for computing free vars. If you run into this, please report a bug.");
-		return new ArrayList<String>();
+		return new ArrayList<>();
 	}
 }

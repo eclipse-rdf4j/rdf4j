@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;

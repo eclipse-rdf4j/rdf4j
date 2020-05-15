@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.util.iterators.Iterators;
 

@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.Before;
