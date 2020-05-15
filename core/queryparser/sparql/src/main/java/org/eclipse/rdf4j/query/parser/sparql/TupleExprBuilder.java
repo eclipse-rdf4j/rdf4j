@@ -1258,6 +1258,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
+		// FIXME the entire path sequence processing needs to be separated out and more cleanly implemented, as it is
+		// currently a very messy operation involving way too many if...else conditions and strange edge case handling.
+
 		Var subjVar = mapValueExprToVar(data);
 
 		// check if we should invert subject and object.
@@ -1420,7 +1423,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						if (invertSequence) {
 							endVar = subjVar;
 							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
-							if (!(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
+							// or otherwise we'd create a reflexive path (possible in nested expressions)
+							if (subjVar.equals(startVar)
+									|| !(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
 								startVar = objVar;
 							}
 						}
