@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 public class SparqlFilter extends FilterPlanNode {
 
 	private final String query;
+
 	private final SailConnection connection;
 
 	public SparqlFilter(SailConnection connection, PlanNode parent, String query) {
