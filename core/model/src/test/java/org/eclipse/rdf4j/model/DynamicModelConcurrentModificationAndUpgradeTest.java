@@ -142,7 +142,6 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 			} catch (Exception e) {
 				exception[0] = e;
 			}
-
 		};
 
 		Runnable upgrade = () -> {
