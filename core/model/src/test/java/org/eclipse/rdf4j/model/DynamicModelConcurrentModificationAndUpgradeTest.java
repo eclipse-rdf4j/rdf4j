@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.model;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -142,7 +142,6 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 			} catch (Exception e) {
 				exception[0] = e;
 			}
-
 		};
 
 		Runnable upgrade = () -> {
@@ -159,8 +158,7 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 		addAllThread.join();
 		upgradeThread.join();
 
-		assertEquals(UnsupportedOperationException.class, exception[0].getClass());
-
+		assertThat(exception[0]).isInstanceOf(UnsupportedOperationException.class);
 	}
 
 }
