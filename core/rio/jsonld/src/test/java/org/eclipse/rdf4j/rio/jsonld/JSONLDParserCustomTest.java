@@ -359,7 +359,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -377,7 +377,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -394,7 +394,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNull(cause.getLocation().getSourceRef());
 		}
 	}
