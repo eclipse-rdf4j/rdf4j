@@ -8,7 +8,8 @@
 
 package org.eclipse.rdf4j.model;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,12 +29,26 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 	/**
 	 * Add multiple statements while forcing an upgrade to make sure we then get an exception because the underlying
 	 * storage was upgraded
-	 * 
+	 *
 	 * @throws InterruptedException
 	 */
 	@Test
 	public void testConcurrentAddAndUpgrade() throws InterruptedException {
 
+		for (int i = 0; i < 100; i++) {
+			Exception exception = runTest();
+
+			if (exception != null) {
+				assertThat(exception).isInstanceOf(UnsupportedOperationException.class);
+				return;
+			}
+		}
+
+		fail("There should have been an UnsupportedOperationException earlier");
+
+	}
+
+	private Exception runTest() throws InterruptedException {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		List<Statement> statements = Arrays.asList(
 				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
@@ -44,7 +59,8 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 
-		CountDownLatch countDownLatch = new CountDownLatch(1);
+		CountDownLatch countDownLatch2 = new CountDownLatch(1);
+		CountDownLatch countDownLatch1 = new CountDownLatch(1);
 
 		final Exception[] exception = new Exception[1];
 
@@ -75,20 +91,23 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 							@Override
 							public boolean hasNext() {
 								try {
-									countDownLatch.await();
+									countDownLatch1.countDown();
+									countDownLatch2.await();
 								} catch (InterruptedException e) {
 									e.printStackTrace();
 								}
+								Thread.yield();
 								return iterator.hasNext();
 							}
 
 							@Override
 							public Statement next() {
 								try {
-									countDownLatch.await();
+									countDownLatch2.await();
 								} catch (InterruptedException e) {
 									e.printStackTrace();
 								}
+								Thread.yield();
 								return iterator.next();
 							}
 						};
@@ -142,12 +161,16 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 			} catch (Exception e) {
 				exception[0] = e;
 			}
-
 		};
 
 		Runnable upgrade = () -> {
+			try {
+				countDownLatch1.await();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 			model.filter(null, RDF.TYPE, null);
-			countDownLatch.countDown();
+			countDownLatch2.countDown();
 		};
 
 		Thread addAllThread = new Thread(addAll);
@@ -159,8 +182,7 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 		addAllThread.join();
 		upgradeThread.join();
 
-		assertEquals(UnsupportedOperationException.class, exception[0].getClass());
-
+		return exception[0];
 	}
 
 }
