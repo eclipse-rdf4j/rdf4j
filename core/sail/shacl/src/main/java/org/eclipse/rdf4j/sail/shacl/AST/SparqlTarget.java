@@ -8,31 +8,23 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.parser.sparql.PrefixDeclProcessor;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
-import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.planNodes.SparqlFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.SparqlTargetSelect;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 
 public class SparqlTarget extends NodeShape {
@@ -41,8 +33,6 @@ public class SparqlTarget extends NodeShape {
 
 	SparqlTarget(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource sparqlTarget) {
 		super(id, connection, deactivated);
-
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		sparqlQuery = connection
 				.getStatements(sparqlTarget, SHACL.SELECT, null)
@@ -106,12 +96,8 @@ public class SparqlTarget extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		// TODO fix this
-		return new EmptyNode();
-//		return new ExternalTypeFilterNode(shaclSailConnection, targetPredicate,
-//				new HashSet<>(Arrays.asList(targetClass)), parent, 0, true);
-
+	public PlanNode getTargetFilter(SailConnection baseConnection, PlanNode parent) {
+		return new SparqlFilter(baseConnection, parent, sparqlQuery).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 }

@@ -67,6 +67,10 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 
+		throw new IllegalStateException("Must specify if filter should return false or true nodes!");
+	}
+
+	private CloseableIteration<Tuple, SailException> iteratorInternal() {
 		FilterPlanNode that = this;
 
 		return new CloseableIteration<Tuple, SailException>() {
@@ -185,7 +189,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public void init() {
 		if (iterator == null) {
-			iterator = iterator();
+			iterator = iteratorInternal();
 		}
 	}
 

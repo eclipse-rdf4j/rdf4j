@@ -66,8 +66,14 @@ public class AndPropertyShape extends PathPropertyShape {
 			OrPropertyShape orPropertyShape = new OrPropertyShape(getId(), nodeShape, deactivated, this, null,
 					and);
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					overrideTargetNode, false, true);
+
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(plan,
+						connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 
 			return new EnrichWithShape(plan.getParent(), this);
 
@@ -77,13 +83,18 @@ public class AndPropertyShape extends PathPropertyShape {
 			PlanNode plan = and.get(0)
 					.get(0)
 					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(plan,
+						connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(plan, this);
 		}
 
 		List<PlanNode> plans = and
 				.stream()
 				.flatMap(List::stream)
-				.map(shape -> shape.getPlan(connectionsGroup, printPlans, overrideTargetNode, negateSubPlans,
+				.map(shape -> shape.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans,
 						false))
 				.collect(Collectors.toList());
 
@@ -110,6 +121,12 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		if (iteratorData == IteratorData.aggregated) {
 			unionPlan = new AggregateIteratorTypeOverride(new Unique(new TrimTuple(unionPlan, 0, 1)));
+		}
+
+		if (printPlans) {
+			String planAsGraphvizDot = getPlanAsGraphvizDot(unionPlan,
+					connectionsGroup);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new EnrichWithShape(unionPlan, this);
