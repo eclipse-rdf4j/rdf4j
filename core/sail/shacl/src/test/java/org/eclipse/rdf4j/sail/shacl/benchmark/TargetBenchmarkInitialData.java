@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -59,14 +60,19 @@ public class TargetBenchmarkInitialData {
 	@Param({ "1", "1000", "100000" })
 	public int existingTargets = 10;
 
+	@Param({ "shaclDatatypePredicateObjectTarget.ttl", "shaclDatatypeSparqlTarget.ttl" })
+	public String shape;
+
 	public int NUMBER_OF_TRANSACTIONS = 10;
 
 	List<Statement> initialStatements = new ArrayList<>();
 
 	private List<List<Statement>> transactions;
 
-	@Setup(Level.Iteration)
-	public void setUp() {
+	SailRepository repository;
+
+	@Setup(Level.Trial)
+	public void trialSetup() {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -96,26 +102,11 @@ public class TargetBenchmarkInitialData {
 
 	}
 
-	@Benchmark
-	public void sparqlTarget() throws Exception {
+	@Setup(Level.Invocation)
+	public void invocationSetup() throws IOException {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatypeSparqlTarget.ttl"));
+		repository = new SailRepository(Utils.getInitializedShaclSail(shape));
 
-		runBenchmark(repository);
-
-	}
-
-	@Benchmark
-	public void predicateObjectTarget() throws Exception {
-
-		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("shaclDatatypePredicateObjectTarget.ttl"));
-
-		runBenchmark(repository);
-
-	}
-
-	private void runBenchmark(SailRepository repository) {
 		((ShaclSail) repository.getSail()).disableValidation();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -125,6 +116,17 @@ public class TargetBenchmarkInitialData {
 		}
 
 		((ShaclSail) repository.getSail()).enableValidation();
+
+		System.gc();
+
+	}
+
+	@Benchmark
+	public void benchmark() throws Exception {
+		runBenchmark(repository);
+	}
+
+	private void runBenchmark(SailRepository repository) {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : transactions) {
