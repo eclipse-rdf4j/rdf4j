@@ -49,7 +49,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private volatile Map<Statement, Statement> statements = new LinkedHashMap<>();
+	private Map<Statement, Statement> statements = new LinkedHashMap<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
