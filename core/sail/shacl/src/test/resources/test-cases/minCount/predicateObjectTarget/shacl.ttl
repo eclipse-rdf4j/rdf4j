@@ -11,7 +11,7 @@ ex:PersonShape
 	a sh:NodeShape  ;
         rdf4j-sh:compoundTarget [
 	        rdf4j-sh:targetPredicate rdf:type;
-	        rdf4j-sh:targetClass ex:Person
+	        rdf4j-sh:targetObject ex:Person
 	];
         sh:property [
 		sh:path ex:ssn ;

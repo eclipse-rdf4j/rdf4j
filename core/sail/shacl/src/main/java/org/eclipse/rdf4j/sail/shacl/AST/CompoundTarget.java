@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 public class CompoundTarget extends NodeShape {
 
 	private IRI targetPredicate;
-	private IRI targetClass;
+	private IRI targetObject;
 
 	CompoundTarget(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource compoundTarget) {
 		super(id, connection, deactivated);
@@ -42,11 +42,11 @@ public class CompoundTarget extends NodeShape {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		IRI targetPredicate = vf.createIRI("http://rdf4j.org/schema/rdf4j-shacl#", "targetPredicate");
-		IRI targetClass = vf.createIRI("http://rdf4j.org/schema/rdf4j-shacl#", "targetClass");
+		IRI targetObject = vf.createIRI("http://rdf4j.org/schema/rdf4j-shacl#", "targetObject");
 
 		for (Statement statement : connection.getStatements(compoundTarget, null, null)) {
-			if (statement.getPredicate().equals(targetClass)) {
-				this.targetClass = (IRI) statement.getObject();
+			if (statement.getPredicate().equals(targetObject)) {
+				this.targetObject = (IRI) statement.getObject();
 			}
 			if (statement.getPredicate().equals(targetPredicate)) {
 				this.targetPredicate = (IRI) statement.getObject();
@@ -64,7 +64,7 @@ public class CompoundTarget extends NodeShape {
 
 		PlanNode planNode = connectionsGroup
 				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
-						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+						targetPredicate, targetObject, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
 
@@ -75,7 +75,7 @@ public class CompoundTarget extends NodeShape {
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode = connectionsGroup
 				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+						targetPredicate, targetObject, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
 
@@ -86,14 +86,14 @@ public class CompoundTarget extends NodeShape {
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode = connectionsGroup
 				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-						targetPredicate, targetClass, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+						targetPredicate, targetObject, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
 	}
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
-		return addedStatements.hasStatement(null, targetPredicate, targetClass, false);
+		return addedStatements.hasStatement(null, targetPredicate, targetObject, false);
 	}
 
 	@Override
@@ -101,7 +101,7 @@ public class CompoundTarget extends NodeShape {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return " BIND(<" + targetPredicate + "> as ?b1) \n " +
-				"BIND(<" + targetClass + "> as " + objectVariable + ") \n " + subjectVariable
+				"BIND(<" + targetObject + "> as " + objectVariable + ") \n " + subjectVariable
 				+ " ?b1 " + objectVariable + ".  \n";
 
 	}
@@ -109,7 +109,7 @@ public class CompoundTarget extends NodeShape {
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalTypeFilterNode(shaclSailConnection, targetPredicate,
-				new HashSet<>(Arrays.asList(targetClass)), parent, 0, true);
+				new HashSet<>(Arrays.asList(targetObject)), parent, 0, true);
 	}
 
 	@Override
@@ -125,19 +125,19 @@ public class CompoundTarget extends NodeShape {
 		}
 		CompoundTarget that = (CompoundTarget) o;
 		return Objects.equals(targetPredicate, that.targetPredicate) &&
-				Objects.equals(targetClass, that.targetClass);
+				Objects.equals(targetObject, that.targetObject);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), targetPredicate, targetClass);
+		return Objects.hash(super.hashCode(), targetPredicate, targetObject);
 	}
 
 	@Override
 	public String toString() {
 		return "CompoundTarget{" +
 				"targetPredicate=" + targetPredicate +
-				", targetClass=" + targetClass +
+				", targetObject=" + targetObject +
 				", id=" + id +
 				'}';
 	}

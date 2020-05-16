@@ -12,12 +12,12 @@ ex:PersonShape
 
         rdf4j-sh:compoundTarget [
 	        rdf4j-sh:targetPredicate rdf:type;
-	        rdf4j-sh:targetClass ex:Person
+	        rdf4j-sh:targetObject ex:Person
 	];
 
         rdf4j-sh:compoundTarget [
 	        rdf4j-sh:targetPredicate rdf:type;
-	        rdf4j-sh:targetClass ex:SecondTarget
+	        rdf4j-sh:targetObject ex:SecondTarget
 	];
 
 	sh:property [

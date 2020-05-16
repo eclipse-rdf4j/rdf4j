@@ -12,7 +12,7 @@ ex:PersonShape
 	a sh:NodeShape  ;
 		rdf4j-sh:compoundTarget [
         	        rdf4j-sh:targetPredicate rdf:type;
-        	        rdf4j-sh:targetClass  rdfs:Resource
+        	        rdf4j-sh:targetObject  rdfs:Resource
         	];
 
 	sh:property [
