@@ -24,6 +24,7 @@ ex:PersonShape
         		                ?this a ex:Person .
         			}
         			""" ;
+        ];
         sh:property [
 	       sh:path ex:iriOr10LengthEnglishNorwegianLiteral ;
 
