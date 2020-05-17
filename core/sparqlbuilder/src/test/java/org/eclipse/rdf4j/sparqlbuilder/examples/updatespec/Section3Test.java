@@ -342,4 +342,30 @@ public class Section3Test extends BaseExamples {
 	public void example_15() {
 		p(Queries.ADD().fromDefault().to(iri("http://example.org/named")));
 	}
+
+	/**
+	 * DELETE { GRAPH ?g1 { ?subject <http://my-example.com/anyIRI/> ?object . ?subject ?predicate
+	 * <http://my-example.com/anyIRI/> . } } WHERE { GRAPH ?g1 { OPTIONAL { ?subject ?predicate
+	 * <http://my-example.com/anyIRI/> . } OPTIONAL { ?subject <http://my-example.com/anyIRI/> ?object . } } }
+	 */
+	@Test
+	public void example_issue_1481() {
+		ModifyQuery modify = Queries.MODIFY();
+		Iri g1 = () -> "<g1>";
+
+		Variable subject = SparqlBuilder.var("subject");
+		Variable obj = SparqlBuilder.var("object");
+		Prefix pre = SparqlBuilder.prefix(iri("http://my-example.com/anyIRI/"));
+		Variable predicate = SparqlBuilder.var("predicate");
+
+		TriplePattern delTriple1 = subject.has(pre.iri(""), obj);
+		TriplePattern delTriple2 = subject.has(predicate, pre.iri(""));
+		TriplePattern whereTriple1 = subject.has(predicate, pre.iri(""));
+		TriplePattern whereTriple2 = subject.has(pre.iri(""), obj);
+
+		modify.with(g1)
+				.delete(delTriple1, delTriple2)
+				.where(and(GraphPatterns.optional(whereTriple1), GraphPatterns.optional(whereTriple2)));
+	}
+
 }
