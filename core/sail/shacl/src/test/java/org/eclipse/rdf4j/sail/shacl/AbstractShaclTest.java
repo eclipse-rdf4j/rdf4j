@@ -122,6 +122,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/minLength/simple",
 		"test-cases/nodeKind/not",
 		"test-cases/nodeKind/simple",
+		"test-cases/nodeKind/simpleInversePath",
 		"test-cases/nodeKind/validateTarget",
 		"test-cases/or/class",
 		"test-cases/or/class2",
@@ -302,7 +303,7 @@ abstract public class AbstractShaclTest {
 				printCurrentState(shaclRepository);
 
 				ran = true;
-				printFile(queryFile.getName());
+				printFile(dataPath + queryFile.getName());
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);

@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.AST.InversePath;
 import org.eclipse.rdf4j.sail.shacl.AST.Path;
 import org.eclipse.rdf4j.sail.shacl.AST.PathPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
@@ -87,7 +88,13 @@ public class ValidationResult {
 		model.add(getId(), SHACL.SOURCE_SHAPE, getSourceShapeResource());
 
 		if (getPath() != null) {
-			model.add(getId(), SHACL.RESULT_PATH, ((SimplePath) getPath()).getPath());
+			// TODO: Path should be responsible for this!
+			if (getPath() instanceof SimplePath) {
+				model.add(getId(), SHACL.RESULT_PATH, ((SimplePath) getPath()).getPath());
+			} else if (getPath() instanceof InversePath) {
+				model.add(getId(), SHACL.RESULT_PATH, getPath().getId());
+				model.add(getPath().getId(), SHACL.INVERSE_PATH, ((InversePath) getPath()).getPath());
+			}
 		}
 
 		if (detail != null) {

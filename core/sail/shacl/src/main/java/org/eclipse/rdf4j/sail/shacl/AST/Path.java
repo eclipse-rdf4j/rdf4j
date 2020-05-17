@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Resource;
  *
  * @author Heshan Jayasinghe
  */
-abstract public class Path implements RequiresEvalutation, QueryGenerator {
+abstract public class Path implements RequiresEvalutation, QueryGenerator, PlanGenerator {
 
 	private Resource id;
 

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
@@ -27,13 +28,13 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
  *
  * @author Heshan Jayasinghe
  */
-public class SimplePath extends Path {
+public class InversePath extends Path {
 
 	private final IRI path;
 
-	SimplePath(IRI id) {
+	public InversePath(Resource id, IRI path) {
 		super(id);
-		this.path = id;
+		this.path = path;
 
 	}
 
@@ -42,7 +43,7 @@ public class SimplePath extends Path {
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		return connectionsGroup
 				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
-						path, null, UnorderedSelect.OutputPattern.SubjectObject)));
+						path, null, UnorderedSelect.OutputPattern.ObjectSubject)));
 	}
 
 	@Override
@@ -50,7 +51,7 @@ public class SimplePath extends Path {
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-				path, null, UnorderedSelect.OutputPattern.SubjectObject);
+				path, null, UnorderedSelect.OutputPattern.ObjectSubject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -61,7 +62,7 @@ public class SimplePath extends Path {
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-				path, null, UnorderedSelect.OutputPattern.SubjectObject);
+				path, null, UnorderedSelect.OutputPattern.ObjectSubject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -93,7 +94,7 @@ public class SimplePath extends Path {
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
-		return subjectVariable + " <" + path + "> " + objectVariable + " . \n";
+		return objectVariable + " <" + path + "> " + subjectVariable + " . \n";
 
 	}
 
@@ -109,7 +110,7 @@ public class SimplePath extends Path {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		SimplePath that = (SimplePath) o;
+		InversePath that = (InversePath) o;
 		return Objects.equals(path, that.path);
 	}
 

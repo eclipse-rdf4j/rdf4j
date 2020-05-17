@@ -73,6 +73,9 @@ public class UnorderedSelect implements PlanNode {
 				if (outputPattern == OutputPattern.SubjectObject) {
 					return new Tuple(next.getSubject(), next.getObject());
 				}
+				if (outputPattern == OutputPattern.ObjectSubject) {
+					return new Tuple(next.getObject(), next.getSubject());
+				}
 				if (outputPattern == OutputPattern.SubjectPredicateObject) {
 					return new Tuple(next.getSubject(), next.getPredicate(), next.getObject());
 				}
@@ -130,6 +133,7 @@ public class UnorderedSelect implements PlanNode {
 				"subject=" + Formatter.prefix(subject) +
 				", predicate=" + Formatter.prefix(predicate) +
 				", object=" + Formatter.prefix(object) +
+				", outputPattern=" + outputPattern +
 				'}';
 	}
 
@@ -172,6 +176,7 @@ public class UnorderedSelect implements PlanNode {
 
 	public enum OutputPattern {
 		SubjectObject,
+		ObjectSubject,
 		ObjectPredicateSubject,
 		SubjectPredicateObject
 	}
