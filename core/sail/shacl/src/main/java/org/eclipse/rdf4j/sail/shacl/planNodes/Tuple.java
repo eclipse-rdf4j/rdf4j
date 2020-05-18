@@ -30,7 +30,7 @@ public class Tuple implements Comparable<Tuple> {
 
 	private List<Tuple> history = new ArrayList<>(1);
 
-	public List<Value> line = new ArrayList<>(3);
+	private List<Value> line = new ArrayList<>(3);
 
 	static final private ValueComparator valueComparator = new ValueComparator();
 
@@ -165,5 +165,13 @@ public class Tuple implements Comparable<Tuple> {
 
 			this.causedByPropertyShapes.addAll(causedByPropertyShapes);
 		}
+	}
+
+	public List<Value> getLine() {
+		return line;
+	}
+
+	public void setLine(List<Value> line) {
+		this.line = line;
 	}
 }

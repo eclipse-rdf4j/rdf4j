@@ -91,7 +91,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
 			select = new ModifyTuple(select, (a) -> {
-				a.line.add(SimpleValueFactory.getInstance().createLiteral(0));
+				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(0));
 
 				return a;
 			});

@@ -78,12 +78,12 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					boolean hasStatement;
 
-					if (!(tuple.line.get(0) instanceof Resource)) {
-						hasStatement = previousStateConnection.hasStatement(null, null, tuple.line.get(0), true);
+					if (!(tuple.getLine().get(0) instanceof Resource)) {
+						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getLine().get(0), true);
 					} else {
 						hasStatement = previousStateConnection
-								.hasStatement(((Resource) tuple.line.get(0)), null, null, true) ||
-								previousStateConnection.hasStatement(null, null, tuple.line.get(0), true);
+								.hasStatement(((Resource) tuple.getLine().get(0)), null, null, true) ||
+								previousStateConnection.hasStatement(null, null, tuple.getLine().get(0), true);
 					}
 
 					if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
@@ -94,7 +94,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					return hasStatement;
 
 				})
-				.map(tuple -> tuple.line.get(0))
+				.map(tuple -> tuple.getLine().get(0))
 				.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
 				.collect(Collectors.toList());
 	}

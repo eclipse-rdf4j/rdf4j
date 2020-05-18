@@ -107,7 +107,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 			next = parentIterator.next();
 
 			if ((previous != null)) {
-				if (!previous.line.get(0).equals(next.line.get(0))) {
+				if (!previous.getLine().get(0).equals(next.getLine().get(0))) {
 					seenLanguages = new HashSet<>();
 				}
 			}
