@@ -120,7 +120,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
 	 * such Document exists yet.
-	 * 
+	 *
 	 * @param id
 	 * @return search document
 	 * @throws IOException
@@ -209,7 +209,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
-	 * 
+	 *
 	 * @param subject
 	 * @param context
 	 * @return search document
@@ -226,7 +226,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
+	 *
 	 * @param subject
 	 * @return list of documents
 	 * @throws IOException
@@ -238,15 +238,16 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Filters the given list of fields, retaining all property fields.
-	 * 
+	 *
 	 * @param fields
 	 * @return set of fields
 	 */
 	public static Set<String> getPropertyFields(Set<String> fields) {
 		Set<String> result = new HashSet<>(fields.size());
 		for (String field : fields) {
-			if (SearchFields.isPropertyField(field))
+			if (SearchFields.isPropertyField(field)) {
 				result.add(field);
+			}
 		}
 		return result;
 	}
@@ -285,7 +286,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query.To be removed, no longer used.
-	 * 
+	 *
 	 * @param query       string
 	 * @param propertyURI
 	 * @return the parsed query
@@ -300,7 +301,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query.
-	 * 
+	 *
 	 * @param subject
 	 * @param query       string
 	 * @param propertyURI
@@ -366,7 +367,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
+	 *
 	 * @param resource
 	 * @param query
 	 * @return response
@@ -575,7 +576,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
-	 * 
+	 *
 	 * @param query
 	 * @return query response
 	 * @throws SolrServerException
@@ -595,13 +596,16 @@ public class SolrIndex extends AbstractSearchIndex {
 	private SolrQuery prepareQuery(IRI propertyURI, SolrQuery query) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser which
-			// has the TEXT_FIELD_NAME as the default field
+		// if we have no property given, we create a default query parser which
+		// has the TEXT_FIELD_NAME as the default field
+		{
 			query.set(CommonParams.DF, SearchFields.TEXT_FIELD_NAME);
-		else
-			// otherwise we create a query parser that has the given property as
-			// the default field
+		} else
+		// otherwise we create a query parser that has the given property as
+		// the default field
+		{
 			query.set(CommonParams.DF, SearchFields.getPropertyField(propertyURI));
+		}
 		return query;
 	}
 
@@ -633,7 +637,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public synchronized void clear() throws IOException {

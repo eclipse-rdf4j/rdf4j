@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
  * Provides concurrent access to statements as they are being parsed.
- * 
+ *
  * @author James Leigh
  * @deprecated Use {@link org.eclipse.rdf4j.query.impl.BackgroundGraphResult} instead.
  */

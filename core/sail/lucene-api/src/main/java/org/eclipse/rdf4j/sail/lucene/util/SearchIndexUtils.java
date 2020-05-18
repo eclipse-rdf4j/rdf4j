@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 /**
  * This is utility class with tool useful for manipulation on the {@link SearchIndex}.
- * 
+ *
  * @author jacek grzebyta
  * @version 2.3
  */

@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
  * <p>
  * Renders a {@link TupleExpr} into SeRQL Syntax
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
@@ -190,7 +190,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * Renders the tuple expression as a query string. It creates a new SerqlTupleExprRenderer rather than reusing this
 	 * one.
-	 * 
+	 *
 	 * @param theExpr the expr to render
 	 * @return the rendered expression
 	 * @throws Exception if there is an error while rendering
@@ -244,7 +244,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 	/**
 	 * Render a StatementPattern
-	 * 
+	 *
 	 * @param thePattern the pattern to render
 	 * @return the rendered pattern
 	 * @throws Exception if there is an error while rendering

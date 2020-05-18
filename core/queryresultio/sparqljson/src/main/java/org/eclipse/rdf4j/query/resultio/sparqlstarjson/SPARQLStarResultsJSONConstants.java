@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
  * <p>
  * For example:
  * <p>
- * 
+ *
  * <pre>
  * 	"b" : {
  * 		"type" : "triple",
@@ -33,16 +33,16 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
  * 			"s" : {
  * 				"type" : "uri",
  * 				"value" : "urn:a"
- *        	},
+ *            },
  * 			"p" : {
  * 				"type" : "uri",
  * 				"value" : "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
- *      	},
+ *        },
  * 			"o" : {
  * 				"type" : "uri",
  * 				"value" : "urn:b"
- *      	}
- *    	}
+ *        }
+ *        }
  *  }
  * </pre>
  *

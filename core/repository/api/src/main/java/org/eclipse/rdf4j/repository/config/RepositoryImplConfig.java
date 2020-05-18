@@ -20,14 +20,14 @@ public interface RepositoryImplConfig {
 	/**
 	 * Validates this configuration. A {@link RepositoryConfigException} is thrown when the configuration is invalid.
 	 * The exception should contain an error message that indicates why the configuration is invalid.
-	 * 
+	 *
 	 * @throws RepositoryConfigException If the configuration is invalid.
 	 */
 	public void validate() throws RepositoryConfigException;
 
 	/**
 	 * Export this {@link RepositoryImplConfig} to its RDF representation
-	 * 
+	 *
 	 * @param model a {@link Model} object. After successful completion of this method this Model will contain the RDF
 	 *              representation of this {@link RepositoryImplConfig}.
 	 * @return the subject {@link Resource} that identifies this {@link RepositoryImplConfig} in the Model.
@@ -36,7 +36,7 @@ public interface RepositoryImplConfig {
 
 	/**
 	 * Reads the properties of this {@link RepositoryImplConfig} from the supplied Model and sets them accordingly.
-	 * 
+	 *
 	 * @param model    a {@link Model} containing repository configuration data.
 	 * @param resource the subject {@link Resource} that identifies the {@link RepositoryImplConfig} in the Model.
 	 * @throws RepositoryConfigException if the configuration data could not be read from the supplied Model.

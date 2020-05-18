@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
  * An implementation of a datatype handler that can process {@link XMLSchema} datatypes.
  * <p>
  * Implemented using {@link XMLDatatypeUtil}.
- * 
+ *
  * @author Peter Ansell
  */
 public class XMLSchemaDatatypeHandler implements DatatypeHandler {

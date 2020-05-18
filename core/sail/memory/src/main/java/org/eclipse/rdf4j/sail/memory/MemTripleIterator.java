@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
  * An Iteration that can iterate over a list of {@link Triple} objects.
- * 
+ *
  * @author Jeen Broekstra
  */
 class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
@@ -65,7 +65,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 * Creates a new MemTripleIterator that will iterate over the triples contained in the supplied MemStatementList
 	 * searching for triples that occur as either subject or object in those statements, and which match the specified
 	 * pattern of subject, predicate, object.
-	 * 
+	 *
 	 * @param statementList the statements over which to iterate.
 	 * @param subject       subject of pattern.
 	 * @param predicate     predicate of pattern.

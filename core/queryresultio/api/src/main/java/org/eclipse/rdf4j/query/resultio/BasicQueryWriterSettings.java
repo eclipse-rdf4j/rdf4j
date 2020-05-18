@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 
 /**
  * {@link RioSetting} constants to use with {@link QueryResultWriter}s.
- * 
+ *
  * @author Peter Ansell
  */
 public class BasicQueryWriterSettings {

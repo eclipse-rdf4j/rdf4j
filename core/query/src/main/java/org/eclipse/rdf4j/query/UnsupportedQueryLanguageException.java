@@ -17,7 +17,7 @@ public class UnsupportedQueryLanguageException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public UnsupportedQueryLanguageException(String msg) {
@@ -26,7 +26,7 @@ public class UnsupportedQueryLanguageException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException.
-	 * 
+	 *
 	 * @param cause The cause of the exception.
 	 */
 	public UnsupportedQueryLanguageException(Throwable cause) {
@@ -35,7 +35,7 @@ public class UnsupportedQueryLanguageException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException wrapping another exception.
-	 * 
+	 *
 	 * @param msg   An error message.
 	 * @param cause The cause of the exception.
 	 */

@@ -33,11 +33,11 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This connection inherits Lucene index supporting methods from {@link LuceneSailConnection}.
- * 
+ *
  * @author sauermann
  * @author christian.huetter
  * @author jacek grzebyta
- * 
+ *
  * @deprecated since 3.0. The experimental LuceneSpinSail is scheduled to be removed by the next major release.
  */
 @Deprecated
@@ -75,8 +75,9 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				// we further only index statements where the Literal's datatype is
 				// accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.add(statement);
+				}
 			}
 		}
 
@@ -93,8 +94,9 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.remove(statement);
+				}
 			}
 		}
 	};

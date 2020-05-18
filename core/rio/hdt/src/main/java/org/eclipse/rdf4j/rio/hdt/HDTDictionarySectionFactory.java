@@ -12,13 +12,13 @@ import java.io.InputStream;
 
 /**
  * HDT DictionarySection factory.
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTDictionarySectionFactory {
 	/**
 	 * Create a dictionary section from input stream. The name an starting position are provided for debugging purposes.
-	 * 
+	 *
 	 * @param is   input stream
 	 * @param name name
 	 * @param pos  starting position

@@ -52,7 +52,7 @@ import junit.framework.TestSuite;
 
 /**
  * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style manifest.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class SPARQL11SyntaxTest extends TestCase {

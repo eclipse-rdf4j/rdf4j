@@ -15,7 +15,7 @@ import org.junit.Test;
 
 /**
  * Test show prefix setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class ShowPrefixTest extends AbstractSettingTest {

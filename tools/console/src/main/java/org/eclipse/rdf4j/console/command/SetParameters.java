@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.console.setting.ConsoleSetting;
 
 /**
  * Set parameters command
- * 
+ *
  * @author dale
  */
 public class SetParameters extends ConsoleCommand {
@@ -42,7 +42,7 @@ public class SetParameters extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param settings
@@ -79,7 +79,7 @@ public class SetParameters extends ConsoleCommand {
 
 	/**
 	 * Show parameter
-	 * 
+	 *
 	 * @param key parameter key
 	 */
 	private void showSetting(String key) {
@@ -104,7 +104,7 @@ public class SetParameters extends ConsoleCommand {
 
 	/**
 	 * Set parameter
-	 * 
+	 *
 	 * @param key
 	 * @param value
 	 */

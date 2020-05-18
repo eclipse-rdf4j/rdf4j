@@ -16,22 +16,22 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT Triples Part.
- * 
+ *
  * This part starts with <code>$HDT</code>, followed by a byte indicating the type of the part, the NULL-terminated URI
  * string for the format, and optionally one or more <code>key=value;</code> properties.
- * 
+ *
  * These properties may include the order (SPO, SOP...), and the number of triples.
- * 
+ *
  * Then a <code>NULL</code> byte, followed by the 16-bit CRC (<code>$HDT</code> and <code>NULL</code> included)
- * 
+ *
  * Structure:
- * 
+ *
  * <pre>
  * +------+------+-----+------+------------+------+-------+
  * | $HDT | type | URI | NULL | key=value; | NULL | CRC16 |
  * +------+------+-----+------+------------+------+-------+
  * </pre>
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTTriples extends HDTPart {
@@ -51,7 +51,7 @@ class HDTTriples extends HDTPart {
 
 		/**
 		 * Constructor
-		 * 
+		 *
 		 * @param value integer value
 		 */
 		private Order(int value) {
@@ -71,7 +71,7 @@ class HDTTriples extends HDTPart {
 
 	/**
 	 * Return triple order
-	 * 
+	 *
 	 * @return enum
 	 */
 	protected Order getOrder() {

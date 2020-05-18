@@ -16,7 +16,7 @@ public interface UUIDable {
 
 	/**
 	 * Returns the UUID of this object.
-	 * 
+	 *
 	 * @return a non-null UUID.
 	 */
 	UUID getUUID();

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * <p>
  * Note that the inner iteration is lazily consumed.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

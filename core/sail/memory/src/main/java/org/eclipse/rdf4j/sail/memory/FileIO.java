@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
  * Functionality to read and write MemoryStore to/from a file.
- * 
+ *
  * @author Arjohn Kampman
  */
 class FileIO {

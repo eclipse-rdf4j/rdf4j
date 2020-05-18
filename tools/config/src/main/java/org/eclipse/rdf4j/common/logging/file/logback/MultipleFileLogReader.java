@@ -31,7 +31,7 @@ import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 
 /**
  * Date range-enabled wrapper for FileLogReader. Reads multiple log files chunked by dates as a single log.
- * 
+ *
  * @author alex
  */
 public class MultipleFileLogReader extends AbstractLogReader implements LogReader {
@@ -114,8 +114,9 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			currentReader = new FileLogReader(logFilesIterator.next());
 			currentReader.init();
 			next = getNext();
-			if (getOffset() > 0)
+			if (getOffset() > 0) {
 				doSkip(getOffset());
+			}
 		}
 	}
 
@@ -153,7 +154,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Get next log record
-	 * 
+	 *
 	 * @return log record
 	 * @throws Exception
 	 */
@@ -171,7 +172,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Skip for a specific offset
-	 * 
+	 *
 	 * @param offset offset
 	 */
 	private void doSkip(int offset) {
@@ -189,7 +190,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Return the start date
-	 * 
+	 *
 	 * @return start date.
 	 */
 	@Override
@@ -199,7 +200,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Set start date
-	 * 
+	 *
 	 * @param startDate The startDate to set.
 	 */
 	@Override
@@ -209,7 +210,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Return the end date
-	 * 
+	 *
 	 * @return end date
 	 */
 	@Override
@@ -219,7 +220,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Set the end date
-	 * 
+	 *
 	 * @param endDate The endDate to set.
 	 */
 	@Override
@@ -239,7 +240,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 	/**
 	 * Custom filename filter
-	 * 
+	 *
 	 * @author alex
 	 */
 	public class DateRangeFilenameFilter implements FilenameFilter {
@@ -252,7 +253,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 
 		/**
 		 * Constructor
-		 * 
+		 *
 		 * @param pattern
 		 * @param df
 		 * @param startCal

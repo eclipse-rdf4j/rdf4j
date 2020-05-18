@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
  * A {@link BooleanQueryResultWriterFactory} for writers of SPARQL/XML boolean query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SPARQLBooleanXMLWriterFactory implements BooleanQueryResultWriterFactory {

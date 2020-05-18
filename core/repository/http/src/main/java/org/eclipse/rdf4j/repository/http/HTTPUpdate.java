@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * Update specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
  * UnautorizedException, the semantics of which is defined by the HTTP protocol.
- * 
+ *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Jeen Broekstra
  */

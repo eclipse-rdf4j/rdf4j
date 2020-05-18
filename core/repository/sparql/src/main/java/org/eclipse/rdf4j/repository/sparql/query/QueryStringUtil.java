@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 /**
  * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
  * {@link SPARQLBooleanQuery}.
- * 
+ *
  * @author Andreas Schwarte
  * @see SPARQLTupleQuery
  * @see SPARQLGraphQuery
@@ -32,7 +32,7 @@ public class QueryStringUtil {
 
 	/**
 	 * Retrieve a modified queryString into which all bindings of the given argument are replaced.
-	 * 
+	 *
 	 * @param queryString
 	 * @param bindings
 	 * @return the modified queryString
@@ -144,9 +144,9 @@ public class QueryStringUtil {
 	 * @return the provided StringBuilder
 	 */
 	public static StringBuilder appendValueAsString(StringBuilder sb, Value value) {
-		if (value == null)
+		if (value == null) {
 			return sb.append("UNDEF"); // see grammar for BINDINGs def
-		else if (value instanceof IRI) {
+		} else if (value instanceof IRI) {
 			return appendValue(sb, (IRI) value);
 		} else if (value instanceof Literal) {
 			return appendValue(sb, (Literal) value);

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * Interface for a QueryBuilder which provides a simple fluent API for constructing Sesame query object
  * programmatically.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
@@ -25,14 +25,14 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Return the query constructed by this query builder
-	 * 
+	 *
 	 * @return the query
 	 */
 	public T query();
 
 	/**
 	 * Specify an offset for the query
-	 * 
+	 *
 	 * @param theOffset the new offset
 	 * @return this query builder
 	 */
@@ -40,7 +40,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify a limit for the query
-	 * 
+	 *
 	 * @param theLimit the new limit for the query
 	 * @return this query builder
 	 */
@@ -48,14 +48,14 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Create an option sub-group
-	 * 
+	 *
 	 * @return the new group
 	 */
 	public GroupBuilder<T, QueryBuilder<T>> optional();
 
 	/**
 	 * Create a new sub-group of the query
-	 * 
+	 *
 	 * @return the new group
 	 */
 	public GroupBuilder<T, QueryBuilder<T>> group();
@@ -67,21 +67,21 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify that this query should use the "distinct" keyword
-	 * 
+	 *
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> distinct();
 
 	/**
 	 * Specify that this query should use the "reduced" keyword
-	 * 
+	 *
 	 * @return this query builder
 	 */
 	public QueryBuilder<T> reduced();
 
 	/**
 	 * Add projection variables to the query
-	 * 
+	 *
 	 * @param theNames the names of the variables to add to the projection
 	 * @return this query builder
 	 */
@@ -89,7 +89,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Add a from clause to this query
-	 * 
+	 *
 	 * @param theURI the from URI
 	 * @return this query builder
 	 */
@@ -97,7 +97,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Add a 'from named' clause to this query
-	 * 
+	 *
 	 * @param theURI the graph URI
 	 * @return this query builder
 	 */
@@ -105,7 +105,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify ORDER BY clause with ASC modifier by default
-	 * 
+	 *
 	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
@@ -113,7 +113,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify ORDER BY clause with ASC modifier
-	 * 
+	 *
 	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */
@@ -121,7 +121,7 @@ public interface QueryBuilder<T extends ParsedQuery> extends SupportsGroups {
 
 	/**
 	 * Specify ORDER BY clause with DESC modifier
-	 * 
+	 *
 	 * @param theNames the names of the variables to apply the ordering
 	 * @return this query builder
 	 */

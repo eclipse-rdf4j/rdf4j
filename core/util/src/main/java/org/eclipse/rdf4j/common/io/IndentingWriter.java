@@ -12,7 +12,7 @@ import java.io.Writer;
 
 /**
  * A writer that adds indentation to written text.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class IndentingWriter extends Writer {
@@ -69,7 +69,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Sets the string that should be used for indentation. The default indentation string is a tab character.
-	 * 
+	 *
 	 * @param indentString The indentation string, e.g. a tab or a number of spaces.
 	 */
 	public void setIndentationString(String indentString) {
@@ -78,7 +78,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Gets the string used for indentation.
-	 * 
+	 *
 	 * @return the indentation string.
 	 */
 	public String getIndentationString() {
@@ -87,7 +87,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Get the indentation level (number of tabs or indentation string).
-	 * 
+	 *
 	 * @return level as an integer
 	 */
 	public int getIndentationLevel() {
@@ -96,7 +96,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Set indentation level (number of tabs or indentation string).
-	 * 
+	 *
 	 * @param indentationLevel level as an integer
 	 */
 	public void setIndentationLevel(int indentationLevel) {
@@ -105,7 +105,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Get the number of characters read since end-of-line.
-	 * 
+	 *
 	 * @return number of characters
 	 */
 	public int getCharactersSinceEOL() {
@@ -128,7 +128,7 @@ public class IndentingWriter extends Writer {
 
 	/**
 	 * Writes an end-of-line character sequence and triggers the indentation for the text written on the next line.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void writeEOL() throws IOException {

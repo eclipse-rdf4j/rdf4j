@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
  * Test for {@link XMLSchemaDatatypeHandler} with {@link XMLSchema#DOUBLE}.
- * 
+ *
  * @author Peter Ansell
  */
 public class XMLSchemaDoubleDatatypeHandlerTest extends AbstractDatatypeHandlerTest {

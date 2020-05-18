@@ -39,7 +39,7 @@ import org.junit.rules.TemporaryFolder;
 /**
  * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
  * implementations.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class EvaluationStrategyTest {
@@ -123,7 +123,7 @@ public abstract class EvaluationStrategyTest {
 
 	/**
 	 * Gets a configuration object for the base Sail that should be tested.
-	 * 
+	 *
 	 * @return a {@link BaseSailConfig}.
 	 */
 	protected abstract BaseSailConfig getBaseSailConfig();

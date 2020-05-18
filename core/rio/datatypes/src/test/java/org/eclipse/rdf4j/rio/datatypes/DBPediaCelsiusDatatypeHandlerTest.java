@@ -18,7 +18,7 @@ import org.junit.Test;
 
 /**
  * Test for {@link DBPediaDatatypeHandler} with http://dbpedia.org/datatype/degreeCelsius .
- * 
+ *
  * @author Peter Ansell
  */
 public class DBPediaCelsiusDatatypeHandlerTest extends AbstractDatatypeHandlerTest {

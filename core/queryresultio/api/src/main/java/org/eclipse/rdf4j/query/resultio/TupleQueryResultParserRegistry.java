@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link TupleQueryResultParserFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TupleQueryResultParserRegistry
@@ -27,7 +27,7 @@ public class TupleQueryResultParserRegistry
 
 	/**
 	 * Gets the default TupleQueryResultParserRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static TupleQueryResultParserRegistry getInstance() {

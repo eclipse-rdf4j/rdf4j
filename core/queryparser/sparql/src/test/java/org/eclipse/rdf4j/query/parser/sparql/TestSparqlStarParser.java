@@ -76,8 +76,8 @@ public class TestSparqlStarParser {
 	 *            Var (name=_const_6a63478_uri, value=urn:A, anonymous)
 	 *            Var (name=_const_6a63479_uri, value=urn:B, anonymous)
 	 *            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	 *      SingletonSet	 
-	 *      
+	 *      SingletonSet
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -114,7 +114,7 @@ public class TestSparqlStarParser {
 	}
 
 	/*-
-	 * Expected tupleExpr like: 
+	 * Expected tupleExpr like:
 	 * Projection
 	 *    ProjectionElemList
 	 *      ProjectionElem "ref"
@@ -293,7 +293,7 @@ public class TestSparqlStarParser {
 		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
 	}
 
-	/*- 
+	/*-
 	 * expected TupleExpr:
 	 * Projection
 	 *    ProjectionElemList
@@ -352,7 +352,7 @@ public class TestSparqlStarParser {
 		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
 	}
 
-	/*- 
+	/*-
 	 * expected TupleExpr:
 	 * Projection
 	 *    ProjectionElemList
@@ -515,7 +515,7 @@ public class TestSparqlStarParser {
 	 * Modify
 	 * 	DeleteExpr:
 	 * 	  null
-	 * 	InsertExpr:   
+	 * 	InsertExpr:
 	 * 	  StatementPattern
 	 *        Var (name=_anon_e1b1cef8_f308_4217_886f_101bf31f3834, anonymous)
 	 *        Var (name=_const_c78aee8a_uri, value=urn:pred, anonymous)
@@ -532,7 +532,7 @@ public class TestSparqlStarParser {
 	 *          Var (name=s)
 	 *          Var (name=p)
 	 *          Var (name=o)
-	 *          	 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -586,7 +586,7 @@ public class TestSparqlStarParser {
 	 * Modify
 	 * 	InsertExpr:
 	 * 	  null
-	 * 	DeleteExpr:   
+	 * 	DeleteExpr:
 	 * 	  StatementPattern
 	 *        Var (name=_anon_e1b1cef8_f308_4217_886f_101bf31f3834, anonymous)
 	 *        Var (name=_const_c78aee8a_uri, value=urn:pred, anonymous)
@@ -603,7 +603,7 @@ public class TestSparqlStarParser {
 	 *          Var (name=s)
 	 *          Var (name=p)
 	 *          Var (name=o)
-	 *          	 
+	 *
 	 * @throws Exception
 	 */
 	@Test

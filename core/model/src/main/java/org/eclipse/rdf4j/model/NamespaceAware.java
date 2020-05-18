@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * An interface that is used to signify that something is able to provide {@link Namespace} information, in addition to
  * {@link Statement}s.
- * 
+ *
  * @author Peter Ansell
  */
 @FunctionalInterface
@@ -21,7 +21,7 @@ public interface NamespaceAware {
 
 	/**
 	 * Gets the set that contains the assigned namespaces.
-	 * 
+	 *
 	 * @return A {@link Set} containing the {@link Namespace} objects that are available.
 	 */
 	public Set<Namespace> getNamespaces();
@@ -29,7 +29,7 @@ public interface NamespaceAware {
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any. If multiple namespaces match the given
 	 * prefix, the result may not be consistent over successive calls to this method.
-	 * 
+	 *
 	 * @param prefix A namespace prefix.
 	 * @return The namespace name that is associated with the specified prefix, or {@link Optional#empty()} if there is
 	 *         no such namespace.

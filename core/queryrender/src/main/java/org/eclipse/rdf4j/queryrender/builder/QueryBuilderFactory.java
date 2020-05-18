@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  * <p>
  * Factory class for obtaining instances of {@link QueryBuilder} objects for the various types of queries.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
@@ -29,7 +29,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for creating a select query
-	 * 
+	 *
 	 * @return a select QueryBuilder
 	 */
 	public static QueryBuilder<ParsedBooleanQuery> ask() {
@@ -38,7 +38,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for creating a select query
-	 * 
+	 *
 	 * @return a select QueryBuilder
 	 */
 	public static QueryBuilder<ParsedTupleQuery> select() {
@@ -47,7 +47,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for creating a select query
-	 * 
+	 *
 	 * @param theProjectionVars the list of elements in the projection of the query
 	 * @return a select query builder
 	 */
@@ -60,7 +60,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for building a construct query
-	 * 
+	 *
 	 * @return a construct QueryBuilder
 	 */
 	public static QueryBuilder<ParsedGraphQuery> construct() {
@@ -69,7 +69,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for creating a describe query
-	 * 
+	 *
 	 * @param theValues the specific bound URI values to be described
 	 * @return a describe query builder
 	 */
@@ -79,7 +79,7 @@ public class QueryBuilderFactory {
 
 	/**
 	 * Create a QueryBuilder for creating a describe query
-	 * 
+	 *
 	 * @param theVars   the variables to be described
 	 * @param theValues the specific bound URI values to be described
 	 * @return a describe query builder

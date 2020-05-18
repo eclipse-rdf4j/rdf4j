@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
 /**
  * Base class for worker unions providing convenience functions to add tasks.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see SynchronousWorkerUnion
  * @see ControlledWorkerUnion
  */
@@ -32,12 +32,13 @@ public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 
 	/**
 	 * Add a generic parallel task. Note that it is required that the task has this instance as its control.
-	 * 
+	 *
 	 * @param task
 	 */
 	public void addTask(ParallelTask<T> task) {
-		if (task.getControl() != this)
+		if (task.getControl() != this) {
 			throw new RuntimeException("Controlling instance of task must be the same as this ControlledWorkerUnion.");
+		}
 		tasks.add(task);
 	}
 }

@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository;
 
 /**
  * Interface used by factory classes that need access to other repositories by their id's.
- * 
+ *
  * @author Dale Visser
  * @since 2.3
  */

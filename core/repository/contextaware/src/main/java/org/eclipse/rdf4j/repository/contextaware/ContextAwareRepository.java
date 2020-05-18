@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 
 /**
  * Allows contexts to be specified at the repository level.
- * 
+ *
  * @author James Leigh
  */
 public class ContextAwareRepository extends RepositoryWrapper {

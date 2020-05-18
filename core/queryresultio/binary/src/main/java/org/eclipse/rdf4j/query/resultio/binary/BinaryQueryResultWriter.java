@@ -53,7 +53,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
  * Writer for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
@@ -281,7 +281,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	/**
 	 * Writes an error msg to the stream.
-	 * 
+	 *
 	 * @param errType The error type.
 	 * @param msg     The error message.
 	 * @throws IOException When the error could not be written to the stream.

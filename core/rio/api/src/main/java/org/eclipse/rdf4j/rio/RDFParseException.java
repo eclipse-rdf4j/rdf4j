@@ -31,7 +31,7 @@ public class RDFParseException extends RDF4JException {
 
 	/**
 	 * Creates a new ParseException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public RDFParseException(String msg) {
@@ -40,7 +40,7 @@ public class RDFParseException extends RDF4JException {
 
 	/**
 	 * Creates a new ParseException.
-	 * 
+	 *
 	 * @param msg      An error message.
 	 * @param lineNo   A line number associated with the message.
 	 * @param columnNo A column number associated with the message.
@@ -54,7 +54,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
 	 * supplied source exception.
-	 * 
+	 *
 	 * @param t The source exception.
 	 */
 	public RDFParseException(Throwable t) {
@@ -64,7 +64,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
 	 * supplied source exception.
-	 * 
+	 *
 	 * @param msg An error message.
 	 * @param t   The source exception.
 	 */
@@ -75,7 +75,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
 	 * supplied source exception.
-	 * 
+	 *
 	 * @param t        The source exception.
 	 * @param lineNo   A line number associated with the message.
 	 * @param columnNo A column number associated with the message.
@@ -89,7 +89,7 @@ public class RDFParseException extends RDF4JException {
 	/**
 	 * Creates a new ParseException wrapping another exception. The ParseException will inherit its message from the
 	 * supplied source exception.
-	 * 
+	 *
 	 * @param t        The source exception.
 	 * @param lineNo   A line number associated with the message.
 	 * @param columnNo A column number associated with the message.
@@ -106,7 +106,7 @@ public class RDFParseException extends RDF4JException {
 
 	/**
 	 * Gets the line number associated with this parse exception.
-	 * 
+	 *
 	 * @return A line number, or -1 if no line number is available or applicable.
 	 */
 	public long getLineNumber() {
@@ -115,7 +115,7 @@ public class RDFParseException extends RDF4JException {
 
 	/**
 	 * Gets the column number associated with this parse exception.
-	 * 
+	 *
 	 * @return A column number, or -1 if no column number is available or applicable.
 	 */
 	public long getColumnNumber() {

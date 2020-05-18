@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
  * <P>
  * Note that we introduce AVG as a first-class object into the algebra, despite it being defined as a compound of other
  * operators (namely, SUM and COUNT). This allows us to more easily optimize evaluation.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Avg extends AbstractAggregateOperator {

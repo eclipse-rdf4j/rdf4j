@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 /**
  * SPARQL 1.1 extended query evaluation strategy. This strategy adds the use of virtual properties, as well as extended
  * comparison and mathematical operators to the minimally-conforming {@link StrictEvaluationStrategy}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy {

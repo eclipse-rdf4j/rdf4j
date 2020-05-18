@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for RDF/JSON writers.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFJSONWriterFactory implements RDFWriterFactory {

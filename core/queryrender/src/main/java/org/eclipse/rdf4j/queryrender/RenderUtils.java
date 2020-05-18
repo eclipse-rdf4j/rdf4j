@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 
 /**
  * Utility methods for rendering (parts of) SeRQL and SPARQL query strings.
- * 
+ *
  * @author Michael Grove
  */
 public final class RenderUtils {
@@ -31,7 +31,7 @@ public final class RenderUtils {
 
 	/**
 	 * Return the query string rendering of the {@link org.eclipse.rdf4j.model.Value}
-	 * 
+	 *
 	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 * @deprecated Use {@link #toSPARQL(Value)} instead.
@@ -43,7 +43,7 @@ public final class RenderUtils {
 
 	/**
 	 * Return the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value}
-	 * 
+	 *
 	 * @param theValue the value to render
 	 * @return the value rendered in its SPARQL query string representation
 	 */
@@ -55,7 +55,7 @@ public final class RenderUtils {
 	/**
 	 * Append the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value} to the supplied
 	 * {@link StringBuilder}.
-	 * 
+	 *
 	 * @param value   the value to render
 	 * @param builder the {@link StringBuilder} to append to
 	 * @return the original {@link StringBuilder} with the value appended.
@@ -83,7 +83,7 @@ public final class RenderUtils {
 
 	/**
 	 * Return the query string rendering of the {@link Value}
-	 * 
+	 *
 	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 * @deprecated Use {{@link #toSeRQL(Value)} instead.
@@ -95,7 +95,7 @@ public final class RenderUtils {
 
 	/**
 	 * Return the query string rendering of the {@link Value}
-	 * 
+	 *
 	 * @param theValue the value to render
 	 * @return the value rendered in its query string representation
 	 */
@@ -126,7 +126,7 @@ public final class RenderUtils {
 	 * Properly escape out any special characters in the query string. Replaces unescaped double quotes with \" and
 	 * replaces slashes '\' which are not a valid escape sequence such as \t or \n with a double slash '\\' so they are
 	 * unescaped correctly by a SPARQL parser.
-	 * 
+	 *
 	 * @param theString the query string to escape chars in
 	 * @return the escaped query string
 	 */

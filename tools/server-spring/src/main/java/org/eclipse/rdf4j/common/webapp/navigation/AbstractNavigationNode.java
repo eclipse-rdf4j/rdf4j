@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.common.webapp.navigation;
 
 /**
  * Base implementation of the NavigationNode interface.
- * 
+ *
  * @author Herko ter Horst
  */
 public abstract class AbstractNavigationNode implements NavigationNode {

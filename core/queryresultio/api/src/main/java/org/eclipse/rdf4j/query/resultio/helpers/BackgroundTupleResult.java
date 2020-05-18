@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 /**
  * Provides concurrent access to tuple results as they are being parsed.
- * 
+ *
  * @author James Leigh
  */
 public class BackgroundTupleResult extends IteratingTupleQueryResult implements Runnable, TupleQueryResultHandler {

@@ -189,7 +189,7 @@ public abstract class FilteredModel extends AbstractModel {
 	/**
 	 * Called by aggregate sets when a term has been removed from a term iterator. At least one of the last four terms
 	 * will be non-empty.
-	 * 
+	 *
 	 * @param iter     The iterator used to navigate the live set (never null)
 	 * @param subj     the subject term to be removed or null
 	 * @param pred     the predicate term to be removed or null

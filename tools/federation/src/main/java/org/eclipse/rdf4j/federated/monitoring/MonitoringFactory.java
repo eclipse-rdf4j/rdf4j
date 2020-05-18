@@ -13,13 +13,14 @@ public class MonitoringFactory {
 
 	/**
 	 * Create a new monitoring instance depending on {@link FedXConfig#isEnableMonitoring()}
-	 * 
+	 *
 	 * @return the {@link Monitoring} instance
 	 */
 	public static Monitoring createMonitoring(FedXConfig config) {
 
-		if (config.isEnableMonitoring())
+		if (config.isEnableMonitoring()) {
 			return new MonitoringImpl(config);
+		}
 		return new NoopMonitoringImpl();
 	}
 }

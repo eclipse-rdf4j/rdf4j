@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.impl.AbstractUpdate;
 
 /**
  * Base class for any {@link Update} operation over HTTP.
- * 
+ *
  * @author Andreas Schwarte
  */
 public abstract class AbstractHTTPUpdate extends AbstractUpdate {

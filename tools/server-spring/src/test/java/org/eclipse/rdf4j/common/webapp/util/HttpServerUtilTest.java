@@ -471,7 +471,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#getServletContext()
 		 */
 		@Override
@@ -482,7 +482,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#startAsync()
 		 */
 		@Override
@@ -493,7 +493,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#startAsync(javax.servlet.ServletRequest, javax.servlet.ServletResponse)
 		 */
 		@Override
@@ -505,7 +505,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#isAsyncStarted()
 		 */
 		@Override
@@ -516,7 +516,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#isAsyncSupported()
 		 */
 		@Override
@@ -527,7 +527,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#getAsyncContext()
 		 */
 		@Override
@@ -538,7 +538,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.ServletRequest#getDispatcherType()
 		 */
 		@Override
@@ -549,7 +549,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.http.HttpServletRequest#authenticate(javax.servlet.http.HttpServletResponse)
 		 */
 		@Override
@@ -560,7 +560,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.http.HttpServletRequest#login(java.lang.String, java.lang.String)
 		 */
 		@Override
@@ -571,7 +571,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.http.HttpServletRequest#logout()
 		 */
 		@Override
@@ -582,7 +582,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.http.HttpServletRequest#getParts()
 		 */
 		@Override
@@ -593,7 +593,7 @@ public class HttpServerUtilTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see javax.servlet.http.HttpServletRequest#getPart(java.lang.String)
 		 */
 		@Override

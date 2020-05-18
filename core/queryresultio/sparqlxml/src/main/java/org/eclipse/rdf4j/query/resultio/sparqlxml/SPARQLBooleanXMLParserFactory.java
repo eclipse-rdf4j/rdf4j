@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserFactory;
 
 /**
  * A {@link BooleanQueryResultParserFactory} for parsers of SPARQL/XML boolean query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SPARQLBooleanXMLParserFactory implements BooleanQueryResultParserFactory {

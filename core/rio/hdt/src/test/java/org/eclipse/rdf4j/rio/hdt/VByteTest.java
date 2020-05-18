@@ -13,7 +13,6 @@ import static org.junit.Assert.fail;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.rio.hdt.VByte;
 import org.junit.Test;
 
 /**

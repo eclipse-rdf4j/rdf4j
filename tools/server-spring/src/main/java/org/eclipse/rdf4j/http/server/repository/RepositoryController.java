@@ -79,7 +79,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 /**
  * Handles queries and admin (delete) operations on a repository and renders the results in a format suitable to the
  * type of operation.
- * 
+ *
  * @author Herko ter Horst
  */
 public class RepositoryController extends AbstractController {
@@ -119,8 +119,9 @@ public class RepositoryController extends AbstractController {
 				} catch (IOException e) {
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body", e);
 				}
-				if (queryStr.isEmpty())
+				if (queryStr.isEmpty()) {
 					queryStr = null;
+				}
 			}
 		} else if (METHOD_DELETE.equals(reqMethod)) {
 			String repId = RepositoryInterceptor.getRepositoryID(request);
@@ -375,8 +376,9 @@ public class RepositoryController extends AbstractController {
 	}
 
 	private IRI createURIOrNull(Repository repository, String graphURI) {
-		if ("null".equals(graphURI))
+		if ("null".equals(graphURI)) {
 			return null;
+		}
 		return repository.getValueFactory().createIRI(graphURI);
 	}
 

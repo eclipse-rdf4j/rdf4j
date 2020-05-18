@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
  * minimizing memory usage as a result.
- * 
+ *
  * @author Arjohn Kampman
  * @author David Huynh
  */
@@ -82,7 +82,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * Returns a previously created MemValue that is equal to the supplied value, or <tt>null</tt> if the supplied value
 	 * is a new value or is equal to <tt>null</tt>.
-	 * 
+	 *
 	 * @param value The MemValue equivalent of the supplied value, or <tt>null</tt>.
 	 * @return A previously created MemValue that is equal to <tt>value</tt>, or <tt>null</tt> if no such value exists
 	 *         or if <tt>value</tt> is equal to <tt>null</tt>.
@@ -162,7 +162,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
 	public Set<MemIRI> getMemURIs() {
@@ -174,7 +174,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemBNode objects.
 	 */
 	public Set<MemBNode> getMemBNodes() {
@@ -186,7 +186,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
 	public Set<MemLiteral> getMemLiterals() {
@@ -197,7 +197,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Gets or creates a MemValue for the supplied Value. If the factory already contains a MemValue object that is
 	 * equivalent to the supplied value then this equivalent value will be returned. Otherwise a new MemValue will be
 	 * created, stored for future calls and then returned.
-	 * 
+	 *
 	 * @param value A Resource or Literal.
 	 * @return The existing or created MemValue.
 	 */

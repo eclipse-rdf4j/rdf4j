@@ -13,11 +13,11 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 public class PropertyPaths {
 	/**
 	 * Construct property paths for use with the {@link SparqlBuilder}
-	 * 
+	 *
 	 * <p>
 	 * <b>Example:</b> {@code subject.has(path(zeroOrMore(property)), object)}.
 	 * <p>
-	 * 
+	 *
 	 * @param aElements the path elements
 	 * @return a property path
 	 */

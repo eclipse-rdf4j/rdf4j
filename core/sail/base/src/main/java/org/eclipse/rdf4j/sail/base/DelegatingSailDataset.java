@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A wrapper around an {@link SailDataset} to specialize the behaviour of an {@link SailDataset}.
- * 
+ *
  * @author James Leigh
  */
 abstract class DelegatingSailDataset implements SailDataset {
@@ -27,7 +27,7 @@ abstract class DelegatingSailDataset implements SailDataset {
 
 	/**
 	 * Wraps an {@link SailDataset} delegating all calls to it.
-	 * 
+	 *
 	 * @param delegate
 	 */
 	public DelegatingSailDataset(SailDataset delegate) {

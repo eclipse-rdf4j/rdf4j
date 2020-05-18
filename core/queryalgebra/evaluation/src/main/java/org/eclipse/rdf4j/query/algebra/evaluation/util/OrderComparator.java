@@ -31,14 +31,14 @@ import org.slf4j.LoggerFactory;
  * A {@link Comparator} on {@link BindingSet}s that imposes a total ordering by examining supplied {@link Order}
  * elements (i.e. the elements of an ORDER BY clause), falling back on a custom predictable ordering for BindingSet
  * elements if no ordering is established on the basis of the Order elements.
- * 
+ *
  * @author James Leigh
  * @author Jeen Broekstra
  */
 public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = -7002730491398949902L;
 

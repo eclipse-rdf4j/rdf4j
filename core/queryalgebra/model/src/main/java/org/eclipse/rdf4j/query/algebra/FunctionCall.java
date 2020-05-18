@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * A call to an (external) function that operates on zero or more arguments.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
@@ -37,7 +37,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 
 	/**
 	 * Creates a new unary value operator.
-	 * 
+	 *
 	 * @param args The operator's argument, must not be <tt>null</tt>.
 	 */
 	public FunctionCall(String uri, ValueExpr... args) {

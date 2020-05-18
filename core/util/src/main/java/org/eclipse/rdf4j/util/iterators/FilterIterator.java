@@ -64,7 +64,7 @@ public abstract class FilterIterator<E> implements Iterator<E> {
 	/**
 	 * Tests whether or not the specified object should be returned by this iterator. All objects from the wrapped
 	 * iterator pass through this method in the same order as they are coming from the wrapped iterator.
-	 * 
+	 *
 	 * @param object The object to be tested.
 	 * @return <tt>true</tt> if the object should be returned, <tt>false</tt> otherwise.
 	 * @throws X

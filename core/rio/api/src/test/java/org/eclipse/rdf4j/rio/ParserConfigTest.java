@@ -23,7 +23,7 @@ import org.junit.Test;
 
 /**
  * Test for ParserConfig to verify that the core operations succeed and are consistent.
- * 
+ *
  * @author Peter Ansell
  */
 public class ParserConfigTest {

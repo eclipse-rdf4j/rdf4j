@@ -41,7 +41,7 @@ class Node {
 
 	/**
 	 * Creates a new Node object with the specified ID.
-	 * 
+	 *
 	 * @param id The node's ID, must be larger than <tt>0</tt>.
 	 * @throws IllegalArgumentException If the specified <tt>id</tt> is &lt;= <tt>0</tt>.
 	 */
@@ -80,8 +80,9 @@ class Node {
 		int newUsage = usageCount.decrementAndGet();
 		assert newUsage >= 0 : "Releasing node while usage count is " + (newUsage + 1);
 
-		if (newUsage == 0)
+		if (newUsage == 0) {
 			tree.releaseNode(this);
+		}
 	}
 
 	public int getUsageCount() {
@@ -106,7 +107,7 @@ class Node {
 
 	/**
 	 * Checks if this node has any values.
-	 * 
+	 *
 	 * @return <tt>true</tt> if this node has no values, <tt>fals</tt> if it has.
 	 */
 	public boolean isEmpty() {
@@ -135,7 +136,7 @@ class Node {
 
 	/**
 	 * Removes the value that can be found at the specified valueIdx and the node ID directly to the right of it.
-	 * 
+	 *
 	 * @param valueIdx A legal value index.
 	 * @return The value that was removed.
 	 * @see #removeValueLeft
@@ -167,7 +168,7 @@ class Node {
 
 	/**
 	 * Removes the value that can be found at the specified valueIdx and the node ID directly to the left of it.
-	 * 
+	 *
 	 * @param valueIdx A legal value index.
 	 * @return The value that was removed.
 	 * @see #removeValueRight
@@ -299,7 +300,7 @@ class Node {
 	 * Splits the node, moving half of its values to the supplied new node, inserting the supplied value-nodeID pair and
 	 * returning the median value. The behaviour of this method when called on a node that isn't full is not specified
 	 * and can produce unexpected results!
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public byte[] splitAndInsert(byte[] newValue, int newNodeID, int newValueIdx, Node newNode) throws IOException {

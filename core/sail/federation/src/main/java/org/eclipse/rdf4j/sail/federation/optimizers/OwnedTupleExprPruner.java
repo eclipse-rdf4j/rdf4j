@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
 /**
  * Remove redundant {@link OwnedTupleExpr}.
- * 
+ *
  * @author James Leigh
  */
 public class OwnedTupleExprPruner extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {

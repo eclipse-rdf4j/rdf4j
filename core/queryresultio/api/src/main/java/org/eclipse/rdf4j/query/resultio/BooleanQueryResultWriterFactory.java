@@ -11,7 +11,7 @@ import java.io.OutputStream;
 
 /**
  * Returns {@link BooleanQueryResultWriter}s for a specific boolean query result format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface BooleanQueryResultWriterFactory {
@@ -23,7 +23,7 @@ public interface BooleanQueryResultWriterFactory {
 
 	/**
 	 * Returns a {@link BooleanQueryResultWriter} instance that will write to the supplied output stream.
-	 * 
+	 *
 	 * @param out The OutputStream to write the result to.
 	 */
 	BooleanQueryResultWriter getWriter(OutputStream out);

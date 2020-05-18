@@ -16,20 +16,20 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT Header Part.
- * 
+ *
  * This part starts with <code>$HDT</code>, followed by a byte indicating the type of the part, the NULL-terminated
  * string for the format, and optionally one or more <code>key=value;</code> properties.
- * 
+ *
  * Then a <code>NULL</code> byte, followed by the 16-bit CRC (<code>$HDT</code> and <code>NULL</code> included).
- * 
+ *
  * Structure:
- * 
+ *
  * <pre>
  * +------+------+--------+------+------------+------+-------+
  * | $HDT | type | format | NULL | key=value; | NULL | CRC16 |
  * +------+------+--------+------+------------+------+-------+
  * </pre>
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTHeader extends HDTPart {
@@ -57,7 +57,7 @@ class HDTHeader extends HDTPart {
 
 	/**
 	 * Get raw header data (byte array data stored as NTriples)
-	 * 
+	 *
 	 * @return byte array
 	 */
 	protected byte[] getHeaderData() {
@@ -66,7 +66,7 @@ class HDTHeader extends HDTPart {
 
 	/**
 	 * Parse header data with metadata in NTriples format.
-	 * 
+	 *
 	 * @param is
 	 * @param len
 	 * @throws IOException

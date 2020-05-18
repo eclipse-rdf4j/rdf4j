@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 /**
  * A task implementation representing the evaluation of a SERVICE which is to be evaluated using block input. See
  * {@link FederationEvalStrategy#evaluateService(FedXService, List)} for details.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {

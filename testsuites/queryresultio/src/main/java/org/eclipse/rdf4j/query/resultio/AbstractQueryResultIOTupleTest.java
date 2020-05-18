@@ -30,7 +30,7 @@ import org.junit.Test;
 
 /**
  * Abstract test for QueryResultIO.
- * 
+ *
  * @author jeen
  * @author Peter Ansell
  */

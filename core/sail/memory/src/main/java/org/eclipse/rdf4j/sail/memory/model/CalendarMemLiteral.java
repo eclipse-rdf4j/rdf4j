@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
  * An extension of MemLiteral that stores a Calendar value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */

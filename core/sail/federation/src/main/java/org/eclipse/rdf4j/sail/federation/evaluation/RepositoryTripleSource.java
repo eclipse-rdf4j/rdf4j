@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 /**
  * Allow a single repository member to control a EvaulationStrategy.
- * 
+ *
  * @author James Leigh
  */
 @Deprecated

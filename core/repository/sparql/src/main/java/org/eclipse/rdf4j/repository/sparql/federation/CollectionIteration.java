@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 
 /**
  * An iteration to access a materialized {@link Collection} of BindingSets.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class CollectionIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {

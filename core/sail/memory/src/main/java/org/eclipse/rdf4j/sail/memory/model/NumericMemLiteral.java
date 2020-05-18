@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * An extension of MemLiteral that stores a numeric value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */

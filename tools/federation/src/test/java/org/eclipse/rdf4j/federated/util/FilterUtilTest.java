@@ -11,8 +11,6 @@ import java.util.HashSet;
 
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
-import org.eclipse.rdf4j.federated.util.FedXUtil;
-import org.eclipse.rdf4j.federated.util.FilterUtils;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;

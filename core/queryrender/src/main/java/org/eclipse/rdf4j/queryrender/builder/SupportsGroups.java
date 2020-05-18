@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.queryrender.builder;
  * <p>
  * Interface for anything that supports having a collection of groups or sub-groups.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
@@ -20,7 +20,7 @@ public interface SupportsGroups<T> {
 
 	/**
 	 * Add this group from the query
-	 * 
+	 *
 	 * @param theGroup the group to add
 	 * @return this builder
 	 */
@@ -28,7 +28,7 @@ public interface SupportsGroups<T> {
 
 	/**
 	 * Remove this group from the query
-	 * 
+	 *
 	 * @param theGroup the group to remove
 	 * @return this builder
 	 */

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 
 /**
  * An RDFHandler that adds RDF data to a sail.
- * 
+ *
  * @author jeen
  */
 public class RDFSailInserter extends AbstractRDFInserter {
@@ -42,7 +42,7 @@ public class RDFSailInserter extends AbstractRDFInserter {
 	/**
 	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon statements
 	 * that are reported to it.
-	 * 
+	 *
 	 * @param con The connection to use for the add operations.
 	 */
 	public RDFSailInserter(SailConnection con, ValueFactory vf, UpdateContext uc) {

@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  * <p>
  * Internal class for representing a group within a query.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
@@ -45,7 +45,7 @@ public class BasicGroup implements Group {
 
 	/**
 	 * Create a new BasicGroup
-	 * 
+	 *
 	 * @param theOptional whether or not the patterns and filters in this group are optional
 	 */
 	public BasicGroup(final boolean theOptional) {
@@ -76,7 +76,7 @@ public class BasicGroup implements Group {
 
 	/**
 	 * Remove a child from this group
-	 * 
+	 *
 	 * @param theGroup the child to remove
 	 */
 	public void removeChild(Group theGroup) {
@@ -85,7 +85,7 @@ public class BasicGroup implements Group {
 
 	/**
 	 * Add a Filter to this group
-	 * 
+	 *
 	 * @param theExpr the value filter to add
 	 */
 	public void addFilter(ValueExpr theExpr) {

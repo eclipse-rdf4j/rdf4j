@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * Default {@link WriteStrategy} implementation for read only federations. In case a user attempts to perform a write
  * operation a {@link UnsupportedOperationException} is thrown.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

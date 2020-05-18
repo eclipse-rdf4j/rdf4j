@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
@@ -25,9 +25,9 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 
 	/**
 	 * Specify which graph to target
-	 * 
+	 *
 	 * @param graph the IRI identifying the graph to target
-	 * 
+	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")
@@ -39,7 +39,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 
 	/**
 	 * Target the default graph
-	 * 
+	 *
 	 * @return this query instance
 	 */
 	public T def() {
@@ -48,7 +48,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 
 	/**
 	 * Target all named graphs
-	 * 
+	 *
 	 * @return this query instance
 	 */
 	public T named() {
@@ -57,7 +57,7 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 
 	/**
 	 * Target all graphs
-	 * 
+	 *
 	 * @return this query instance
 	 */
 	public T all() {

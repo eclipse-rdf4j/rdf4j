@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
  * Represents the concept of an tuple query result serialization format. Tuple query result formats are identified by a
  * {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
  * can specify a (default) character encoding.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TupleQueryResultFormat extends QueryResultFormat {
@@ -238,7 +238,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Return <tt>true</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively.
-	 * 
+	 *
 	 * @since 3.2.0
 	 */
 	public boolean supportsRDFStar() {

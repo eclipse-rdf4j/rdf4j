@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 /**
  * A task implementation representing a grouped bound check. See
  * {@link FederationEvalStrategy#evaluateGroupedCheck(CheckStatementPattern, List)} for further details.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelCheckJoinTask extends ParallelTaskBase<BindingSet> {

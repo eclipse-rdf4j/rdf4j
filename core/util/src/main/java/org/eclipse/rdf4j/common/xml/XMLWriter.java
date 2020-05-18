@@ -238,7 +238,7 @@ public class XMLWriter {
 	 * Writes a start tag containing the previously set attributes.
 	 *
 	 * @param elName The element name.
-	 * @see #setAttribute(java.lang.String,java.lang.String)
+	 * @see #setAttribute(java.lang.String, java.lang.String)
 	 */
 	public void startTag(String elName) throws IOException {
 		_writeIndent();
@@ -263,7 +263,7 @@ public class XMLWriter {
 	 * Writes an 'empty' element, e.g. <tt>&lt;foo/&gt;</tt>. The tag will contain any previously set attributes.
 	 *
 	 * @param elName The element name.
-	 * @see #setAttribute(java.lang.String,java.lang.String)
+	 * @see #setAttribute(java.lang.String, java.lang.String)
 	 */
 	public void emptyElement(String elName) throws IOException {
 		_writeIndent();
@@ -289,7 +289,7 @@ public class XMLWriter {
 	 *
 	 * @param elName The element name.
 	 * @param text   The text.
-	 * @see #setAttribute(java.lang.String,java.lang.String)
+	 * @see #setAttribute(java.lang.String, java.lang.String)
 	 */
 	public void textElement(String elName, String text) throws IOException {
 		_writeIndent();
@@ -306,7 +306,7 @@ public class XMLWriter {
 	 *
 	 * @param elName The element name.
 	 * @param text   The text.
-	 * @see #setAttribute(java.lang.String,java.lang.String)
+	 * @see #setAttribute(java.lang.String, java.lang.String)
 	 */
 	public void unescapedTextElement(String elName, String text) throws IOException {
 		_writeIndent();

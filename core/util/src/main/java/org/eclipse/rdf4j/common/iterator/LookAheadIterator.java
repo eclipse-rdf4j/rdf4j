@@ -37,7 +37,7 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 
 	/**
 	 * Gets the next element. Subclasses should implement this method so that it returns the next element.
-	 * 
+	 *
 	 * @return The next element, or <tt>null</tt> if no more elements are available.
 	 */
 	protected abstract E getNextElement();
@@ -71,7 +71,7 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 
 	/**
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
-	 * 
+	 *
 	 * @throws X
 	 */
 	private void lookAhead() {

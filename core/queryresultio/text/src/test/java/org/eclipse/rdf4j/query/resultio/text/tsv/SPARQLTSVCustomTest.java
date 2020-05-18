@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -39,7 +39,7 @@ public class SPARQLTSVCustomTest {
 	 * <p>
 	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XMLSchema#STRING} is implied and hence is not
 	 * generally represented.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Ignore("This test does not work with RDF-1.1")
@@ -55,7 +55,7 @@ public class SPARQLTSVCustomTest {
 
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

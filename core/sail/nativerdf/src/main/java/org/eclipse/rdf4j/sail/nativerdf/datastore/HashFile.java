@@ -198,8 +198,9 @@ public class HashFile implements Closeable {
 	 */
 	public void storeID(int hash, int id) throws IOException {
 		structureLock.readLock().lock();
-		if (!loadedHashFileFromDisk)
+		if (!loadedHashFileFromDisk) {
 			poorMansBloomFilter.set(getBloomFilterIndex(hash), true);
+		}
 		try {
 			// Calculate bucket offset for initial bucket
 			long bucketOffset = getBucketOffset(hash);

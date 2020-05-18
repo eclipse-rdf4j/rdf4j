@@ -49,9 +49,11 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	public boolean containsAll(Collection<?> c) {
 		Iterator<?> e = c.iterator();
 		try {
-			while (e.hasNext())
-				if (!contains(e.next()))
+			while (e.hasNext()) {
+				if (!contains(e.next())) {
 					return false;
+				}
+			}
 			return true;
 		} finally {
 			closeIterator(c, e);
@@ -64,8 +66,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		if (size() > c.size()) {
 			Iterator<?> i = c.iterator();
 			try {
-				while (i.hasNext())
+				while (i.hasNext()) {
 					modified |= remove(i.next());
+				}
 			} finally {
 				closeIterator(c, i);
 			}
@@ -121,8 +124,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		try {
 			boolean modified = false;
 			while (e.hasNext()) {
-				if (add(e.next()))
+				if (add(e.next())) {
 					modified = true;
+				}
 			}
 			return modified;
 		} finally {
@@ -451,8 +455,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			boolean modified = false;
 			Iterator<?> i = c.iterator();
 			try {
-				while (i.hasNext())
+				while (i.hasNext()) {
 					modified |= remove(i.next());
+				}
 			} finally {
 				closeIterator(c, i);
 			}
@@ -491,9 +496,11 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		public boolean containsAll(Collection<?> c) {
 			Iterator<?> e = c.iterator();
 			try {
-				while (e.hasNext())
-					if (!contains(e.next()))
+				while (e.hasNext()) {
+					if (!contains(e.next())) {
 						return false;
+					}
+				}
 				return true;
 			} finally {
 				closeIterator(c, e);
@@ -506,8 +513,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			try {
 				boolean modified = false;
 				while (e.hasNext()) {
-					if (add(e.next()))
+					if (add(e.next())) {
 						modified = true;
+					}
 				}
 				return modified;
 			} finally {
@@ -555,7 +563,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	/**
 	 * Called by aggregate sets when a term has been removed from a term iterator. Exactly one of the last four terms
 	 * will be non-empty.
-	 * 
+	 *
 	 * @param iter     The iterator used to navigate the live set (never null)
 	 * @param subj     the subject term to be removed or null
 	 * @param pred     the predicate term to be removed or null
@@ -567,7 +575,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	/**
 	 * Cleans up any resources used by this iterator. After this call the given iterator should not be used.
-	 * 
+	 *
 	 * @param iter Iterator to clean up
 	 */
 	protected void closeIterator(Iterator<?> iter) {

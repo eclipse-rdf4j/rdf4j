@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 
 /**
  * An extension of ConnectionWrapper that implements the {@link InferencerConnection} interface.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper implements InferencerConnection {
@@ -43,7 +43,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 
 	/**
 	 * Gets the connection that is wrapped by this object.
-	 * 
+	 *
 	 * @return The connection that was supplied to the constructor of this class.
 	 */
 	@Override

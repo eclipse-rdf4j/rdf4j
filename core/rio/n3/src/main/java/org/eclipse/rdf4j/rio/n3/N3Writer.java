@@ -45,7 +45,7 @@ public class N3Writer implements RDFWriter {
 
 	/**
 	 * Creates a new N3Writer that will write to the supplied OutputStream.
-	 * 
+	 *
 	 * @param out The OutputStream to write the N3 document to.
 	 */
 	public N3Writer(OutputStream out) {
@@ -64,7 +64,7 @@ public class N3Writer implements RDFWriter {
 
 	/**
 	 * Creates a new N3Writer that will write to the supplied Writer.
-	 * 
+	 *
 	 * @param writer The Writer to write the N3 document to.
 	 */
 	public N3Writer(Writer writer) {

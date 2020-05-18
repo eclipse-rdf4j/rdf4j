@@ -259,7 +259,7 @@ public class LuceneSailTupleFunctionTest {
 	 * construct {
 	 *   ?pred a <urn:ontology/Phrase> .
 	 *   ?pred <urn:ontology/label> ?label .
-	     *   ?pred <urn:ontology/score> ?score .
+	 *   ?pred <urn:ontology/score> ?score .
 	 * } where {
 	 *    ?pred search:matches[
 	 *       search:query "ornare";

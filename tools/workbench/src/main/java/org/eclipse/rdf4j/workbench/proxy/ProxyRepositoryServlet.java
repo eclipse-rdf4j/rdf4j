@@ -41,8 +41,9 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
 		lastModified = System.currentTimeMillis();
-		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null)
+		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null) {
 			throw new MissingInitParameterException(DEFAULT_PATH_PARAM);
+		}
 		Enumeration<String> names = config.getInitParameterNames();
 		while (names.hasMoreElements()) {
 			String path = names.nextElement();
@@ -87,8 +88,9 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));
 		} else {
 			RepositoryServlet servlet = servlets.get(pathInfo);
-			if (servlet == null)
+			if (servlet == null) {
 				throw new BadRequestException("Unconfigured path: " + pathInfo);
+			}
 			DynamicHttpRequest hreq = new DynamicHttpRequest(req);
 			hreq.setServletPath(hreq.getServletPath() + hreq.getPathInfo());
 			hreq.setPathInfo(null);
@@ -105,8 +107,9 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	private boolean isCachable(HttpServletRequest req) {
-		if (!"GET".equals(req.getMethod()))
+		if (!"GET".equals(req.getMethod())) {
 			return false;
+		}
 		// MSIE does not cache different url parameters separately
 		return req.getRequestURL().toString().indexOf(';') < 0;
 	}

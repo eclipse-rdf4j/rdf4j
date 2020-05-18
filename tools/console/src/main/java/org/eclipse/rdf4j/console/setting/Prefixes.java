@@ -32,13 +32,14 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * Namespace prefix setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public final static String NAME = "prefixes";
 
 	public final static Set<Namespace> DEFAULT = new HashSet<>();
+
 	static {
 		DEFAULT.add(DCAT.NS);
 		DEFAULT.add(DCTERMS.NS);
@@ -67,7 +68,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * Default set of namespaces are well-known ones
 	 */
 	public Prefixes() {
@@ -76,7 +77,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public Prefixes(Set<Namespace> initValue) {
@@ -95,7 +96,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Remove the namespace with specified prefix
-	 * 
+	 *
 	 * @param prefix
 	 */
 	private void clearNamespace(String prefix) {
@@ -112,7 +113,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	/**
 	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI E.g. 'dcterms
 	 * http://purl.org/dc/terms/'
-	 * 
+	 *
 	 * @param namespace
 	 */
 	private void setNamespace(String namespace) {

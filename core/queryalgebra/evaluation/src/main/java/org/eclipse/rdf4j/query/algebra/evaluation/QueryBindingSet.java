@@ -59,7 +59,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 
 	/**
 	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
-	 * 
+	 *
 	 * @param binding The binding to add this this BindingSet.
 	 */
 	public void addBinding(Binding binding) {
@@ -68,7 +68,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 
 	/**
 	 * Adds a new binding to the binding set. The binding's name must not already be part of this binding set.
-	 * 
+	 *
 	 * @param name  The binding's name, must not be bound in this binding set already.
 	 * @param value The binding's value.
 	 */

@@ -14,7 +14,6 @@ import java.util.Set;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.highlight.Highlighter;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
 public class LuceneDocumentScore extends LuceneDocumentResult implements DocumentScore {

@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A query forumalated in the OpenRDF query algebra that produces an RDF graph (a set of statements) as its result.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ParsedGraphQuery extends ParsedQuery {
@@ -40,7 +40,7 @@ public class ParsedGraphQuery extends ParsedQuery {
 	/**
 	 * Creates a new graph query. To complete this query, a tuple expression needs to be supplied to it using
 	 * {@link #setTupleExpr(TupleExpr)}.
-	 * 
+	 *
 	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
 	 *                   the query.
 	 */
@@ -51,7 +51,7 @@ public class ParsedGraphQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new graph query for the supplied tuple expression.
-	 * 
+	 *
 	 * @param tupleExpr A tuple expression representing the query, formulated in Sail Query Model objects.
 	 */
 	public ParsedGraphQuery(TupleExpr tupleExpr) {
@@ -60,7 +60,7 @@ public class ParsedGraphQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new graph query for the supplied tuple expression.
-	 * 
+	 *
 	 * @param tupleExpr A tuple expression representing the query, formulated in Sail Query Model objects.
 	 */
 	public ParsedGraphQuery(String sourceString, TupleExpr tupleExpr) {
@@ -69,7 +69,7 @@ public class ParsedGraphQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new graph query.
-	 * 
+	 *
 	 * @param tupleExpr  A tuple expression representing the query, formulated in Sail Query Model objects.
 	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
 	 *                   the query.
@@ -81,7 +81,7 @@ public class ParsedGraphQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new graph query.
-	 * 
+	 *
 	 * @param tupleExpr  A tuple expression representing the query, formulated in Sail Query Model objects.
 	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
 	 *                   the query.

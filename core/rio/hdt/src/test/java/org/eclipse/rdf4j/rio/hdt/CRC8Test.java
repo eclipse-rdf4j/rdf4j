@@ -11,7 +11,6 @@ import static org.junit.Assert.assertEquals;
 
 import java.nio.charset.StandardCharsets;
 
-import org.eclipse.rdf4j.rio.hdt.CRC8;
 import org.junit.Test;
 
 /**
