@@ -135,7 +135,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	/**
 	 * add param v to the set reportedValues2
-	 * 
+	 *
 	 * @param reportedValues2
 	 * @param v
 	 * @return true if v added to set and not yet present

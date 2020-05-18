@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * It is assumed the the query results contain a binding for "?__index" which corresponds to the index in the input
  * mappings. See {@link QueryStringUtil} for details
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see SparqlFederationEvalStrategy
  * @since 3.0
@@ -54,12 +54,14 @@ public class BoundJoinVALUESConversionIteration
 		Iterator<Binding> bIter = bIn.iterator();
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
-			if (b.getName().equals(INDEX_BINDING_NAME))
+			if (b.getName().equals(INDEX_BINDING_NAME)) {
 				continue;
+			}
 			res.addBinding(b);
 		}
-		for (Binding bs : bindings.get(bIndex))
+		for (Binding bs : bindings.get(bIndex)) {
 			res.setBinding(bs);
+		}
 		return res;
 	}
 }

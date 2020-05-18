@@ -66,7 +66,7 @@ import org.slf4j.LoggerFactory;
  * A set of compliance tests on SPARQL query functionality which can not be easily executed using the
  * {@link SPARQL11ManifestTest} format. This includes tests on queries with non-deterministic output (e.g.
  * GROUP_CONCAT).
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class ComplexSPARQLQueryTest {
@@ -2505,7 +2505,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	/**
 	 * Get a set of useful namespace prefix declarations.
-	 * 
+	 *
 	 * @return namespace prefix declarations for dc, foaf and ex.
 	 */
 	protected String getNamespaceDeclarations() {

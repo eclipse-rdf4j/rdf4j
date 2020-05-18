@@ -15,11 +15,11 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * Interface for the {@link WriteStrategy} that is used for writing data to the federation. The implementation can
  * decided upon how is data written to the underlying federation members (e.g. to a designated federation member)
- * 
+ *
  * <p>
  * <b>Note:</b> this is an experimental feature which is subject to change in a future version.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see RepositoryWriteStrategy
  * @see ReadOnlyWriteStrategy
@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public interface WriteStrategy extends AutoCloseable {
 	/**
 	 * Close this write strategy (e.g. close a shared {@link RepositoryException}).
-	 * 
+	 *
 	 * @throws RepositoryException
 	 */
 	@Override
@@ -35,28 +35,28 @@ public interface WriteStrategy extends AutoCloseable {
 
 	/**
 	 * Begin a transaction.
-	 * 
+	 *
 	 * @throws RepositoryException
 	 */
 	void begin() throws RepositoryException;
 
 	/**
 	 * Commit a transaction.
-	 * 
+	 *
 	 * @throws RepositoryException
 	 */
 	void commit() throws RepositoryException;
 
 	/**
 	 * Rollback a transaction.
-	 * 
+	 *
 	 * @throws RepositoryException
 	 */
 	void rollback() throws RepositoryException;
 
 	/**
 	 * Add a statement
-	 * 
+	 *
 	 * @param subj
 	 * @param pred
 	 * @param obj
@@ -67,7 +67,7 @@ public interface WriteStrategy extends AutoCloseable {
 
 	/**
 	 * Remove a statement
-	 * 
+	 *
 	 * @param subj
 	 * @param pred
 	 * @param obj

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * A {@link SailStore} wrapper that branches the backing {@link SailSource}s to provide concurrent
  * {@link IsolationLevels#SNAPSHOT_READ} isolation and higher.
- * 
+ *
  * @author James Leigh
  */
 public class SnapshotSailStore implements SailStore {
@@ -38,7 +38,7 @@ public class SnapshotSailStore implements SailStore {
 
 	/**
 	 * Wraps an {@link SailStore}, tracking changes in {@link ModelFactory} instances.
-	 * 
+	 *
 	 * @param backingStore
 	 * @param modelFactory
 	 */

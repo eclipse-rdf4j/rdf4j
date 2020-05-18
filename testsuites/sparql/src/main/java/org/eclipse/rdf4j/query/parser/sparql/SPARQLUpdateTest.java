@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tests for SPARQL 1.1 Update functionality.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class SPARQLUpdateTest {
@@ -1722,7 +1722,7 @@ public abstract class SPARQLUpdateTest {
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml>"; String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
 	 * operation.execute(); assertTrue(con.hasStatement(null, RDF.TYPE, f.createURI(ns, "Family"), true)); }
-	 * 
+	 *
 	 * @Test public void testLoadIntoGraph() throws Exception { String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml> INTO GRAPH <" + ns + "> "; Update operation =
@@ -1746,7 +1746,7 @@ public abstract class SPARQLUpdateTest {
 
 	/**
 	 * Get a set of useful namespace prefix declarations.
-	 * 
+	 *
 	 * @return namespace prefix declarations for rdf, rdfs, dc, foaf and ex.
 	 */
 	protected String getNamespaceDeclarations() {
@@ -1764,7 +1764,7 @@ public abstract class SPARQLUpdateTest {
 
 	/**
 	 * Creates, initializes and clears a repository.
-	 * 
+	 *
 	 * @return an initialized empty repository.
 	 * @throws Exception
 	 */
@@ -1781,7 +1781,7 @@ public abstract class SPARQLUpdateTest {
 	/**
 	 * Create a new Repository object. Subclasses are expected to implement this method to supply the test case with a
 	 * specific Repository type and configuration.
-	 * 
+	 *
 	 * @return a new (uninitialized) Repository
 	 * @throws Exception
 	 */

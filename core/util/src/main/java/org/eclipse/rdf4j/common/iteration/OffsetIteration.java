@@ -33,7 +33,7 @@ public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, 
 
 	/**
 	 * Creates a new OffsetIteration.
-	 * 
+	 *
 	 * @param iter   The underlying Iteration, must not be <tt>null</tt>.
 	 * @param offset The number of elements to skip, must be larger than or equal to 0.
 	 */

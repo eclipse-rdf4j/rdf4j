@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
  * View used to render boolean query results. Renders results in a format specified using a parameter or Accept header.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultView extends QueryResultView {

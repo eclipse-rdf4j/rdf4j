@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 
 /**
  * Provided with add and remove operation to give them context within a {@link UpdateExpr} operation.
- * 
+ *
  * @author James Leigh
  */
 public class UpdateContext {

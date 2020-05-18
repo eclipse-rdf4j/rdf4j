@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 /**
  * Run {@link SPARQL11QueryComplianceTest} on an in-memory store
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MemorySPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {

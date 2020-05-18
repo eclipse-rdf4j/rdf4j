@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.sail.lucene.SearchQueryEvaluator;
  * <li>distance is the distance to the shape if search:distance is present.</li>
  * <li>context is the context if search:context is present.</li>
  * </ol>
- * 
+ *
  * @deprecated since 3.0. The LuceneSpinSail is to removed in the next major release.
  */
 @Deprecated

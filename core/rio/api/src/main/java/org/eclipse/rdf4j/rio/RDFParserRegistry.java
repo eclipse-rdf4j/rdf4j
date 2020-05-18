@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link RDFParserFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RDFParserRegistry extends FileFormatServiceRegistry<RDFFormat, RDFParserFactory> {
@@ -26,7 +26,7 @@ public class RDFParserRegistry extends FileFormatServiceRegistry<RDFFormat, RDFP
 
 	/**
 	 * Gets the default RDFParserRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static RDFParserRegistry getInstance() {

@@ -19,7 +19,7 @@ import org.junit.Test;
 
 /**
  * Test setting parameters
- * 
+ *
  * @author Bart Hanssens
  */
 public class SetParametersTest extends AbstractCommandTest {

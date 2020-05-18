@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.queryrender.builder;
  * <p>
  * Abstract representation of a group of atoms in a query
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */

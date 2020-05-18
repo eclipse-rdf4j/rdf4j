@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Test that the Repository correctly supports claimed isolation levels.
- * 
+ *
  * @author James Leigh
  */
 public class IsolationLevelTest {

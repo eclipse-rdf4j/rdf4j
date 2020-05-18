@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * A task implementation representing a bound join, see
  * {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)} for further details on the
  * evaluation process.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {

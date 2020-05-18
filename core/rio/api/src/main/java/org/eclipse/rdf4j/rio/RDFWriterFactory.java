@@ -13,7 +13,7 @@ import java.net.URISyntaxException;
 
 /**
  * A RDFWriterFactory returns {@link RDFWriter}s for a specific RDF format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface RDFWriterFactory {
@@ -25,7 +25,7 @@ public interface RDFWriterFactory {
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied output stream.
-	 * 
+	 *
 	 * @param out The OutputStream to write the RDF to.
 	 */
 	public RDFWriter getWriter(OutputStream out);
@@ -42,7 +42,7 @@ public interface RDFWriterFactory {
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied writer. (Optional operation)
-	 * 
+	 *
 	 * @param writer The Writer to write the RDF to.
 	 * @throws UnsupportedOperationException if the RDFWriter the specific format does not support writing to a
 	 *                                       {@link java.io.Writer}

@@ -35,14 +35,14 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
  * Class offering utility methods related to query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryResultIO {
 
 	/**
 	 * Tries to match a MIME type against the list of tuple query result formats that can be parsed.
-	 * 
+	 *
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -52,7 +52,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
-	 * 
+	 *
 	 * @param fileName A file name.
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -62,7 +62,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match a MIME type against the list of tuple query result formats that can be written.
-	 * 
+	 *
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -72,7 +72,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
-	 * 
+	 *
 	 * @param fileName A file name.
 	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -82,7 +82,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match a MIME type against the list of boolean query result formats that can be parsed.
-	 * 
+	 *
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -92,7 +92,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
-	 * 
+	 *
 	 * @param fileName A file name.
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -102,7 +102,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match a MIME type against the list of boolean query result formats that can be written.
-	 * 
+	 *
 	 * @param mimeType A MIME type, e.g. "application/sparql-results+xml".
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -112,7 +112,7 @@ public class QueryResultIO {
 
 	/**
 	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
-	 * 
+	 *
 	 * @param fileName A file name.
 	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
 	 */
@@ -124,7 +124,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating TupleQueryResultParser objects. This method uses the registry returned by
 	 * {@link TupleQueryResultParserRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate parser.
-	 * 
+	 *
 	 * @return A TupleQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified tuple query result
 	 *                                               format.
@@ -142,7 +142,7 @@ public class QueryResultIO {
 	/**
 	 * Convenience methods for creating TupleQueryResultParser objects that use the specified ValueFactory to create RDF
 	 * model objects.
-	 * 
+	 *
 	 * @param format
 	 * @param valueFactory
 	 * @return A TupleQueryResultParser matching the given format.
@@ -161,7 +161,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating TupleQueryResultWriter objects.This method uses the registry returned by
 	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
-	 * 
+	 *
 	 * @param format
 	 * @param out
 	 * @return A TupleQueryResultWriter matching the given format.
@@ -182,7 +182,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating BooleanQueryResultParser objects.This method uses the registry returned by
 	 * {@link BooleanQueryResultParserRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate parser.
-	 * 
+	 *
 	 * @param format
 	 * @return A BooleanQueryResultParser matching the given format.
 	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified boolean query result
@@ -202,7 +202,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating BooleanQueryResultWriter objects.This method uses the registry returned by
 	 * {@link BooleanQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
-	 * 
+	 *
 	 * @param format
 	 * @param out
 	 * @return A BooleanQueryResultWriter matching the given format.
@@ -223,7 +223,7 @@ public class QueryResultIO {
 	 * Convenience methods for creating QueryResultWriter objects.This method uses the registry returned by
 	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
 	 * factory to create the appropriate writer.
-	 * 
+	 *
 	 * @param format
 	 * @param out
 	 * @return A QueryResultWriter matching the given format.
@@ -255,7 +255,7 @@ public class QueryResultIO {
 
 	/**
 	 * Parses a query result document, reporting the parsed solutions to the supplied TupleQueryResultHandler.
-	 * 
+	 *
 	 * @param in           An InputStream to read the query result document from.
 	 * @param format       The query result format of the document to parse. Supported formats are
 	 *                     {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
@@ -287,7 +287,7 @@ public class QueryResultIO {
 
 	/**
 	 * Parses a query result document and returns it as a TupleQueryResult object.
-	 * 
+	 *
 	 * @param in     An InputStream to read the query result document from.
 	 * @param format The query result format of the document to parse. Supported formats are
 	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
@@ -308,7 +308,7 @@ public class QueryResultIO {
 	 * thread in the background.<br>
 	 * IMPORTANT: As this method may spawn a new thread in the background, it is vitally important that the
 	 * TupleQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
-	 * 
+	 *
 	 * @param in     An InputStream to read the query result document from.
 	 * @param format The query result format of the document to parse. Supported formats are
 	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
@@ -362,7 +362,7 @@ public class QueryResultIO {
 
 	/**
 	 * Parses a boolean query result document and returns the parsed value.
-	 * 
+	 *
 	 * @param in     An InputStream to read the query result document from.
 	 * @param format The file format of the document to parse.
 	 * @return A boolean representing the result of parsing the given InputStream.
@@ -391,7 +391,7 @@ public class QueryResultIO {
 
 	/**
 	 * Writes a query result document in a specific query result format to an output stream.
-	 * 
+	 *
 	 * @param tqr    The query result to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
@@ -421,7 +421,7 @@ public class QueryResultIO {
 
 	/**
 	 * Writes a boolean query result document in a specific boolean query result format to an output stream.
-	 * 
+	 *
 	 * @param value  The value to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
@@ -439,7 +439,7 @@ public class QueryResultIO {
 
 	/**
 	 * Writes a graph query result document in a specific RDF format to an output stream.
-	 * 
+	 *
 	 * @param gqr    The query result to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.

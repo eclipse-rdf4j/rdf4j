@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation that removes the namespace for a specific prefix.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class RemoveNamespaceOperation implements TransactionOperation, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 3227597422508894927L;
 

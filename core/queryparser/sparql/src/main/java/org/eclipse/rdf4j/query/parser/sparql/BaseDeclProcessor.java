@@ -25,9 +25,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 /**
  * Resolves relative URIs in a query model using either an external base URI or using the base URI specified in the
  * query model itself. The former takes precedence over the latter.
- * 
+ *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -38,7 +38,7 @@ public class BaseDeclProcessor {
 	/**
 	 * Resolves relative URIs in the supplied query model using either the specified <tt>externalBaseURI</tt> or, if
 	 * this parameter is <tt>null</tt>, the base URI specified in the query model itself.
-	 * 
+	 *
 	 * @param qc              The query model to resolve relative URIs in.
 	 * @param externalBaseURI The external base URI to use for resolving relative URIs, or <tt>null</tt> if the base URI
 	 *                        that is specified in the query model should be used.

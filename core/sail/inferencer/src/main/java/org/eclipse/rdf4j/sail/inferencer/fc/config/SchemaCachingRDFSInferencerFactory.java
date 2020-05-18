@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 
 /**
  * A {@link SailFactory} that creates {@link SchemaCachingRDFSInferencer}s based on RDF configuration data.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SchemaCachingRDFSInferencerFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "rdf4j:SchemaCachingRDFSInferencer";

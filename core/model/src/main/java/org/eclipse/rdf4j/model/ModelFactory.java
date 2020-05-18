@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.model;
 
 /**
  * Factory to create empty {@link Model} implementations.
- * 
+ *
  * @author James Leigh
  */
 public interface ModelFactory {

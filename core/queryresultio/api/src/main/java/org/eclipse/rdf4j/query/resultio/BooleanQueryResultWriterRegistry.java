@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link BooleanQueryResultWriterFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultWriterRegistry
@@ -27,7 +27,7 @@ public class BooleanQueryResultWriterRegistry
 
 	/**
 	 * Gets the default BooleanQueryResultWriterRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static BooleanQueryResultWriterRegistry getInstance() {

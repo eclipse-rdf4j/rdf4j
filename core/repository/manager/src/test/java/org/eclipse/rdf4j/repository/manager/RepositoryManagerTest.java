@@ -24,7 +24,7 @@ import org.junit.Test;
 
 /**
  * Unit tests for {@link RepositoryManager}. May be extended by specific {@link RepositoryManager} implementations.
- * 
+ *
  * @author Jeen Broekstra
  *
  */

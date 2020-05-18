@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * <p>
  * Example
  * </p>
- * 
+ *
  * <pre>
  * TupleQuery tq = ...; 
  * FedXDataset ds = new FedXDataset(tq.getDataset);
@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * tq.setDataset(ds)
  * TupleQueryResult res = tq.evaluate()
  * </pre>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

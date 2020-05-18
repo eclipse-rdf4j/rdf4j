@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserFactory;
 
 /**
  * A {@link BooleanQueryResultParserFactory} for plain text boolean result parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanTextParserFactory implements BooleanQueryResultParserFactory {

@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.Dataset;
 
 /**
  * Serializes of an RDF transaction.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
@@ -46,7 +46,7 @@ public class TransactionWriter {
 
 	/**
 	 * serialize the passed list of operations to the passed writer.
-	 * 
+	 *
 	 * @param txn the operations
 	 * @param out the output stream to write to
 	 * @throws IOException
@@ -72,7 +72,7 @@ public class TransactionWriter {
 
 	/**
 	 * Serializes the supplied operation.
-	 * 
+	 *
 	 * @param op        The operation to serialize
 	 * @param xmlWriter
 	 * @throws IOException

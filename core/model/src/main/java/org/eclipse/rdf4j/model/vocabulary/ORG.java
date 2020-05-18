@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the W3C Organization Ontology.
- * 
+ *
  * @see <a href="https://www.w3.org/TR/vocab-org/">Organization Ontology</a>
- * 
+ *
  * @author Bart.Hanssens
  */
 public class ORG {

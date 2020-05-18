@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 /**
  * Class controlling various logging properties such as the amount of lock tracking that is done for debugging (at the
  * cost of performance).
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Properties {

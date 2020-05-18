@@ -20,7 +20,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Base class for any federation test, this class is self-contained with regard to testing if run in a distinct JVM.
- * 
+ *
  * @author as
  *
  */
@@ -43,7 +43,7 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 * 
+	 *
 	 * @param queryFile
 	 * @param expectedResultFile
 	 * @param checkOrder

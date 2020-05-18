@@ -19,7 +19,7 @@ import org.junit.Test;
 
 /**
  * Test for {@link RDFDatatypeHandler} with {@link RDF#LANGSTRING}.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFLangStringDatatypeHandlerTest extends AbstractDatatypeHandlerTest {

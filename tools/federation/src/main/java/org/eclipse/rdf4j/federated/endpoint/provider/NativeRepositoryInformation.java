@@ -22,34 +22,34 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 /**
  * Graph information for RDF4J {@link NativeStore} initialization.
- * 
+ *
  * <p>
  * Format:
  * </p>
- * 
+ *
  * <pre>
  * <%name%> a sd:Service ;
  *  	fedx:store "NativeStore" ;
  *  	fedx:RepositoryLocation "%location%".
- * 
+ *
  * relative path (to {@link FedXRepository#getDataDir()}) in a "repositories" subfolder
- * 
+ *
  * <http://DBpedia> a sd:Service ;
  *  	fedx:store "NativeStore" ;
  *  	fedx:repositoryLocation "data\\repositories\\native-storage.dbpedia".
- *  
+ *
  * absolute Path
- * 
+ *
  * <http://DBpedia> a sd:Service ;
  *  	fedx:store "NativeStore" ;
  *  	fedx:repositoryLocation "D:\\data\\repositories\\native-storage.dbpedia".
  * </pre>
- * 
+ *
  * <p>
  * Note: the id is constructed from the location: repositories\\native-storage.dbpedia => native-storage.dbpedia
  * </p>
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */

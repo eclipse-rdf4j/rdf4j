@@ -43,7 +43,7 @@ import org.junit.runners.Parameterized.Parameters;
 /**
  * The test verifies the evaluation of TripleRef nodes through evaluation strategy that uses a tripleSource implementing
  * either {@link TripleSource} or {@link RDFStarTripleSource} interfaces
- * 
+ *
  * @author damyan.ognyanov
  *
  */
@@ -72,7 +72,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	/**
 	 * this class does it all over a collection of triples but do not IMPLEMENT either TripleSource nor
 	 * RDFStarTripleSource The sources for the eval strategies just forward the evaluation to an instance of that
-	 * 
+	 *
 	 * @author damyan.ognyanov
 	 *
 	 */
@@ -153,7 +153,9 @@ public class EvaluationStrategyWithRDFStarTest {
 			return null;
 		}
 
-	};
+	}
+
+	;
 
 	@Before
 	public void setUp() throws Exception {

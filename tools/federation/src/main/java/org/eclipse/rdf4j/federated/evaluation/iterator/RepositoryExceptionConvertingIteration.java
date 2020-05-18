@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 
 /**
  * Convenience iteration to convert {@link RepositoryResult} exceptions to {@link QueryEvaluationException}.
- * 
+ *
  * @author Andreas Schwarte
  *
  * @param <T>

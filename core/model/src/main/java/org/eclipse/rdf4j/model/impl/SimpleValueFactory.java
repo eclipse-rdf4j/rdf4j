@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * Default implementation of the {@link ValueFactory} interface.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SimpleValueFactory extends AbstractValueFactory {
@@ -24,7 +24,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	/**
 	 * Provide a single shared instance of a SimpleValueFactory.
-	 * 
+	 *
 	 * @return a singleton instance of SimpleValueFactory.
 	 */
 	public static SimpleValueFactory getInstance() {

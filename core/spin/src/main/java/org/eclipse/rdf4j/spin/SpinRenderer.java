@@ -588,7 +588,7 @@ public class SpinRenderer {
 			handler.handleStatement(valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereBNode));
 
 			isSubQuery = true; // further projection elements are for
-								// sub-queries
+			// sub-queries
 
 			ListContext ctx = newList(whereBNode);
 			where.visit(this);

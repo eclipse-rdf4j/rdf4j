@@ -7,7 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -22,7 +28,7 @@ public class JSONLDHierarchicalProcessor {
 
 	/**
 	 * Converts a JSON-LD object to a hierarchical JSON-LD object
-	 * 
+	 *
 	 * @param jsonLdObject JSON-LD object to be converted. Gets modified during processing
 	 * @return hierarchical JSON-LD object
 	 */

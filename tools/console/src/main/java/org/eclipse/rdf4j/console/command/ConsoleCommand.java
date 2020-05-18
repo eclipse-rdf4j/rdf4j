@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Abstract command
- * 
+ *
  * @author Bart Hanssens
  */
 public abstract class ConsoleCommand implements Command, Help {
@@ -33,7 +33,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Get console IO
-	 * 
+	 *
 	 * @return console IO
 	 */
 	public ConsoleIO getConsoleIO() {
@@ -42,7 +42,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Get console state
-	 * 
+	 *
 	 * @return console state
 	 */
 	public ConsoleState getConsoleState() {
@@ -51,7 +51,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Get console settings map
-	 * 
+	 *
 	 * @return map of console settings
 	 */
 	public Map<String, ConsoleSetting> getConsoleSettings() {
@@ -60,7 +60,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Get short description, small enough to fit on one console row
-	 * 
+	 *
 	 * @return help string
 	 */
 	@Override
@@ -70,7 +70,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Get long description
-	 * 
+	 *
 	 * @return string, can be multiple lines
 	 */
 	@Override
@@ -85,7 +85,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 */
 	public ConsoleCommand(ConsoleIO consoleIO) {
@@ -96,7 +96,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 */
@@ -108,7 +108,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO console IO
 	 * @param state     console state
 	 * @param settings  console settings
@@ -126,7 +126,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Write a string to the console
-	 * 
+	 *
 	 * @param str text
 	 */
 	protected void write(String str) {
@@ -135,7 +135,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Write a string + newline to the console
-	 * 
+	 *
 	 * @param str text
 	 */
 	protected void writeln(String str) {
@@ -144,7 +144,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Write a string + newline to the console and to the log at level INFO
-	 * 
+	 *
 	 * @param str text
 	 */
 	protected void writeInfo(String str) {
@@ -154,7 +154,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Write a string + newline to the console and to the log as an error
-	 * 
+	 *
 	 * @param str text
 	 */
 	protected void writeError(String str) {
@@ -164,7 +164,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Write a string + message of exception + newline to the console and to the log as an error
-	 * 
+	 *
 	 * @param str text
 	 * @param e   exception
 	 */
@@ -182,7 +182,7 @@ public abstract class ConsoleCommand implements Command, Help {
 
 	/**
 	 * Ask user to proceed
-	 * 
+	 *
 	 * @param str    question to ask
 	 * @param defVal default value
 	 * @return true

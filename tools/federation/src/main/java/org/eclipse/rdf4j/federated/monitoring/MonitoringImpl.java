@@ -21,10 +21,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Implementation supporting the following monitoring features:
- * 
+ *
  * - monitor remote requests per endpoint - maintain a query backlog using {@link QueryLog}
- * 
- * 
+ *
+ *
  * @author andreas_s
  *
  */
@@ -46,8 +46,9 @@ public class MonitoringImpl implements MonitoringService {
 			} catch (IOException e) {
 				throw new FedXRuntimeException("QueryLog cannot be initialized: " + e.getMessage());
 			}
-		} else
+		} else {
 			queryLog = null;
+		}
 	}
 
 	@Override
@@ -104,8 +105,9 @@ public class MonitoringImpl implements MonitoringService {
 
 	@Override
 	public void monitorQuery(QueryInfo query) {
-		if (queryLog != null)
+		if (queryLog != null) {
 			queryLog.logQuery(query);
+		}
 	}
 
 	@Override

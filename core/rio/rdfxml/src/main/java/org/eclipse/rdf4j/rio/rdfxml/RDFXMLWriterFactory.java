@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for RDF/XML writers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RDFXMLWriterFactory implements RDFWriterFactory {

@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 /**
  * A pipeline of {@link QueryOptimizer}s that, when executed in order on a {@link TupleExpr}, convert that
  * {@link TupleExpr} to a more optimal query execution plan.
- * 
+ *
  * @author Jeen Broekstra
  *
  */
@@ -20,7 +20,7 @@ public interface QueryOptimizerPipeline {
 
 	/**
 	 * Get the optimizers that make up this pipeline.
-	 * 
+	 *
 	 * @return an {@link Iterable} of {@link QueryOptimizer}s
 	 */
 	Iterable<QueryOptimizer> getOptimizers();

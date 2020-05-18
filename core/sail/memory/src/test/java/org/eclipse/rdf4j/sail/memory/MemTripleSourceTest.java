@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Unit Test for {@link TripleSource}
- * 
+ *
  * @author Peter Ansell
  */
 public class MemTripleSourceTest {
@@ -835,7 +835,7 @@ public class MemTripleSourceTest {
 	/**
 	 * Helper method to avoid writing this constructor multiple times. It needs to be created after statements are added
 	 * and committed.
-	 * 
+	 *
 	 * @return
 	 * @throws SailException
 	 */

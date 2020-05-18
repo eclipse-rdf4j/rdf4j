@@ -36,8 +36,9 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	@Override
 	protected boolean add(BindingSet object) throws QueryEvaluationException {
 		boolean add = super.add(object);
-		if (add && used.incrementAndGet() > maxSize)
+		if (add && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException("Size limited reached inside query operator.");
+		}
 		return add;
 	}
 

@@ -14,7 +14,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.io.FileUtil;
 
 /**
- * 
+ *
  */
 public class DataStorePerfTest {
 

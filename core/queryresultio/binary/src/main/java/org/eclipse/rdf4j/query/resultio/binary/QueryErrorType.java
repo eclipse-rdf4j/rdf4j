@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.resultio.binary;
 
 /**
  * A type-safe enumeration for query error types.
- * 
+ *
  * @author Arjohn Kampman
  */
 public enum QueryErrorType {

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and thus any
  * implementation of this class is applicable for pipelining when used in a different thread (access to shared variables
  * is synchronized).
- * 
+ *
  * @author Andreas Schwarte
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
  */

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 /**
  * FederatedService to allow for customized evaluation of SERVICE expression. By default
  * {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} is used.
- * 
+ *
  * @author Andreas Schwarte
  * @author James Leigh
  * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService
@@ -28,11 +28,11 @@ public interface FederatedService {
 	 * <p>
 	 * Evaluate the provided SPARQL ASK query at this federated service.
 	 * </p>
-	 * 
+	 *
 	 * <pre>
 	 * Expected behavior: evaluate boolean query using the bindings as constraints
 	 * </pre>
-	 * 
+	 *
 	 * @param service  the reference to the service node, contains additional meta information (vars, prefixes)
 	 * @param bindings the bindings serving as additional constraints
 	 * @param baseUri
@@ -48,11 +48,11 @@ public interface FederatedService {
 	 * <p>
 	 * <b>Important:</b> The original bindings need to be inserted into the result.
 	 * </p>
-	 * 
+	 *
 	 * <pre>
 	 * Expected behavior: evaluate the given SPARQL query using the bindings as constraints
 	 * </pre>
-	 * 
+	 *
 	 * @param service        the reference to the service node, contains additional meta information (vars, prefixes)
 	 * @param projectionVars The variables with unknown value that should be projected from this evaluation
 	 * @param bindings       the bindings serving as additional constraints
@@ -75,7 +75,7 @@ public interface FederatedService {
 	 * Compare {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} for a reference
 	 * implementation
 	 * </p>
-	 * 
+	 *
 	 * @param service  the reference to the service node, contains information to construct the query
 	 * @param bindings the bindings serving as additional constraints (for vectored evaluation)
 	 * @param baseUri  the baseUri
@@ -94,14 +94,14 @@ public interface FederatedService {
 
 	/**
 	 * Method to perform any initializations, invoked after construction.
-	 * 
+	 *
 	 * @throws QueryEvaluationException If there was an exception generated while initializing the service.
 	 */
 	public void initialize() throws QueryEvaluationException;
 
 	/**
 	 * Method to perform any shutDown code, invoked at unregistering.
-	 * 
+	 *
 	 * @throws QueryEvaluationException If there was an exception generated while shutting down the service.
 	 */
 	public void shutdown() throws QueryEvaluationException;

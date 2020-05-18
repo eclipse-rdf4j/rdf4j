@@ -29,7 +29,7 @@ import org.junit.Test;
 
 /**
  * Test verify command
- * 
+ *
  * @author Bart Hanssens
  */
 public class VerifyTest extends AbstractCommandTest {
@@ -50,7 +50,7 @@ public class VerifyTest extends AbstractCommandTest {
 
 	/**
 	 * Copy Turtle file from resource to temp directory
-	 * 
+	 *
 	 * @param str name of the resource file
 	 * @return path to file in temp directory
 	 * @throws IOException

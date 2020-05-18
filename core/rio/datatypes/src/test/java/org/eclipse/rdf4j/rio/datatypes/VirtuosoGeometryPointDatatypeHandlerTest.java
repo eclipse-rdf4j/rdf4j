@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
  * Test for {@link VirtuosoDatatypeHandler} with http://www.openlinksw.com/schemas/virtrdf#Geometry .
- * 
+ *
  * @author Peter Ansell
  */
 public class VirtuosoGeometryPointDatatypeHandlerTest extends AbstractDatatypeHandlerTest {

@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Version utility: read the version from the Jar's manifest file.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -39,7 +39,7 @@ public class Version {
 
 	/**
 	 * Return the version instance
-	 * 
+	 *
 	 * @return the {@link Version} instance
 	 */
 	public static Version getVersionInfo() {
@@ -142,7 +142,7 @@ public class Version {
 
 	/**
 	 * Prints the version info.
-	 * 
+	 *
 	 * @param args
 	 */
 	public static void main(String[] args) {

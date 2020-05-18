@@ -242,7 +242,7 @@ public abstract class InferencingTest {
 
 	/**
 	 * Gets an instance of the Sail that should be tested.
-	 * 
+	 *
 	 * @return a SailRepo.
 	 */
 	protected abstract Sail createSail();

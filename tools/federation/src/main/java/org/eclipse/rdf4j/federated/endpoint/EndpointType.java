@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Information about the type of an endpoint
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -31,7 +31,7 @@ public enum EndpointType {
 	/**
 	 * Returns true if the endpoint type supports the given format (e.g. mime-type). Consider as an example the
 	 * SparqlEndpoint which supports format "api/sparql".
-	 * 
+	 *
 	 * @param format
 	 * @return true if the endpoint supports the given format
 	 */
@@ -41,16 +41,19 @@ public enum EndpointType {
 
 	/**
 	 * returns true if the given format is supported by some repository type.
-	 * 
+	 *
 	 * @param format
 	 * @return wheter the given format is supported
 	 */
 	public static boolean isSupportedFormat(String format) {
-		if (format == null)
+		if (format == null) {
 			return false;
-		for (EndpointType e : values())
-			if (e.supportsFormat(format))
+		}
+		for (EndpointType e : values()) {
+			if (e.supportsFormat(format)) {
 				return true;
+			}
+		}
 		return false;
 	}
 }

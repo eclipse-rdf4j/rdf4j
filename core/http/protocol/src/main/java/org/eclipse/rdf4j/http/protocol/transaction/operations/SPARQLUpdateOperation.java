@@ -20,13 +20,13 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Encapsulation of a SPARQL 1.1 update operation executed as part of a transaction.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SPARQLUpdateOperation implements TransactionOperation, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 4432275498318918582L;
 

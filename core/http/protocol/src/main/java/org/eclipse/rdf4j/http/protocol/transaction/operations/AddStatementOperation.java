@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation to add a statement.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class AddStatementOperation extends StatementOperation implements Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 7055177153036638975L;
 

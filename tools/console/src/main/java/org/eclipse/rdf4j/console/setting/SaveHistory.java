@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.console.setting;
 
 /**
  * Save command history to a file.
- * 
+ *
  * @author Bart Hanssens
  */
 public class SaveHistory extends ConsoleSetting<Boolean> {
@@ -29,7 +29,7 @@ public class SaveHistory extends ConsoleSetting<Boolean> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public SaveHistory(Boolean initValue) {

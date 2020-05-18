@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * An iterating implementation of the {@link GraphQueryResult} interface.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */

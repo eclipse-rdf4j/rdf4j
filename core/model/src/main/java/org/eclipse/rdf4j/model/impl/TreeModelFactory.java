@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 
 /**
  * Creates {@link TreeModel}.
- * 
+ *
  * @author James Leigh
  */
 public class TreeModelFactory implements ModelFactory {

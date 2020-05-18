@@ -11,7 +11,7 @@ import java.io.OutputStream;
 
 /**
  * Returns {@link TupleQueryResultWriter}s for a specific tuple query result format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface TupleQueryResultWriterFactory {
@@ -23,7 +23,7 @@ public interface TupleQueryResultWriterFactory {
 
 	/**
 	 * Returns a TupleQueryResultWriter instance that will write to the supplied output stream.
-	 * 
+	 *
 	 * @param out The OutputStream to write the result to.
 	 */
 	TupleQueryResultWriter getWriter(OutputStream out);

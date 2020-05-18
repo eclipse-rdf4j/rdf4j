@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
- * 
+ *
  * @author Arjohn Kampman
  * @author David Huynh
  */
@@ -63,7 +63,7 @@ public class SimpleLiteral implements Literal {
 
 	/**
 	 * Creates a new plain literal with the supplied label.
-	 * 
+	 *
 	 * @param label The label for the literal, must not be <tt>null</tt>.
 	 */
 	protected SimpleLiteral(String label) {
@@ -73,7 +73,7 @@ public class SimpleLiteral implements Literal {
 
 	/**
 	 * Creates a new plain literal with the supplied label and language tag.
-	 * 
+	 *
 	 * @param label    The label for the literal, must not be <tt>null</tt>.
 	 * @param language The language tag for the literal, must not be <tt>null</tt> and not be empty.
 	 */
@@ -84,7 +84,7 @@ public class SimpleLiteral implements Literal {
 
 	/**
 	 * Creates a new datatyped literal with the supplied label and datatype.
-	 * 
+	 *
 	 * @param label    The label for the literal, must not be <tt>null</tt>.
 	 * @param datatype The datatype for the literal.
 	 */

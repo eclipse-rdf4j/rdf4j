@@ -123,7 +123,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	/**
 	 * Replace the given pattern with a new instance of the given replacement type.
-	 * 
+	 *
 	 * @param pattern     the pattern to remove
 	 * @param replacement the replacement type
 	 */
@@ -139,7 +139,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	/**
 	 * return the name of the bound variable that should match the query
-	 * 
+	 *
 	 * @return the name of the variable or null, if no name set
 	 */
 	public String getMatchesVariableName() {
@@ -164,7 +164,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	/**
 	 * The variable name associated with the query score
-	 * 
+	 *
 	 * @return the name or null, if no score is queried in the pattern
 	 */
 	public String getScoreVariableName() {
@@ -185,14 +185,15 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	/**
 	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A null type is possible, but not valid.
-	 * 
+	 *
 	 * @return the type of the Query or null, if no type assigned.
 	 */
 	public IRI getQueryType() {
-		if (typePattern != null)
+		if (typePattern != null) {
 			return (IRI) typePattern.getObjectVar().getValue();
-		else
+		} else {
 			return null;
+		}
 	}
 
 	public Resource getSubject() {
@@ -201,7 +202,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	/**
 	 * return the literal expression of the query or null, if none set. (null values are possible, but not valid).
-	 * 
+	 *
 	 * @return the query or null
 	 */
 	public String getQueryString() {
@@ -238,8 +239,9 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	}
 
 	private void append(StatementPattern pattern, StringBuilder buffer) {
-		if (pattern == null)
+		if (pattern == null) {
 			return;
+		}
 
 		buffer.append("   ");
 		buffer.append("StatementPattern\n");

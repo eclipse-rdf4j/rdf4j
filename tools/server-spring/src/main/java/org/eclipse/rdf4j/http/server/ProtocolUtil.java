@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Utilities to help with the transition between HTTP requests/responses and values expected by the protocol.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */
@@ -182,7 +182,7 @@ public class ProtocolUtil {
 	/**
 	 * Reads the {@link Protocol#TIMEOUT_PARAM_NAME} parameter from the request and (if present) parses it into an
 	 * integer value.
-	 * 
+	 *
 	 * @param request the {@link HttpServletRequest} to read the parameter from
 	 * @return the value of the timeout parameter as an integer (representing the timeout time in seconds), or 0 if no
 	 *         timeout parameter is specified in the request.

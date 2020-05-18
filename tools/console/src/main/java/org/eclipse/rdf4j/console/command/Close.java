@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.repository.Repository;
 
 /**
  * Close command
- * 
+ *
  * @author Dale Visser
  */
 public class Close extends ConsoleCommand {
@@ -35,7 +35,7 @@ public class Close extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 */
@@ -54,7 +54,7 @@ public class Close extends ConsoleCommand {
 
 	/**
 	 * Close repository
-	 * 
+	 *
 	 * @param verbose print more information
 	 */
 	protected void closeRepository(final boolean verbose) {

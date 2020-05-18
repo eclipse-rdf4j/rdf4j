@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * An extension of MemLiteral that stores an integer value to avoid parsing.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class IntegerMemLiteral extends MemLiteral {

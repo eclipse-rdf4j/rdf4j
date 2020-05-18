@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 
 /**
  * A registry that keeps track of the available {@link QueryParserFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryParserRegistry extends ServiceRegistry<QueryLanguage, QueryParserFactory> {
@@ -27,7 +27,7 @@ public class QueryParserRegistry extends ServiceRegistry<QueryLanguage, QueryPar
 
 	/**
 	 * Gets the default QueryParserRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static QueryParserRegistry getInstance() {

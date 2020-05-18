@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Abstract super class of all query types that a query parser can generate.
- * 
+ *
  * @author Arjohn Kampman
  */
 public abstract class ParsedQuery extends ParsedOperation {
@@ -50,7 +50,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 
 	/**
 	 * Creates a new query object.
-	 * 
+	 *
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	protected ParsedQuery(String sourceString, TupleExpr tupleExpr) {
@@ -60,7 +60,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 
 	/**
 	 * Creates a new query object.
-	 * 
+	 *
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	protected ParsedQuery(TupleExpr tupleExpr) {
@@ -69,7 +69,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 
 	/**
 	 * Creates a new query object.
-	 * 
+	 *
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	protected ParsedQuery(TupleExpr tupleExpr, Dataset dataset) {
@@ -78,7 +78,7 @@ public abstract class ParsedQuery extends ParsedOperation {
 
 	/**
 	 * Creates a new query object.
-	 * 
+	 *
 	 * @param tupleExpr The tuple expression underlying this query.
 	 */
 	protected ParsedQuery(String sourceString, TupleExpr tupleExpr, Dataset dataset) {

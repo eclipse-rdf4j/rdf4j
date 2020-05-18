@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.federated.FederationManager.FederationType;
 
 /**
  * Factory class for retrieving the {@link FederationEvalStrategy} to be used
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FederationEvaluationStrategyFactory {
@@ -22,7 +22,7 @@ public class FederationEvaluationStrategyFactory {
 	 * Return an instance of {@link FederationEvalStrategy} which is used for evaluating the query. The type depends on
 	 * the {@link FederationType} as well as on the actual implementations given by the configuration, in particular
 	 * this is {@link FedXConfig#getSailEvaluationStrategy()} and {@link FedXConfig#getSPARQLEvaluationStrategy()}.
-	 * 
+	 *
 	 * @param federationType
 	 * @param federationContext
 	 * @return the {@link FederationEvalStrategy}

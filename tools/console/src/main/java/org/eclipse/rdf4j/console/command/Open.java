@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**
  * Open command
- * 
+ *
  * @author Dale Visser
  */
 public class Open extends ConsoleCommand {
@@ -42,7 +42,7 @@ public class Open extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param close
@@ -65,7 +65,7 @@ public class Open extends ConsoleCommand {
 
 	/**
 	 * Open a repository
-	 * 
+	 *
 	 * @param repoID repository ID
 	 */
 	public void openRepository(final String repoID) {

@@ -11,14 +11,14 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Common interface to objects that throw {@link SailException} on close.
- * 
+ *
  * @author James Leigh
  */
 public interface SailClosable extends AutoCloseable {
 
 	/**
 	 * Closes this resource, relinquishing any underlying resources.
-	 * 
+	 *
 	 * @throws SailException if this resource cannot be closed
 	 */
 	@Override

@@ -29,10 +29,10 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * Processes 'wildcard' projections, making them explicit by adding the appropriate variable nodes to them.
- * 
+ *
  * @author arjohn
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */

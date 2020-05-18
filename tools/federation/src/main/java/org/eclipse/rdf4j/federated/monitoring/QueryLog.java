@@ -21,12 +21,12 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Requires monitoring to be enabled:
  * </p>
- * 
+ *
  * <ul>
  * <li>{@link FedXConfig#isEnableMonitoring()}</li>
  * <li>{@link FedXConfig#isLogQueries()}</li>
  * </ul>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

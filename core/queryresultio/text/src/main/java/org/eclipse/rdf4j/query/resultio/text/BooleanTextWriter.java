@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 
 /**
  * Writer for the plain text boolean result format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanTextWriter extends AbstractQueryResultWriter implements BooleanQueryResultWriter {

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * <p>
  * Builder class for creating Unioned groups
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */
@@ -44,7 +44,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 
 	/**
 	 * Return a builder for creating the left operand of the union
-	 * 
+	 *
 	 * @return builder for left operand
 	 */
 	public GroupBuilder<T, UnionBuilder<T, E>> left() {
@@ -53,7 +53,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 
 	/**
 	 * Return a builder for creating the right operand of the union
-	 * 
+	 *
 	 * @return builder for right operand
 	 */
 	public GroupBuilder<T, UnionBuilder<T, E>> right() {
@@ -62,7 +62,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 
 	/**
 	 * Close this union and return it's parent group builder.
-	 * 
+	 *
 	 * @return the parent builder
 	 */
 	public GroupBuilder<T, E> closeUnion() {

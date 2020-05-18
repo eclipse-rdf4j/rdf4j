@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class RDFSchemaMemoryRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {

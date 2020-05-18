@@ -35,7 +35,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the double value
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return double
@@ -56,7 +56,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the string value
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return string
@@ -69,7 +69,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the geo shape
-	 * 
+	 *
 	 * @param func    function
 	 * @param v       value
 	 * @param context
@@ -88,7 +88,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the geo point
-	 * 
+	 *
 	 * @param func       function
 	 * @param v          value
 	 * @param geoContext
@@ -106,7 +106,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the literal of a specific data type
-	 * 
+	 *
 	 * @param func             function
 	 * @param v                value
 	 * @param expectedDatatype
@@ -127,7 +127,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the UoM IRI of the unit
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return UoM IRI
@@ -146,7 +146,7 @@ class FunctionArguments {
 
 	/**
 	 * Convert degrees to another unit
-	 * 
+	 *
 	 * @param degs  degrees
 	 * @param units UoM IRI of the unit to convert to
 	 * @return converted value as a double
@@ -171,7 +171,7 @@ class FunctionArguments {
 
 	/**
 	 * Convert a value to degrees
-	 * 
+	 *
 	 * @param v     value
 	 * @param units UoM IRI of the unit
 	 * @return degrees as a double

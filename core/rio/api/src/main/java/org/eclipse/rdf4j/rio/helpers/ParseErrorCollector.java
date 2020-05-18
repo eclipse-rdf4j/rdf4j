@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.rio.ParseErrorListener;
 
 /**
  * A ParseErrorListener that collects Rio parse errors in the sequence they were collected in.
- * 
+ *
  * @author Peter Ansell
  */
 public class ParseErrorCollector implements ParseErrorListener {

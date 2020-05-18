@@ -43,8 +43,9 @@ public class InterceptorTest {
 
 		@Override
 		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-			if (Boolean.TYPE.equals(method.getReturnType()))
+			if (Boolean.TYPE.equals(method.getReturnType())) {
 				return false;
+			}
 			return null;
 		}
 	}

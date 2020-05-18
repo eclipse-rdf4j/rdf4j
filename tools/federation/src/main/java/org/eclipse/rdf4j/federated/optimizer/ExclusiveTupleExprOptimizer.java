@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * A specialized optimizer which identifies and marks {@link ExclusiveTupleExpr}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

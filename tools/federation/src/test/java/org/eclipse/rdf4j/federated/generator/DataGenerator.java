@@ -16,10 +16,10 @@ import java.util.Set;
 
 /**
  * Data generator for 4 endpoints
- * 
+ *
  * Endpoint1: Person Data (rdf:type={foaf:Person, ns1:Person}, foaf:project, foaf:name, owl:sameAs{author in ns4)
- * 
- * 
+ *
+ *
  * @author andreas_s
  *
  */
@@ -98,30 +98,35 @@ public class DataGenerator {
 	protected void createPersons() {
 
 		// endpoint 1
-		for (int i = 1; i <= PERSONS_1; i++)
+		for (int i = 1; i <= PERSONS_1; i++) {
 			appendLine(endpoint1, createPerson(i));
+		}
 
 		// endpoint 2
-		for (int i = PERSONS_1 + 1; i <= PERSONS_1 + PERSONS_2; i++)
+		for (int i = PERSONS_1 + 1; i <= PERSONS_1 + PERSONS_2; i++) {
 			appendLine(endpoint2, createPerson(i));
+		}
 	}
 
 	protected void createProjects() {
 
 		// endpoint 3
-		for (int i = 1; i <= PROJECTS; i++)
+		for (int i = 1; i <= PROJECTS; i++) {
 			appendLine(endpoint3, createProject(i));
+		}
 	}
 
 	protected void createPublications() {
 
 		// endpoint 4
-		for (int i = 1; i <= AUTHORS; i++)
+		for (int i = 1; i <= AUTHORS; i++) {
 			appendLine(endpoint4, createAuthor(i));
+		}
 
 		// endpoint 4
-		for (int i = 1; i <= PUBLICATIONS; i++)
+		for (int i = 1; i <= PUBLICATIONS; i++) {
 			appendLine(endpoint4, createPublication(i));
+		}
 
 	}
 
@@ -159,7 +164,7 @@ public class DataGenerator {
 
 	/**
 	 * Create a publication for endpoint 3, and randomly assign up to 4 authors
-	 * 
+	 *
 	 * @param id
 	 * @return
 	 */
@@ -176,8 +181,9 @@ public class DataGenerator {
 		Set<Integer> authors = new HashSet<>();
 		for (int i = 0; i < hasAuthors; i++) {
 			int authorId = rand(AUTHORS);
-			if (authors.contains(authorId))
+			if (authors.contains(authorId)) {
 				continue;
+			}
 			authors.add(authorId);
 			appendLine(sb, pubUri + " :hasAuthor :Author_" + authorId + " .");
 		}
@@ -218,7 +224,7 @@ public class DataGenerator {
 
 	/**
 	 * Return an integer between 1 and upper (inclusive)
-	 * 
+	 *
 	 * @param upperInclusive
 	 * @return
 	 */
@@ -228,7 +234,7 @@ public class DataGenerator {
 
 	/**
 	 * Returns true if the the event is probable using random generator. True iff rand(100)<probability, false otherwise
-	 * 
+	 *
 	 * @param probability
 	 * @return
 	 */

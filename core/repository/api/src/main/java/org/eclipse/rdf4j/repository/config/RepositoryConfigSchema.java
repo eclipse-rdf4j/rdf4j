@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Defines constants for the repository configuration schema that is used by
  * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RepositoryConfigSchema {

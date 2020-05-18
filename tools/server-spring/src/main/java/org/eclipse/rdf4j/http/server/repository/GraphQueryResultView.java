@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 /**
  * View used to render graph query results. Renders the graph as RDF using a serialization specified using a parameter
  * or Accept header.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */

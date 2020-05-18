@@ -33,7 +33,7 @@ public class LogConfigurator extends JoranConfigurator {
 
 	/**
 	 * Get default log reader
-	 * 
+	 *
 	 * @return log reader
 	 */
 	public LogReader getDefaultLogReader() {
@@ -46,7 +46,7 @@ public class LogConfigurator extends JoranConfigurator {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param appenderName
 	 * @return log reader
 	 */

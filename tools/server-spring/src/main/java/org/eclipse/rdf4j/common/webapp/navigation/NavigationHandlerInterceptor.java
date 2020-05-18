@@ -16,7 +16,7 @@ import org.springframework.web.servlet.ModelAndView;
 
 /**
  * Interceptor that inserts the navigation model for the current Spring view into the model.
- * 
+ *
  * @author Herko ter Horst
  */
 public class NavigationHandlerInterceptor implements HandlerInterceptor {

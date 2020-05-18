@@ -26,7 +26,7 @@ public class EhContainsTest extends GeometricRelationFunctionTest {
 
 	/**
 	 * Test ehContains.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test

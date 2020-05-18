@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 /**
  * An exception indicating that a {@link ValueExpr} could not be evaluated due to illegal or incompatible values. When
  * thrown, the result of the evaluation should be considered to be "unknown".
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ValueExprEvaluationException extends QueryEvaluationException {

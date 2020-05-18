@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
  * <p>
  * Extends the BaseTupleExprRenderer to provide support for rendering tuple expressions as SPARQL queries.
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
@@ -156,7 +156,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	/**
 	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than reusing this
 	 * one.
-	 * 
+	 *
 	 * @param theExpr the expr to render
 	 * @return the rendered expression
 	 * @throws Exception if there is an error while rendering

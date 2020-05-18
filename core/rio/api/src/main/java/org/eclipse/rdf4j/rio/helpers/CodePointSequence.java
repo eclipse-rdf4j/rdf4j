@@ -11,7 +11,7 @@ import java.util.Iterator;
 
 /**
  * Helper class for working with Strings as sequences of Unicode code points.
- * 
+ *
  * @author Jeen Broekstra
  * @see CodePointIterator
  */

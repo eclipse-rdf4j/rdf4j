@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
  * Provides concurrent access to statements as they are being parsed when instances of this class are run as Threads.
- * 
+ *
  * @author James Leigh
  */
 public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException>

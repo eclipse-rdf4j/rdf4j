@@ -60,7 +60,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * An abstract class to implement the base functionality for both SPARQLBooleanXMLWriter and SPARQLResultsXMLWriter.
- * 
+ *
  * @author Peter Ansell
  */
 abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter {
@@ -112,7 +112,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
 	 * is set to <tt>true</tt>. If set to <tt>false</tt>, no indentation and newlines are added to the XML document.
 	 * This method has to be used before writing starts (that is, before {@link #startDocument} is called).
-	 * 
+	 *
 	 * @deprecated Use {@link #getWriterConfig()} .set(BasicWriterSettings.PRETTY_PRINT, prettyPrint) instead.
 	 */
 	@Deprecated
@@ -411,7 +411,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 * Write a QName for the given URI if and only if the {@link BasicQueryWriterSettings#ADD_SESAME_QNAME} setting has
 	 * been set to true. By default it is false, to ensure that this implementation stays within the specification by
 	 * default.
-	 * 
+	 *
 	 * @param nextUri The prefixed URI to be written as a sesame qname attribute.
 	 */
 	private void writeQName(IRI nextUri) {

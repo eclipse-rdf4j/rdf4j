@@ -13,13 +13,13 @@ import java.util.Iterator;
 
 /**
  * HDT TriplesSection part.
- * 
+ *
  * @author Bart Hanssens
  */
 abstract class HDTTriplesSection extends HDTPart implements Iterator<int[]> {
 	/**
 	 * Parse triples section and return the triple parts in the correct S,P,O order.
-	 * 
+	 *
 	 * @param is
 	 * @param order
 	 * @throws IOException

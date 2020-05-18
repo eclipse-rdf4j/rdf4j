@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 /**
  * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used in cases where interleaved iteration
  * joining is not appropriate (e.g. when the join arguments are subselects).
- * 
+ *
  * @author jeen
  * @deprecated replaced by HashJoinIteration
  */
@@ -226,7 +226,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent maps
-	 * 
+	 *
 	 * @return map
 	 */
 	protected Map<BindingSet, List<BindingSet>> makeMap() {
@@ -235,7 +235,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent list
-	 * 
+	 *
 	 * @return list
 	 */
 	protected List<BindingSet> makeList() {
@@ -244,7 +244,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent list
-	 * 
+	 *
 	 * @return list
 	 */
 	protected List<BindingSet> makeList(List<BindingSet> key) {
@@ -253,7 +253,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	/**
 	 * Remove the first (0 index) element from a BindingSet list.
-	 * 
+	 *
 	 * @param list which is worked on.
 	 * @return the removed BindingSet
 	 */

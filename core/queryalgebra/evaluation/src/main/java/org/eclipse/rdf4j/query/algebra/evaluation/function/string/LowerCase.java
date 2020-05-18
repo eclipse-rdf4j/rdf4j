@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * The SPARQL built-in {@link Function} LCASE, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-lcase">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class LowerCase implements Function {

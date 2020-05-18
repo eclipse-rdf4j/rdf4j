@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.datatypes;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -22,7 +25,7 @@ import org.junit.rules.ExpectedException;
 
 /**
  * Abstract test for DatatypeHandler interface.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class AbstractDatatypeHandlerTest {
@@ -32,7 +35,7 @@ public abstract class AbstractDatatypeHandlerTest {
 
 	/**
 	 * Generates a new instance of the {@link DatatypeHandler} implementation in question and returns it.
-	 * 
+	 *
 	 * @return A new instance of the {@link DatatypeHandler} implementation being tested.
 	 */
 	protected abstract DatatypeHandler getNewDatatypeHandler();

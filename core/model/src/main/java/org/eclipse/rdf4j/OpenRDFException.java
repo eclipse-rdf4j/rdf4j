@@ -9,7 +9,7 @@ package org.eclipse.rdf4j;
 
 /**
  * abstract superclass of all OpenRDF Sesame exceptions
- * 
+ *
  * @author Jeen Broekstra
  * @deprecated use {@link RDF4JException} instead.
  */

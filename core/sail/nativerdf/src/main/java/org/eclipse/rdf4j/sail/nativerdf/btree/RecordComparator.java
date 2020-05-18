@@ -15,7 +15,7 @@ public interface RecordComparator {
 	/**
 	 * Compares the supplied <tt>key</tt> to the value of length <tt>length</tt>, starting at offset <tt>offset</tt> in
 	 * the supplied <tt>data</tt> array.
-	 * 
+	 *
 	 * @param key    A byte array representing the search key.
 	 * @param data   A byte array containing the value to compare the key to.
 	 * @param offset The offset (0-based) of the value in <tt>data</tt>.

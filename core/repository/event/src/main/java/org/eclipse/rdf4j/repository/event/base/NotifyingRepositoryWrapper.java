@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryListener;
 /**
  * This notifying decorator allows listeners to register with the repository or connection and be notified when events
  * occur.
- * 
+ *
  * @author James Leigh
  * @author Herko ter Horst
  * @author Arjohn Kampman

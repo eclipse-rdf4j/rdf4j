@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 
 /**
  * A parsed update sequence formulated in the OpenRDF query algebra.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ParsedUpdate extends ParsedOperation {
@@ -57,7 +57,7 @@ public class ParsedUpdate extends ParsedOperation {
 	/**
 	 * Creates a new update sequence. To complete this update sequence, one or update expressions need to be supplied to
 	 * it using {@link #addUpdateExpr(UpdateExpr)}.
-	 * 
+	 *
 	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
 	 *                   the update.
 	 */

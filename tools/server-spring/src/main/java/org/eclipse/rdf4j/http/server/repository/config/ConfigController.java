@@ -39,7 +39,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests related to repository configuration.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ConfigController extends AbstractController {

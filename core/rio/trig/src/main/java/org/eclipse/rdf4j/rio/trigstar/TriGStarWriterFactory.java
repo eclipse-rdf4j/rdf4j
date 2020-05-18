@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for TriG* writers.
- * 
+ *
  * @author Pavel Mihaylov
  */
 public class TriGStarWriterFactory implements RDFWriterFactory {

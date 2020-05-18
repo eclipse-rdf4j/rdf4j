@@ -27,7 +27,7 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 	/**
 	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations. By default,
 	 * duplicates are <em>not</em> filtered from the results.
-	 * 
+	 *
 	 * @param arg1    An Iteration containing the first set of elements.
 	 * @param arg2    An Iteration containing the second set of elements.
 	 * @param used    An atomic long used to monitor how many elements are in the set collections.

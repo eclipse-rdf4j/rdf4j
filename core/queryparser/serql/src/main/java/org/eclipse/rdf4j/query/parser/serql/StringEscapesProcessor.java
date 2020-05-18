@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
  * Processes escape sequences in strings, replacing the escape sequence with their actual value. Escape sequences for
  * SPARQL are documented in section <a href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape sequences
  * in strings</a>.
- * 
+ *
  * @author Arjohn Kampman
  */
 class StringEscapesProcessor {
 
 	/**
 	 * Processes escape sequences in ASTString objects.
-	 * 
+	 *
 	 * @param qc The query that needs to be processed.
 	 * @throws MalformedQueryException If an invalid escape sequence was found.
 	 */

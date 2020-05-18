@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.console.setting;
 
 /**
  * Use prefixes when querying.
- * 
+ *
  * @author Bart Hanssens
  */
 public class QueryPrefix extends ConsoleSetting<Boolean> {
@@ -29,7 +29,7 @@ public class QueryPrefix extends ConsoleSetting<Boolean> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public QueryPrefix(Boolean initValue) {

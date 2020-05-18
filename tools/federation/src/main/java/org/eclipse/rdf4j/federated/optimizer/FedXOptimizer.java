@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Interface for any FedX optimizer
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -19,7 +19,7 @@ public interface FedXOptimizer {
 
 	/**
 	 * Optimize the provided tuple expression
-	 * 
+	 *
 	 * @param tupleExpr
 	 */
 	public void optimize(TupleExpr tupleExpr);
