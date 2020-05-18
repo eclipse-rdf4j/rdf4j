@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * Provides methods for handling the standard XML Schema datatypes.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class XMLDatatypeUtil {
@@ -69,7 +69,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if the datatype is a primitive type
 	 */
@@ -88,7 +88,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a derived XML Schema datatype.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if the datatype is a derived type
 	 */
@@ -111,7 +111,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is a built-in XML Schema datatype.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if it is a primitive or derived XML Schema type
 	 */
@@ -122,7 +122,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
 	 * xsd:decimal or one of the datatypes derived from xsd:decimal.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true of it is a decimal or floating point type
 	 */
@@ -133,7 +133,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
 	 * from xsd:decimal.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if it is a decimal datatype
 	 */
@@ -144,7 +144,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
 	 * from xsd:integer.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if it is an integer type
 	 */
@@ -159,7 +159,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if it is a floating point type
 	 */
@@ -170,7 +170,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth, xsd:gMonthDay,
 	 * xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates and/or times.
-	 * 
+	 *
 	 * @see XMLGregorianCalendar
 	 * @param datatype
 	 * @return true if it is a calendar type
@@ -199,7 +199,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other
 	 * using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
-	 * 
+	 *
 	 * @param datatype
 	 * @return true if the datatype is ordered
 	 */
@@ -213,7 +213,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is valid for the given datatype.
-	 * 
+	 *
 	 * @param value    a lexical value
 	 * @param datatype an XML Schema datatatype.
 	 * @return true if the supplied lexical value is valid, false otherwise.
@@ -292,7 +292,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid decimal or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -307,7 +307,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -322,7 +322,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid negative integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -337,7 +337,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid non-positive integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -352,7 +352,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid non-negative integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -367,7 +367,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid positive integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -382,7 +382,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid long or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -397,7 +397,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid integer or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -412,7 +412,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid short or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -427,7 +427,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid byte or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -442,7 +442,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid unsigned long or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -457,7 +457,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid unsigned int.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -472,7 +472,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid unsigned short or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -487,7 +487,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid unsigned byte or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -502,7 +502,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid float or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -517,7 +517,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid double or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -532,7 +532,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid boolean or not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -547,7 +547,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid duration.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -559,7 +559,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid day-time duration ot not.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -569,7 +569,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid year-month duration.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -579,7 +579,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid date-time.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -595,7 +595,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Verifies if the supplied lexical value is a valid date-timestamp.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -611,7 +611,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:date string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -621,7 +621,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:time string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -631,7 +631,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:gDay string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -641,7 +641,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:gMonth string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -651,7 +651,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:gMonthDay string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -661,7 +661,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:gYear string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -671,7 +671,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied value is a valid xsd:gYearMonth string.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -682,7 +682,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Determines if the supplied value is a valid xsd:QName string. Note that this method only checks for syntax errors
 	 * in the supplied string itself. It does not validate that the prefix is a declared and in-scope namespace prefix.
-	 * 
+	 *
 	 * @param value
 	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
 	 */
@@ -763,7 +763,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Determines if the supplied string can be parsed to a valid XMLGregorianCalendar value.
-	 * 
+	 *
 	 * @param value
 	 * @return true if the supplied string is a parsable calendar value, false otherwise.
 	 */
@@ -782,7 +782,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes the supplied value according to the normalization rules for the supplied datatype.
-	 * 
+	 *
 	 * @param value    The value to normalize.
 	 * @param datatype The value's datatype.
 	 * @return The normalized value if there are any (supported) normalization rules for the supplied datatype, or the
@@ -839,7 +839,7 @@ public class XMLDatatypeUtil {
 	 * Normalizes a boolean value to its canonical representation. More specifically, the values <tt>1</tt> and
 	 * <tt>0</tt> will be normalized to the canonical values <tt>true</tt> and <tt>false</tt>, respectively. Supplied
 	 * canonical values will remain as is.
-	 * 
+	 *
 	 * @param value The boolean value to normalize.
 	 * @return The normalized value.
 	 * @throws IllegalArgumentException If the supplied value is not a legal boolean.
@@ -862,7 +862,7 @@ public class XMLDatatypeUtil {
 	 * Normalizes a decimal to its canonical representation. For example: <tt>120</tt> becomes <tt>120.0</tt>,
 	 * <tt>+.3</tt> becomes <tt>0.3</tt>, <tt>00012.45000</tt> becomes <tt>12.45</tt> and <tt>-.0</tt> becomes
 	 * <tt>0.0</tt>.
-	 * 
+	 *
 	 * @param decimal The decimal to normalize.
 	 * @return The canonical representation of <tt>decimal</tt>.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
@@ -964,7 +964,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Normalizes an integer to its canonical representation. For example: <tt>+120</tt> becomes <tt>120</tt> and
 	 * <tt>00012</tt> becomes <tt>12</tt>.
-	 * 
+	 *
 	 * @param value The value to normalize.
 	 * @return The canonical representation of <tt>value</tt>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal integer.
@@ -1124,7 +1124,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes a float to its canonical representation.
-	 * 
+	 *
 	 * @param value The value to normalize.
 	 * @return The canonical representation of <tt>value</tt>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal float.
@@ -1135,7 +1135,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes a double to its canonical representation.
-	 * 
+	 *
 	 * @param value The value to normalize.
 	 * @return The canonical representation of <tt>value</tt>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal double.
@@ -1146,7 +1146,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes a floating point number to its canonical representation.
-	 * 
+	 *
 	 * @param value The value to normalize.
 	 * @return The canonical representation of <tt>value</tt>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal floating point number.
@@ -1157,7 +1157,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes a floating point lexical value to its canonical representation.
-	 * 
+	 *
 	 * @param value       The lexical value to normalize.
 	 * @param minMantissa A normalized decimal indicating the lowest value that the mantissa may have.
 	 * @param maxMantissa A normalized decimal indicating the highest value that the mantissa may have.
@@ -1311,7 +1311,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Normalizes an xsd:dateTime.
-	 * 
+	 *
 	 * @param value The value to normalize.
 	 * @return The normalized value.
 	 * @throws IllegalArgumentException If the supplied value is not a legal xsd:dateTime value.
@@ -1337,7 +1337,7 @@ public class XMLDatatypeUtil {
 	 * Replaces all contiguous sequences of #x9 (tab), #xA (line feed) and #xD (carriage return) with a single #x20
 	 * (space) character, and removes any leading and trailing whitespace characters, as specified for whiteSpace facet
 	 * <tt>collapse</tt>.
-	 * 
+	 *
 	 * @param s
 	 * @return new string
 	 */
@@ -1403,7 +1403,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two decimals to eachother.
-	 * 
+	 *
 	 * @param dec1
 	 * @param dec2
 	 * @return A negative number if <tt>dec1</tt> is smaller than <tt>dec2</tt>, <tt>0</tt> if they are equal, or
@@ -1419,7 +1419,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two canonical decimals to each other.
-	 * 
+	 *
 	 * @param dec1
 	 * @param dec2
 	 * @return A negative number if <tt>dec1</tt> is smaller than <tt>dec2</tt>, <tt>0</tt> if they are equal, or
@@ -1479,7 +1479,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two integers to each other.
-	 * 
+	 *
 	 * @param int1
 	 * @param int2
 	 * @return A negative number if <tt>int1</tt> is smaller than <tt>int2</tt>, <tt>0</tt> if they are equal, or
@@ -1495,7 +1495,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two canonical integers to each other.
-	 * 
+	 *
 	 * @param int1
 	 * @param int2
 	 * @return A negative number if <tt>int1</tt> is smaller than <tt>int2</tt>, <tt>0</tt> if they are equal, or
@@ -1622,7 +1622,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two floats to each other.
-	 * 
+	 *
 	 * @param float1
 	 * @param float2
 	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
@@ -1639,7 +1639,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two canonical floats to each other.
-	 * 
+	 *
 	 * @param float1
 	 * @param float2
 	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
@@ -1654,7 +1654,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two doubles to each other.
-	 * 
+	 *
 	 * @param double1
 	 * @param double2
 	 * @return A negative number if <tt>double1</tt> is smaller than <tt>double2</tt>, <tt>0</tt> if they are equal, or
@@ -1671,7 +1671,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two canonical doubles to eachother.
-	 * 
+	 *
 	 * @param double1
 	 * @param double2
 	 * @return A negative number if <tt>double1</tt> is smaller than <tt>double2</tt>, <tt>0</tt> if they are equal, or
@@ -1686,7 +1686,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two floating point numbers to eachother.
-	 * 
+	 *
 	 * @param fp1
 	 * @param fp2
 	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
@@ -1703,7 +1703,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Compares two canonical floating point numbers to each other.
-	 * 
+	 *
 	 * @param float1
 	 * @param float2
 	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
@@ -1774,7 +1774,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Compares two dateTime objects. <b>Important:</b> The comparison only works if both values have, or both values
 	 * don't have specified a valid value for the timezone.
-	 * 
+	 *
 	 * @param value1 An xsd:dateTime value.
 	 * @param value2 An xsd:dateTime value.
 	 * @return <tt>-1</tt> if <tt>value1</tt> is before <tt>value2</tt> (i.e. if the dateTime object represented by
@@ -1798,7 +1798,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:boolean string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:boolean value.
 	 * @return The <tt>boolean</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:boolean value.
@@ -1809,7 +1809,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:byte string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:byte value.
 	 * @return The <tt>byte</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:byte value.
@@ -1821,7 +1821,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:short string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:short value.
 	 * @return The <tt>short</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:short value.
@@ -1833,7 +1833,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:int strings and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:int value.
 	 * @return The <tt>int</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:int value.
@@ -1845,7 +1845,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:long string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:long value.
 	 * @return The <tt>long</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:long value.
@@ -1857,7 +1857,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:float string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:float value.
 	 * @return The <tt>float</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:float value.
@@ -1877,7 +1877,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:double string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:double value.
 	 * @return The <tt>double</tt> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:double value.
@@ -1897,7 +1897,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:integer string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:integer value.
 	 * @return The integer value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:integer value.
@@ -1909,7 +1909,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied decimal/floating point string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:decimal or xsd:double value.
 	 * @return The decimal/floating point value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:decimal or xsd:double value.
@@ -1921,7 +1921,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied calendar value string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:dateTime, xsd:time, xsd:date, xsd:gYearMonth, xsd:gMonthDay,
 	 *          xsd:gYear, xsd:gMonth or xsd:gDay value.
 	 * @return The calendar value represented by the supplied string argument.
@@ -1933,7 +1933,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Parses the supplied xsd:duration value string and returns its value.
-	 * 
+	 *
 	 * @param s A string representation of an xsd:duration value.
 	 * @return The {@link Duration} value represented by the supplied string argument.
 	 * @throws IllegalArgumentException      If the supplied string is not a valid xsd:duration value.
@@ -1963,9 +1963,9 @@ public class XMLDatatypeUtil {
 	/**
 	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema 1.0 URI for the corresponding
 	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}.
-	 * 
+	 *
 	 * Note that Java 8 / 11 do not have constants for XML Schema 1.1 datatypes like xsd:dateTimeStamp.
-	 * 
+	 *
 	 * @param qname One of the XML Schema qnames from {@link DatatypeConstants}.
 	 * @return A URI for the specified datatype.
 	 * @throws IllegalArgumentException If the supplied qname was not recognized by this method.

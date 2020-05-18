@@ -21,7 +21,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for protocol information. Currently returns the protocol version as plain text.
- * 
+ *
  * @author Herko ter Horst
  */
 public class ProtocolController extends AbstractController {

@@ -66,7 +66,7 @@ public class SparqlBuilderUtils {
 
 	/**
 	 * For string literals that contain single- or double-quotes
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals"> RDF Literal Syntax</a>
 	 * @param contents
 	 * @return a "long quoted" string

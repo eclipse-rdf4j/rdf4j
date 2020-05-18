@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

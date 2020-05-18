@@ -32,11 +32,11 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Optimizer with the following tasks:
- * 
+ *
  * 1. Group {@link ExclusiveStatement} into {@link ExclusiveGroup} 2. Adjust the join order using
  * {@link DefaultFedXCostModel}
- * 
- * 
+ *
+ *
  * @author as
  */
 public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<OptimizationException>
@@ -104,7 +104,7 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 
 	/**
 	 * Group {@link ExclusiveStatement}s having the same source into an {@link ExclusiveGroup}.
-	 * 
+	 *
 	 * @param originalArgs
 	 * @return the new (potentially grouped) join arguments. If empty, the join will not produce any results.
 	 */
@@ -233,12 +233,12 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 
 	/**
 	 * Join Order Optimizer
-	 * 
+	 *
 	 * Group -> Statements according to number of free Variables
-	 * 
+	 *
 	 * Additional Heuristics: - ExclusiveGroups are cheaper than any other subquery - owned statements are cheaper if
 	 * they have a single free variable
-	 * 
+	 *
 	 * @param joinArgs
 	 * @return
 	 */

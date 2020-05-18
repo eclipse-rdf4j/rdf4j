@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client.util;
 
-import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
 import javax.net.ssl.HostnameVerifier;
@@ -18,7 +17,6 @@ import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.ssl.SSLContextBuilder;
-import org.apache.http.ssl.TrustStrategy;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 
 /**

@@ -13,10 +13,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;

@@ -120,7 +120,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
 	 * such Document exists yet.
-	 * 
+	 *
 	 * @param id
 	 * @return search document
 	 * @throws IOException
@@ -209,7 +209,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	/**
 	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
-	 * 
+	 *
 	 * @param subject
 	 * @param context
 	 * @return search document
@@ -226,7 +226,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
+	 *
 	 * @param subject
 	 * @return list of documents
 	 * @throws IOException
@@ -238,7 +238,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Filters the given list of fields, retaining all property fields.
-	 * 
+	 *
 	 * @param fields
 	 * @return set of fields
 	 */
@@ -285,7 +285,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query.To be removed, no longer used.
-	 * 
+	 *
 	 * @param query       string
 	 * @param propertyURI
 	 * @return the parsed query
@@ -300,7 +300,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Parse the passed query.
-	 * 
+	 *
 	 * @param subject
 	 * @param query       string
 	 * @param propertyURI
@@ -366,7 +366,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
+	 *
 	 * @param resource
 	 * @param query
 	 * @return response
@@ -575,7 +575,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
-	 * 
+	 *
 	 * @param query
 	 * @return query response
 	 * @throws SolrServerException
@@ -633,7 +633,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public synchronized void clear() throws IOException {

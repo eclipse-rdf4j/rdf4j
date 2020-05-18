@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Base class providing all common functionality for FedX StatementPatterns
- * 
+ *
  * @author Andreas Schwarte
  * @see StatementSourcePattern
  * @see ExclusiveStatement
@@ -185,7 +185,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	/**
 	 * Set the upper limit for this statement expression (i.e. applied in the evaluation to individual subqueries of
 	 * this expr)
-	 * 
+	 *
 	 * @param upperLimit the upper limit, a negative number means unlimited
 	 */
 	public void setUpperLimit(long upperLimit) {
@@ -193,7 +193,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the upper limit or a negative number (meaning no LIMIT)
 	 */
 	public long getUpperLimit() {

@@ -8,7 +8,13 @@ http://www.eclipse.org/org/documents/edl-v10.php.
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.*;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.ABS;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.BNODE;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.BOUND;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CEIL;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;

@@ -77,7 +77,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
 	 * much since to index xsd:float.
-	 * 
+	 *
 	 * @param literal the literal to be accepted
 	 * @return true if the given literal will be indexed by this LuceneIndex
 	 */
@@ -184,7 +184,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
 	 * done inside this method. The passed added/removed sets are disjunct, no statement can be in both
-	 * 
+	 *
 	 * @param added   all added statements, can have multiple subjects
 	 * @param removed all removed statements, can have multiple subjects
 	 */
@@ -358,7 +358,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
 	 * subject id. (assume the existing document was deleted)
-	 * 
+	 *
 	 * @param statements the statements that make up the resource
 	 * @throws IOException
 	 */
@@ -395,7 +395,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * check if the passed statement should be added (is it indexed? is it stored?) and add it as predicate to the
 	 * passed document. No checks whether the predicate was already there.
-	 * 
+	 *
 	 * @param statement the statement to add
 	 * @param document  the document to add to
 	 */
@@ -449,7 +449,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Evaluates one Lucene Query. It distinguishes between two cases, the one where no subject is given and the one
 	 * were it is given.
-	 * 
+	 *
 	 * @param query the Lucene query to evaluate
 	 * @return QueryResult consisting of hits and highlighter
 	 */
@@ -481,7 +481,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	/**
 	 * This method generates bindings from the given result of a Lucene query.
-	 * 
+	 *
 	 * @param query the Lucene query
 	 * @return a LinkedHashSet containing generated bindings
 	 * @throws SailException

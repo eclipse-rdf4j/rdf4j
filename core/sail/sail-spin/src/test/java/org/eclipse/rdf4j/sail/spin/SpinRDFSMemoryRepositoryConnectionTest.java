@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.fc.DedupingInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.spin.SpinSail;
 import org.junit.Ignore;
 
 @Ignore("#58 - disabled spin compliance tests due to being slow and unstable. Manually execute when modifying SPIN functionality")

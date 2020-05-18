@@ -79,7 +79,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 /**
  * Handles queries and admin (delete) operations on a repository and renders the results in a format suitable to the
  * type of operation.
- * 
+ *
  * @author Herko ter Horst
  */
 public class RepositoryController extends AbstractController {

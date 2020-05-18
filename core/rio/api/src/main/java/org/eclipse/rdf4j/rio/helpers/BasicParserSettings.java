@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A class encapsulating the basic parser settings that most parsers may support.
- * 
+ *
  * @author Peter Ansell
  */
 public class BasicParserSettings {

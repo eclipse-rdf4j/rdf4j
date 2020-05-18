@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Represents a group of {@link ExclusiveTupleExpr} that can only produce results at a single endpoint, the
  * {@link StatementSource}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

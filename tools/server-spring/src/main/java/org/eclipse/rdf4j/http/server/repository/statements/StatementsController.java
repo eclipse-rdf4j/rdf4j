@@ -76,7 +76,7 @@ import org.xml.sax.SAXParseException;
 
 /**
  * Handles requests for manipulating the statements in a repository.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */
@@ -284,7 +284,7 @@ public class StatementsController extends AbstractController {
 
 	/**
 	 * Get all statements and export them as RDF.
-	 * 
+	 *
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,

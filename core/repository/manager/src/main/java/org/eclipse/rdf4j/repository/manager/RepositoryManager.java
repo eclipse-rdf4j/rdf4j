@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

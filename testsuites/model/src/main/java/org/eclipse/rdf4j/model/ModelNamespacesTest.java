@@ -14,8 +14,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDF;

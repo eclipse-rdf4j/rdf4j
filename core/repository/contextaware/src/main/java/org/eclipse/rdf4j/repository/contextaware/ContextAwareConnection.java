@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 
 /**
  * Allows contexts to be specified at the connection level or the method level.
- * 
+ *
  * @author James Leigh
  */
 public class ContextAwareConnection extends RepositoryConnectionWrapper {
@@ -421,7 +421,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	/**
 	 * Exports all statements with a specific subject, predicate and/or object from the repository, optionally from the
 	 * specified contexts.
-	 * 
+	 *
 	 * @param subj    The subject, or null if the subject doesn't matter.
 	 * @param pred    The predicate, or null if the predicate doesn't matter.
 	 * @param obj     The object, or null if the object doesn't matter.
@@ -452,7 +452,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	/**
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
 	 * optionally restricted to the specified set of named contexts.
-	 * 
+	 *
 	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -505,7 +505,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	/**
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
 	 * the specified contexts.
-	 * 
+	 *
 	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -523,7 +523,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	/**
 	 * Checks whether the repository contains the specified statement, optionally in the specified contexts.
-	 * 
+	 *
 	 * @param st The statement to look for. Context information in the statement is ignored.
 	 * @return true If the repository contains the specified statement, false otherwise.
 	 * @see #getReadContexts()
@@ -642,7 +642,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	/**
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
 	 * carried by the statements themselves.
-	 * 
+	 *
 	 * @param statementIter The statements to remove. In case the iterator is a {@link CloseableIteration}, it will be
 	 *                      closed before this method returns.
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
@@ -672,7 +672,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	/**
 	 * Removes the statement with the specified subject, predicate and object from the repository, optionally restricted
 	 * to the specified contexts.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
@@ -691,7 +691,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	/**
 	 * Removes the supplied statement from the specified contexts in the repository.
-	 * 
+	 *
 	 * @param st The statement to remove.
 	 * @throws RepositoryException If the statement could not be removed from the repository, for example because the
 	 *                             repository is not writable.
@@ -708,7 +708,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	/**
 	 * Returns the number of (explicit) statements that are in the specified contexts in this repository.
-	 * 
+	 *
 	 * @return The number of explicit statements from the specified contexts in this repository.
 	 * @see #getReadContexts()
 	 */

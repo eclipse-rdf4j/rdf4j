@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 /**
  * Processes projections. 'Wildcard' projections are made explicit by adding projection elements with the appropriate
  * variable nodes to them. Explicit projections are checked to see if they don't contain any unbound variables.
- * 
+ *
  * @author Arjohn Kampman
  */
 class ProjectionProcessor extends AbstractASTVisitor {

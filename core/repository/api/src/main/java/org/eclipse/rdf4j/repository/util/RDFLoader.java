@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
 
 /**
  * Handles common I/O to retrieve and parse RDF.
- * 
+ *
  * @author James Leigh
  */
 public class RDFLoader {
@@ -58,7 +58,7 @@ public class RDFLoader {
 
 	/**
 	 * Parses RDF data from the specified file to the given RDFHandler.
-	 * 
+	 *
 	 * @param file       A file containing RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
@@ -88,7 +88,7 @@ public class RDFLoader {
 
 	/**
 	 * Parses the RDF data that can be found at the specified URL to the RDFHandler.
-	 * 
+	 *
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
@@ -144,7 +144,7 @@ public class RDFLoader {
 
 	/**
 	 * Parses RDF data from an InputStream to the RDFHandler.
-	 * 
+	 *
 	 * @param in         An InputStream from which RDF data can be read.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat The serialization format of the data.
@@ -173,7 +173,7 @@ public class RDFLoader {
 	 * Parses RDF data from a Reader to the RDFHandler. <b>Note: using a Reader to upload byte-based data means that you
 	 * have to be careful not to destroy the data's character encoding by enforcing a default character encoding upon
 	 * the bytes. If possible, adding such data using an InputStream is to be preferred.</b>
-	 * 
+	 *
 	 * @param reader     A Reader from which RDF data can be read.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat The serialization format of the data.
@@ -218,7 +218,7 @@ public class RDFLoader {
 
 	/**
 	 * Adds the data that can be read from the supplied InputStream or Reader to this repository.
-	 * 
+	 *
 	 * @param inputStreamOrReader An {@link InputStream} or {@link Reader} containing RDF data that must be added to the
 	 *                            repository.
 	 * @param baseURI             The base URI for the data.

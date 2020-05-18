@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.AbstractSearchIndex;
 import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
 import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
@@ -461,7 +460,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	/**
 	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
-	 * 
+	 *
 	 * @param subject
 	 * @param context
 	 * @return search document
@@ -478,7 +477,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
+	 *
 	 * @param subject
 	 * @return list of documents
 	 * @throws IOException
@@ -490,7 +489,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Filters the given list of fields, retaining all property fields.
-	 * 
+	 *
 	 * @param fields
 	 * @return set of fields
 	 */
@@ -610,7 +609,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
+	 *
 	 * @param resource
 	 * @param request
 	 * @param query

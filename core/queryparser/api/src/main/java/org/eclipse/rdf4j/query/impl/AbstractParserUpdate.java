@@ -37,7 +37,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 	 * Determines the active dataset by appropriately merging the pre-set dataset and the dataset defined in the SPARQL
 	 * operation itself. If the SPARQL operation contains WITH, USING, or USING NAMED clauses, these should override
 	 * whatever is preset.
-	 * 
+	 *
 	 * @param sparqlDefinedDataset the dataset as defined in the SPARQL update itself.
 	 * @return a {@link Dataset} comprised of a merge between the pre-set dataset and the SPARQL-defined dataset.
 	 */

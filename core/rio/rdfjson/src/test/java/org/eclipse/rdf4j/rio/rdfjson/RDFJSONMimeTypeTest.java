@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfjson;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Interface for any expression that can be evaluated
- * 
+ *
  * @author Andreas Schwarte
  *
  * @see StatementSourcePattern
@@ -36,7 +36,7 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 
 	/**
 	 * returns true iff this statement has free variables in the presence of the specified binding set
-	 * 
+	 *
 	 * @param binding
 	 * @return whether the statement has free vars
 	 */
@@ -44,10 +44,10 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 
 	/**
 	 * Evaluate this expression using the provided bindings
-	 * 
+	 *
 	 * @param bindings
 	 * @return the result iteration
-	 * 
+	 *
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)

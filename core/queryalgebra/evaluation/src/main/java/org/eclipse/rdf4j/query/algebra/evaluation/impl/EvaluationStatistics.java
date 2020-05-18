@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */

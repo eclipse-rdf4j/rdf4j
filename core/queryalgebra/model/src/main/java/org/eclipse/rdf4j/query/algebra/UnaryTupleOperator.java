@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * An abstract superclass for unary tuple operators which, by definition, has one argument.

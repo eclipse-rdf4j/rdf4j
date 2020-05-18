@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

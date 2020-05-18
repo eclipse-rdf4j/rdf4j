@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Integration tests for checking Native Store index consistency.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class NativeStoreConsistencyTest {

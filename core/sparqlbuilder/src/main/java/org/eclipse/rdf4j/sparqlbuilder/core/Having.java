@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Having clause
- * 
+ *
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#having"> SPARQL Having Clause</a>
  */
 public class Having extends StandardQueryElementCollection<Expression<?>> {
@@ -29,7 +29,7 @@ public class Having extends StandardQueryElementCollection<Expression<?>> {
 
 	/**
 	 * Add having conditions
-	 * 
+	 *
 	 * @param expressions the conditions to add
 	 * @return this
 	 */

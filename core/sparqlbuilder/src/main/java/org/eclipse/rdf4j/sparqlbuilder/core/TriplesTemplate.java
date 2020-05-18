@@ -28,9 +28,9 @@ public class TriplesTemplate extends StandardQueryElementCollection<TriplePatter
 
 	/**
 	 * add triples to this template
-	 * 
+	 *
 	 * @param triples the triples to add
-	 * 
+	 *
 	 * @return this TriplesTemplate instance
 	 */
 	public TriplesTemplate and(TriplePattern... triples) {

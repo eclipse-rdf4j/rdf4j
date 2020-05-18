@@ -33,7 +33,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for manipulating a specific namespace definition in a repository.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 /**
  * A query optimizer that contains a list of other query optimizers, which are called consecutively when the list's
  * {@link #optimize(TupleExpr, Dataset, BindingSet)} method is called.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryOptimizerList implements QueryOptimizer {

@@ -62,7 +62,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new <tt>major.minor</tt> version number, e.g.<tt>1.0</tt>.
-	 * 
+	 *
 	 * @param major major number
 	 * @param minor minor number
 	 */
@@ -72,7 +72,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new <tt>major.minor.patch</tt> version number, e.g.<tt>1.0.1</tt>.
-	 * 
+	 *
 	 * @param major major number
 	 * @param minor minor number
 	 * @param patch patch number
@@ -83,7 +83,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g.<tt>1.0-beta1</tt>.
-	 * 
+	 *
 	 * @param major    major number
 	 * @param minor    minor number
 	 * @param modifier additional string
@@ -94,7 +94,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.<tt>1.0.1-SNAPSHOT</tt>.
-	 * 
+	 *
 	 * @param major    major number
 	 * @param minor    minor number
 	 * @param patch    patch number
@@ -106,7 +106,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, e.g.<tt>1.0.1M1-SNAPSHOT</tt>.
-	 * 
+	 *
 	 * @param major     major number
 	 * @param minor     minor number
 	 * @param patch     patch number
@@ -119,7 +119,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Creates a new version number
-	 * 
+	 *
 	 * @param major     major number
 	 * @param minor     minor number
 	 * @param patch     patch number
@@ -138,7 +138,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Gets the version's major version number.
-	 * 
+	 *
 	 * @return major number
 	 */
 	public int getMajor() {
@@ -147,7 +147,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Set major number
-	 * 
+	 *
 	 * @param major major number
 	 */
 	public void setMajor(int major) {
@@ -156,7 +156,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Gets the version's minor version number.
-	 * 
+	 *
 	 * @return minor number
 	 */
 	public int getMinor() {
@@ -165,7 +165,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Set minor number
-	 * 
+	 *
 	 * @param minor minor number
 	 */
 	public void setMinor(int minor) {
@@ -174,7 +174,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Gets the version's micro version / patch level number.
-	 * 
+	 *
 	 * @return patch level number
 	 */
 	public int getPatch() {
@@ -183,7 +183,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Sets the version's micro version / patch level number.
-	 * 
+	 *
 	 * @param micro patch level number
 	 */
 	public void setPatch(int micro) {
@@ -192,7 +192,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Set the milestone number
-	 * 
+	 *
 	 * @param milestone milestone number
 	 */
 	public void setMilestone(int milestone) {
@@ -201,7 +201,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Get the milestone number
-	 * 
+	 *
 	 * @return milestone number
 	 */
 	public int getMilestone() {
@@ -210,7 +210,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Gets the version's release modifier part.
-	 * 
+	 *
 	 * @return modifier string
 	 */
 	public String getModifier() {
@@ -219,7 +219,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Set the version's release modifier part.
-	 * 
+	 *
 	 * @param modifier modifier string
 	 */
 	public void setModifier(String modifier) {
@@ -228,7 +228,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Check if two versions are exactly equal, modifier is case insensitive.
-	 * 
+	 *
 	 * @param other second object
 	 * @return true if equal
 	 */
@@ -271,7 +271,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Checks if this version is older than the specified version, according to the result of
 	 * {@link #compareTo(AppVersion)}.
-	 * 
+	 *
 	 * @param other other version
 	 * @return true if this version is older than other
 	 */
@@ -282,7 +282,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * Checks if this version is newer than the specified version, according to the result of
 	 * {@link #compareTo(AppVersion)}.
-	 * 
+	 *
 	 * @param other other version
 	 * @return true if this version is newer than other
 	 */
@@ -295,7 +295,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * oldest to newest version. If all version numbers are equal, then their modifiers are compared lexicographically
 	 * (based on the Unicode value of each character), ignoring case. Versions without a modifier or milestone are
 	 * considered to be the "final" versions and come after other versions with a modifier or milestone.
-	 * 
+	 *
 	 * @param other
 	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than <tt>other</tt>, or
 	 *         a positive number otherwise.
@@ -341,7 +341,7 @@ public class AppVersion implements Comparable<AppVersion> {
 
 	/**
 	 * Parses a version string into a Version object.
-	 * 
+	 *
 	 * @param versionString A version string, e.g. 1.0.1 or 1.0-beta1.
 	 * @return The parsed Version.
 	 * @exception NumberFormatException If versionString could not be parsed to a version.

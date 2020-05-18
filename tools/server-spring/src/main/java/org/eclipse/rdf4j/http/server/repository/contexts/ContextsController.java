@@ -36,7 +36,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for the list of contexts in a repository.
- * 
+ *
  * @author Herko ter Horst
  */
 public class ContextsController extends AbstractController {
