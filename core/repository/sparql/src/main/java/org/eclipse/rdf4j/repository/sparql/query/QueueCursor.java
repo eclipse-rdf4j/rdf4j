@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.repository.sparql.query;
 /**
  * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and
  * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
- * 
+ *
  * @author James Leigh
  * @deprecated Use {@link org.eclipse.rdf4j.query.impl.QueueCursor} instead
  */

@@ -84,12 +84,14 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	@Override
 	public boolean accept(Literal literal) {
 		// we reject null literals
-		if (literal == null)
+		if (literal == null) {
 			return false;
+		}
 
 		// we reject literals that are in the list of rejected data types
-		if ((literal.getDatatype() != null) && (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue())))
+		if ((literal.getDatatype() != null) && (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue()))) {
 			return false;
+		}
 
 		return true;
 	}
@@ -246,10 +248,11 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					updater.add(document);
 
 					// THERE SHOULD BE NO DELETED TRIPLES ON A NEWLY ADDED RESOURCE
-					if (stmtsToRemove.containsKey(contextId))
+					if (stmtsToRemove.containsKey(contextId)) {
 						logger.info(
 								"Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.",
 								resource, contextId);
+					}
 				} else {
 					// update the Document
 
@@ -522,8 +525,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				// get the score of the hit
 				float score = hit.getScore();
@@ -534,8 +538,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					derivedBindings.addBinding(matchVar, resource);
 				}
 
-				if ((scoreVar != null) && (score > 0.0f))
+				if ((scoreVar != null) && (score > 0.0f)) {
 					derivedBindings.addBinding(scoreVar, SearchFields.scoreToLiteral(score));
+				}
 
 				if (snippetVar != null || propertyVar != null) {
 					if (hit.isHighlighted()) {
@@ -654,8 +659,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			for (DocumentDistance hit : hits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {
@@ -753,8 +759,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			for (DocumentResult hit : hits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {

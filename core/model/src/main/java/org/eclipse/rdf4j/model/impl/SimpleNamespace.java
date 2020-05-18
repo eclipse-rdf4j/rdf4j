@@ -36,7 +36,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Creates a new Namespace object.
-	 * 
+	 *
 	 * @param prefix The namespace's prefix.
 	 * @param name   The namespace's name.
 	 */
@@ -51,7 +51,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Gets the prefix of the namespace.
-	 * 
+	 *
 	 * @return prefix of the namespace
 	 */
 	@Override
@@ -61,7 +61,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Sets the prefix of the namespace.
-	 * 
+	 *
 	 * @param prefix The (new) prefix for this namespace.
 	 */
 	public void setPrefix(String prefix) {
@@ -70,7 +70,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Gets the name of the namespace.
-	 * 
+	 *
 	 * @return name of the namespace
 	 */
 	@Override
@@ -80,7 +80,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Sets the name of the namespace.
-	 * 
+	 *
 	 * @param name The (new) name for this namespace.
 	 */
 	public void setName(String name) {
@@ -89,7 +89,7 @@ public class SimpleNamespace implements Namespace {
 
 	/**
 	 * Returns a string representation of the object.
-	 * 
+	 *
 	 * @return String representation of the namespace
 	 */
 	@Override

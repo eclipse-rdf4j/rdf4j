@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
  * An implementation of a datatype handler that can process Virtuoso Geometry datatypes.
- * 
+ *
  * @author Peter Ansell
  */
 public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {

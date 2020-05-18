@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 
 /**
  * Operator for a hash join of tuple expressions.
- * 
+ *
  * @author Andreas Schwarte
  * @since 6.0
  */
@@ -96,7 +96,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	 * <p>
 	 * See {@link #join(Collection, Collection, Set, Collection)} and {@link #addResult(CloseableIteration)}.
 	 * </p>
-	 * 
+	 *
 	 * @param leftBlock
 	 * @param rightBlock
 	 * @param joinVariables
@@ -113,7 +113,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	 * This method keeps the merged bindings in the results, if the join variables match and if all previously resolved
 	 * bindings hold.
 	 * </p>
-	 * 
+	 *
 	 * @param leftBlock
 	 * @param rightBlock
 	 * @param joinVariables

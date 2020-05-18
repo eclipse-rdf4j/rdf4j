@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * A query optimizer that replaces {@link Compare} operators with {@link SameTerm}s, if possible.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class CompareOptimizer implements QueryOptimizer {

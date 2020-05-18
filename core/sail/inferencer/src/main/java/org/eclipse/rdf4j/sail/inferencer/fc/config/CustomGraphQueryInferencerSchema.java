@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer;
 
 /**
  * Configuration schema URI's for {@link CustomGraphQueryInferencer}.
- * 
+ *
  * @author Dale Visser
  */
 public class CustomGraphQueryInferencerSchema {

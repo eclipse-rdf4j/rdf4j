@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Unit tests for {@link JSONLDParser} related to handling of datatypes and languages.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDParserHandlerTest extends AbstractParserHandlingTest {

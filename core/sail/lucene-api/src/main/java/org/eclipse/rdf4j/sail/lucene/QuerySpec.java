@@ -189,10 +189,11 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	 * @return the type of the Query or null, if no type assigned.
 	 */
 	public IRI getQueryType() {
-		if (typePattern != null)
+		if (typePattern != null) {
 			return (IRI) typePattern.getObjectVar().getValue();
-		else
+		} else {
 			return null;
+		}
 	}
 
 	public Resource getSubject() {
@@ -238,8 +239,9 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	}
 
 	private void append(StatementPattern pattern, StringBuilder buffer) {
-		if (pattern == null)
+		if (pattern == null) {
 			return;
+		}
 
 		buffer.append("   ");
 		buffer.append("StatementPattern\n");

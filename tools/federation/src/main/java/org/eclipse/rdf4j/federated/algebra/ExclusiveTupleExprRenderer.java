@@ -15,11 +15,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 /**
  * A specialization of {@link ExclusiveTupleExpr} which provides definitions how the expressions can be rendered to a
  * sub-query.
- * 
+ *
  * <p>
  * This is required for the evaluation of sub queries.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -31,7 +31,7 @@ public interface ExclusiveTupleExprRenderer extends ExclusiveTupleExpr {
 	 * Implementations are required to create a valid query string for this expression where the given bindings are
 	 * inserted.
 	 * </p>
-	 * 
+	 *
 	 * @param varNames the set of resulting (unbound) variables from this expression
 	 * @param bindings the optional input bindings
 	 * @return the query string part
@@ -44,7 +44,7 @@ public interface ExclusiveTupleExprRenderer extends ExclusiveTupleExpr {
 	 * Implementations are required to create a new equivalent expression or clone, where any provided input bindings
 	 * are inserted. The free variable names after insertion need to be added to the provided set.
 	 * </p>
-	 * 
+	 *
 	 * @param varNames the set of resulting (unbound) variables from this expression
 	 * @param bindings the input bindings that need to be inserted
 	 * @return the algebra expression

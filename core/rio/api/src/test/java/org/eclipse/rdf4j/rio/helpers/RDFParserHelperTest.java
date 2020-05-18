@@ -34,7 +34,7 @@ import org.junit.rules.ExpectedException;
 
 /**
  * Tests for {@link RDFParserHelper} methods.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFParserHelperTest {
@@ -320,7 +320,7 @@ public class RDFParserHelperTest {
 
 	/**
 	 * Private method for verifying the number of errors that were logged to the {@link ParseErrorListener}.
-	 * 
+	 *
 	 * @param fatalErrors Expected number of fatal errors logged by error listener.
 	 * @param errors      Expected number of errors logged by error listener.
 	 * @param warnings    Expected number of warnings logged by error listener.

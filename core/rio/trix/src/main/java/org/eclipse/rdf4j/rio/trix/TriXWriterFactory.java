@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for TriX writers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TriXWriterFactory implements RDFWriterFactory {

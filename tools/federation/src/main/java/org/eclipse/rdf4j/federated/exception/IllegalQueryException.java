@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.federated.exception;
 
 /**
  * Thrown if something is wrong while constructing the query string.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class IllegalQueryException extends Exception {

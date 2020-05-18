@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 
 /**
  * {@link SailImplConfig} for the {@link SchemaCachingRDFSInferencer}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SchemaCachingRDFSInferencerConfig extends AbstractDelegatingSailImplConfig {

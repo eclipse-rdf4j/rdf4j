@@ -72,8 +72,9 @@ public class QueryAlgebraUtil {
 	 */
 	public static boolean hasFreeVars(StatementPattern stmt, BindingSet bindings) {
 		for (Var var : stmt.getVarList()) {
-			if (!var.hasValue() && !bindings.hasBinding(var.getName()))
+			if (!var.hasValue() && !bindings.hasBinding(var.getName())) {
 				return true; // there is at least one free var
+			}
 		}
 		return false;
 	}
@@ -159,8 +160,9 @@ public class QueryAlgebraUtil {
 		Set<String> varNames = new HashSet<>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
 
-		if (varNames.isEmpty())
+		if (varNames.isEmpty()) {
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
+		}
 
 		if (filterExpr != null) {
 			try {
@@ -173,8 +175,9 @@ public class QueryAlgebraUtil {
 		}
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(expr, projList);
 
@@ -231,8 +234,9 @@ public class QueryAlgebraUtil {
 		}
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(expr, projList);
 
@@ -276,8 +280,9 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementId(stmt, Integer.toString(idx), varNames, unionBindings.get(idx)));
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(union, projList);
 
@@ -312,8 +317,9 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementCheckId(stmt, idx, varNames, unionBindings.get(idx)));
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(union, projList);
 
@@ -456,10 +462,11 @@ public class QueryAlgebraUtil {
 	protected static Var appendVar(Var var, Set<String> varNames, BindingSet bindings) {
 		Var res = var.clone();
 		if (!var.hasValue()) {
-			if (bindings.hasBinding(var.getName()))
+			if (bindings.hasBinding(var.getName())) {
 				res.setValue(bindings.getValue(var.getName()));
-			else
+			} else {
 				varNames.add(var.getName());
+			}
 		}
 		return res;
 	}
@@ -539,8 +546,9 @@ public class QueryAlgebraUtil {
 		if (tupleExpr instanceof NTuple) {
 			HashSet<String> freeVars = new HashSet<>();
 			NTuple ntuple = (NTuple) tupleExpr;
-			for (TupleExpr t : ntuple.getArgs())
+			for (TupleExpr t : ntuple.getArgs()) {
 				freeVars.addAll(getFreeVars(t));
+			}
 			return freeVars;
 		}
 
@@ -556,12 +564,15 @@ public class QueryAlgebraUtil {
 		if (tupleExpr instanceof StatementPattern) {
 			List<String> freeVars = new ArrayList<>();
 			StatementPattern st = (StatementPattern) tupleExpr;
-			if (st.getSubjectVar().getValue() == null)
+			if (st.getSubjectVar().getValue() == null) {
 				freeVars.add(st.getSubjectVar().getName());
-			if (st.getPredicateVar().getValue() == null)
+			}
+			if (st.getPredicateVar().getValue() == null) {
 				freeVars.add(st.getPredicateVar().getName());
-			if (st.getObjectVar().getValue() == null)
+			}
+			if (st.getObjectVar().getValue() == null) {
 				freeVars.add(st.getObjectVar().getName());
+			}
 			return freeVars;
 		}
 

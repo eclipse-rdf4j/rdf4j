@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This unit test reproduces issue #41
- * 
+ *
  * @author Jacek Grzebyta
  */
 public class LuceneIndexLocationTest {
@@ -91,7 +91,7 @@ public class LuceneIndexLocationTest {
 
 	/**
 	 * Check Lucene index location
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

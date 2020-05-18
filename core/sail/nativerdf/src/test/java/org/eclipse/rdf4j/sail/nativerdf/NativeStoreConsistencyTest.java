@@ -109,7 +109,7 @@ public class NativeStoreConsistencyTest {
 
 		// Step 4: check the repository size with SPOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
-													// update index usage
+		// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "spoc"));
 		repo.initialize();
 		conn = repo.getConnection();
@@ -120,7 +120,7 @@ public class NativeStoreConsistencyTest {
 
 		// Step 5: check the repository size with PSOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
-													// update index usage
+		// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "psoc"));
 		repo.initialize();
 		conn = repo.getConnection();

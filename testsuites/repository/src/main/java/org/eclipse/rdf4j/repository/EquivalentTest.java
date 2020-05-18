@@ -148,8 +148,9 @@ public abstract class EquivalentTest {
 	public static Collection<Object[]> params() {
 		LinkedList<Object[]> params = new LinkedList<>();
 		for (String row : matrix.split("\n")) {
-			if (row.contains("_:"))
+			if (row.contains("_:")) {
 				continue;
+			}
 			String[] fields = row.split("\t", 3);
 			if (fields[2].contains("neq")) {
 				params.add(new Object[] { NEQ, fields[0], fields[1] });
@@ -217,36 +218,50 @@ public abstract class EquivalentTest {
 
 	private static Value getTerm(String label) {
 		if (label.contains("xyz")) {
-			if (label.contains("integer"))
+			if (label.contains("integer")) {
 				return xyz_integer;
-			if (label.contains("string"))
+			}
+			if (label.contains("string")) {
 				return xyz_string;
-			if (label.contains("unknown"))
+			}
+			if (label.contains("unknown")) {
 				return xyz_unknown;
-			if (label.contains("en"))
+			}
+			if (label.contains("en")) {
 				return xyz_en;
-			if (label.contains("EN"))
+			}
+			if (label.contains("EN")) {
 				return xyz_EN;
-			if (label.contains(":xyz"))
+			}
+			if (label.contains(":xyz")) {
 				return xyz_uri;
-			if (label.contains("\"xyz\""))
+			}
+			if (label.contains("\"xyz\"")) {
 				return xyz_simple;
+			}
 		}
 		if (label.contains("abc")) {
-			if (label.contains("integer"))
+			if (label.contains("integer")) {
 				return abc_integer;
-			if (label.contains("string"))
+			}
+			if (label.contains("string")) {
 				return abc_string;
-			if (label.contains("unknown"))
+			}
+			if (label.contains("unknown")) {
 				return abc_unknown;
-			if (label.contains("en"))
+			}
+			if (label.contains("en")) {
 				return abc_en;
-			if (label.contains("EN"))
+			}
+			if (label.contains("EN")) {
 				return abc_EN;
-			if (label.contains(":abc"))
+			}
+			if (label.contains(":abc")) {
 				return abc_uri;
-			if (label.contains("\"abc\""))
+			}
+			if (label.contains("\"abc\"")) {
 				return abc_simple;
+			}
 		}
 		throw new AssertionError(label);
 	}
@@ -255,12 +270,15 @@ public abstract class EquivalentTest {
 		boolean eq = evaluate(EQ);
 		boolean neq = evaluate(NEQ);
 		assertTrue(!eq || !neq);
-		if (eq && !neq)
+		if (eq && !neq) {
 			return EQ;
-		if (!eq && neq)
+		}
+		if (!eq && neq) {
 			return NEQ;
-		if (!eq && !neq)
+		}
+		if (!eq && !neq) {
 			return IND;
+		}
 		throw new AssertionError();
 	}
 

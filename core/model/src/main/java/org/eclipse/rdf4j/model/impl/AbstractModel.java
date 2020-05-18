@@ -49,9 +49,11 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	public boolean containsAll(Collection<?> c) {
 		Iterator<?> e = c.iterator();
 		try {
-			while (e.hasNext())
-				if (!contains(e.next()))
+			while (e.hasNext()) {
+				if (!contains(e.next())) {
 					return false;
+				}
+			}
 			return true;
 		} finally {
 			closeIterator(c, e);
@@ -64,8 +66,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		if (size() > c.size()) {
 			Iterator<?> i = c.iterator();
 			try {
-				while (i.hasNext())
+				while (i.hasNext()) {
 					modified |= remove(i.next());
+				}
 			} finally {
 				closeIterator(c, i);
 			}
@@ -121,8 +124,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		try {
 			boolean modified = false;
 			while (e.hasNext()) {
-				if (add(e.next()))
+				if (add(e.next())) {
 					modified = true;
+				}
 			}
 			return modified;
 		} finally {
@@ -451,8 +455,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			boolean modified = false;
 			Iterator<?> i = c.iterator();
 			try {
-				while (i.hasNext())
+				while (i.hasNext()) {
 					modified |= remove(i.next());
+				}
 			} finally {
 				closeIterator(c, i);
 			}
@@ -491,9 +496,11 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 		public boolean containsAll(Collection<?> c) {
 			Iterator<?> e = c.iterator();
 			try {
-				while (e.hasNext())
-					if (!contains(e.next()))
+				while (e.hasNext()) {
+					if (!contains(e.next())) {
 						return false;
+					}
+				}
 				return true;
 			} finally {
 				closeIterator(c, e);
@@ -506,8 +513,9 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			try {
 				boolean modified = false;
 				while (e.hasNext()) {
-					if (add(e.next()))
+					if (add(e.next())) {
 						modified = true;
+					}
 				}
 				return modified;
 			} finally {

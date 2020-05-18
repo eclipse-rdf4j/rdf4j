@@ -246,6 +246,7 @@ public class ResourceUtil {
 	private static final class CallerResolver extends SecurityManager {
 
 		private static final CallerResolver INSTANCE;
+
 		static {
 			try {
 				INSTANCE = new CallerResolver();

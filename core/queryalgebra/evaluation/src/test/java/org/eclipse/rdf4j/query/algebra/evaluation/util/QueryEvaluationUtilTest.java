@@ -401,7 +401,7 @@ public class QueryEvaluationUtilTest {
 
 	/**
 	 * Assert that there is an exception as a result of comparing the two literals with the given operator.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
@@ -423,7 +423,7 @@ public class QueryEvaluationUtilTest {
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns false.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
@@ -440,7 +440,7 @@ public class QueryEvaluationUtilTest {
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns true.
-	 * 
+	 *
 	 * @param lit1   The left literal
 	 * @param lit2   The right literal
 	 * @param op     The operator for the comparison

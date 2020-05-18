@@ -20,7 +20,7 @@ public interface RepositoryBloomFilter {
 
 	/**
 	 * Returns true if the repository may have such a statement or false if it definitely does not.
-	 * 
+	 *
 	 * @param conn connection to the repository to check.
 	 * @param subj subject of the statement to check for (can be null).
 	 * @param pred predicate of the statement to check for (can be null).

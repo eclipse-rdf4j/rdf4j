@@ -24,7 +24,7 @@ public class Difference extends BinaryTupleOperator {
 
 	/**
 	 * Creates a new minus operator that operates on the two specified arguments.
-	 * 
+	 *
 	 * @param leftArg  The left argument of the minus operator.
 	 * @param rightArg The right argument of the minus operator.
 	 */

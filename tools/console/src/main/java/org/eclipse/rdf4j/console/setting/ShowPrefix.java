@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.console.setting;
 
 /**
  * Show prefixes when displaying results.
- * 
+ *
  * @author Bart Hanssens
  */
 public class ShowPrefix extends ConsoleSetting<Boolean> {
@@ -30,7 +30,7 @@ public class ShowPrefix extends ConsoleSetting<Boolean> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public ShowPrefix(Boolean initValue) {

@@ -34,7 +34,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	/**
 	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
-	 * 
+	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	public UnionIteration(Iteration<? extends E, X>... args) {
@@ -43,7 +43,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	/**
 	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
-	 * 
+	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {

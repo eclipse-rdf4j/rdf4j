@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 /**
  * Test SPARQL 1.1 Update functionality on an in-memory store.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MemorySPARQLUpdateTest extends SPARQLUpdateTest {

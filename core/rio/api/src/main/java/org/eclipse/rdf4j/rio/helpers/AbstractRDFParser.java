@@ -325,8 +325,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * @throws RDFParseException if no namespace is associated with this prefix
 	 */
 	protected String getNamespace(String prefix) throws RDFParseException {
-		if (namespaceTable.containsKey(prefix))
+		if (namespaceTable.containsKey(prefix)) {
 			return namespaceTable.get(prefix);
+		}
 		String msg = "Namespace prefix '" + prefix + "' used but not defined";
 
 		if ("".equals(prefix)) {
@@ -575,7 +576,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a warning to the registered ParseErrorListener, if any. This method simply calls
-	 * {@link #reportWarning(String,long,long)} supplying <tt>-1</tt> for the line- and column number.
+	 * {@link #reportWarning(String, long, long)} supplying <tt>-1</tt> for the line- and column number.
 	 */
 	protected void reportWarning(String msg) {
 		reportWarning(msg, -1, -1);
@@ -718,7 +719,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <tt>ParseException</tt>
-	 * afterwards. This method simply calls {@link #reportFatalError(String,long,long)} supplying <tt>-1</tt> for the
+	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long)} supplying <tt>-1</tt> for the
 	 * line- and column number.
 	 */
 	protected void reportFatalError(String msg) throws RDFParseException {
@@ -740,7 +741,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * to the ParseErrorListener, assuming that it has already been reported when the original ParseException was
 	 * thrown.
 	 * <p>
-	 * This method simply calls {@link #reportFatalError(Exception,long,long)} supplying <tt>-1</tt> for the line- and
+	 * This method simply calls {@link #reportFatalError(Exception, long, long)} supplying <tt>-1</tt> for the line- and
 	 * column number.
 	 */
 	protected void reportFatalError(Exception e) throws RDFParseException {

@@ -90,7 +90,7 @@ public class XMLReaderFactory {
 
 	/**
 	 * Creates an org.xml.sax.XMLReader object using the supplied name.
-	 * 
+	 *
 	 * @return an XMLReader
 	 * @throws SAXException when the supplied XMLReader class name can not be found or instantiated.
 	 */

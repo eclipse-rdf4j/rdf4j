@@ -41,7 +41,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	protected final List<String> freeVars = new ArrayList<>(3);
 	protected FilterValueExpr filterExpr = null;
 	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
-													// additional bindings
+	// additional bindings
 	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery
 
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
@@ -56,8 +56,9 @@ public abstract class FedXStatementPattern extends StatementPattern
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		super.visitChildren(visitor);
-		for (StatementSource s : sort(statementSources))
+		for (StatementSource s : sort(statementSources)) {
 			s.visit(visitor);
+		}
 
 		if (boundFilters != null) {
 			BoundFiltersNode.visit(visitor, boundFilters);
@@ -67,8 +68,9 @@ public abstract class FedXStatementPattern extends StatementPattern
 			new UpperLimitNode(upperLimit).visit(visitor);
 		}
 
-		if (filterExpr != null)
+		if (filterExpr != null) {
 			filterExpr.visit(visitor);
+		}
 	}
 
 	@Override
@@ -78,12 +80,15 @@ public abstract class FedXStatementPattern extends StatementPattern
 	}
 
 	protected void initFreeVars() {
-		if (getSubjectVar().getValue() == null)
+		if (getSubjectVar().getValue() == null) {
 			freeVars.add(getSubjectVar().getName());
-		if (getPredicateVar().getValue() == null)
+		}
+		if (getPredicateVar().getValue() == null) {
 			freeVars.add(getPredicateVar().getName());
-		if (getObjectVar().getValue() == null)
+		}
+		if (getObjectVar().getValue() == null) {
 			freeVars.add(getObjectVar().getName());
+		}
 	}
 
 	@Override
@@ -108,9 +113,11 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	@Override
 	public boolean hasFreeVarsFor(BindingSet bindings) {
-		for (String var : freeVars)
-			if (!bindings.hasBinding(var))
+		for (String var : freeVars) {
+			if (!bindings.hasBinding(var)) {
 				return true;
+			}
+		}
 		return false;
 	}
 
@@ -141,9 +148,9 @@ public abstract class FedXStatementPattern extends StatementPattern
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
 
-		if (filterExpr == null)
+		if (filterExpr == null) {
 			filterExpr = expr;
-		else if (filterExpr instanceof ConjunctiveFilterExpr) {
+		} else if (filterExpr instanceof ConjunctiveFilterExpr) {
 			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
 		} else if (filterExpr instanceof FilterExpr) {
 			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);
@@ -166,12 +173,15 @@ public abstract class FedXStatementPattern extends StatementPattern
 		}
 
 		// visit Var nodes and set value for matching var names
-		if (getSubjectVar().getName().equals(varName))
+		if (getSubjectVar().getName().equals(varName)) {
 			getSubjectVar().setValue(value);
-		if (getPredicateVar().getName().equals(varName))
+		}
+		if (getPredicateVar().getName().equals(varName)) {
 			getPredicateVar().setValue(value);
-		if (getObjectVar().getName().equals(varName))
+		}
+		if (getObjectVar().getName().equals(varName)) {
 			getObjectVar().setValue(value);
+		}
 
 		boundFilters.addBinding(varName, value);
 

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 /**
  * Defines constants for the MemoryStore schema which is used by {@link MemoryStoreFactory}s to initialize
  * {@link MemoryStore}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class MemoryStoreSchema {

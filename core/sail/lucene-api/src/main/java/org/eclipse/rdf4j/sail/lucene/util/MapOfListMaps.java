@@ -38,8 +38,9 @@ public class MapOfListMaps<Index1Type, Index2Type, DataType> {
 		Map<Index2Type, List<DataType>> intermediateMap = data.get(key1);
 		if (intermediateMap != null) {
 			List<DataType> tmp = intermediateMap.get(key2);
-			if (tmp != null)
+			if (tmp != null) {
 				return tmp;
+			}
 		}
 		return Collections.emptyList();
 	}

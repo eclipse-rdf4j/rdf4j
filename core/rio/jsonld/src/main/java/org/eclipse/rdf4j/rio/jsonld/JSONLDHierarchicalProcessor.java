@@ -28,7 +28,7 @@ public class JSONLDHierarchicalProcessor {
 
 	/**
 	 * Converts a JSON-LD object to a hierarchical JSON-LD object
-	 * 
+	 *
 	 * @param jsonLdObject JSON-LD object to be converted. Gets modified during processing
 	 * @return hierarchical JSON-LD object
 	 */

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedByte</tt> .
- * 
+ *
  * @author Jeen Broekstra
  */
 public class UnsignedByteCast extends IntegerCastFunction {

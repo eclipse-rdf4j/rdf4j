@@ -39,7 +39,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * Custom (non-manifest) tests for SPARQL/JSON parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class SPARQLJSONParserCustomTest {

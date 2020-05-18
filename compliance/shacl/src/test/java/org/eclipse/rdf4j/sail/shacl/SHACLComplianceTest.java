@@ -34,8 +34,9 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 	public static TestSuite suite() throws Exception {
 		String[] ignoredDirectories = { "targets", "sparql", "complex", "misc", "node", "path", "validation-reports",
 				"property" };
-		if (RUN_ALL)
+		if (RUN_ALL) {
 			ignoredDirectories = new String[0];
+		}
 
 		return new SHACLManifestTestSuiteFactory().createTestSuite(new TestFactory() {
 

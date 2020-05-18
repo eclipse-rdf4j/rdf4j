@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 /**
  * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
  * compliant comparator.
- * 
+ *
  * @author james
  * @author Arjohn Kampman
  */

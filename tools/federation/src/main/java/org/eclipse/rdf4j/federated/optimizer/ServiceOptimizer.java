@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Optimizer for SERVICE nodes.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -118,18 +118,19 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 	/**
 	 * Return the FedX endpoint corresponding to the given service URI. If there is no such endpoint in FedX, this
 	 * method returns null.
-	 * 
+	 *
 	 * Note that this method compares the endpoint URL first, however, that the name of the endpoint can be used as
 	 * identifier as well. Note that the name must be a valid URI, i.e. start with http://
-	 * 
+	 *
 	 * @param serviceUri
 	 * @return
 	 */
 	private Endpoint getFedXEndpoint(String serviceUri) {
 		EndpointManager em = queryInfo.getFederationContext().getEndpointManager();
 		Endpoint e = em.getEndpointByUrl(serviceUri);
-		if (e != null)
+		if (e != null) {
 			return e;
+		}
 		e = em.getEndpointByName(serviceUri);
 		return e;
 	}

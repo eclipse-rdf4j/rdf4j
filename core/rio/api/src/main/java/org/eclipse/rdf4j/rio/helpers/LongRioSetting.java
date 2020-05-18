@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 /**
  * A {@link RioSetting} with a {@link Long} value. The given default for the setting can be overriden by means of a
  * system property with a name equal to the setting key.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class LongRioSetting extends AbstractRioSetting<Long> {

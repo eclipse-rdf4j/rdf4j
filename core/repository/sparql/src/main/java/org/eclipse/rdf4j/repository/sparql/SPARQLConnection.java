@@ -72,7 +72,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 /**
  * Provides a {@link RepositoryConnection} interface to any SPARQL endpoint.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLConnection extends AbstractRepositoryConnection implements HttpClientDependent {
@@ -979,7 +979,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	/**
 	 * Shall graph information also be retrieved, e.g. for
 	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)}
-	 * 
+	 *
 	 * @return true if in quad mode
 	 */
 	protected boolean isQuadMode() {
@@ -989,7 +989,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	/**
 	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by using the
 	 * respective values from the {@link BindingSet} or (if provided) the ones from the arguments.
-	 * 
+	 *
 	 * @param iter the {@link TupleQueryResult}
 	 * @param subj the subject {@link Resource} used as input or <code>null</code> if wildcard was used
 	 * @param pred the predicate {@link IRI} used as input or <code>null</code> if wildcard was used

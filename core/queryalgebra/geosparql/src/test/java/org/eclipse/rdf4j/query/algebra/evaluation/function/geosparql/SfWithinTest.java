@@ -27,7 +27,7 @@ public class SfWithinTest extends GeometricRelationFunctionTest {
 
 	/**
 	 * Test sfWithin
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test
@@ -48,7 +48,7 @@ public class SfWithinTest extends GeometricRelationFunctionTest {
 
 	/**
 	 * Test sf:within
-	 * 
+	 *
 	 * @throws java.io.IOException
 	 */
 	@Test

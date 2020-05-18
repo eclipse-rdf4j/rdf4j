@@ -17,7 +17,7 @@ public class ProxyRepositoryFactory implements RepositoryFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see RepositoryFactory#getRepositoryType()
 	 */
 	public static final String REPOSITORY_TYPE = "openrdf:ProxyRepository";

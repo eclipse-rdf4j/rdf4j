@@ -70,7 +70,7 @@ import java.io.DataOutput;
  * This is a special record that indicates the end of the results table and consists of nothing more than the record
  * type marker. Any data following this record should be ignored.
  * </ul>
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface BinaryQueryResultConstants {

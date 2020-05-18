@@ -25,7 +25,7 @@ public interface TripleSource {
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
 	 * to statements matching one or more of the specified contexts.
-	 * 
+	 *
 	 * @param subj     A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred     A URI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj      A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -39,7 +39,7 @@ public interface TripleSource {
 
 	/**
 	 * Gets a ValueFactory object that can be used to create URI-, blank node- and literal objects.
-	 * 
+	 *
 	 * @return a ValueFactory object for this TripleSource.
 	 */
 	public ValueFactory getValueFactory();

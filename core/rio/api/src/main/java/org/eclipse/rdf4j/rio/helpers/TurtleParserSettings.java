@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE} parsers.
- * 
+ *
  * @author Peter Ansell
  */
 public class TurtleParserSettings {

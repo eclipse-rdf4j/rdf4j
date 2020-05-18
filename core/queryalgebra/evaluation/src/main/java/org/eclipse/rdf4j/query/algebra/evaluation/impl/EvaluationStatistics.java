@@ -130,10 +130,10 @@ public class EvaluationStatistics {
 				// more than one free variable in a single triple pattern
 				if (count == 1 && node.getServiceVars().size() > 1) {
 					cardinality = 100 + node.getServiceVars().size(); // TODO (should
-																		// be higher
-																		// than other
-																		// simple
-																		// stmts)
+					// be higher
+					// than other
+					// simple
+					// stmts)
 				} else {
 					// only very selective statements should be better than this
 					// => evaluate service expressions first
@@ -288,5 +288,7 @@ public class EvaluationStatistics {
 		public void meet(StatementPattern node) throws RuntimeException {
 			count++;
 		}
-	};
+	}
+
+	;
 }

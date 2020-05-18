@@ -75,8 +75,9 @@ public class PatternIterator<S extends Statement> implements Iterator<S> {
 
 	@Override
 	public void remove() {
-		if (!nextCalled)
+		if (!nextCalled) {
 			throw new IllegalStateException();
+		}
 		filteredIter.remove();
 	}
 

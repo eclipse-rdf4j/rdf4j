@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 
 /**
  * Clear command.
- * 
+ *
  * @author Dale Visser
  */
 public class Clear extends ConsoleCommand {
@@ -43,10 +43,10 @@ public class Clear extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
-	 * 
+	 *
 	 */
 	public Clear(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -72,7 +72,7 @@ public class Clear extends ConsoleCommand {
 
 	/**
 	 * Clear repository, either completely or only triples of specific contexts.
-	 * 
+	 *
 	 * @param repository repository to be cleared
 	 * @param contexts   array of contexts
 	 */

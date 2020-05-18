@@ -27,7 +27,7 @@ import org.junit.Test;
 /**
  * Test rdf:Statement(a, b, c) function cases covered: subject one of (IRI | BNode | Triple | Literal) predicate one of
  * (IRI | Literal) object one of (IRI | BNode | Triple | Literal)
- * 
+ *
  * @author damyan.ognyanov
  */
 public class StatementFunctionTest {

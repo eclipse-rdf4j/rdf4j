@@ -25,7 +25,7 @@ import com.opencsv.bean.CsvToBeanBuilder;
 
 /**
  * SPARQL Results TSV format parser.
- * 
+ *
  * @author Jeen Broekstra
  * @author Andrew Rucker Jones
  */

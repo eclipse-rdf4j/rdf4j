@@ -245,8 +245,9 @@ public class SolrIndex extends AbstractSearchIndex {
 	public static Set<String> getPropertyFields(Set<String> fields) {
 		Set<String> result = new HashSet<>(fields.size());
 		for (String field : fields) {
-			if (SearchFields.isPropertyField(field))
+			if (SearchFields.isPropertyField(field)) {
 				result.add(field);
+			}
 		}
 		return result;
 	}
@@ -595,13 +596,16 @@ public class SolrIndex extends AbstractSearchIndex {
 	private SolrQuery prepareQuery(IRI propertyURI, SolrQuery query) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser which
-			// has the TEXT_FIELD_NAME as the default field
+		// if we have no property given, we create a default query parser which
+		// has the TEXT_FIELD_NAME as the default field
+		{
 			query.set(CommonParams.DF, SearchFields.TEXT_FIELD_NAME);
-		else
-			// otherwise we create a query parser that has the given property as
-			// the default field
+		} else
+		// otherwise we create a query parser that has the given property as
+		// the default field
+		{
 			query.set(CommonParams.DF, SearchFields.getPropertyField(propertyURI));
+		}
 		return query;
 	}
 

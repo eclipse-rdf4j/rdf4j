@@ -221,9 +221,7 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 				} else {
 					newArgs.add(current);
 				}
-			}
-
-			else {
+			} else {
 				newArgs.add(t);
 			}
 		}
@@ -263,8 +261,9 @@ public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<Op
 			}
 
 			joinVars.addAll(QueryAlgebraUtil.getFreeVars(item));
-			if (log.isTraceEnabled())
+			if (log.isTraceEnabled()) {
 				log.trace("Cost of " + item.getClass().getSimpleName() + " is determined as " + minCost);
+			}
 			optimized.add(item);
 			left.remove(item);
 		}

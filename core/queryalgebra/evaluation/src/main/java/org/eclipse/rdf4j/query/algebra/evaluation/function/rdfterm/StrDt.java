@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * The SPARQL built-in {@link Function} STRDT, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-strdt">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class StrDt implements Function {

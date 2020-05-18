@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Class encapsulates configuration settings specific for {@link HTTPRepository}.
- * 
+ *
  * @author Jacek Grzebyta
  */
 public class HTTPRepositorySettings {

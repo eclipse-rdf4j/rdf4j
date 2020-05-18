@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Inserts original bindings into the result.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -49,8 +49,9 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 			result = computeResult();
 		}
 
-		if (currentIdx >= result.size())
+		if (currentIdx >= result.size()) {
 			return null;
+		}
 
 		return result.get(currentIdx++);
 	}
@@ -75,17 +76,19 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 
 			BindingSet bIn = iter.next();
 
-			if (bIn.size() != 1)
+			if (bIn.size() != 1) {
 				throw new RuntimeException(
 						"For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size()
 								+ ": " + bIn);
+			}
 
 			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());
 
 			// name is something like myVar_%outerID%_bindingId, e.g. name_0_0
 			Matcher m = pattern.matcher(b.getName());
-			if (!m.find())
+			if (!m.find()) {
 				throw new QueryEvaluationException("Unexpected pattern for binding name: " + b.getName());
+			}
 
 			BindingInfo bInfo = new BindingInfo(m.group(1), Integer.parseInt(m.group(3)), b.getValue());
 			int bIndex = Integer.parseInt(m.group(2));
@@ -101,10 +104,11 @@ public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration<B
 			// add a new binding info to the correct result list
 			if (bIndex == 0) {
 				a_res.get(bInfo.bindingsIdx).add(bInfo);
-			} else if (bIndex == 1)
+			} else if (bIndex == 1) {
 				b_res.get(bInfo.bindingsIdx).add(bInfo);
-			else
+			} else {
 				throw new RuntimeException("Unexpected binding value.");
+			}
 		}
 
 		// TODO think about a better upper bound or use linked list

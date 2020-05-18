@@ -15,7 +15,7 @@ public class LuceneSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPr
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see
 	 * org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest#configure(org.eclipse.rdf4j.sail.lucene.
 	 * LuceneSail)

@@ -24,7 +24,7 @@ import com.google.common.io.Files;
 
 /**
  * Unit tests for {@link ContextStore}
- * 
+ *
  * @author Jeen Broekstra
  *
  */

@@ -41,7 +41,7 @@ public class PagedQuery {
 	 * <p>
 	 * Implementation note: The new object contains the user's query with appended or modified LIMIT and OFFSET clauses.
 	 * </p>
-	 * 
+	 *
 	 * @param query         as it was specified by the user
 	 * @param language      SPARQL or SeRQL, as specified by the user
 	 * @param requestLimit  maximum number of results to return, as specified by the URL query parameters or cookies
@@ -136,7 +136,7 @@ public class PagedQuery {
 	/**
 	 * Insert a given string into another string at the point at which the given matcher matches, making sure to place
 	 * the insertion string on its own line. If there is no match, appends to end on own line.
-	 * 
+	 *
 	 * @param pattern pattern to search for insertion location
 	 * @param orig    string to perform insertion on
 	 * @param insert  string to insert on own line

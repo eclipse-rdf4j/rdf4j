@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JConfigException;
 
 /**
  * Exception indicating a sail configuration problem.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailConfigException extends RDF4JConfigException {

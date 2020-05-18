@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */

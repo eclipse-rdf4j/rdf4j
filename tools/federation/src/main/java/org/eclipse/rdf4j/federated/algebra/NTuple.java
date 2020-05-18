@@ -41,8 +41,9 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 		super();
 		this.queryInfo = queryInfo;
 		this.args = args;
-		for (TupleExpr expr : args)
+		for (TupleExpr expr : args) {
 			expr.setParentNode(this);
+		}
 	}
 
 	public TupleExpr getArg(int i) {
@@ -59,8 +60,9 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-		for (TupleExpr expr : args)
+		for (TupleExpr expr : args) {
 			expr.visit(visitor);
+		}
 	}
 
 	@Override

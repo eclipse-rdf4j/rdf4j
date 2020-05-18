@@ -12,14 +12,14 @@ package org.eclipse.rdf4j.federated.algebra;
  * <p>
  * Implementations are recommended to additionally implement {@link ExclusiveTupleExprRenderer}
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see ExclusiveStatement
  */
 public interface ExclusiveTupleExpr extends FedXTupleExpr {
 
 	/**
-	 * 
+	 *
 	 * @return the owner for this expression
 	 */
 	public StatementSource getOwner();

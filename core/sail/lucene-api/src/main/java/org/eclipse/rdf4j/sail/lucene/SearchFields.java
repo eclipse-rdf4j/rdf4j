@@ -91,10 +91,11 @@ public final class SearchFields {
 	 * @return a string
 	 */
 	public static String getContextID(Resource resource) {
-		if (resource == null)
+		if (resource == null) {
 			return CONTEXT_NULL;
-		else
+		} else {
 			return getResourceID(resource);
+		}
 	}
 
 	/**

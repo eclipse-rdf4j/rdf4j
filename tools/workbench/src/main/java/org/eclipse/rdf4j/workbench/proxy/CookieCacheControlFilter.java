@@ -26,7 +26,7 @@ import javax.servlet.http.HttpServletResponseWrapper;
 /**
  * Browsers do not expire cache if Cookies have changed. Even if "Vary: Cookie" header is set. This filter intercepts
  * the Last-Modified and If-Modified-Since headers to include modification of browser cookies.
- * 
+ *
  * @author James Leigh
  */
 public class CookieCacheControlFilter implements Filter {

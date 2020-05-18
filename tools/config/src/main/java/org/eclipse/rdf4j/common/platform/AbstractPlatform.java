@@ -73,7 +73,7 @@ public abstract class AbstractPlatform implements Platform {
 
 	/**
 	 * Get the relative name of the application directory
-	 * 
+	 *
 	 * @param applicationName   name of the application
 	 * @param caseSensitive     true when case-sensitive
 	 * @param replaceWhitespace true when whitespace is to be replaced

@@ -17,7 +17,7 @@ import junit.framework.Test;
 
 /**
  * Checks conformance of SPARQL query evaluation against the W3C-approved SPARQL 1.0 query test cases
- * 
+ *
  * @author Jeen Broekstra
  */
 public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {

@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Resource;
 
 /**
  * A TransactionOperation that operates on a specific (set of) contexts.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */

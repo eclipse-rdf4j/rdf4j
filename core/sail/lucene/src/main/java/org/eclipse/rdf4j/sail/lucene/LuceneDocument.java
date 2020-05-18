@@ -88,8 +88,9 @@ public class LuceneDocument implements SearchDocument {
 		Set<String> names = new HashSet<>();
 		for (IndexableField field : fields) {
 			String name = field.name();
-			if (SearchFields.isPropertyField(name))
+			if (SearchFields.isPropertyField(name)) {
 				names.add(name);
+			}
 		}
 		return names;
 	}

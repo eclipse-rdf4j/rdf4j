@@ -29,7 +29,7 @@ import org.junit.Test;
 
 /**
  * Unit and regression tests for {@link RemoteServlet}.
- * 
+ *
  * @author Dale Visser
  */
 public class TestRemoveServlet {

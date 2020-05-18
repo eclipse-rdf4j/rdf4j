@@ -17,6 +17,7 @@ public class BenchmarkConfigs {
 	{
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
+
 	public static final int NUMBER_OF_TRANSACTIONS = 30;
 	public static final int NUMBER_OF_EMPTY_TRANSACTIONS = 10;
 

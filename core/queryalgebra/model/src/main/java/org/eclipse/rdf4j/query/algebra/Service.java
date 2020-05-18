@@ -134,11 +134,13 @@ public class Service extends UnaryTupleOperator {
 	 * @return SELECT query string, utilizing the given projection variables
 	 */
 	public String getSelectQueryString(Set<String> projectionVars) {
-		if (projectionVars.isEmpty())
+		if (projectionVars.isEmpty()) {
 			return preparedSelectQueryString.replace("%PROJECTION_VARS%", "*");
+		}
 		StringBuilder sb = new StringBuilder();
-		for (String var : projectionVars)
+		for (String var : projectionVars) {
 			sb.append(" ?").append(var);
+		}
 		return preparedSelectQueryString.replace("%PROJECTION_VARS%", sb.toString());
 	}
 
@@ -260,8 +262,9 @@ public class Service extends UnaryTupleOperator {
 	 * @return a Prefix String or an empty string if there are no prefixes
 	 */
 	private String computePrefixString(Map<String, String> prefixDeclarations) {
-		if (prefixDeclarations == null)
+		if (prefixDeclarations == null) {
 			return "";
+		}
 
 		StringBuilder sb = new StringBuilder();
 		for (String prefix : prefixDeclarations.keySet()) {

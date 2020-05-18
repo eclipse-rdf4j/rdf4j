@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 /**
  * Processes projection aliases, verifying that the specified aliases are unique and generating aliases for the elements
  * for which no alias has been specified but that do require one.
- * 
+ *
  * @author Arjohn Kampman
  */
 class ProjectionAliasProcessor extends AbstractASTVisitor {

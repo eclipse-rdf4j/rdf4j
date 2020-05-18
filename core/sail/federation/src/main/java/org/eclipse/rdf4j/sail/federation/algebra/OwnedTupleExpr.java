@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.federation.evaluation.InsertBindingSetCursor;
 
 /**
  * Indicates that the argument should be evaluated in a particular member.
- * 
+ *
  * @author James Leigh
  */
 public class OwnedTupleExpr extends UnaryTupleOperator {

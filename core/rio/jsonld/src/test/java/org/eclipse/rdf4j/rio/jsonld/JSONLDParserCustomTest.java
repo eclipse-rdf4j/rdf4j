@@ -43,7 +43,7 @@ import com.github.jsonldjava.core.DocumentLoader;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDParserCustomTest {

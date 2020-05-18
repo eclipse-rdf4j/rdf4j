@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * 
+ *
  * @author jeen
  *
  * @deprecated since 3.2. Use {@link VariableScopeChange} instead.
@@ -18,7 +18,7 @@ public interface GraphPatternGroupable {
 
 	/**
 	 * indicates if the node represents the root of a graph pattern group.
-	 * 
+	 *
 	 * @return true iff the node represents the node of a graph pattern group.
 	 *
 	 */

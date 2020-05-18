@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 /**
  * Defines constants for the SailRepository schema which is used by {@link SailRepositoryFactory}s to initialize
  * {@link SailRepository}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailRepositorySchema {

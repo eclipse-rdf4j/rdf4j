@@ -22,13 +22,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Base implementation for an {@link Endpoint}.
- * 
+ *
  * <p>
  * Provides implementation for the common behavior as well as connection management. Typically a fresh
  * {@link RepositoryConnection} is returned when invoking {@link #getConnection()}, however, it is configurable that a
  * managed (singleton) connection can be used.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see EndpointManager
  */
@@ -162,11 +162,11 @@ public abstract class EndpointBase implements Endpoint {
 
 	/**
 	 * Whether to reuse the same {@link RepositoryConnection} throughout the lifetime of this Endpoint.
-	 * 
+	 *
 	 * <p>
 	 * Note that the {@link RepositoryConnection} is wrapped as {@link ManagedRepositoryConnection}
 	 * </p>
-	 * 
+	 *
 	 * @return indicator whether a single connection should be used
 	 */
 	protected boolean useSingleConnection() {
@@ -231,7 +231,7 @@ public abstract class EndpointBase implements Endpoint {
 	/**
 	 * A wrapper for managed {@link RepositoryConnection}s which makes sure that {@link #close()} is a no-op, i.e. the
 	 * actual closing of the managed connection is controlled by the {@link Endpoint}.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */

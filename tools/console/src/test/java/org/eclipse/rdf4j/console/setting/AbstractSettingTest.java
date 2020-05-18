@@ -19,7 +19,7 @@ import org.mockito.MockitoAnnotations;
 
 /**
  * Abstract class for settings
- * 
+ *
  * @author Bart Hanssens
  */
 public abstract class AbstractSettingTest {

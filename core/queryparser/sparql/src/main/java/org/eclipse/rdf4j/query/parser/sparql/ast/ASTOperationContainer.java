@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * Abstract supertype of {@link ASTQueryContainer} and {@link ASTUpdateContainer}
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class ASTOperationContainer extends SimpleNode {

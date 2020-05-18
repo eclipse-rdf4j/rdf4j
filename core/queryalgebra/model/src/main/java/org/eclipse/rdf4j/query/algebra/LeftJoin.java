@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * The LeftJoin operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#algLeftJoin">SPARQL Query
  * Language for RDF</a>.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class LeftJoin extends BinaryTupleOperator {

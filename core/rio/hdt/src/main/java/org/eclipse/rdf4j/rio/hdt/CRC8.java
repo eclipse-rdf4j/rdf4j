@@ -11,7 +11,7 @@ import java.util.zip.Checksum;
 
 /**
  * CRC8-CCIT checksum
- * 
+ *
  * @author Bart Hanssens
  */
 class CRC8 implements Checksum {

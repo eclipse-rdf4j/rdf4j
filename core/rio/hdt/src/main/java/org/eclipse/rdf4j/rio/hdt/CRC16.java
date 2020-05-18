@@ -11,7 +11,7 @@ import java.util.zip.Checksum;
 
 /**
  * CRC16-ANSI checksum
- * 
+ *
  * @author Bart Hanssens
  */
 class CRC16 implements Checksum {

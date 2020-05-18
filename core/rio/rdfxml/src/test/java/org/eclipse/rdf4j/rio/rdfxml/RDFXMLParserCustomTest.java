@@ -34,14 +34,14 @@ import org.junit.Test;
 
 /**
  * Custom tests for RDFXML Parser.
- * 
+ *
  * @author Michael Grove
  */
 public class RDFXMLParserCustomTest {
 
 	/**
 	 * Test with the default ParserConfig settings. Ie, setParserConfig is not called.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -71,7 +71,7 @@ public class RDFXMLParserCustomTest {
 
 	/**
 	 * Test with unrelated ParserConfig settings
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -103,7 +103,7 @@ public class RDFXMLParserCustomTest {
 
 	/**
 	 * Test with Secure processing setting on.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -138,7 +138,7 @@ public class RDFXMLParserCustomTest {
 	 * IMPORTANT: Only turn this on to verify it is still working, as there is no way to safely perform this test.
 	 * <p>
 	 * WARNING: This test will cause an OutOfMemoryException when it eventually fails, as it will eventually fail.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Ignore

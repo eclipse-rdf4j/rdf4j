@@ -23,7 +23,7 @@ import com.opencsv.bean.CsvToBeanBuilder;
 
 /**
  * SPARQL Results CSV format parser.
- * 
+ *
  * @author Jeen Broekstra
  * @author Andrew Rucker Jones
  */

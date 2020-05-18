@@ -301,7 +301,7 @@ class SailDatasetImpl implements SailDataset {
 			return new EmptyIteration<>();
 		}
 		return iter; // TODO we will need to figure out a way to handle transaction isolation with deprecated and
-						// approved data
+		// approved data
 //		Model deprecated = changes.getDeprecated();
 //		if (deprecated != null && iter != null) {
 //			iter = difference(iter, deprecated.));

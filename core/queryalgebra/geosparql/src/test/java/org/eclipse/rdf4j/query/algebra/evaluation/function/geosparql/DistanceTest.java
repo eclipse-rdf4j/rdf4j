@@ -26,7 +26,7 @@ public class DistanceTest {
 
 	/**
 	 * Test distance between two cities, in meters.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test
@@ -47,7 +47,7 @@ public class DistanceTest {
 
 	/**
 	 * Test if distance between cities is the same in both directions
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test

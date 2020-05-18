@@ -181,8 +181,9 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 */
 	@Deprecated
 	public IRI[] getAddContexts() {
-		if (isNilContext(addContexts))
+		if (isNilContext(addContexts)) {
 			return new IRI[] { getInsertContext() };
+		}
 		return addContexts;
 	}
 
@@ -327,9 +328,10 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 				@Override
 				protected Statement convert(Statement st) {
-					if (st.getContext() == null)
+					if (st.getContext() == null) {
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
 								insertContext);
+					}
 					return st;
 				}
 			});
@@ -658,9 +660,10 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 				@Override
 				protected Statement convert(Statement st) {
-					if (st.getContext() == null)
+					if (st.getContext() == null) {
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
 								removeContexts[0]);
+					}
 					return st;
 				}
 			});

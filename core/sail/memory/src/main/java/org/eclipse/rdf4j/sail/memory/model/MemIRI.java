@@ -67,7 +67,7 @@ public class MemIRI implements IRI, MemResource {
 
 	/**
 	 * Creates a new MemURI for a URI.
-	 * 
+	 *
 	 * @param creator   The object that is creating this MemURI.
 	 * @param namespace namespace part of URI.
 	 * @param localName localname part of URI.
@@ -190,7 +190,7 @@ public class MemIRI implements IRI, MemResource {
 
 	/**
 	 * Gets the list of statements for which this MemURI is the predicate.
-	 * 
+	 *
 	 * @return a MemStatementList containing the statements.
 	 */
 	public MemStatementList getPredicateStatementList() {
@@ -203,7 +203,7 @@ public class MemIRI implements IRI, MemResource {
 
 	/**
 	 * Gets the number of Statements for which this MemURI is the predicate.
-	 * 
+	 *
 	 * @return An integer larger than or equal to 0.
 	 */
 	public int getPredicateStatementCount() {
@@ -239,7 +239,7 @@ public class MemIRI implements IRI, MemResource {
 	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
 	 * this MemValue's list of statements for which it is the predicate.
-	 * 
+	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
 	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) {

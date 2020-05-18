@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
  * A task implementation representing a statement expression to be evaluated.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelUnionTask extends ParallelTaskBase<BindingSet> {

@@ -53,7 +53,8 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 			tripleRefs.put(((TripleRef) node).getExprVar().getName(), (TripleRef) node);
 		} else if (node instanceof ValueExprTripleRef) {
 			tripleRefs.put(((ValueExprTripleRef) node).getExtVarName(), node);
-		} else
+		} else {
 			super.meetOther(node);
+		}
 	}
 }

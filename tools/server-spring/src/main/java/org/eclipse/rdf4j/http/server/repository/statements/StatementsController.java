@@ -145,8 +145,9 @@ public class StatementsController extends AbstractController {
 			} catch (IOException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Error reading request message body", e);
 			}
-			if (sparqlUpdateString.isEmpty())
+			if (sparqlUpdateString.isEmpty()) {
 				sparqlUpdateString = null;
+			}
 		} else {
 			sparqlUpdateString = request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0];
 		}
@@ -277,8 +278,9 @@ public class StatementsController extends AbstractController {
 	}
 
 	private IRI createURIOrNull(Repository repository, String graphURI) {
-		if ("null".equals(graphURI))
+		if ("null".equals(graphURI)) {
 			return null;
+		}
 		return repository.getValueFactory().createIRI(graphURI);
 	}
 

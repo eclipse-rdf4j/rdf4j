@@ -28,11 +28,11 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Generic optimizer
- * 
+ *
  * Tasks: - Collect information (hasUnion, hasFilter, hasService) - Collect all statements in a list (for source
  * selection), do not collect SERVICE expressions - Collect all Join arguments and group them in the NJoin structure for
  * easier optimization (flatten)
- * 
+ *
  * @author Andreas Schwarte
  */
 public class GenericInfoOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
@@ -111,7 +111,7 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 
 		/*
 		 * Optimization task:
-		 * 
+		 *
 		 * Collect all join arguments recursively and create the NJoin structure for easier join order optimization
 		 */
 

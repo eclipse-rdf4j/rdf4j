@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * An operator that returns aggregates values.
- * 
+ *
  * @author David Huynh
  */
 public interface AggregateOperator extends ValueExpr {

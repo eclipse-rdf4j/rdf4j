@@ -40,6 +40,7 @@ public class BasicParserSettings {
 	 * @see http://www.w3.org/2013/json-ld-context/rdfa11
 	 */
 	private static final Set<Namespace> _DEFAULT_PREFIX;
+
 	static {
 		Set<Namespace> aNamespaces = new HashSet<>();
 

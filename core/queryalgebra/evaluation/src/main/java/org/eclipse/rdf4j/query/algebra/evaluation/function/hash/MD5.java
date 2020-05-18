@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * The SPARQL built-in {@link Function} MD5, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-md5">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MD5 extends HashFunction {

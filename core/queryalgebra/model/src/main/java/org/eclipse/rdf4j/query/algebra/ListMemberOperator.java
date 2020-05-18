@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * ValueOperator that verifies if the first of its arguments occurs in any of the subsequent arguments.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ListMemberOperator extends NAryValueOperator {

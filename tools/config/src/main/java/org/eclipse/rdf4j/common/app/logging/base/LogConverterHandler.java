@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handler to convert java.util.logging events to SLF4J logging events.
- * 
+ *
  * @author Herko ter Horst
  */
 public class LogConverterHandler extends Handler {

@@ -62,8 +62,9 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	// //////////////////////////////Methods for controlled index access
 
 	protected IndexSearcher getIndexSearcher() throws IOException {
-		if (indexSearcherCreateException != null)
+		if (indexSearcherCreateException != null) {
 			throw indexSearcherCreateException;
+		}
 		return indexSearcher;
 	}
 

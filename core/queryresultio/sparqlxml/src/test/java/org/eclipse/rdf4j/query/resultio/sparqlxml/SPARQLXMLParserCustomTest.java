@@ -24,7 +24,7 @@ import org.junit.Test;
 
 /**
  * Custom tests for SPARQL/XML Parser.
- * 
+ *
  * @author Michael Grove
  * @author Peter Ansell
  */
@@ -32,7 +32,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with the default ParserConfig settings. Ie, setParserConfig is not called.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -61,7 +61,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with unrelated ParserConfig settings
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -92,7 +92,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with Secure processing setting on.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -126,7 +126,7 @@ public class SPARQLXMLParserCustomTest {
 	 * IMPORTANT: Only turn this on to verify it is still working, as there is no way to safely perform this test.
 	 * <p>
 	 * WARNING: This test will cause an OutOfMemoryException when it eventually fails, as it will eventually fail.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Ignore

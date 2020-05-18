@@ -15,28 +15,28 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 
 /**
  * Class holding information for RDF4J {@link HTTPRepository} initialization.
- * 
+ *
  * <p>
  * Format:
  * </p>
- * 
+ *
  * <pre>
  * <%name%> a sd:Service ;
  *  	fedx:store "RemoteRepository" ;
  *  	fedx:repositoryServer "%location%" ;
  *  	fedx:repositoryName "%name%" .
- * 
+ *
  * <http://dbpedia> a sd:Service ;
  *  	fedx:store "RemoteRepository";
  *  	fedx:repositoryServer "http://<host>/openrdf-sesame" ;
  *  	fedx:repositoryName "dbpedia" .
  * </pre>
- * 
+ *
  * <p>
  * Note: the id is constructed from the name: http://dbpedia.org/ => remote_dbpedia.org
  * </p>
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */

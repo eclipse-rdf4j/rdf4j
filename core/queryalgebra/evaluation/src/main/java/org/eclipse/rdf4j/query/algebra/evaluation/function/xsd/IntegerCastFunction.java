@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 /**
  * Abstract superclass for {@link CastFunction}s that cast their arguments to an xsd:integer or one of its derived
  * types.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class IntegerCastFunction extends CastFunction {
@@ -68,7 +68,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 
 	/**
 	 * create a {@link Literal} with the specific datatype for the supplied {@link BigInteger} value.
-	 * 
+	 *
 	 * @param vf           the {@link ValueFactory} to use for creating the {@link Literal}
 	 * @param integerValue the integer value to use for creating the {@link Literal}
 	 * @return an {@link Optional} literal value, which may be empty if the supplied integerValue can not be
@@ -81,7 +81,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 
 	/**
 	 * create a {@link Literal} with the specific datatype for the supplied boolean value.
-	 * 
+	 *
 	 * @param vf           the {@link ValueFactory} to use for creating the {@link Literal}
 	 * @param booleanValue the boolean value to use for creating the {@link Literal}
 	 * @return an {@link Optional} literal value, which may be empty if the supplied boolean value can not be

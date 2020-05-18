@@ -63,9 +63,7 @@ public class NamespaceController extends AbstractController {
 		if (METHOD_GET.equals(reqMethod)) {
 			logger.info("GET namespace for prefix {}", prefix);
 			return getExportNamespaceResult(request, prefix);
-		}
-
-		else if ("PUT".equals(reqMethod)) {
+		} else if ("PUT".equals(reqMethod)) {
 			logger.info("PUT prefix {}", prefix);
 			return getUpdateNamespaceResult(request, prefix);
 		} else if ("DELETE".equals(reqMethod)) {

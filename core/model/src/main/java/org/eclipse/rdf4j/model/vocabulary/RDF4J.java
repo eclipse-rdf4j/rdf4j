@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Defines constants for the RDF4J namespace. These constants include things like implementation-specific named graph
  * identifiers or properties.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class RDF4J {

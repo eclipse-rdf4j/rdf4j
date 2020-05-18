@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 /**
  * Defines constants for the NativeStore schema which is used by {@link NativeStoreFactory}s to initialize
  * {@link NativeStore}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NativeStoreSchema {

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Converts graph results into a binding set iteration
- * 
+ *
  * @author Andreas Schwarte
  */
 public class GraphToBindingSetConversionIteration

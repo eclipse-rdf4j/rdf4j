@@ -16,14 +16,14 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 /**
  * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and
  * automatically converting the exception into a QueryEvaluationException with an appropriate stack trace.
- * 
+ *
  * @author James Leigh
  */
 public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> {
 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
-	 * 
+	 *
 	 * @param capacity the capacity of this queue
 	 */
 	public QueueCursor(int capacity) {
@@ -32,7 +32,7 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 
 	/**
 	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
-	 * 
+	 *
 	 * @param capacity the capacity of this queue
 	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
 	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
@@ -45,7 +45,7 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 	 * Creates an <tt>QueueCursor</tt> with the given {@link BlockingQueue} as its backing queue.<br>
 	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
 	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
-	 * 
+	 *
 	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
 	 *              implementation for this cursor.
 	 */

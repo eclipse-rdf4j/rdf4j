@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Filters iteration according to specified filterExpr.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluationException> {

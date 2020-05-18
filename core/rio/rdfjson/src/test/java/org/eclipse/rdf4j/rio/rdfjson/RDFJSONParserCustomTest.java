@@ -40,7 +40,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * Custom (non-manifest) tests for RDF/JSON parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFJSONParserCustomTest {

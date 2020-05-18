@@ -18,7 +18,7 @@ public class RDF4J {
 
 	/**
 	 * Get version number string
-	 * 
+	 *
 	 * @return version as string
 	 */
 	public final static String getVersion() {
@@ -27,7 +27,7 @@ public class RDF4J {
 
 	/**
 	 * Load version string from java package
-	 * 
+	 *
 	 * @return version string
 	 */
 	private static String loadVersion() {

@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * The first reference was used to implement this class.
  * <p>
- * 
+ *
  * @author Arjohn Kampman
  * @author Enrico Minack
  */
@@ -172,7 +172,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
-	 * 
+	 *
 	 * @param dataDir        The directory for the BTree data.
 	 * @param filenamePrefix The prefix for all files used by this BTree.
 	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
@@ -187,7 +187,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Creates a new BTree that uses an instance of <tt>DefaultRecordComparator</tt> to compare values.
-	 * 
+	 *
 	 * @param dataDir        The directory for the BTree data.
 	 * @param filenamePrefix The prefix for all files used by this BTree.
 	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
@@ -206,7 +206,7 @@ public class BTree implements Closeable {
 	/**
 	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or will be
 	 * stored in the B-Tree.
-	 * 
+	 *
 	 * @param dataDir        The directory for the BTree data.
 	 * @param filenamePrefix The prefix for all files used by this BTree.
 	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
@@ -224,7 +224,7 @@ public class BTree implements Closeable {
 	/**
 	 * Creates a new BTree that uses the supplied <tt>RecordComparator</tt> to compare the values that are or will be
 	 * stored in the B-Tree.
-	 * 
+	 *
 	 * @param dataDir        The directory for the BTree data.
 	 * @param filenamePrefix The prefix for all files used by this BTree.
 	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
@@ -343,7 +343,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Closes the BTree and then deletes its data files.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the operation was successful.
 	 */
 	public boolean delete() throws IOException {
@@ -371,7 +371,7 @@ public class BTree implements Closeable {
 	/**
 	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes are optionally
 	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
-	 * 
+	 *
 	 * @param syncChanges Flag indicating whether pending changes should be synchronized to disk.
 	 */
 	private void close(boolean syncChanges) throws IOException {
@@ -399,7 +399,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Writes any changes that are cached in memory to disk.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void sync() throws IOException {
@@ -420,7 +420,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Gets the value that matches the specified key.
-	 * 
+	 *
 	 * @param key A value that is equal to the value that should be retrieved, at least as far as the RecordComparator
 	 *            of this BTree is concerned.
 	 * @return The value matching the key, or <tt>null</tt> if no such value could be found.
@@ -502,7 +502,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Gives an estimate of the number of values between <tt>minValue</tt> and <tt>maxValue</tt>.
-	 * 
+	 *
 	 * @param minValue the lower bound of the range.
 	 * @param maxValue the upper bound of the range,
 	 * @return an estimate of the number of values in the specified range.
@@ -693,7 +693,7 @@ public class BTree implements Closeable {
 	/**
 	 * Inserts the supplied value into the B-Tree. In case an equal value is already present in the B-Tree this value is
 	 * overwritten with the new value and the old value is returned by this method.
-	 * 
+	 *
 	 * @param value The value to insert into the B-Tree.
 	 * @return The old value that was replaced, if any.
 	 * @throws IOException If an I/O error occurred.
@@ -821,7 +821,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Removes the value that matches the specified key from the B-Tree.
-	 * 
+	 *
 	 * @param key A key that matches the value that should be removed from the B-Tree.
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
 	 * @throws IOException If an I/O error occurred.
@@ -867,7 +867,7 @@ public class BTree implements Closeable {
 	/**
 	 * Removes the value that matches the specified key from the tree starting at the specified node and returns the
 	 * removed value.
-	 * 
+	 *
 	 * @param key  A key that matches the value that should be removed from the B-Tree.
 	 * @param node The root of the (sub) tree.
 	 * @return The value that was removed from the B-Tree, or <tt>null</tt> if no matching value was found.
@@ -913,7 +913,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Removes the largest value from the tree starting at the specified node and returns the removed value.
-	 * 
+	 *
 	 * @param node The root of the (sub) tree.
 	 * @return The value that was removed from the B-Tree.
 	 * @throws IOException              If an I/O error occurred.
@@ -977,7 +977,7 @@ public class BTree implements Closeable {
 
 	/**
 	 * Removes all values from the B-Tree.
-	 * 
+	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
@@ -1038,8 +1038,9 @@ public class BTree implements Closeable {
 					nioFile.truncate(nodeID2offset(maxNodeID) + nodeSize);
 				}
 			}
-		} else
+		} else {
 			nodeCache.release(node, forceSync);
+		}
 	}
 
 	private void writeFileHeader() throws IOException {

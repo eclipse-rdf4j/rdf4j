@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Various tests for the junit framework
- * 
+ *
  * @author as
  *
  */

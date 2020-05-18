@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 public class LockRemover {
 	/**
 	 * Try to remove lock from repository
-	 * 
+	 *
 	 * @param repo
 	 * @param consoleIO
 	 * @return true if lock was removed
@@ -45,7 +45,7 @@ public class LockRemover {
 
 	/**
 	 * Try to remove lock when exception was raised
-	 * 
+	 *
 	 * @param rle
 	 * @param consoleIO
 	 * @return true if lock was removed

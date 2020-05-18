@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
  * A task implementation to retrieve statements for a given {@link StatementPattern} using the provided triple source.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {

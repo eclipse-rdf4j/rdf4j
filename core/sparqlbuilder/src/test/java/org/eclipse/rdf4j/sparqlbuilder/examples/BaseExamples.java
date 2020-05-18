@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.examples;
 
@@ -27,7 +27,7 @@ import org.junit.rules.TestName;
  * The classes inheriting from this pose as examples on how to use SparqlBuilder. They follow the SPARQL 1.1 Spec and
  * the SPARQL 1.1 Update Spec linked below. Each class covers a section of the spec, documenting how to create the
  * example SPARQL queries in each section using SparqlBuilder.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/"> The referenced SPARQL 1.1 Spec</a>
  * @see <a href="https://www.w3.org/TR/sparql11-update/">The referenced SPARQL 1.1 Update Spec</a>
  */

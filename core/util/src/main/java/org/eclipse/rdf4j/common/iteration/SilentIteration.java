@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * An {@link IterationWrapper} that silently ignores any errors that occur during processing.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SilentIteration<T, E extends Exception> extends IterationWrapper<T, E> {

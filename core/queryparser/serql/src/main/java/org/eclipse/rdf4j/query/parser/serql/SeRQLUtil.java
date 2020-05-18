@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 
 /**
  * SeRQL-related utility methods.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SeRQLUtil {
@@ -32,7 +32,7 @@ public class SeRQLUtil {
 
 	/**
 	 * Decodes an encoded SeRQL string. Any \-escape sequences are substituted with their decoded value.
-	 * 
+	 *
 	 * @param s An encoded SeRQL string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded SeRQL string.

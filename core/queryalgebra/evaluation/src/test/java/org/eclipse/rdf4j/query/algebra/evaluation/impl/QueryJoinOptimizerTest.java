@@ -31,7 +31,7 @@ import org.junit.Test;
 
 /**
  * Tests to monitor QueryJoinOptimizer behaviour.
- * 
+ *
  * @author Mark
  */
 public class QueryJoinOptimizerTest {

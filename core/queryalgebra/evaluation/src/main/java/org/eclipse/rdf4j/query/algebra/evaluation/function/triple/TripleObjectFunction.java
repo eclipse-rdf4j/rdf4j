@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
  * Function returning the object component of RDF* Triple reused the IRI of rdf:object as name
- * 
+ *
  * @author damyan.ognyanov
  *
  */

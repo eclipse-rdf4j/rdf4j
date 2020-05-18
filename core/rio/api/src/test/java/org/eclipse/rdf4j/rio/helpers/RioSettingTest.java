@@ -48,14 +48,14 @@ public abstract class RioSettingTest<T> {
 
 	/**
 	 * a (legal) default value for the type T
-	 * 
+	 *
 	 * @return a single legal default value.
 	 */
 	protected abstract T getDefaultValue();
 
 	/**
 	 * a legal string-represention of a setting value
-	 * 
+	 *
 	 * @return a legal string-representation of a setting value.
 	 */
 	protected abstract String getLegalStringValue();
@@ -63,21 +63,21 @@ public abstract class RioSettingTest<T> {
 	/**
 	 * the value of type T that corresponds to the value returned by {@link #getLegalStringValue()}. NB implementors
 	 * should return a hardcoded value, not doing on-the-fly conversion.
-	 * 
+	 *
 	 * @return a value of type T corresponding to the the value returned by {@link #getLegalStringValue()}
 	 */
 	protected abstract T getConvertedStringValue();
 
 	/**
 	 * an illegal string-representation of a setting value.
-	 * 
+	 *
 	 * @return an illegal string value;
 	 */
 	protected abstract String getIllegalStringValue();
 
 	/**
 	 * Create a new {@link RioSetting} for use as the test subject.
-	 * 
+	 *
 	 * @param key          the setting key
 	 * @param description  the setting description
 	 * @param defaultValue the default value
