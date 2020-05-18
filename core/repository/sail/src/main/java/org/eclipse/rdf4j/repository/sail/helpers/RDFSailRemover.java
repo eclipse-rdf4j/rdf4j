@@ -111,7 +111,8 @@ class RDFSailRemover extends AbstractRDFHandler {
 				if (ctxt == null) {
 					final Set<IRI> removeGraphs = uc.getDataset().getDefaultRemoveGraphs();
 					if (!removeGraphs.isEmpty()) {
-						con.removeStatement(uc, subj, pred, obj, new IRI[removeGraphs.size()]);
+						IRI[] ctxts = removeGraphs.toArray(new IRI[removeGraphs.size()]);
+						con.removeStatement(uc, subj, pred, obj, ctxts);
 					} else {
 						con.removeStatement(uc, subj, pred, obj);
 					}
