@@ -1385,6 +1385,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				case 'u':
 					f |= Pattern.UNICODE_CASE;
 					break;
+				case 'q':
+					f |= Pattern.LITERAL;
+					break;
 				default:
 					throw new ValueExprEvaluationException(flags);
 				}
