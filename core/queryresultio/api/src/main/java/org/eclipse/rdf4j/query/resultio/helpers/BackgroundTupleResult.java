@@ -42,7 +42,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 	private final CountDownLatch finishedParsing = new CountDownLatch(1);
 
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
-		this(new QueueCursor<BindingSet>(10), parser, in);
+		this(new QueueCursor<>(10), parser, in);
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {

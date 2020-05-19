@@ -165,7 +165,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		try {
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
 			iter = query.evaluate();
-			result = new RepositoryResult<Resource>(new ExceptionConvertingIteration<Resource, RepositoryException>(
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<Resource, RepositoryException>(
 					new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter) {
 
 						@Override
@@ -265,7 +265,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(tupleQuery, subj, pred, obj, contexts);
 			tupleQuery.setIncludeInferred(includeInferred);
 			qRes = tupleQuery.evaluate();
-			result = new RepositoryResult<Statement>(new ExceptionConvertingIteration<Statement, RepositoryException>(
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<Statement, RepositoryException>(
 					toStatementIteration(qRes, subj, pred, obj)) {
 
 				@Override
@@ -313,7 +313,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			query.setIncludeInferred(includeInferred);
 			setBindings(query, subj, pred, obj, contexts);
 			gRes = query.evaluate();
-			result = new RepositoryResult<Statement>(
+			result = new RepositoryResult<>(
 					new ExceptionConvertingIteration<Statement, RepositoryException>(gRes) {
 
 						@Override

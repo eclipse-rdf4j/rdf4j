@@ -256,7 +256,7 @@ public class BasicParserSettings {
 	 * <p>
 	 * Defaults to {@link LargeLiteralHandling#PRESERVE}.
 	 */
-	public static final RioSetting<LargeLiteralHandling> LARGE_LITERALS_HANDLING = new RioSettingImpl<LargeLiteralHandling>(
+	public static final RioSetting<LargeLiteralHandling> LARGE_LITERALS_HANDLING = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.large_literals", "Large literals handling", LargeLiteralHandling.PRESERVE);
 
 	/**
@@ -289,7 +289,7 @@ public class BasicParserSettings {
 	 * Defaults to <a href="http://www.w3.org/2011/rdfa-context/rdfa-1.1">this list</a>.
 	 * </p>
 	 */
-	public static final RioSetting<Set<Namespace>> NAMESPACES = new RioSettingImpl<Set<Namespace>>(
+	public static final RioSetting<Set<Namespace>> NAMESPACES = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.namespaces", "Collection of default namespaces to use for parsing", _DEFAULT_PREFIX);
 
 	/**

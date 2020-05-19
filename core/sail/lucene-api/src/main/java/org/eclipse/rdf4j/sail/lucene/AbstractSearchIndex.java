@@ -51,7 +51,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static final Set<String> REJECTED_DATATYPES = new HashSet<String>();
+	private static final Set<String> REJECTED_DATATYPES = new HashSet<>();
 
 	static {
 		REJECTED_DATATYPES.add("http://www.w3.org/2001/XMLSchema#float");

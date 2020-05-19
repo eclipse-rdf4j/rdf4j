@@ -53,7 +53,7 @@ public class QueryLanguage {
 	/**
 	 * List of known query languages.
 	 */
-	private static List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<QueryLanguage>(4);
+	private static List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<>(4);
 
 	/*--------------------*
 	 * Static initializer *
