@@ -61,6 +61,7 @@ public class Section6Test extends BaseExamples {
 						GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
 		p();
 	}
+
 	@Test
 	public void example_6_4() {
 		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
