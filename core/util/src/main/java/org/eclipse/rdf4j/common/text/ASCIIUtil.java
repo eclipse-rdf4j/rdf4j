@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.common.text;
 
-import java.util.Arrays;
-
 /**
  * Utility methods for ASCII character checking.
  */

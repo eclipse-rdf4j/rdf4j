@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -47,7 +46,6 @@ import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -63,7 +61,6 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,9 +98,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@Before
+	@Override
 	public void setUp() throws Exception {
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
+		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++)
 			repositoryIds.add("endpoint" + i);
 		server = new SPARQLEmbeddedServer(repositoryIds);
@@ -115,7 +113,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			throw e;
 		}
 
-		remoteRepositories = new ArrayList<HTTPRepository>(MAX_ENDPOINTS);
+		remoteRepositories = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl(i));
 			r.initialize();
@@ -204,6 +202,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@After
+	@Override
 	public void tearDown() throws Exception {
 		try {
 			localRepository.shutDown();
@@ -558,7 +557,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(SimpleValueFactory.getInstance());
 
-		Set<Statement> result = new LinkedHashSet<Statement>();
+		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
 		InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
@@ -625,10 +624,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 			List<BindingSet> expectedBindings = Iterations.asList(expectedResultTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
 
-			List<BindingSet> unexpectedBindings = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
 			StringBuilder message = new StringBuilder(128);

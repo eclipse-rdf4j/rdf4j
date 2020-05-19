@@ -220,7 +220,7 @@ public class FedXConnection extends AbstractSailConnection {
 					try (RepositoryConnection conn = e.getConnection()) {
 						// we need to materialize the contexts as they are only accessible
 						// while the connection is open
-						return new CollectionIteration<Resource, QueryEvaluationException>(
+						return new CollectionIteration<>(
 								Iterations.asList(conn.getContextIDs()));
 					}
 				}

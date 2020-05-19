@@ -255,7 +255,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -323,7 +323,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -390,7 +390,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -467,7 +467,7 @@ public class TestSparqlStarParser {
 		Projection proj = (Projection) ((Reduced) q.getTupleExpr()).getArg();
 
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listTargetNames = new ArrayList<String>();
+		final ArrayList<String> listTargetNames = new ArrayList<>();
 		list.forEach(el -> {
 			listTargetNames.add(el.getTargetName());
 		});
@@ -476,7 +476,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect target predicate", listTargetNames.contains("predicate"));
 		assertTrue("expect target oobject", listTargetNames.contains("object"));
 
-		final ArrayList<String> listSourceNames = new ArrayList<String>();
+		final ArrayList<String> listSourceNames = new ArrayList<>();
 		list.forEach(el -> {
 			listSourceNames.add(el.getSourceName());
 		});
@@ -689,7 +689,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -774,7 +774,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -837,7 +837,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
