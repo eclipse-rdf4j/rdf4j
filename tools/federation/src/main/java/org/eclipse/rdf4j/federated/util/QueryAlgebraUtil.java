@@ -586,8 +586,8 @@ public class QueryAlgebraUtil {
 		}
 
 		if (tupleExpr instanceof Extension) {
-			// for a BIND extension in our cost model we work with 0 free vars
-			return new ArrayList<String>();
+			// for a BIND extension in our cost model we use the binding names
+			return new ArrayList<String>(tupleExpr.getBindingNames());
 		}
 
 		if (tupleExpr instanceof ArbitraryLengthPath) {
