@@ -679,7 +679,7 @@ public class SpinParser {
 	}
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
-		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(
+		SortedSet<IRI> sortedArgs = new TreeSet<>(
 				(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 

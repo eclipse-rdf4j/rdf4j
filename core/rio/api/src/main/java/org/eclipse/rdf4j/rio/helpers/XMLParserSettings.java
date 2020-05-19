@@ -101,7 +101,7 @@ public final class XMLParserSettings {
 	 * <p>
 	 * Defaults to null, This settings is only useful if {@link RioConfig#isSet(RioSetting)} returns true.
 	 */
-	public static final RioSetting<XMLReader> CUSTOM_XML_READER = new RioSettingImpl<XMLReader>(
+	public static final RioSetting<XMLReader> CUSTOM_XML_READER = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.xmlreader", "Custom XML Reader", null);
 
 	/**

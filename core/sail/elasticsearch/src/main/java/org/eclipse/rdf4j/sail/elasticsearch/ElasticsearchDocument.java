@@ -55,7 +55,7 @@ public class ElasticsearchDocument implements SearchDocument {
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
 			Function<? super String, ? extends SpatialContext> geoContextMapper) {
-		this(id, type, index, Versions.MATCH_ANY, new HashMap<String, Object>(), geoContextMapper);
+		this(id, type, index, Versions.MATCH_ANY, new HashMap<>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
 		if (context != null) {
 			fields.put(SearchFields.CONTEXT_FIELD_NAME, context);

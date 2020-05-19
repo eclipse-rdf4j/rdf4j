@@ -129,7 +129,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	public Iterator<T> iterator() {
-		return new CloseableIterationIterator<T>(this);
+		return new CloseableIterationIterator<>(this);
 	}
 
 }

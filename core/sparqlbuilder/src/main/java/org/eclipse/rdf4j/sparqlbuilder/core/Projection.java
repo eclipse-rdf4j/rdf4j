@@ -23,7 +23,7 @@ public class Projection extends QueryElementCollection<Projectable> {
 	private boolean isDistinct, selectAll;
 
 	Projection() {
-		super(DELIMETER, new ArrayList<Projectable>());
+		super(DELIMETER, new ArrayList<>());
 		all(false);
 		distinct(false);
 	}

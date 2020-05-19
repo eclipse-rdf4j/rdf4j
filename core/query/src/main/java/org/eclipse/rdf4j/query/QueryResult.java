@@ -22,7 +22,7 @@ public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationExc
 
 	@Override
 	default Iterator<T> iterator() {
-		return new CloseableIterationIterator<T>(this);
+		return new CloseableIterationIterator<>(this);
 	}
 
 }

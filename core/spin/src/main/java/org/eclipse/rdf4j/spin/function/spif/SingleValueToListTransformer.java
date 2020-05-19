@@ -16,7 +16,7 @@ import com.google.common.collect.Iterators;
 
 class SingleValueToListTransformer<E> implements Function<E, List<? extends E>> {
 
-	private static final SingleValueToListTransformer<?> INSTANCE = new SingleValueToListTransformer<Object>();
+	private static final SingleValueToListTransformer<?> INSTANCE = new SingleValueToListTransformer<>();
 
 	@SuppressWarnings("unchecked")
 	static <E> Iterator<List<? extends E>> transform(Iterator<E> iter) {

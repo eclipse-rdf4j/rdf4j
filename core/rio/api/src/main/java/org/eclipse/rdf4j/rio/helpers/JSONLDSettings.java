@@ -36,7 +36,7 @@ public class JSONLDSettings {
 	 * If specified, it is used to retrieve remote documents and contexts; otherwise the processor's built-in loader is
 	 * used.
 	 */
-	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<DocumentLoader>(
+	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<>(
 			"org.eclipse.rdf4j.rio.jsonld.document_loader", "Document loader", null);
 
 	/**
@@ -102,7 +102,7 @@ public class JSONLDSettings {
 	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
 	 */
-	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<JSONLDMode>(
+	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.jsonld_mode", "JSONLD Mode", JSONLDMode.EXPAND);
 
 	/**

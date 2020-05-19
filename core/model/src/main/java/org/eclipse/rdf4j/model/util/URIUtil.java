@@ -27,14 +27,14 @@ public class URIUtil {
 	 * URI component would conflict with the reserved purpose, then the conflicting data must be escaped before forming
 	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
 	 */
-	private static final Set<Character> reserved = new HashSet<Character>(
+	private static final Set<Character> reserved = new HashSet<>(
 			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
 
 	/**
 	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
 	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
-	private static final Set<Character> mark = new HashSet<Character>(
+	private static final Set<Character> mark = new HashSet<>(
 			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
 
 	/**

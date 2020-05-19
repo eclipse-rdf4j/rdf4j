@@ -59,7 +59,7 @@ public class RepositoryProvider {
 		}
 	}
 
-	static final Map<String, SynchronizedManager> managers = new HashMap<String, SynchronizedManager>();
+	static final Map<String, SynchronizedManager> managers = new HashMap<>();
 
 	static {
 		Runtime.getRuntime().addShutdownHook(new Thread("RepositoryProvider-shutdownHook") {

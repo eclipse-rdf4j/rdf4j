@@ -20,7 +20,7 @@ public class OrderBy extends StandardQueryElementCollection<Orderable> {
 	private static final String DELIMETER = " ";
 
 	OrderBy() {
-		super(ORDER_BY, DELIMETER, new ArrayList<Orderable>());
+		super(ORDER_BY, DELIMETER, new ArrayList<>());
 		printNameIfEmpty(false);
 	}
 

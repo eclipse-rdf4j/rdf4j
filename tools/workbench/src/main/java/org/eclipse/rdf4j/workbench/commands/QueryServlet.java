@@ -81,7 +81,7 @@ public class QueryServlet extends TransformationServlet {
 
 	// Poor Man's Cache: At the very least, garbage collection can clean up keys
 	// followed by values whenever the JVM faces memory pressure.
-	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<String, String>());
+	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<>());
 
 	/**
 	 * For testing purposes only.

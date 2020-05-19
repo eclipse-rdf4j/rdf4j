@@ -48,7 +48,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 * LinkedHashMap to store the reported namespaces.
 	 */
 	public ContextStatementCollector(ValueFactory vf, Resource... contexts) {
-		this(new ArrayList<Statement>(), vf, contexts);
+		this(new ArrayList<>(), vf, contexts);
 	}
 
 	/**

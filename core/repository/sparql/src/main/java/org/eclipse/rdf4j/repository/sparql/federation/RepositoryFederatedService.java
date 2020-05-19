@@ -234,7 +234,7 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 
 			if (service.isSilent()) {
-				return new SilentIteration<BindingSet, QueryEvaluationException>(result);
+				return new SilentIteration<>(result);
 			} else {
 				return result;
 			}
