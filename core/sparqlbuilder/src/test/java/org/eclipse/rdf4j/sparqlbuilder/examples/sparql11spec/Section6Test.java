@@ -61,4 +61,18 @@ public class Section6Test extends BaseExamples {
 						GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
 		p();
 	}
+	@Test
+	public void example_6_4() {
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
+
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.or(Expressions.lt(price, 20),
+						Expressions.and(Expressions.lt(price, 50), Expressions.gt(price, 30))))
+				.optional();
+
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
+		p();
+	}
+
 }
