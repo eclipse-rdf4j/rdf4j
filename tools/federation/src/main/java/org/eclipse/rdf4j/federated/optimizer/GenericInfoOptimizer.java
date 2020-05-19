@@ -101,7 +101,7 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 	@Override
 	public void meet(Service service) {
 		if (services == null) {
-			services = new ArrayList<Service>();
+			services = new ArrayList<>();
 		}
 		services.add(service);
 	}

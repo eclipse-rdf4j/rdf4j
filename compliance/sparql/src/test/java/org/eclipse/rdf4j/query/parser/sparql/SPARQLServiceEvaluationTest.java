@@ -100,7 +100,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	@Before
 	public void setUp() throws Exception {
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
+		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			repositoryIds.add("endpoint" + i);
 		}
@@ -113,7 +113,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			throw e;
 		}
 
-		remoteRepositories = new ArrayList<HTTPRepository>(MAX_ENDPOINTS);
+		remoteRepositories = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl(i));
 			r.initialize();
@@ -558,7 +558,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(SimpleValueFactory.getInstance());
 
-		Set<Statement> result = new LinkedHashSet<Statement>();
+		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
 		InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
@@ -625,10 +625,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 			List<BindingSet> expectedBindings = Iterations.asList(expectedResultTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
 
-			List<BindingSet> unexpectedBindings = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
 			StringBuilder message = new StringBuilder(128);

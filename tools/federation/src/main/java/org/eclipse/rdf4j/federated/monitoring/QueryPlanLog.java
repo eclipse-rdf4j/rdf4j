@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public class QueryPlanLog {
 
-	static ThreadLocal<String> queryPlan = new ThreadLocal<String>();
+	static ThreadLocal<String> queryPlan = new ThreadLocal<>();
 
 	public static String getQueryPlan() {
 		return queryPlan.get();

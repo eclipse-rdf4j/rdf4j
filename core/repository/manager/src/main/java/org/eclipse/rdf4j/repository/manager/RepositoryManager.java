@@ -78,7 +78,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Creates a new RepositoryManager.
 	 */
 	protected RepositoryManager() {
-		this(new HashMap<String, Repository>());
+		this(new HashMap<>());
 	}
 
 	/**

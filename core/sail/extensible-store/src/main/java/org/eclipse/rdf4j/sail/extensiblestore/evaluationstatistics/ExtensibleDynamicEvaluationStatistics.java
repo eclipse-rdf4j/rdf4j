@@ -68,7 +68,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private static final int QUEUE_LIMIT = 128;
 	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
 
-	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<StatementQueueItem>();
+	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<>();
 
 	AtomicInteger queueSize = new AtomicInteger();
 

@@ -20,7 +20,7 @@ public class GroupBy extends StandardQueryElementCollection<Groupable> {
 	private static final String DELIMETER = " ";
 
 	GroupBy() {
-		super(GROUP_BY, DELIMETER, new ArrayList<Groupable>());
+		super(GROUP_BY, DELIMETER, new ArrayList<>());
 		printNameIfEmpty(false);
 	}
 
