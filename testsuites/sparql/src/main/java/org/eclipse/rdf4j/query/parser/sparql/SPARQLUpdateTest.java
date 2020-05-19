@@ -30,10 +30,12 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -1715,6 +1717,37 @@ public abstract class SPARQLUpdateTest {
 				+ "};";
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
 		operation.execute();
+	}
+
+	@Test
+	public void contextualInsertDeleteData()
+			throws RepositoryException, MalformedQueryException, UpdateExecutionException {
+		StringBuilder insert = new StringBuilder();
+		insert.append(getNamespaceDeclarations());
+		insert.append("INSERT DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \"alice@example.org\" .} ");
+
+		SimpleDataset ds = new SimpleDataset();
+		ds.setDefaultInsertGraph(graph2);
+		ds.addDefaultRemoveGraph(graph2);
+
+		Update updInsert = con.prepareUpdate(QueryLanguage.SPARQL, insert.toString());
+		updInsert.setDataset(ds);
+		updInsert.execute();
+
+		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));
+		assertTrue(con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
+
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("DELETE DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \"alice@example.org\" .} ");
+
+		Update updDelete = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		updDelete.setDataset(ds);
+		updDelete.execute();
+
+		String msg = "statement should have been deleted.";
+		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));
+		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
 	}
 
 	/*
