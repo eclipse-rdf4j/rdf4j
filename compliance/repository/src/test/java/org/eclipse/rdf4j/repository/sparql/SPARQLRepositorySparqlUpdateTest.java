@@ -67,31 +67,39 @@ import junit.runner.Version;
 
 public class SPARQLRepositorySparqlUpdateTest extends TestCase {
 
-    private Repository m_repository;
+	private Repository m_repository;
 
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
-        m_repository = new SailRepository(new MemoryStore());
-        m_repository.initialize();
-    }
+	@Override
+	protected void setUp() throws Exception {
+		super.setUp();
+		m_repository = new SailRepository(new MemoryStore());
+		m_repository.initialize();
+	}
 
-    @Override
-    protected void tearDown() throws Exception {
-        super.tearDown();
-        m_repository.shutDown();
-    }
+	@Override
+	protected void tearDown() throws Exception {
+		super.tearDown();
+		m_repository.shutDown();
+	}
 
 //    @Test (expected = org.eclipse.rdf4j.rio.RDFParseException.class)
-    @Test
-    public void testInvalidUpdate() {
-        RepositoryConnection connection = m_repository.getConnection();
-        try {
-            Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
-        } catch (RDFParseException rdfpe) {
-            Assert.assertEquals(7, rdfpe.getLineNumber());
-        }
+	@Test
+	public void testInvalidInsertUpdate() {
+		RepositoryConnection connection = m_repository.getConnection();
+		try {
+			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
+		} catch (RDFParseException rdfpe) {
+			Assert.assertEquals(7, rdfpe.getLineNumber());
+		}
+	}
 
-    }
+	@Test
+	public void testInvalidDeleteUpdate() {
+		RepositoryConnection connection = m_repository.getConnection();
+		try {
+			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }");
+		} catch (RDFParseException rdfpe) {
+			Assert.assertEquals(7, rdfpe.getLineNumber());
+		}
+	}
 }
-

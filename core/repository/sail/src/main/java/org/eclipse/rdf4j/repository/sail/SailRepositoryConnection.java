@@ -271,16 +271,15 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
 		List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(this.getValueFactory());
-		for (UpdateExpr expr:updateExprs) {
+		for (UpdateExpr expr : updateExprs) {
 			String datablock = "";
 			if (expr instanceof InsertData) {
 				datablock = ((InsertData) expr).getDataBlock();
-			}
-			else if(expr instanceof DeleteData) {
+			} else if (expr instanceof DeleteData) {
 				datablock = ((DeleteData) expr).getDataBlock();
 			}
 			try {
-				parser.parse(new StringReader(datablock),"");
+				parser.parse(new StringReader(datablock), "");
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
