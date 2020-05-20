@@ -5,6 +5,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
+import junit.framework.TestCase;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.Assert;
+import org.junit.Test;
+import junit.runner.Version;
+
 /**
  * @author Jeen Broekstra
  */
@@ -52,3 +64,34 @@ package org.eclipse.rdf4j.repository.sparql;
 //		System.err.println("temporarily disabled testAutoCommitHandling() for HTTPRepository");
 //	}
 //}
+
+public class SPARQLRepositorySparqlUpdateTest extends TestCase {
+
+    private Repository m_repository;
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        m_repository = new SailRepository(new MemoryStore());
+        m_repository.initialize();
+    }
+
+    @Override
+    protected void tearDown() throws Exception {
+        super.tearDown();
+        m_repository.shutDown();
+    }
+
+//    @Test (expected = org.eclipse.rdf4j.rio.RDFParseException.class)
+    @Test
+    public void testInvalidUpdate() {
+        RepositoryConnection connection = m_repository.getConnection();
+        try {
+            Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
+        } catch (RDFParseException rdfpe) {
+            Assert.assertEquals(7, rdfpe.getLineNumber());
+        }
+
+    }
+}
+

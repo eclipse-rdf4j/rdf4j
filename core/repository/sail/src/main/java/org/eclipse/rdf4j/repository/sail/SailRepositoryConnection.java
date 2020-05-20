@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
@@ -25,7 +28,9 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -42,6 +47,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.helpers.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -262,6 +268,22 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException {
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
+		List<UpdateExpr> updateExprs = parsedUpdate.getUpdateExprs();
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(this.getValueFactory());
+		for (UpdateExpr expr:updateExprs) {
+			System.out.println(expr);
+			if (expr instanceof InsertData) {
+				System.out.println("the operation is insert");
+				String datablock = ((InsertData) expr).getDataBlock();
+				System.out.println("Datablock when parsing the query");
+				System.out.println(datablock);
+				try {
+					parser.parse(new StringReader(datablock),"");
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
 
 		return new SailUpdate(parsedUpdate, this);
 	}
