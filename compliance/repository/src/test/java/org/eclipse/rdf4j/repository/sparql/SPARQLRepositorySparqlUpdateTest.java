@@ -81,7 +81,7 @@ public class SPARQLRepositorySparqlUpdateTest extends TestCase {
 
 	// @Test (expected = org.eclipse.rdf4j.rio.RDFParseException.class)
 	@Test
-	public void testInvalidUpdate() {
+	public void testInvalidInsertUpdate() {
 		RepositoryConnection connection = m_repository.getConnection();
 		try {
 			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
