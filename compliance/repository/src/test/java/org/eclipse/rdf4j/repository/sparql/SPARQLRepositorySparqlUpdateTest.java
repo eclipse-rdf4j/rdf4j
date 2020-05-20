@@ -5,7 +5,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
-import junit.framework.TestCase;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
@@ -15,6 +14,8 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Assert;
 import org.junit.Test;
+
+import junit.framework.TestCase;
 
 /**
  * @author Jeen Broekstra
