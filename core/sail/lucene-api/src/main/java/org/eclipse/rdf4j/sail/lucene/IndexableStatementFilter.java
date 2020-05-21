@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Statement;
 /**
  * Specifies a filter, which determines whether a statement should be included in the keyword index when performing
  * complete reindexing. See {@link LuceneSail#registerStatementFilter(IndexableStatementFilter)}.}
- * 
+ *
  * @author andriy.nikolov
  */
 public interface IndexableStatementFilter {

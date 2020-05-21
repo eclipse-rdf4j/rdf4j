@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
+import static junit.framework.Assert.fail;
 import static junit.framework.TestCase.assertTrue;
 
 import java.io.IOException;
@@ -15,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -29,6 +32,8 @@ import org.junit.Test;
 
 public class ValidationReportTest {
 
+	ValueFactory vf = SimpleValueFactory.getInstance();
+
 	@Test
 	public void simpleFirstTest() throws IOException {
 		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
@@ -42,6 +47,7 @@ public class ValidationReportTest {
 			connection.add(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
 
 			connection.commit();
+			fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -74,6 +80,49 @@ public class ValidationReportTest {
 	}
 
 	@Test
+	public void withoutPathTest() throws IOException {
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shaclValidateTarget.ttl", false);
+
+		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
+
+			connection.begin();
+			connection.add(vf.createIRI("http://example.com/ns#", "node1"), RDF.TYPE,
+					vf.createIRI("http://example.com/ns#", "SecondTarget"));
+			connection.commit();
+
+			fail();
+
+		} catch (RepositoryException e) {
+			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
+			Model actual = cause.validationReportAsModel();
+
+			actual.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
+			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+			actual.setNamespace("ex", "http://example.com/ns#");
+
+			Rio.write(actual, System.out, RDFFormat.TURTLE);
+
+			Model expected = Rio.parse(new StringReader("" +
+					"@prefix ex: <http://example.com/ns#> .\n" +
+					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"_:node1e4dsta0ax19 a sh:ValidationReport;\n" +
+					"  sh:conforms false;\n" +
+					"  sh:result _:node1e4dsta0ax20 .\n" +
+					"\n" +
+					"_:node1e4dsta0ax20 a sh:ValidationResult;\n" +
+					"  sh:focusNode ex:node1;\n" +
+					"  sh:sourceConstraintComponent sh:ClassConstraintComponent;\n" +
+					"  sh:sourceShape ex:PersonShape ."
+					+ ""), "", RDFFormat.TURTLE);
+
+			assertTrue(Models.isomorphic(expected, actual));
+
+		}
+	}
+
+	@Test
 	public void nestedLogicalOrSupport() throws IOException {
 
 		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl", false);
@@ -85,6 +134,7 @@ public class ValidationReportTest {
 					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8))
 					.execute();
 			connection.commit();
+			fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();

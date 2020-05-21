@@ -16,7 +16,6 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -34,6 +33,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
@@ -82,12 +82,12 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	}
 
 	@Override
-	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements) {
+	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		if (deactivated) {
 			return false;
 		}
 
-		return nodeShape.requiresEvaluation(addedStatements, removedStatements);
+		return nodeShape.requiresEvaluation(addedStatements, removedStatements, stats);
 	}
 
 	public String getPlanAsGraphvizDot(PlanNode planNode, ConnectionsGroup connectionsGroup) {
@@ -177,7 +177,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
-			if (shaclProperties.minCount != null) {
+			if (shaclProperties.minCount != null && shaclProperties.minCount > 0) {
 				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minCount));
 			}

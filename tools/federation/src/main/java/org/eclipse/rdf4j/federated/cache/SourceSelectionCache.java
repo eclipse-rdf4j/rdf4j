@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.federated.structures.SubQuery;
 
 /**
  * Describes a cache that can be used for {@link SourceSelection} to reduce the number of remote requests.
- * 
+ *
  * @author Andreas Schwarte
  */
 public interface SourceSelectionCache {
@@ -40,11 +40,11 @@ public interface SourceSelectionCache {
 	 * Implementations may infer information by applying logical rules, e.g. if a cache knows that an endpoint can
 	 * provide statements {s, foaf:name, "Alan"}, it can also provide results for {s, foaf:name, ?name}.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * If a cache cannot provide information for the given arguments, it must return
 	 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS} in order to trigger a remote check.</p
-	 * 
+	 *
 	 * @param subQuery
 	 * @param endpoint
 	 * @return the {@link StatementSourceAssurance}
@@ -53,11 +53,11 @@ public interface SourceSelectionCache {
 
 	/**
 	 * Update the information for a given {@link SubQuery} and {@link Endpoint}.
-	 * 
+	 *
 	 * <p>
 	 * Implementations must make sure that any operations are thread-safe
 	 * </p>
-	 * 
+	 *
 	 * @param subQuery
 	 * @param endpoint
 	 * @param hasStatements

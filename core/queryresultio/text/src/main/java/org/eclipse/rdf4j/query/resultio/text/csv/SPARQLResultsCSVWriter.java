@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
  * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
  * @author Jeen Broekstra
  */
@@ -45,12 +45,15 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsCSVWriter(OutputStream out) {
+		super(out);
 		Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		writer = new BufferedWriter(w, 1024);
 	}
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		super.startQueryResult(bindingNames);
+
 		this.bindingNames = bindingNames;
 
 		try {
@@ -80,7 +83,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		if (bindingNames == null) {
 			throw new IllegalStateException("Must call startQueryResult before handleSolution");
 		}

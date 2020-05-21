@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -30,7 +31,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value} creation methods
  * by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and type-optimized subclasses
  * (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
@@ -124,6 +125,11 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		return new ContextStatement(subject, predicate, object, context);
+	}
+
+	@Override
+	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+		return new SimpleTriple(subject, predicate, object);
 	}
 
 	/**
@@ -241,7 +247,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	/**
 	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar and the
 	 * appropriate datatype as parameters.
-	 * 
+	 *
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
 	 * @see XMLDatatypeUtil#qnameToURI(javax.xml.namespace.QName)

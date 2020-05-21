@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A ParseErrorListener that reports Rio parser errors to the SLf4J Logging framework.
- * 
+ *
  * @author jeen
  */
 public class ParseErrorLogger implements ParseErrorListener {

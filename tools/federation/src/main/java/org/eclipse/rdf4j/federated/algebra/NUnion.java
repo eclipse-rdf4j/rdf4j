@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A tuple expression that represents an nary-Union.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -25,7 +25,7 @@ public class NUnion extends NTuple implements TupleExpr {
 
 	/**
 	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
-	 * 
+	 *
 	 * @param args
 	 */
 	public NUnion(List<TupleExpr> args, QueryInfo queryInfo) {

@@ -14,14 +14,14 @@ import java.io.InputStream;
 /**
  * A wrapper for an input stream to avoid allowing libraries to close input streams unexpectedly using the
  * {@link #close()} method. Instead, they must be closed by the creator using {@link #doClose()}.
- * 
+ *
  * @author Peter Ansell
  */
 public class UncloseableInputStream extends FilterInputStream {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param parent input stream
 	 */
 	public UncloseableInputStream(InputStream parent) {
@@ -35,7 +35,7 @@ public class UncloseableInputStream extends FilterInputStream {
 
 	/**
 	 * Invoke close on FilterInputStream parent class.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void doClose() throws IOException {

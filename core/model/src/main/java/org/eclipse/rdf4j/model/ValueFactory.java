@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
  * statements} based on the RDF-1.1 Concepts and Abstract Syntax, a W3C Recommendation.
- * 
+ *
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/">RDF-1.1 Concepts and Abstract Syntax</a>
  */
@@ -27,7 +27,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new IRI from the supplied string-representation.
-	 * 
+	 *
 	 * @param iri A string-representation of a IRI.
 	 * @return An object representing the IRI.
 	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
@@ -36,7 +36,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new URI from the supplied string-representation.
-	 * 
+	 *
 	 * @param uri A string-representation of a URI.
 	 * @return An object representing the URI.
 	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
@@ -52,7 +52,7 @@ public interface ValueFactory {
 	 * calling {@link #createIRI(String) createIRI(namespace+localName)}, but allows the ValueFactory to reuse supplied
 	 * namespace and local name strings whenever possible. Note that the values returned by {@link IRI#getNamespace()}
 	 * and {@link IRI#getLocalName()} are not necessarily the same as the values that are supplied to this method.
-	 * 
+	 *
 	 * @param namespace The IRI's namespace.
 	 * @param localName The IRI's local name.
 	 * @throws IllegalArgumentException If the supplied namespace and localname do not resolve to a legal (absolute)
@@ -62,7 +62,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new URI from the supplied namespace and local name.
-	 * 
+	 *
 	 * @param namespace The IRI's namespace.
 	 * @param localName The IRI's local name.
 	 * @return An object representing the URI.
@@ -76,14 +76,14 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new bNode.
-	 * 
+	 *
 	 * @return An object representing the bNode.
 	 */
 	public BNode createBNode();
 
 	/**
 	 * Creates a new blank node with the given node identifier.
-	 * 
+	 *
 	 * @param nodeID The blank node identifier.
 	 * @return An object representing the blank node.
 	 */
@@ -92,7 +92,7 @@ public interface ValueFactory {
 	/**
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
 	 * object must be {@link XMLSchema#STRING}.
-	 * 
+	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
 	 */
 	public Literal createLiteral(String label);
@@ -100,7 +100,7 @@ public interface ValueFactory {
 	/**
 	 * Creates a new literal with the supplied label and language attribute. The return value of
 	 * {@link Literal#getDatatype()} for the returned object must be {@link RDF#LANGSTRING}.
-	 * 
+	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param language The literal's language attribute, must not be <tt>null</tt>.
 	 */
@@ -108,7 +108,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label and datatype.
-	 * 
+	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param datatype The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
 	 *                 this literal.
@@ -117,7 +117,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label and datatype.
-	 * 
+	 *
 	 * @param label    The literal's label.
 	 * @param datatype The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
 	 *                 this literal.
@@ -130,7 +130,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:boolean</tt>-typed literal for the specified value.
 	 */
@@ -138,7 +138,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:byte</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:byte</tt>-typed literal for the specified value.
 	 */
@@ -146,7 +146,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:short</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:short</tt>-typed literal for the specified value.
 	 */
@@ -154,7 +154,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:int</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:int</tt>-typed literal for the specified value.
 	 */
@@ -162,7 +162,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:long</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:long</tt>-typed literal for the specified value.
 	 */
@@ -170,7 +170,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:float</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:float</tt>-typed literal for the specified value.
 	 */
@@ -178,7 +178,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new <tt>xsd:double</tt>-typed literal representing the specified value.
-	 * 
+	 *
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:double</tt>-typed literal for the specified value.
 	 */
@@ -199,7 +199,7 @@ public interface ValueFactory {
 	/**
 	 * Creates a new literal representing the specified calendar that is typed using the appropriate XML Schema
 	 * date/time datatype.
-	 * 
+	 *
 	 * @param calendar The value for the literal.
 	 * @return An typed literal for the specified calendar.
 	 */
@@ -213,7 +213,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
@@ -223,7 +223,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
@@ -237,7 +237,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
@@ -248,7 +248,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
@@ -258,5 +258,20 @@ public interface ValueFactory {
 	@Deprecated
 	public default Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
 		return createStatement(subject, (IRI) predicate, object, context);
+	}
+
+	/**
+	 * Creates a new RDF* triple with the supplied subject, predicate and object.
+	 *
+	 * @param subject   The statement's subject.
+	 * @param predicate The statement's predicate.
+	 * @param object    The statement's object.
+	 * @return The created triple.
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility, but throws an
+	 *           {@link UnsupportedOperationException}. Concrete implementations are expected to override.
+	 * @since 3.2.0
+	 */
+	default Triple createTriple(Resource subject, IRI predicate, Value object) {
+		throw new UnsupportedOperationException();
 	}
 }

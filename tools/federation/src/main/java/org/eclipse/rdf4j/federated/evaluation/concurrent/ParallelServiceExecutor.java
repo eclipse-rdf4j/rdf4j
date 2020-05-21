@@ -26,9 +26,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Parallel executor for {@link FedXService} nodes, which wrap SERVICE expressions.
- * 
+ *
  * Uses the union scheduler to execute the task
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, QueryEvaluationException>
@@ -36,7 +36,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 	/*
 	 * IMPLEMENTATION NOTE
-	 * 
+	 *
 	 * This class explicitly does not extend ParallelServiceExecutor: here the execution of the #run() is non blocking,
 	 * i.g. blocking is done a consumption time of the iterator
 	 */
@@ -113,8 +113,9 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 		// error resulting from TOSS
 		if (error != null) {
-			if (error instanceof QueryEvaluationException)
+			if (error instanceof QueryEvaluationException) {
 				throw (QueryEvaluationException) error;
+			}
 			throw new QueryEvaluationException(error);
 		}
 
@@ -133,20 +134,22 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 		// check again for error
 		if (error != null) {
-			if (error instanceof QueryEvaluationException)
+			if (error instanceof QueryEvaluationException) {
 				throw (QueryEvaluationException) error;
+			}
 			throw new QueryEvaluationException(error);
 		}
 
-		if (rightIter.hasNext())
+		if (rightIter.hasNext()) {
 			return rightIter.next();
+		}
 
 		return null;
 	}
 
 	/**
 	 * Task for evaluating service requests
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 */
 	private class ParallelServiceTask extends ParallelTaskBase<BindingSet> {

@@ -2,8 +2,8 @@
 
 This is the main code repository for the Eclipse RDF4J project. 
 
-![](https://github.com/eclipse/rdf4j/workflows/master%20status/badge.svg)
-![](https://github.com/eclipse/rdf4j/workflows/develop%20status/badge.svg)
+[![master status](https://github.com/eclipse/rdf4j/workflows/master%20status/badge.svg)](https://github.com/eclipse/rdf4j/actions?query=workflow%3A%22master+status%22)
+[![develop status](https://github.com/eclipse/rdf4j/workflows/develop%20status/badge.svg)](https://github.com/eclipse/rdf4j/actions?query=workflow%3A%22develop+status%22)
 
 Visit the [project website](https://rdf4j.org/) for news, documentation, and downloadable releases.
 

@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * <p>
  * FIXME: This code is an adapted copy of the relevant parts of QueryEvaluationUtil. That util can not be used here
  * directly because of circular dependency issues between the rdf4j and rdf4j-storage repositories.
- * 
+ *
  * @author Jeen Broekstra
  */
 class CSVQueryResultsComparisons {
@@ -226,7 +226,7 @@ class CSVQueryResultsComparisons {
 	/**
 	 * Checks whether the supplied literal is a "simple literal". A "simple literal" is a literal with no language tag
 	 * and the datatype {@link XMLSchema#STRING}.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	private static boolean isSimpleLiteral(Literal l) {

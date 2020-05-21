@@ -15,12 +15,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Combines multiple {@link SailDataset} into a single view.
- * 
+ *
  * @author James Leigh
  */
 class UnionSailDataset implements SailDataset {
@@ -32,7 +33,7 @@ class UnionSailDataset implements SailDataset {
 
 	/**
 	 * Creates a new {@link SailDataset} that includes all the given {@link SailDataset}s.
-	 * 
+	 *
 	 * @param datasets
 	 */
 	public UnionSailDataset(SailDataset... datasets) {
@@ -89,6 +90,17 @@ class UnionSailDataset implements SailDataset {
 		result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
 			result[i] = datasets[i].getStatements(subj, pred, obj, contexts);
+		}
+		return union(result);
+	}
+
+	@Override
+	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException {
+		CloseableIteration<? extends Triple, SailException>[] result;
+		result = new CloseableIteration[datasets.length];
+		for (int i = 0; i < datasets.length; i++) {
+			result[i] = datasets[i].getTriples(subj, pred, obj);
 		}
 		return union(result);
 	}

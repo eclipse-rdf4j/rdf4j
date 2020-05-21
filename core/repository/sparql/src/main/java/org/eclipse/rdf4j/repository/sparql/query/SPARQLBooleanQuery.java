@@ -15,11 +15,12 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Parses boolean query response from remote stores.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuery {
@@ -43,5 +44,10 @@ public class SPARQLBooleanQuery extends AbstractHTTPQuery implements BooleanQuer
 
 	private String getQueryString() {
 		return QueryStringUtil.getBooleanQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+		throw new UnsupportedOperationException();
 	}
 }

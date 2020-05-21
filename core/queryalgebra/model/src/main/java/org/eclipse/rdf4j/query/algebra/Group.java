@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.util.iterators.Iterators;
 /**
  * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can apply
  * aggregate functions on the grouped results.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */
@@ -167,20 +167,21 @@ public class Group extends UnaryTupleOperator {
 
 	@Override
 	public String getSignature() {
-		StringBuilder b = new StringBuilder();
-		b.append(this.getClass().getSimpleName());
-		b.append(" (");
+		StringBuilder sb = new StringBuilder();
+		sb.append(this.getClass().getSimpleName());
+		sb.append(" (");
 
 		Set<String> bindingNames = getGroupBindingNames();
 		int count = 0;
 		for (String name : bindingNames) {
-			b.append(name);
+			sb.append(name);
 			count++;
 			if (count < bindingNames.size()) {
-				b.append(", ");
+				sb.append(", ");
 			}
 		}
-		b.append(")");
-		return b.toString();
+		sb.append(")");
+
+		return sb.toString();
 	}
 }

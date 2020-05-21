@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 
 /**
@@ -68,8 +69,8 @@ abstract class DatasetQuery implements Query {
 	}
 
 	@Override
-	public void setMaxExecutionTime(int maxExecTime) {
-		sailQuery.setMaxExecutionTime(maxExecTime);
+	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+		sailQuery.setMaxExecutionTime(maxExecutionTimeSeconds);
 	}
 
 	@Override
@@ -92,5 +93,10 @@ abstract class DatasetQuery implements Query {
 	@Override
 	public String toString() {
 		return sailQuery.toString();
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+		throw new UnsupportedOperationException();
 	}
 }

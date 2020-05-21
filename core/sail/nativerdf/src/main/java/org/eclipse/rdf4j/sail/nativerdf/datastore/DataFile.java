@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.common.io.NioFile;
 /**
  * Class supplying access to a data file. A data file stores data sequentially. Each entry starts with the entry's
  * length (4 bytes), followed by the data itself. File offsets are used to identify entries.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DataFile implements Closeable {
@@ -48,6 +48,12 @@ public class DataFile implements Closeable {
 	private final NioFile nioFile;
 
 	private final boolean forceSync;
+
+	// cached file size, also reflects buffer usage
+	private volatile long nioFileSize;
+
+	// 4KB write buffer that is flushed on sync, close and any read operations
+	private final ByteBuffer buffer = ByteBuffer.allocate(4 * 1024);
 
 	/*--------------*
 	 * Constructors *
@@ -89,6 +95,9 @@ public class DataFile implements Closeable {
 			this.nioFile.close();
 			throw e;
 		}
+
+		this.nioFileSize = nioFile.size();
+
 	}
 
 	/*---------*
@@ -101,80 +110,169 @@ public class DataFile implements Closeable {
 
 	/**
 	 * Stores the specified data and returns the byte-offset at which it has been stored.
-	 * 
+	 *
 	 * @param data The data to store, must not be <tt>null</tt>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
 	public long storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
 
-		long offset = nioFile.size();
+		long offset = nioFileSize;
 
-		// TODO: two writes could be more efficient since it prevent array copies
-		ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
-		buf.putInt(data.length);
-		buf.put(data);
-		buf.rewind();
+		if (data.length + 4 > buffer.capacity()) {
+			// direct write because we are writing more data than the buffer can hold
 
-		nioFile.write(buf, offset);
+			flush();
+
+			// TODO: two writes could be more efficient since it prevent array copies
+			ByteBuffer buf = ByteBuffer.allocate(data.length + 4);
+			buf.putInt(data.length);
+			buf.put(data);
+			buf.rewind();
+
+			nioFile.write(buf, offset);
+
+			nioFileSize += buf.array().length;
+
+		} else {
+			if (data.length + 4 > remainingBufferCapacity()) {
+				flush();
+			}
+
+			buffer.putInt(data.length);
+			buffer.put(data);
+			nioFileSize += data.length + 4;
+		}
 
 		return offset;
+
 	}
+
+	synchronized private void flush() throws IOException {
+		int position = buffer.position();
+		if (position == 0) {
+			return;
+		}
+		buffer.position(0);
+
+		byte[] byteToWrite = new byte[position];
+		buffer.get(byteToWrite, 0, position);
+
+		nioFile.write(ByteBuffer.wrap(byteToWrite), nioFileSize - byteToWrite.length);
+
+		buffer.position(0);
+
+	}
+
+	private int remainingBufferCapacity() {
+		return buffer.capacity() - buffer.position();
+	}
+
+	// This variable is used for predicting the number of bytes to read in getData(long offset). This helps us to only
+	// need to execute a single IO read instead of first one read to find the length and then one read to read the data.
+	int dataLengthApproximateAverage = 25;
 
 	/**
 	 * Gets the data that is stored at the specified offset.
-	 * 
+	 *
 	 * @param offset An offset in the data file, must be larger than 0.
 	 * @return The data that was found on the specified offset.
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public byte[] getData(long offset) throws IOException {
 		assert offset > 0 : "offset must be larger than 0, is: " + offset;
+		flush();
 
-		// TODO: maybe get more data in one go is more efficient?
-		int dataLength = nioFile.readInt(offset);
-
-		byte[] data = new byte[dataLength];
+		// Read in twice the average length because multiple small read operations take more time than one single larger
+		// operation even if that larger operation is unnecessarily large (within sensible limits).
+		byte[] data = new byte[(dataLengthApproximateAverage * 2) + 4];
 		ByteBuffer buf = ByteBuffer.wrap(data);
-		nioFile.read(buf, offset + 4L);
+		nioFile.read(buf, offset);
 
-		return data;
+		int dataLength = (data[0] << 24) & 0xff000000 |
+				(data[1] << 16) & 0x00ff0000 |
+				(data[2] << 8) & 0x0000ff00 |
+				(data[3]) & 0x000000ff;
+
+		// We have either managed to read enough data and can return the required subset of the data, or we have read
+		// too little so we need to execute another read to get the correct data.
+		if (dataLength <= data.length - 4) {
+
+			// adjust the approximate average with 1 part actual length and 99 parts previous average up to a sensible
+			// max of 200
+			dataLengthApproximateAverage = (int) (Math.min(200,
+					((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
+
+			return Arrays.copyOfRange(data, 4, dataLength + 4);
+
+		} else {
+
+			// adjust the approximate average, but favour the actual dataLength since dataLength predictions misses are
+			// costly
+			dataLengthApproximateAverage = Math.min(200, (dataLengthApproximateAverage + dataLength) / 2);
+
+			// we didn't read enough data so we need to execute a new read
+			data = new byte[dataLength];
+			buf = ByteBuffer.wrap(data);
+			nioFile.read(buf, offset + 4L);
+
+			return data;
+		}
+
 	}
 
 	/**
 	 * Discards all stored data.
-	 * 
+	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
 		nioFile.truncate(HEADER_LENGTH);
+		nioFileSize = HEADER_LENGTH;
+		buffer.clear();
 	}
 
 	/**
 	 * Syncs any unstored data to the hash file.
 	 */
 	public void sync() throws IOException {
+		flush();
+
 		if (forceSync) {
 			nioFile.force(false);
 		}
 	}
 
+	public void sync(boolean force) throws IOException {
+		flush();
+
+		nioFile.force(force);
+	}
+
 	/**
 	 * Closes the data file, releasing any file locks that it might have.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Override
 	public void close() throws IOException {
+		flush();
+
 		nioFile.close();
 	}
 
 	/**
 	 * Gets an iterator that can be used to iterate over all stored data.
-	 * 
+	 *
 	 * @return a DataIterator.
 	 */
 	public DataIterator iterator() {
+		try {
+			flush();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
 		return new DataIterator();
 	}
 
@@ -186,7 +284,7 @@ public class DataFile implements Closeable {
 		private long position = HEADER_LENGTH;
 
 		public boolean hasNext() throws IOException {
-			return position < nioFile.size();
+			return position < nioFileSize;
 		}
 
 		public byte[] next() throws IOException {

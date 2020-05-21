@@ -11,14 +11,12 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -62,9 +60,11 @@ public class TransactionParallelBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
-
+		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
+		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
+		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home");
+				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		repository = new SailRepository(
 				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));

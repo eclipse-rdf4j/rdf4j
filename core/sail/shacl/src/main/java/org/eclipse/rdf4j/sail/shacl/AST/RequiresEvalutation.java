@@ -9,12 +9,13 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.Stats;
 
 /**
  * @author Håvard Ottestad
  */
 public interface RequiresEvalutation {
 
-	boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements);
+	boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats);
 
 }

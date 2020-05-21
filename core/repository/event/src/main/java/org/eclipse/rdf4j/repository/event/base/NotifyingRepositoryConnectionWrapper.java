@@ -7,14 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.event.base;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -29,7 +27,6 @@ import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.event.NotifyingRepositoryConnection;
 import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
@@ -339,8 +336,8 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 				}
 
 				@Override
-				public void setMaxExecutionTime(int maxExecTime) {
-					delegate.setMaxExecutionTime(maxExecTime);
+				public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+					delegate.setMaxExecutionTime(maxExecutionTimeSeconds);
 				}
 
 				@Override

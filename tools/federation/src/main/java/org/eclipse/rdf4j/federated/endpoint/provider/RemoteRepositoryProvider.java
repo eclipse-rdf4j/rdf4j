@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 /**
  * Provider for an Endpoint that uses a RDF4J {@link HTTPRepository} as underlying repository. All SPARQL endpoints are
  * considered Remote.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class RemoteRepositoryProvider implements EndpointProvider<RemoteRepositoryRepositoryInformation> {
@@ -31,9 +31,10 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 		String repositoryServer = repoInfo.get("repositoryServer");
 		String repositoryName = repoInfo.get("repositoryName");
 
-		if (repositoryServer == null || repositoryName == null)
+		if (repositoryServer == null || repositoryName == null) {
 			throw new FedXException("Invalid configuration, repositoryServer and repositoryName are required for "
 					+ repoInfo.getName());
+		}
 
 		try {
 			HTTPRepository repo = new HTTPRepository(repositoryServer, repositoryName);

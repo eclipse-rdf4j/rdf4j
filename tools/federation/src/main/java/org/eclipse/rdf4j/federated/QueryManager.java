@@ -48,9 +48,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * QueryManager to manage queries.
- * 
+ *
  * a) Management of running queries (abort, finish) b) Factory to create queries
- * 
+ *
  * @author Andreas Schwarte
  */
 public class QueryManager {
@@ -118,7 +118,7 @@ public class QueryManager {
 
 	/**
 	 * Add the query to the set of running queries, queries are identified via a unique id
-	 * 
+	 *
 	 * @param queryInfo
 	 */
 	public void registerQuery(QueryInfo queryInfo) {
@@ -137,8 +137,9 @@ public class QueryManager {
 
 	public void abortQuery(QueryInfo queryInfo) {
 		synchronized (queryInfo) {
-			if (!runningQueries.contains(queryInfo))
+			if (!runningQueries.contains(queryInfo)) {
 				return;
+			}
 			log.info("Aborting query " + queryInfo.getQueryID());
 			queryInfo.abort();
 			runningQueries.remove(queryInfo);
@@ -156,9 +157,9 @@ public class QueryManager {
 	/**
 	 * Register a prefix declaration to be used during query evaluation. If a known prefix is used in a query, it is
 	 * substituted in the parsing step.
-	 * 
+	 *
 	 * If namespace is null, the corresponding entry is removed.
-	 * 
+	 *
 	 * @param prefix    a common prefix, e.g. rdf
 	 * @param namespace the corresponding namespace, e.g. "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 	 */
@@ -174,10 +175,10 @@ public class QueryManager {
 	/**
 	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
 	 * <p>
-	 * 
+	 *
 	 * The queryString is modified to use the declared PREFIX declarations, see
 	 * {@link FedXConfig#getPrefixDeclarations()} for details.
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prepared tuple query
 	 * @throws MalformedQueryException
@@ -185,18 +186,19 @@ public class QueryManager {
 	public TupleQuery prepareTupleQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
-		if (!(q instanceof TupleQuery))
+		if (!(q instanceof TupleQuery)) {
 			throw new FedXRuntimeException("Query is not a tuple query: " + q.getClass());
+		}
 		return (TupleQuery) q;
 	}
 
 	/**
 	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
 	 * <p>
-	 * 
+	 *
 	 * The queryString is modified to use the declared PREFIX declarations, see
 	 * {@link FedXConfig#getPrefixDeclarations()} for details.
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prepared graph query
 	 * @throws MalformedQueryException
@@ -204,18 +206,19 @@ public class QueryManager {
 	public GraphQuery prepareGraphQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
-		if (!(q instanceof GraphQuery))
+		if (!(q instanceof GraphQuery)) {
 			throw new FedXRuntimeException("Query is not a graph query: " + q.getClass());
+		}
 		return (GraphQuery) q;
 	}
 
 	/**
 	 * Prepare a boolean query which uses the underlying federation to evaluate the query.
 	 * <p>
-	 * 
+	 *
 	 * The queryString is modified to use the declared PREFIX declarations, see
 	 * {@link FedXConfig#getPrefixDeclarations()} for details.
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prepared {@link BooleanQuery}
 	 * @throws MalformedQueryException
@@ -223,8 +226,9 @@ public class QueryManager {
 	public BooleanQuery prepareBooleanQuery(String queryString) throws MalformedQueryException {
 
 		Query q = prepareQuery(queryString);
-		if (!(q instanceof BooleanQuery))
+		if (!(q instanceof BooleanQuery)) {
 			throw new FedXRuntimeException("Unexpected query type: " + q.getClass());
+		}
 		return (BooleanQuery) q;
 	}
 
@@ -235,10 +239,10 @@ public class QueryManager {
 	/**
 	 * Prepare a {@link Query} which uses the underlying federation to evaluate the SPARQL query.
 	 * <p>
-	 * 
+	 *
 	 * The queryString is modified to use the declared PREFIX declarations, see
 	 * {@link FedXConfig#getPrefixDeclarations()} for details.
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prepared {@link Query}
 	 * @throws MalformedQueryException
@@ -251,10 +255,11 @@ public class QueryManager {
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
 			 * RDF4J throws a MalformedQueryException
 			 */
-			if (prefixCheck.matcher(queryString).matches())
+			if (prefixCheck.matcher(queryString).matches()) {
 				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
-			else
+			} else {
 				queryString = getPrefixDeclarations() + queryString;
+			}
 		}
 
 		Query q;
@@ -271,7 +276,7 @@ public class QueryManager {
 
 	/**
 	 * Retrieve the query plan for the given query string.
-	 * 
+	 *
 	 * @param queryString
 	 * @return the query plan
 	 * @throws MalformedQueryException
@@ -285,18 +290,21 @@ public class QueryManager {
 			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
 			 * RDF4J throws a MalformedQueryException
 			 */
-			if (prefixCheck.matcher(queryString).matches())
+			if (prefixCheck.matcher(queryString).matches()) {
 				queryString = getPrefixDeclarationsCheck(queryString) + queryString;
-			else
+			} else {
 				queryString = getPrefixDeclarations() + queryString;
+			}
 		}
 
 		ParsedOperation query = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null);
-		if (!(query instanceof ParsedQuery))
+		if (!(query instanceof ParsedQuery)) {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
+		}
 		// we use a dummy query info object here
 		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				federationContext.getConfig().getIncludeInferredDefault(), federationContext);
+				federationContext.getConfig().getIncludeInferredDefault(), federationContext,
+				((ParsedQuery) query).getDataset());
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
@@ -311,7 +319,7 @@ public class QueryManager {
 
 	/**
 	 * Computes the (incremental) next query identifier. Implementation is thread safe and synchronized.
-	 * 
+	 *
 	 * @return the next query identifier
 	 */
 	public BigInteger getNextQueryId() {
@@ -320,7 +328,7 @@ public class QueryManager {
 
 	/**
 	 * Get the prefix declarations that have to be prepended to the query.
-	 * 
+	 *
 	 * @return the prefix declarations
 	 */
 	protected String getPrefixDeclarations() {
@@ -338,7 +346,7 @@ public class QueryManager {
 	/**
 	 * Get the prefix declarations that have to be added while considering prefixes that are already declared in the
 	 * query. The issue here is that duplicate declaration causes exceptions in Sesame
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prefix declarations
 	 */
@@ -348,8 +356,9 @@ public class QueryManager {
 
 		StringBuilder sb = new StringBuilder();
 		for (String prefix : prefixDeclarations.keySet()) {
-			if (queryPrefixes.contains(prefix))
+			if (queryPrefixes.contains(prefix)) {
 				continue; // already there, do not add
+			}
 			sb.append("PREFIX ")
 					.append(prefix)
 					.append(": <")
@@ -361,7 +370,7 @@ public class QueryManager {
 
 	/**
 	 * Find all prefixes declared in the query
-	 * 
+	 *
 	 * @param queryString
 	 * @return the prefixes
 	 */
@@ -375,8 +384,9 @@ public class QueryManager {
 				MatchResult m = sc.match();
 				res.add(m.group(1));
 			}
-			if (!sc.hasNextLine())
+			if (!sc.hasNextLine()) {
 				break;
+			}
 			sc.nextLine();
 		}
 		sc.close();

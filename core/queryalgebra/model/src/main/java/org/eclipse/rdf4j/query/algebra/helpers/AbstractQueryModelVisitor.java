@@ -87,11 +87,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
@@ -489,6 +491,16 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	@Override
+	public void meet(TripleRef node) throws X {
+		meetNode(node);
+	}
+
+	@Override
+	public void meet(ValueExprTripleRef node) throws X {
+		meetNode(node);
+	}
+
+	@Override
 	public void meetOther(QueryModelNode node) throws X {
 		if (node instanceof UnaryTupleOperator) {
 			meetUnaryTupleOperator((UnaryTupleOperator) node);
@@ -512,7 +524,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link BinaryTupleOperator} node as argument. Forwards the call
 	 * to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetBinaryTupleOperator(BinaryTupleOperator node) throws X {
@@ -522,7 +534,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link BinaryValueOperator} node as argument. Forwards the call
 	 * to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetBinaryValueOperator(BinaryValueOperator node) throws X {
@@ -532,7 +544,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link CompareSubQueryValueOperator} node as argument. Forwards
 	 * the call to {@link #meetSubQueryValueOperator} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) throws X {
@@ -542,7 +554,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link org.eclipse.rdf4j.query.algebra.NAryValueOperator} node
 	 * as argument. Forwards the call to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetNAryValueOperator(NAryValueOperator node) throws X {
@@ -553,7 +565,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	 * Method called by all of the other <tt>meet</tt> methods that are not overridden in subclasses. This method can be
 	 * overridden in subclasses to define default behaviour when visiting nodes. The default behaviour of this method is
 	 * to visit the node's children.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetNode(QueryModelNode node) throws X {
@@ -563,7 +575,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link SubQueryValueOperator} node as argument. Forwards the
 	 * call to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetSubQueryValueOperator(SubQueryValueOperator node) throws X {
@@ -573,7 +585,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link UnaryTupleOperator} node as argument. Forwards the call
 	 * to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws X {
@@ -583,7 +595,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link UnaryValueOperator} node as argument. Forwards the call
 	 * to {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetUnaryValueOperator(UnaryValueOperator node) throws X {
@@ -593,7 +605,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	/**
 	 * Method called by all <tt>meet</tt> methods with a {@link UpdateExpr} node as argument. Forwards the call to
 	 * {@link #meetNode} by default.
-	 * 
+	 *
 	 * @param node The node that is being visited.
 	 */
 	protected void meetUpdateExpr(UpdateExpr node) throws X {

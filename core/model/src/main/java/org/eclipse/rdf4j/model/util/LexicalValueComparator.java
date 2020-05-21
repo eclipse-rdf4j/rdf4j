@@ -15,13 +15,14 @@ import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
  * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
  * compliant comparator.
- * 
+ *
  * @author james
  * @author Arjohn Kampman
  */
@@ -71,7 +72,20 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		}
 
 		// 4. RDF literals
-		return compareLiterals((Literal) o1, (Literal) o2);
+		boolean l1 = o1 instanceof Literal;
+		boolean l2 = o2 instanceof Literal;
+		if (l1 && l2) {
+			return compareLiterals((Literal) o1, (Literal) o2);
+		}
+		if (l1) {
+			return -1;
+		}
+		if (l2) {
+			return 1;
+		}
+
+		// 5. RDF* triples
+		return compareTriples((Triple) o1, (Triple) o2);
 	}
 
 	private int compareBNodes(BNode leftBNode, BNode rightBNode) {
@@ -157,5 +171,16 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 			// incompatible or unordered datatypes
 			return compareURIs(leftDatatype, rightDatatype);
 		}
+	}
+
+	private int compareTriples(Triple leftTriple, Triple rightTriple) {
+		int c = compare(leftTriple.getSubject(), rightTriple.getSubject());
+		if (c == 0) {
+			c = compare(leftTriple.getPredicate(), rightTriple.getPredicate());
+			if (c == 0) {
+				c = compare(leftTriple.getObject(), rightTriple.getObject());
+			}
+		}
+		return c;
 	}
 }

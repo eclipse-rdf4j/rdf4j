@@ -7,14 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.io.Serializable;
+
 import org.eclipse.rdf4j.model.ModelFactory;
 
 /**
  * Creates {@link LinkedHashModel}.
- * 
+ *
  * @author James Leigh
  */
-public class LinkedHashModelFactory implements ModelFactory {
+public class LinkedHashModelFactory implements ModelFactory, Serializable {
+
+	private static final long serialVersionUID = -9152104133818783614L;
 
 	@Override
 	public LinkedHashModel createEmptyModel() {

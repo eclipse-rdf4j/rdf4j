@@ -27,7 +27,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	/**
 	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
 	 * argument. By default, duplicates are <em>not</em> filtered from the results.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set. * @param
 	 *                 used An atomic long used to monitor how many elements are in the set collections.
@@ -42,7 +42,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	/**
 	 * Creates a new SPARQLMinusIteration that returns the results of the left argument minus the results of the right
 	 * argument.
-	 * 
+	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.

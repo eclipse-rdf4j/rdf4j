@@ -14,7 +14,7 @@ public class SilentIterationTest {
 	@SuppressWarnings("unchecked")
 	private CloseableIteration<Object, Exception> delegate = mock(CloseableIteration.class);
 
-	private SilentIteration<Object, Exception> subject = new SilentIteration<Object, Exception>(delegate);
+	private SilentIteration<Object, Exception> subject = new SilentIteration<>(delegate);
 
 	@Test
 	public void hasNextSwallowsException() throws Exception {

@@ -33,7 +33,7 @@ import com.google.common.collect.Lists;
 
 /**
  * Integration tests for {@link RepositoryFederatedService}
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -101,7 +101,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
-		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1000  } }";
+		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1000  } } order by ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2")));
 	}
@@ -129,7 +129,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
-		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var } . SERVICE <urn:dummy> {  ?s ?p ?var  } }";
+		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var } . SERVICE <urn:dummy> {  ?s ?p ?var  } } order by ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
 	}
@@ -143,7 +143,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		// Note: here we apply a workaround and explicitly project "?__rowIdx"
-		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var ?__rowIdx { ?s ?p ?var } LIMIT 3  } }";
+		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var ?__rowIdx { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
 	}
@@ -156,7 +156,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
-		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var } LIMIT 3  } }";
+		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
 	}

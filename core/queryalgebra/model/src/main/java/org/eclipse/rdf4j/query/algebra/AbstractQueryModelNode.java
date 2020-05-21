@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 /**
  * Base implementation of {@link QueryModelNode}.
  */
-public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPatternGroupable {
+public abstract class AbstractQueryModelNode implements QueryModelNode, VariableScopeChange, GraphPatternGroupable {
 
 	/*-----------*
 	 * Variables *
@@ -25,7 +25,12 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	private QueryModelNode parent;
 
-	private boolean isGraphPatternGroup;
+	private boolean isVariableScopeChange;
+
+	private double resultSizeEstimate = -1;
+	private long resultSizeActual = -1;
+	private double costEstimate = -1;
+	private long totalTimeNanosActual = -1;
 
 	/*---------*
 	 * Methods *
@@ -41,24 +46,26 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 		this.parent = parent;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#isGraphPatternGroup()
-	 */
 	@Override
-	public boolean isGraphPatternGroup() {
-		return isGraphPatternGroup;
+	public boolean isVariableScopeChange() {
+		return isVariableScopeChange;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see org.eclipse.rdf4j.query.algebra.GraphPatternGroupable#setGraphPatternGroup(boolean)
-	 */
 	@Override
+	public void setVariableScopeChange(boolean isVariableScopeChange) {
+		this.isVariableScopeChange = isVariableScopeChange;
+	}
+
+	@Override
+	@Deprecated
+	public boolean isGraphPatternGroup() {
+		return isVariableScopeChange();
+	}
+
+	@Override
+	@Deprecated
 	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
-		this.isGraphPatternGroup = isGraphPatternGroup;
+		setVariableScopeChange(isGraphPatternGroup);
 	}
 
 	/**
@@ -110,7 +117,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 	public AbstractQueryModelNode clone() {
 		try {
 			AbstractQueryModelNode clone = (AbstractQueryModelNode) super.clone();
-			clone.setGraphPatternGroup(this.isGraphPatternGroup());
+			clone.setVariableScopeChange(this.isVariableScopeChange());
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -133,5 +140,66 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, GraphPat
 
 	protected boolean nullEquals(Object o1, Object o2) {
 		return o1 == o2 || o1 != null && o1.equals(o2);
+	}
+
+	@Override
+	public double getResultSizeEstimate() {
+		return resultSizeEstimate;
+	}
+
+	@Override
+	public void setResultSizeEstimate(double resultSizeEstimate) {
+		this.resultSizeEstimate = resultSizeEstimate;
+	}
+
+	@Override
+	public long getResultSizeActual() {
+		return resultSizeActual;
+	}
+
+	@Override
+	public void setResultSizeActual(long resultSizeActual) {
+		this.resultSizeActual = resultSizeActual;
+	}
+
+	@Override
+	public double getCostEstimate() {
+		return costEstimate;
+	}
+
+	@Override
+	public void setCostEstimate(double costEstimate) {
+		this.costEstimate = costEstimate;
+	}
+
+	@Override
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
+	}
+
+	@Override
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
+	}
+
+	/**
+	 *
+	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+	 */
+	static String toHumanReadbleNumber(double number) {
+		String humanReadbleString;
+		if (number == Double.POSITIVE_INFINITY) {
+			humanReadbleString = "∞";
+		} else if (number > 1_000_000) {
+			humanReadbleString = Math.round(number / 100_000) / 10.0 + "M";
+		} else if (number > 1_000) {
+			humanReadbleString = Math.round(number / 100) / 10.0 + "K";
+		} else if (number >= 0) {
+			humanReadbleString = Math.round(number) + "";
+		} else {
+			humanReadbleString = "UNKNOWN";
+		}
+
+		return humanReadbleString;
 	}
 }

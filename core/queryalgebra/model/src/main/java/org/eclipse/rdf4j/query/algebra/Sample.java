@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The SAMPLE operator as defined in http://www.w3.org/TR/sparql11-query/#aggregates
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Sample extends AbstractAggregateOperator {

@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
  * <p>
  * Renders a {@link ValueExpr} into SeRQL syntax.
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
@@ -68,7 +68,7 @@ class SerqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
 
 	/**
 	 * Return the rendering of the ValueExpr object
-	 * 
+	 *
 	 * @param theExpr the expression to render
 	 * @return the rendering
 	 * @throws Exception if there is an error while rendering

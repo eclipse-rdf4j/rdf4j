@@ -21,11 +21,11 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
  * allow comments to be used inside triple constructs that extend over multiple lines, but the author's own parser
  * deviates from this too.</li>
  * </ul>
- * 
+ *
  * @author Arjohn Kampman
  * @author Peter Ansell
  */
@@ -630,7 +630,7 @@ public class TurtleParser extends AbstractRDFParser {
 				// Turtle
 				// language tags do not need whitespace following the language
 				// tag
-				if (c == '.' || c == ';' || c == ',' || c == ')' || c == ']' || c == -1) {
+				if (c == '.' || c == ';' || c == ',' || c == ')' || c == ']' || c == '>' || c == -1) {
 					break;
 				}
 				if (verifyLanguageTag && !TurtleUtil.isLanguageChar(c)) {
@@ -654,13 +654,13 @@ public class TurtleParser extends AbstractRDFParser {
 
 			// Read datatype
 			Value datatype = parseValue();
-			if (datatype instanceof Literal || datatype instanceof BNode) {
-				reportFatalError("Illegal datatype value: " + datatype);
-			} else if (datatype == null) {
+			if (datatype == null) {
 				// the datatype IRI could not be parsed. report as error only if VERIFY_URI_SYNTAX is enabled, silently
 				// skip otherwise.
 				reportError("Invalid datatype IRI for literal '" + label + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
 				return null;
+			} else if (!(datatype instanceof IRI)) {
+				reportFatalError("Illegal datatype value: " + datatype);
 			}
 			return createLiteral(label, null, (IRI) datatype, getLineNumber(), -1);
 		} else {
@@ -670,7 +670,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a quoted string, which is either a "normal string" or a """long string""".
-	 * 
+	 *
 	 * @return string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -710,7 +710,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a "normal string". This method requires that the opening character has already been parsed.
-	 * 
+	 *
 	 * @return parsed string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -1329,7 +1329,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but prevents
 	 * the additional char array garbage for BMP codepoints.
-	 * 
+	 *
 	 * @param dst       the destination in which to append the characters
 	 * @param codePoint the codepoint to be appended
 	 */
@@ -1342,5 +1342,56 @@ public class TurtleParser extends AbstractRDFParser {
 		} else {
 			throw new IllegalArgumentException("Invalid codepoint " + codePoint);
 		}
+	}
+
+	/**
+	 * Peeks at the next two Unicode code points without advancing the reader and returns true if they indicate the
+	 * start of an RDF* triple value. Such values start with '<<'.
+	 *
+	 * @return true if the next code points indicate the beginning of an RDF* triple value, false otherwise
+	 * @throws IOException
+	 */
+	protected boolean peekIsTripleValue() throws IOException {
+		int c0 = readCodePoint();
+		int c1 = readCodePoint();
+		unread(c1);
+		unread(c0);
+
+		return c0 == '<' && c1 == '<';
+	}
+
+	/**
+	 * Parser an RDF* triple value and returns it.
+	 *
+	 * @return An RDF* triple.
+	 * @throws IOException
+	 */
+	protected Triple parseTripleValue() throws IOException {
+		verifyCharacterOrFail(readCodePoint(), "<");
+		verifyCharacterOrFail(readCodePoint(), "<");
+		skipWSC();
+		Value subject = parseValue();
+		if (subject instanceof Resource) {
+			skipWSC();
+			Value predicate = parseValue();
+			if (predicate instanceof IRI) {
+				skipWSC();
+				Value object = parseValue();
+				if (object != null) {
+					skipWSC();
+					verifyCharacterOrFail(readCodePoint(), ">");
+					verifyCharacterOrFail(readCodePoint(), ">");
+					return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+				} else {
+					reportFatalError("Missing object in RDF* triple");
+				}
+			} else {
+				reportFatalError("Illegal predicate value in RDF* triple: " + predicate);
+			}
+		} else {
+			reportFatalError("Illegal subject val in RDF* triple: " + subject);
+		}
+
+		return null;
 	}
 }

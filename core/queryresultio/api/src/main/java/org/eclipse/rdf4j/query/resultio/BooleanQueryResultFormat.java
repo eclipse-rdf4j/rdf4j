@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
  * Represents the concept of a boolean query result serialization format. Boolean query result formats are identified by
  * a {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
  * can specify a (default) character encoding.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultFormat extends QueryResultFormat {
@@ -38,8 +38,11 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final BooleanQueryResultFormat JSON = new BooleanQueryResultFormat("SPARQL/JSON",
-			Arrays.asList("application/sparql-results+json", "application/json"), StandardCharsets.UTF_8,
-			Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
+			// Note: The MIME type for SPARQL* JSON is handled by this format in order to handle BooleanQueryResult
+			// when SPARQL* JSON is requested.
+			Arrays.asList("application/sparql-results+json", "application/json",
+					"application/x-sparqlstar-results+json"),
+			StandardCharsets.UTF_8, Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
 
 	/**
 	 * Plain text encoding using values "true" and "false" (case-insensitive).
@@ -53,7 +56,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name     The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
 	 *                 format.
@@ -65,7 +68,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name     The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
 	 *                 format.
@@ -78,7 +81,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name           The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
 	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
@@ -94,7 +97,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name           The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
 	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for

@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
 
 /**
  * Base implementation of LogConfiguration.
- * 
+ *
  * @author Herko ter Horst
  */
 public abstract class AbstractLogConfiguration implements LogConfiguration {
@@ -43,7 +43,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected AbstractLogConfiguration() throws IOException {
@@ -79,7 +79,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	/**
 	 * Initialize logging, setting log levels and handlers.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private void initBase() throws IOException {
@@ -123,7 +123,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	/**
 	 * Get packages as a set
-	 * 
+	 *
 	 * @return packages as set of string
 	 */
 	protected Set<String> getPackages() {

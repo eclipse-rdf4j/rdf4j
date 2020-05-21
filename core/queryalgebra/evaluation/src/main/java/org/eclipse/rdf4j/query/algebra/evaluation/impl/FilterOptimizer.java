@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
  * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class FilterOptimizer implements QueryOptimizer {

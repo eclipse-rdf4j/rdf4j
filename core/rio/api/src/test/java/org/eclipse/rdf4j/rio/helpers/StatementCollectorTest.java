@@ -169,7 +169,7 @@ public class StatementCollectorTest {
 
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler#handleComment(java.lang.String)} .
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

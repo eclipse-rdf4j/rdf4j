@@ -19,7 +19,7 @@ public class OptimizerUtil {
 
 	/**
 	 * Flatten the join to one layer, i.e. collect all join arguments
-	 * 
+	 *
 	 * @param join
 	 * @param queryInfo
 	 * @return the flattened {@link NJoin}
@@ -32,7 +32,7 @@ public class OptimizerUtil {
 
 	/**
 	 * Collect join arguments by descending the query tree (recursively).
-	 * 
+	 *
 	 * @param node
 	 * @param joinArgs
 	 */
@@ -41,7 +41,8 @@ public class OptimizerUtil {
 		if (node instanceof Join) {
 			collectJoinArgs(((Join) node).getLeftArg(), joinArgs);
 			collectJoinArgs(((Join) node).getRightArg(), joinArgs);
-		} else
+		} else {
 			joinArgs.add(node);
+		}
 	}
 }

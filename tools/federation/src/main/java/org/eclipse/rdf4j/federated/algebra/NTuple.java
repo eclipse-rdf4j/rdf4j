@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Base class for any nary-tuple expression
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see NJoin
  * @see NUnion
  */
@@ -34,15 +34,16 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 
 	/**
 	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
-	 * 
+	 *
 	 * @param args
 	 */
 	public NTuple(List<TupleExpr> args, QueryInfo queryInfo) {
 		super();
 		this.queryInfo = queryInfo;
 		this.args = args;
-		for (TupleExpr expr : args)
+		for (TupleExpr expr : args) {
 			expr.setParentNode(this);
+		}
 	}
 
 	public TupleExpr getArg(int i) {
@@ -59,8 +60,9 @@ public abstract class NTuple extends AbstractQueryModelNode implements TupleExpr
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-		for (TupleExpr expr : args)
+		for (TupleExpr expr : args) {
 			expr.visit(visitor);
+		}
 	}
 
 	@Override

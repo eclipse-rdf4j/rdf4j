@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.net;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -57,6 +58,20 @@ public class ParsedIRITest {
 	@Test(expected = URISyntaxException.class)
 	public void testIncorrectIPv4() throws URISyntaxException {
 		ParsedIRI iri = new ParsedIRI("http://127.0.0.256/");
+	}
+
+	@Test
+	public void testUnknownSchemeHostProcessing() throws URISyntaxException {
+		ParsedIRI uri = new ParsedIRI("bundleresource://385.fwk19480900/test.ttl");
+		assertThat(uri.isAbsolute());
+		assertThat(uri.getScheme()).isEqualTo("bundleresource");
+		assertThat(uri.isOpaque());
+		assertThat(uri.getHost()).isEqualTo("385.fwk19480900");
+	}
+
+	@Test(expected = URISyntaxException.class)
+	public void testHttpSchemeHostProcessing() throws URISyntaxException {
+		ParsedIRI uri = new ParsedIRI("http://385.fwk19480900/test.ttl");
 	}
 
 	@Test

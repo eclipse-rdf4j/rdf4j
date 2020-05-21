@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link SailFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailRegistry extends ServiceRegistry<String, SailFactory> {
@@ -26,7 +26,7 @@ public class SailRegistry extends ServiceRegistry<String, SailFactory> {
 
 	/**
 	 * Gets the default SailRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static SailRegistry getInstance() {

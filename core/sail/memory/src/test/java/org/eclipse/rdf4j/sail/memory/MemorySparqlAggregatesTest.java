@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.SparqlAggregatesTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.BeforeClass;
 
 public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {

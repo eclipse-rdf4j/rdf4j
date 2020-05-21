@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
 /**
  * Creates {@link SPARQLRepository} from a configuration.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLRepositoryFactory implements RepositoryFactory {

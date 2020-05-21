@@ -16,14 +16,14 @@ import org.eclipse.rdf4j.sail.inferencer.fc.CustomGraphQueryInferencer;
 
 /**
  * A {@link SailFactory} that creates a {@link CustomGraphQueryInferencer} based on RDF configuration data.
- * 
+ *
  * @author Dale Visser
  */
 public class CustomGraphQueryInferencerFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "openrdf:CustomGraphQueryInferencer";

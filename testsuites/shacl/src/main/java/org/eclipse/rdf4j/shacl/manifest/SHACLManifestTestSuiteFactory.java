@@ -273,7 +273,7 @@ public class SHACLManifestTestSuiteFactory {
 	private String getManifestName(Model model, IRI manifest)
 			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
-		String label = Models.objectString(model.filter(manifest, RDFS.LABEL, null)).orElse(null);
+		String label = Models.objectString(model.getStatements(manifest, RDFS.LABEL, null)).orElse(null);
 		if (label != null) {
 			return label;
 		}
@@ -289,8 +289,8 @@ public class SHACLManifestTestSuiteFactory {
 		if (rdfList == null || rdfList.equals(RDF.NIL)) {
 			return new ArrayList<>();
 		}
-		Resource first = Models.objectResource(model.filter(rdfList, RDF.FIRST, null)).orElse(null);
-		Resource rest = Models.objectResource(model.filter(rdfList, RDF.REST, null)).orElse(null);
+		Resource first = Models.objectResource(model.getStatements(rdfList, RDF.FIRST, null)).orElse(null);
+		Resource rest = Models.objectResource(model.getStatements(rdfList, RDF.REST, null)).orElse(null);
 		List<Resource> list = getListEntries(model, rest);
 		list.add(0, first);
 		return list;
@@ -298,13 +298,13 @@ public class SHACLManifestTestSuiteFactory {
 
 	private Resource getResource(Model model, Resource subject, String pred) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
-		Optional<Resource> optional = Models.objectResource(model.filter(subject, vf.createIRI(pred), null));
+		Optional<Resource> optional = Models.objectResource(model.getStatements(subject, vf.createIRI(pred), null));
 		return optional.orElseThrow(Models.modelException("Missing " + subject + " " + pred));
 	}
 
 	private Literal getLiteral(Model model, Resource subject, String pred) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
-		Optional<Literal> optional = Models.objectLiteral(model.filter(subject, vf.createIRI(pred), null));
+		Optional<Literal> optional = Models.objectLiteral(model.getStatements(subject, vf.createIRI(pred), null));
 		return optional.orElseThrow(Models.modelException("Missing " + subject + " " + pred));
 	}
 

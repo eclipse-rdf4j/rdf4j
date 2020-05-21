@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.BindingSetTest;
 
 /**
  * Unit tests for {@link ListBindingSet}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ListBindingSetTest extends BindingSetTest<ListBindingSet> {

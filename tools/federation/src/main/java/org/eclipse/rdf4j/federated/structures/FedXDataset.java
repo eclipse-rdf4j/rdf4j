@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * <p>
  * Example
  * </p>
- * 
+ *
  * <pre>
  * TupleQuery tq = ...; 
  * FedXDataset ds = new FedXDataset(tq.getDataset);
@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * tq.setDataset(ds)
  * TupleQueryResult res = tq.evaluate()
  * </pre>
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -61,21 +61,33 @@ public class FedXDataset implements Dataset {
 
 	@Override
 	public Set<IRI> getDefaultGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getDefaultGraphs();
 	}
 
 	@Override
 	public IRI getDefaultInsertGraph() {
+		if (delegate == null) {
+			return null;
+		}
 		return delegate.getDefaultInsertGraph();
 	}
 
 	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getDefaultRemoveGraphs();
 	}
 
 	@Override
 	public Set<IRI> getNamedGraphs() {
+		if (delegate == null) {
+			return Collections.emptySet();
+		}
 		return delegate.getNamedGraphs();
 	}
 

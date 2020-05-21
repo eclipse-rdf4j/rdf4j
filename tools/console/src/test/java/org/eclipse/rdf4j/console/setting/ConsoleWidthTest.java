@@ -15,7 +15,7 @@ import org.junit.Test;
 
 /**
  * Test console width
- * 
+ *
  * @author Bart Hanssens
  */
 public class ConsoleWidthTest extends AbstractSettingTest {

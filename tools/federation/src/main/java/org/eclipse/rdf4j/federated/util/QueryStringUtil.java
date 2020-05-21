@@ -33,9 +33,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -43,7 +45,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Various static functions for query handling and parsing.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class QueryStringUtil {
@@ -60,15 +62,16 @@ public class QueryStringUtil {
 
 	/**
 	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return whether free vars are available
 	 */
 	public static boolean hasFreeVars(StatementPattern stmt, BindingSet bindings) {
 		for (Var var : stmt.getVarList()) {
-			if (!var.hasValue() && !bindings.hasBinding(var.getName()))
+			if (!var.hasValue() && !bindings.hasBinding(var.getName())) {
 				return true; // there is at least one free var
+			}
 		}
 		return false;
 	}
@@ -76,9 +79,9 @@ public class QueryStringUtil {
 	/**
 	 * Return a string representation of this statement using the following pattern, where variables are indicated using
 	 * ?var and values are represented as strings.
-	 * 
+	 *
 	 * Pattern: {s; p; o}
-	 * 
+	 *
 	 * @param stmt
 	 * @return a string representation of the statement
 	 */
@@ -96,11 +99,11 @@ public class QueryStringUtil {
 
 	/**
 	 * Converts an {@link ArbitraryLengthPath} node to a sub query string and makes sure to insert any bindings.
-	 * 
+	 *
 	 * <p>
 	 * This method assumes that the {@link ArbitraryLengthPath#getPathExpression()} is a {@link StatementPattern}.
 	 * </p>
-	 * 
+	 *
 	 * @param node
 	 * @param varNames
 	 * @param bindings
@@ -131,17 +134,18 @@ public class QueryStringUtil {
 	}
 
 	public static String toString(Var var) {
-		if (!var.hasValue())
+		if (!var.hasValue()) {
 			return "?" + var.getName();
+		}
 		return getValueString(var.getValue());
 	}
 
 	/**
 	 * Return a string representation of this statement using the following pattern, where variables are indicated using
 	 * ?var and values are represented as strings.
-	 * 
+	 *
 	 * Pattern: {s; p; o}
-	 * 
+	 *
 	 * @param subj the subject
 	 * @param pred the predicate
 	 * @param obj  the object
@@ -153,18 +157,18 @@ public class QueryStringUtil {
 
 	/**
 	 * Construct a SELECT query for the provided statement.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @param filterExpr
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 * 
+	 *
 	 * @return the SELECT query
 	 * @throws IllegalQueryException if the query does not have any free variables
 	 */
-	public static String selectQueryString(FedXStatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated) throws IllegalQueryException {
+	public static String selectQueryString(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
+			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
@@ -173,13 +177,17 @@ public class QueryStringUtil {
 
 		res.append("SELECT ");
 
-		if (varNames.isEmpty())
+		if (varNames.isEmpty()) {
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
+		}
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" WHERE { ").append(s);
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE { ").append(s);
 
 		if (filterExpr != null) {
 			try {
@@ -194,28 +202,31 @@ public class QueryStringUtil {
 
 		res.append(" }");
 
-		long upperLimit = stmt.getUpperLimit();
-		if (upperLimit > 0) {
-			res.append(" LIMIT ").append(upperLimit);
+		if (stmt instanceof FedXStatementPattern) {
+			long upperLimit = ((FedXStatementPattern) stmt).getUpperLimit();
+			if (upperLimit > 0) {
+				res.append(" LIMIT ").append(upperLimit);
+			}
 		}
+
 		return res.toString();
 	}
 
 	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveTupleExprRenderer}
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @param filterExpr
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 * 
+	 *
 	 * @return the SELECT query
 	 * @throws IllegalQueryException if the query does not have any free variables
 	 */
 	public static String selectQueryString(ExclusiveTupleExprRenderer expr, BindingSet bindings,
 			FilterValueExpr filterExpr,
-			AtomicBoolean evaluated) throws IllegalQueryException {
+			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructJoinArg(expr, varNames, bindings);
@@ -224,13 +235,17 @@ public class QueryStringUtil {
 
 		res.append("SELECT ");
 
-		if (varNames.isEmpty())
+		if (varNames.isEmpty()) {
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
+		}
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" WHERE { ").append(s);
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE { ").append(s);
 
 		if (filterExpr != null) {
 			try {
@@ -256,36 +271,41 @@ public class QueryStringUtil {
 	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveGroup}. Note that bindings and filterExpr are applied
 	 * whenever possible.
-	 * 
+	 *
 	 * @param group      the expression for the query
 	 * @param bindings   the bindings to be applied
 	 * @param filterExpr a filter expression or null
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 * 
+	 *
 	 * @return the SELECT query string
 	 * @throws IllegalQueryException
-	 * 
+	 *
 	 */
 	public static String selectQueryString(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated) throws IllegalQueryException {
+			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		StringBuilder sb = new StringBuilder();
 		Set<String> varNames = new HashSet<>();
 
-		for (ExclusiveTupleExpr s : group.getExclusiveExpressions())
+		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {
 			sb.append(constructJoinArg(s, varNames, bindings));
+		}
 
-		if (varNames.isEmpty())
+		if (varNames.isEmpty()) {
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
+		}
 
 		StringBuilder res = new StringBuilder();
 		res.append("SELECT  ");
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" WHERE { ").append(sb);
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE { ").append(sb);
 
 		if (filterExpr != null) {
 			try {
@@ -305,51 +325,53 @@ public class QueryStringUtil {
 
 	/**
 	 * Transform the {@link ExclusiveTupleExpr} into a ASK query string
-	 * 
+	 *
 	 * @param expr
 	 * @param bindings
 	 * @return the ASK query string
 	 * @throws IllegalQueryException
 	 */
-	public static String askQueryString(ExclusiveTupleExpr expr, BindingSet bindings) {
+	public static String askQueryString(ExclusiveTupleExpr expr, BindingSet bindings, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 
 		StringBuilder res = new StringBuilder();
-		res.append("ASK { ").append(constructJoinArg(expr, varNames, bindings)).append(" }");
+		res.append("ASK ");
+		appendDatasetClause(res, dataset);
+		res.append("{ ").append(constructJoinArg(expr, varNames, bindings)).append(" }");
 		return res.toString();
 	}
 
 	/**
 	 * Construct a SELECT query string for a bound union.
-	 * 
+	 *
 	 * Pattern:
-	 * 
+	 *
 	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
-	 * 
+	 *
 	 * Note that the filterExpr is not evaluated at the moment.
-	 * 
+	 *
 	 * @param stmt
 	 * @param unionBindings
 	 * @param filterExpr
 	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
 	 *                      in beginning
-	 * 
+	 *
 	 * @return the SELECT query string
 	 * @deprecated replaced with
 	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
 	 */
 	@Deprecated
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, Boolean evaluated) {
+			FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
-
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
 			String s = constructStatementId(stmt, Integer.toString(i), varNames, unionBindings.get(i));
-			if (i > 0)
+			if (i > 0) {
 				unions.append(" UNION");
+			}
 			unions.append(" { ").append(s).append(" }");
 		}
 
@@ -357,10 +379,13 @@ public class QueryStringUtil {
 
 		res.append("SELECT ");
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" WHERE {");
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE { ");
 
 		res.append(unions);
 
@@ -379,31 +404,31 @@ public class QueryStringUtil {
 	 * <p>
 	 * Example subquery:
 	 * </p>
-	 * 
+	 *
 	 * <pre>
-	 * SELECT ?v ?__index WHERE { 
-	 *    VALUES (?s ?__index) { 
+	 * SELECT ?v ?__index WHERE {
+	 *    VALUES (?s ?__index) {
 	 *      (:s1 1) (:s2 2) 
 	 *      ... 
 	 *      (:sN N) 
-	 *    } 
+	 *    }
 	 *    ?s name ?v. 
 	 * }
 	 * </pre>
-	 * 
+	 *
 	 * @param stmt
 	 * @param unionBindings
 	 * @param filterExpr
 	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
 	 *                      in beginning
-	 * 
+	 *
 	 * @return the SELECT query string
 	 * @see SparqlFederationEvalStrategy
 	 * @see BoundJoinVALUESConversionIteration
 	 * @since 3.0
 	 */
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, AtomicBoolean evaluated) {
+			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset) {
 
 		Set<String> varNames = new LinkedHashSet<>();
 		StringBuilder res = new StringBuilder();
@@ -411,10 +436,15 @@ public class QueryStringUtil {
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
 		res.append("SELECT ");
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" ?").append(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME).append(" WHERE {");
+		res.append(" ?").append(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);
+
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
 
 		// TODO evaluate filter expression remote
 //		if (filterExpr!=null) {
@@ -425,18 +455,20 @@ public class QueryStringUtil {
 		res.append(" VALUES (");
 
 		// find relevant bindings
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append("?").append(var).append(" ");
+		}
 		res.append(" ?__index) { ");
 
 		int index = 0;
 		for (BindingSet b : unionBindings) {
 			res.append("(");
 			for (String var : varNames) {
-				if (b.hasBinding(var))
+				if (b.hasBinding(var)) {
 					appendValue(res, b.getValue(var)).append(" ");
-				else
+				} else {
 					res.append("UNDEF ");
+				}
 			}
 			res.append("\"").append(index).append("\") ");
 			index++;
@@ -453,24 +485,26 @@ public class QueryStringUtil {
 
 	/**
 	 * Construct a SELECT query for a grouped bound check.
-	 * 
+	 *
 	 * Pattern:
-	 * 
+	 *
 	 * SELECT ?o_1 .. ?o_N WHERE { { s1 p1 ?o_1 FILTER ?o_1=o1 } UNION ... UNION { sN pN ?o_N FILTER ?o_N=oN }}
-	 * 
+	 *
 	 * @param stmt
 	 * @param unionBindings
 	 * @return the SELECT query string
 	 */
-	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings) {
+	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings,
+			Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
 			String s = constructStatementCheckId(stmt, i, varNames, unionBindings.get(i));
-			if (i > 0)
+			if (i > 0) {
 				unions.append(" UNION");
+			}
 			unions.append(" { ").append(s).append(" }");
 		}
 
@@ -478,10 +512,15 @@ public class QueryStringUtil {
 
 		res.append("SELECT ");
 
-		for (String var : varNames)
+		for (String var : varNames) {
 			res.append(" ?").append(var);
+		}
 
-		res.append(" WHERE {").append(unions).append(" }");
+		res.append(" ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
+
+		res.append(unions).append(" }");
 
 		return res.toString();
 	}
@@ -492,8 +531,9 @@ public class QueryStringUtil {
 		StringBuilder innerUnion = new StringBuilder();
 
 		for (int idx = 0; idx < bindings.size(); idx++) {
-			if (idx > 0)
+			if (idx > 0) {
 				innerUnion.append("UNION ");
+			}
 			innerUnion.append("{")
 					.append(constructStatementId(stmt, outerID + "_" + idx, varNames, bindings.get(idx)))
 					.append("} ");
@@ -510,7 +550,7 @@ public class QueryStringUtil {
 	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
 	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement} or {@link ExclusiveGroup}.
 	 * </p>
-	 * 
+	 *
 	 * @param exclusiveExpr
 	 * @param varNames
 	 * @param bindings
@@ -540,19 +580,21 @@ public class QueryStringUtil {
 
 	/**
 	 * Construct a boolean ASK query for the provided statement.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return the ASK query string
 	 */
-	public static String askQueryString(StatementPattern stmt, BindingSet bindings) {
+	public static String askQueryString(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
-		res.append("ASK {");
+		res.append("ASK ");
+		appendDatasetClause(res, dataset);
+		res.append(" { ");
 		res.append(s).append(" }");
 
 		return res.toString();
@@ -561,19 +603,21 @@ public class QueryStringUtil {
 	/**
 	 * Construct a SELECT query for the provided statement with LIMIT 1. Such query can be used for source selection
 	 * instead of ASK queries.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return the SELECT query string
 	 */
-	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings) {
+	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
-		res.append("SELECT * WHERE {");
+		res.append("SELECT * ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE { ");
 		res.append(s).append(" } LIMIT 1");
 
 		return res.toString();
@@ -582,15 +626,15 @@ public class QueryStringUtil {
 	/**
 	 * Construct a SELECT query for the provided expr with LIMIT 1. Such query can be used for source selection instead
 	 * of ASK queries.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return the SELECT query string
 	 */
-	public static String selectQueryStringLimit1(ExclusiveTupleExpr expr, BindingSet bindings) {
+	public static String selectQueryStringLimit1(ExclusiveTupleExpr expr, BindingSet bindings, Dataset dataset) {
 
 		if (expr instanceof ExclusiveGroup) {
-			return selectQueryStringLimit1((ExclusiveGroup) expr, bindings);
+			return selectQueryStringLimit1((ExclusiveGroup) expr, bindings, dataset);
 		}
 
 		Set<String> varNames = new HashSet<>();
@@ -598,7 +642,9 @@ public class QueryStringUtil {
 
 		StringBuilder res = new StringBuilder();
 
-		res.append("SELECT * WHERE {");
+		res.append("SELECT * ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
 		res.append(s).append(" } LIMIT 1");
 
 		return res.toString();
@@ -607,20 +653,23 @@ public class QueryStringUtil {
 	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveGroup} with LIMIT 1. Such query can be used for source
 	 * selection instead of ASK queries.
-	 * 
+	 *
 	 * @param group
 	 * @param bindings
 	 * @return the SELECT query string
 	 */
-	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings) {
+	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 		StringBuilder res = new StringBuilder();
 
-		res.append("SELECT * WHERE { ");
+		res.append("SELECT * ");
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {");
 
-		for (ExclusiveTupleExpr s : group.getExclusiveExpressions())
+		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {
 			res.append(constructJoinArg(s, varNames, bindings));
+		}
 
 		res.append(" } LIMIT 1");
 
@@ -630,19 +679,28 @@ public class QueryStringUtil {
 	/**
 	 * Construct the statement string, i.e. "s p o . " with bindings inserted wherever possible. Note that the relevant
 	 * free variables are added to the varNames set for further evaluation.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the constructed statement pattern
 	 */
 	protected static String constructStatement(StatementPattern stmt, Set<String> varNames, BindingSet bindings) {
 		StringBuilder sb = new StringBuilder();
 
+		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
+			sb.append("GRAPH ");
+			appendVar(sb, stmt.getContextVar(), varNames, bindings);
+			sb.append(" { ");
+		}
 		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
 		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings).append(" ");
 		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
+
+		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
+			sb.append("} ");
+		}
 
 		return sb.toString();
 	}
@@ -651,11 +709,11 @@ public class QueryStringUtil {
 	 * Construct the statement string, i.e. "s p o . " with bindings inserted wherever possible. Variables are renamed
 	 * to "var_"+varId to identify query results in bound queries. Note that the free variables are also added to the
 	 * varNames set for further evaluation.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the constructed statement pattern
 	 */
 	protected static String constructStatementId(StatementPattern stmt, String varID, Set<String> varNames,
@@ -672,7 +730,7 @@ public class QueryStringUtil {
 	/**
 	 * Construct the statement string, i.e. "s p ?o_varID FILTER ?o_N=o ". This kind of statement pattern is necessary
 	 * to later on identify available results.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varID
 	 * @param varNames
@@ -707,57 +765,61 @@ public class QueryStringUtil {
 
 	/**
 	 * Append the variable to the provided StringBuilder.
-	 * 
+	 *
 	 * Cases: 1) unbound: check provided bindingset for possible match a) match found: append matching value b) no
 	 * match: append ?varName and add to varNames 2) bound: append value
-	 * 
+	 *
 	 * @param sb
 	 * @param var
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the stringbuilder
 	 */
 	protected static StringBuilder appendVar(StringBuilder sb, Var var, Set<String> varNames, BindingSet bindings) {
 		if (!var.hasValue()) {
-			if (bindings.hasBinding(var.getName()))
+			if (bindings.hasBinding(var.getName())) {
 				return appendValue(sb, bindings.getValue(var.getName()));
+			}
 			varNames.add(var.getName());
 			return sb.append("?").append(var.getName());
-		} else
+		} else {
 			return appendValue(sb, var.getValue());
+		}
 	}
 
 	/**
 	 * Append the variable to the provided StringBuilder, however change name of variable by appending "_varId" to it.
-	 * 
+	 *
 	 * Cases: 1) unbound: check provided bindingset for possible match a) match found: append matching value b) no
 	 * match: append ?varName_varId and add to varNames 2) bound: append value
-	 * 
+	 *
 	 * @param sb
 	 * @param var
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the complemented string builder
 	 */
 	protected static StringBuilder appendVarId(StringBuilder sb, Var var, String varID, Set<String> varNames,
 			BindingSet bindings) {
 		if (!var.hasValue()) {
-			if (bindings.hasBinding(var.getName()))
+			if (bindings.hasBinding(var.getName())) {
 				return appendValue(sb, bindings.getValue(var.getName()));
+			}
 			String newName = var.getName() + "_" + varID;
 			varNames.add(newName);
 			return sb.append("?").append(newName);
-		} else
+		} else {
 			return appendValue(sb, var.getValue());
+		}
 	}
 
 	/**
 	 * Return the string representation of this value, see {@link #appendValue(StringBuilder, Value)} for details.
-	 * 
+	 *
 	 * @param value
-	 * 
+	 *
 	 * @return the string representation
 	 */
 	protected static String getValueString(Value value) {
@@ -768,27 +830,30 @@ public class QueryStringUtil {
 
 	/**
 	 * Append a string representation of the value to the string builder.
-	 * 
+	 *
 	 * 1. URI: <http://myUri> 2. Literal: "myLiteral"^^<dataType>
-	 * 
+	 *
 	 * @param sb
 	 * @param value
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
 
-		if (value instanceof IRI)
+		if (value instanceof IRI) {
 			return appendURI(sb, (IRI) value);
-		if (value instanceof Literal)
+		}
+		if (value instanceof Literal) {
 			return appendLiteral(sb, (Literal) value);
-		if (value instanceof BNode)
+		}
+		if (value instanceof BNode) {
 			return appendBNode(sb, (BNode) value);
+		}
 		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
 	}
 
 	/**
 	 * Append the uri to the stringbuilder, i.e. <uri.stringValue>.
-	 * 
+	 *
 	 * @param sb
 	 * @param uri
 	 * @return the string builder
@@ -800,10 +865,10 @@ public class QueryStringUtil {
 
 	/**
 	 * Append a dummy string (see {@link #BNODE_URI}) to represent the BNode.
-	 * 
+	 *
 	 * Note: currently it is not possible to retrieve values for a BNode via SPARQL, hence we use a dummy BNode which
 	 * does not produce any results. A warning is printed to debug.
-	 * 
+	 *
 	 * @param sb
 	 * @param bNode
 	 * @return the string builder
@@ -818,7 +883,7 @@ public class QueryStringUtil {
 
 	/**
 	 * Append the literal to the stringbuilder.
-	 * 
+	 *
 	 * @param sb
 	 * @param lit
 	 * @return the string builder
@@ -843,16 +908,16 @@ public class QueryStringUtil {
 
 	/**
 	 * load the queries from a queries file located at the specified path.
-	 * 
+	 *
 	 * Expected format: - Queries are SPARQL queries in String format - queries are allowed to span several lines - a
 	 * query is interpreted to be finished if an empty line occurs
-	 * 
+	 *
 	 * Ex:
-	 * 
+	 *
 	 * QUERY1 ... Q1 cntd
-	 * 
+	 *
 	 * QUERY2
-	 * 
+	 *
 	 * @param queryFile
 	 * @return a list of queries for the query type
 	 * @throws FileNotFoundException
@@ -865,17 +930,32 @@ public class QueryStringUtil {
 			String tmpQuery = "";
 			while ((tmp = in.readLine()) != null) {
 				if (tmp.isEmpty()) {
-					if (!tmpQuery.isEmpty())
+					if (!tmpQuery.isEmpty()) {
 						res.add(tmpQuery);
+					}
 					tmpQuery = "";
 				} else {
 					tmpQuery = tmpQuery + tmp;
 				}
 			}
-			if (!tmpQuery.isEmpty())
+			if (!tmpQuery.isEmpty()) {
 				res.add(tmpQuery);
+			}
 			return res;
 		}
 
+	}
+
+	private static StringBuilder appendDatasetClause(StringBuilder sb, Dataset dataset) {
+		if (dataset == null) {
+			return sb;
+		}
+		for (IRI context : dataset.getDefaultGraphs()) {
+			sb.append("FROM <").append(context.stringValue()).append("> ");
+		}
+		for (IRI namedContext : dataset.getNamedGraphs()) {
+			sb.append("FROM NAMED <").append(namedContext.stringValue()).append("> ");
+		}
+		return sb;
 	}
 }

@@ -28,10 +28,10 @@ import org.slf4j.LoggerFactory;
  * ControlledWorkerScheduler is a task scheduler that uses a FIFO queue for managing its process. Each instance has a
  * pool with a fixed number of worker threads. Once notified a worker picks the next task from the queue and executes
  * it. The results is then returned to the controlling instance retrieved from the task.
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see ControlledWorkerUnion
  * @see ControlledWorkerJoin
  * @see ControlledWorkerBoundJoin
@@ -56,7 +56,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Construct a new instance with the specified number of workers and the given name.
-	 * 
+	 *
 	 * @param nWorkers
 	 * @param name
 	 */
@@ -68,7 +68,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Schedule the specified parallel task.
-	 * 
+	 *
 	 * @param task the task to schedule
 	 */
 	@Override
@@ -91,7 +91,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	/**
 	 * Schedule the given tasks and inform about finish using the same lock, i.e. all tasks are scheduled one after the
 	 * other.
-	 * 
+	 *
 	 * @param tasks
 	 * @param control
 	 */
@@ -148,7 +148,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Inform this scheduler that the specified control instance will no longer submit tasks.
-	 * 
+	 *
 	 * @param control
 	 */
 	public void informFinish(ParallelExecutor<T> control) {
@@ -164,9 +164,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Determine if there are still task running or queued for the specified control.
-	 * 
+	 *
 	 * @param control
-	 * 
+	 *
 	 * @return true, if there are unfinished tasks, false otherwise
 	 */
 	public boolean isRunning(ParallelExecutor<T> control) {
@@ -224,7 +224,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Structure to maintain the status for a given control instance.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 */
 	protected class ControlStatus {

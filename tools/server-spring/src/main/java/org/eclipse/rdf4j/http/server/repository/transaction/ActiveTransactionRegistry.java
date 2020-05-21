@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -20,12 +19,11 @@ import org.slf4j.LoggerFactory;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalCause;
-import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 
 /**
  * Registry keeping track of active transactions identified by a {@link UUID}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public enum ActiveTransactionRegistry {
@@ -39,7 +37,7 @@ public enum ActiveTransactionRegistry {
 	/**
 	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
 	 * timeout (in seconds).
-	 * 
+	 *
 	 * @deprecated since 2.3 use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
 	 */
 	@Deprecated
@@ -47,7 +45,7 @@ public enum ActiveTransactionRegistry {
 
 	/**
 	 * Default timeout setting for transaction cache entries (in seconds).
-	 * 
+	 *
 	 * @deprecated since 2.3 use {@link Protocol#DEFAULT_TIMEOUT}
 	 */
 	@Deprecated
@@ -186,7 +184,7 @@ public enum ActiveTransactionRegistry {
 	/**
 	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time in the
 	 * process) and if not reinserts it.
-	 * 
+	 *
 	 * @param transaction the transaction to check
 	 */
 	private void updateSecondaryCache(final Transaction transaction) {

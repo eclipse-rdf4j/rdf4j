@@ -143,4 +143,5 @@ public class MultiProjection extends UnaryTupleOperator {
 
 		return clone;
 	}
+
 }

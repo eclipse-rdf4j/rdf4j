@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader and
  * IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was read.
- * 
+ *
  * @author Tomasz Trela, DFKI Gmbh
  */
 public abstract class AbstractReaderMonitor {
@@ -37,7 +37,7 @@ public abstract class AbstractReaderMonitor {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	public final synchronized void beginReading() {
 		if (closed.get()) {
@@ -53,7 +53,7 @@ public abstract class AbstractReaderMonitor {
 
 	/**
 	 * called by the iterator
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public final synchronized void endReading() throws IOException {
@@ -71,7 +71,7 @@ public abstract class AbstractReaderMonitor {
 
 	/**
 	 * This method is called in LecenIndex invalidateReaders or on commit
-	 * 
+	 *
 	 * @return <code>true</code> if the close succeeded, <code>false</code> otherwise.
 	 * @throws IOException
 	 */
@@ -91,7 +91,7 @@ public abstract class AbstractReaderMonitor {
 
 	/**
 	 * This method is thread-safe (i.e. it is not called concurrently).
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected abstract void handleClose() throws IOException;

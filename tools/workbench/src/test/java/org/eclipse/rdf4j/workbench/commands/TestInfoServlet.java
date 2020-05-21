@@ -45,7 +45,7 @@ public class TestInfoServlet {
 	/**
 	 * Throwing exceptions for invalid repository ID's results in a 500 response code to the client. As seen in the bug
 	 * report, some versions of Internet Explorer don't gracefully handle error responses during XSLT parsing.
-	 * 
+	 *
 	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1770">SES-1770</a>
 	 */
 	@Test

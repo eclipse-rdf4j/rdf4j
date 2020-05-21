@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.URI;
 
 /**
  * Utility functions for working with {@link URI URIs}.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class URIUtil {
@@ -27,14 +27,14 @@ public class URIUtil {
 	 * URI component would conflict with the reserved purpose, then the conflicting data must be escaped before forming
 	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
 	 */
-	private static final Set<Character> reserved = new HashSet<Character>(
+	private static final Set<Character> reserved = new HashSet<>(
 			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
 
 	/**
 	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
 	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
-	private static final Set<Character> mark = new HashSet<Character>(
+	private static final Set<Character> mark = new HashSet<>(
 			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
 
 	/**
@@ -54,7 +54,7 @@ public class URIUtil {
 	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one ':' character
 	 * to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
 	 * {@link IllegalArgumentException}.
-	 * 
+	 *
 	 * @param uri A URI string.
 	 * @return The index of the first local name character in the URI string. Note that this index does not reference an
 	 *         actual character if the algorithm determines that there is not local name. In that case, the return index
@@ -84,7 +84,7 @@ public class URIUtil {
 	/**
 	 * Checks whether the URI consisting of the specified namespace and local name has been split correctly according to
 	 * the URI splitting rules specified in {@link URI}.
-	 * 
+	 *
 	 * @param namespace The URI's namespace, must not be <tt>null</tt>.
 	 * @param localName The URI's local name, must not be <tt>null</tt>.
 	 * @return <tt>true</tt> if the specified URI has been correctly split into a namespace and local name,
@@ -135,7 +135,7 @@ public class URIUtil {
 	 * <li>encoding the Unicode string as UTF-8, giving a sequence of octet values.
 	 * <li>%-escaping octets that do not correspond to permitted US-ASCII characters.
 	 * </ol>
-	 * 
+	 *
 	 * @param uriRef a string representing an RDF URI reference.
 	 * @return <code>true</code> iff the supplied string is a syntactically valid RDF URI reference, <code>false</code>
 	 *         otherwise.
@@ -170,7 +170,7 @@ public class URIUtil {
 	/**
 	 * Escapes any character that is not either reserved or in the legal range of unreserved characters, according to
 	 * RFC 2396.
-	 * 
+	 *
 	 * @param unescaped a (relative or absolute) uri reference.
 	 * @return a (relative or absolute) uri reference with all characters that can not appear as-is in a URI %-escaped.
 	 * @see <a href="http://www.ietf.org/rfc/rfc2396.txt">RFC 2396</a>

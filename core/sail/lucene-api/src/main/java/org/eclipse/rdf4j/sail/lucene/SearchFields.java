@@ -86,20 +86,21 @@ public final class SearchFields {
 
 	/**
 	 * Get the ID for a context. Context can be null, then the "null" string is returned
-	 * 
+	 *
 	 * @param resource the context
 	 * @return a string
 	 */
 	public static String getContextID(Resource resource) {
-		if (resource == null)
+		if (resource == null) {
 			return CONTEXT_NULL;
-		else
+		} else {
 			return getResourceID(resource);
+		}
 	}
 
 	/**
 	 * Parses an id-string (a serialized resource) back to a resource Inverse method of {@link #getResourceID(Resource)}
-	 * 
+	 *
 	 * @param idString
 	 * @return resource
 	 */
@@ -151,7 +152,7 @@ public final class SearchFields {
 
 	/**
 	 * Returns a score value encoded as a Literal.
-	 * 
+	 *
 	 * @param score the float score to convert
 	 * @return the score as a literal
 	 */

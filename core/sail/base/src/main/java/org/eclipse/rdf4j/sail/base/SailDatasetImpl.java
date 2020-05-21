@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -22,10 +23,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
@@ -265,17 +266,19 @@ class SailDatasetImpl implements SailDataset {
 		} else {
 			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
 		}
-		Model deprecated = changes.getDeprecated();
-		if (deprecated != null && iter != null) {
-			iter = difference(iter, deprecated.filter(subj, pred, obj, contexts));
+		if (changes.hasDeprecated() && iter != null) {
+			iter = difference(iter, changes::hasDeprecated);
 		}
-		Model approved = changes.getApproved();
-		if (approved != null && iter != null) {
 
-			return new DistinctModelReducingUnionIteration(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
+		if (changes.hasApproved() && iter != null) {
 
-		} else if (approved != null) {
-			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
+			return new DistinctModelReducingUnionIteration(
+					iter,
+					changes::removeApproved,
+					() -> changes.getApprovedStatements(subj, pred, obj, contexts));
+
+		} else if (changes.hasApproved()) {
+			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
 			return new CloseableIteratorIteration<>(i);
 		} else if (iter != null) {
 			return iter;
@@ -284,16 +287,46 @@ class SailDatasetImpl implements SailDataset {
 		}
 	}
 
-	private CloseableIteration<? extends Statement, SailException> difference(
-			CloseableIteration<? extends Statement, SailException> result, final Model excluded) {
-		if (excluded.isEmpty()) {
-			return result;
+	@Override
+	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException {
+		CloseableIteration<? extends Triple, SailException> iter;
+		if (changes.isStatementCleared()) {
+			iter = null;
+		} else {
+			iter = derivedFrom.getTriples(subj, pred, obj);
 		}
+
+		if (iter == null) {
+			return new EmptyIteration<>();
+		}
+		return iter; // TODO we will need to figure out a way to handle transaction isolation with deprecated and
+		// approved data
+//		Model deprecated = changes.getDeprecated();
+//		if (deprecated != null && iter != null) {
+//			iter = difference(iter, deprecated.));
+//		}
+//		Model approved = changes.getApproved();
+//		if (approved != null && iter != null) {
+//			return new DistinctModelReducingUnionIteration(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
+//
+//		} else if (approved != null) {
+//			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
+//			return new CloseableIteratorIteration<>(i);
+//		} else if (iter != null) {
+//			return iter;
+//		} else {
+//			return new EmptyIteration<>();
+//		}
+	}
+
+	private CloseableIteration<? extends Statement, SailException> difference(
+			CloseableIteration<? extends Statement, SailException> result, Function<Statement, Boolean> excluded) {
 		return new FilterIteration<Statement, SailException>(result) {
 
 			@Override
 			protected boolean accept(Statement stmt) {
-				return !excluded.contains(stmt);
+				return !excluded.apply(stmt);
 			}
 		};
 	}

@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.query.algebra;
  * The SLICE operator, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#defn_algSlice">SPARQL Query
  * Language for RDF</a>. The SLICE operator selects specific results from the underlying tuple expression based on an
  * offset and limit value (both optional).
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Slice extends UnaryTupleOperator {
@@ -56,7 +56,7 @@ public class Slice extends UnaryTupleOperator {
 
 	/**
 	 * Checks whether the row selection has a (valid) offset.
-	 * 
+	 *
 	 * @return <tt>true</tt> when <tt>offset &gt; 0</tt>
 	 */
 	public boolean hasOffset() {
@@ -73,7 +73,7 @@ public class Slice extends UnaryTupleOperator {
 
 	/**
 	 * Checks whether the row selection has a (valid) limit.
-	 * 
+	 *
 	 * @return <tt>true</tt> when <tt>offset &gt;= 0</tt>
 	 */
 	public boolean hasLimit() {
@@ -90,7 +90,7 @@ public class Slice extends UnaryTupleOperator {
 		StringBuilder sb = new StringBuilder(256);
 
 		sb.append(super.getSignature());
-		sb.append(" ( ");
+		sb.append(" (");
 
 		if (hasLimit()) {
 			sb.append("limit=").append(getLimit());
@@ -99,7 +99,7 @@ public class Slice extends UnaryTupleOperator {
 			sb.append("offset=").append(getOffset());
 		}
 
-		sb.append(" )");
+		sb.append(")");
 
 		return sb.toString();
 	}

@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -19,7 +17,7 @@ import junit.framework.Test;
 
 /**
  * Checks conformance of SPARQL query evaluation against the W3C-approved SPARQL 1.0 query test cases
- * 
+ *
  * @author Jeen Broekstra
  */
 public class W3CApprovedSPARQL10QueryTest extends SPARQLQueryTest {

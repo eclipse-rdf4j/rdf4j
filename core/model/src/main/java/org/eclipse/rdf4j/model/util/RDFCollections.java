@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * using the {@link RDF#NIL} node.
  * <p>
  * As an example, a list containing three literal values "A", "B", and "C" looks like this as an RDF Collection:
- * 
+ *
  * <pre>
  *   _:n1 -rdf:type--> rdf:List
  *     |
@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  *
  * Here, {@code _:n1} is the head resource of the list. Note that in this example it is declared an instance of
  * {@link RDF#LIST}, however this is not required for the collection to be considered well-formed.
- * 
+ *
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
  *      vocabulary</a>.
@@ -62,7 +62,7 @@ public class RDFCollections {
 	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
 	 * statements making up the new RDF Collection will be added to the supplied statement collection.
-	 * 
+	 *
 	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
 	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
 	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
@@ -92,7 +92,7 @@ public class RDFCollections {
 	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
 	 * statements making up the new RDF Collection will be added to the supplied statement collection.
-	 * 
+	 *
 	 * @param values       an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
 	 *                     to an RDF Collection. May not be {@code null}. The method attempts to convert each value that
 	 *                     is not already an instance of {@link Value} to a {@link Literal}. This conversion will fail
@@ -113,7 +113,7 @@ public class RDFCollections {
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
 	 *      vocabulary</a>.
-	 * 
+	 *
 	 * @since 3.0
 	 */
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
@@ -128,7 +128,7 @@ public class RDFCollections {
 	 * the supplied {@link Model} and {@code head}. This method expects the RDF Collection to be well-formed. If the
 	 * collection is not well-formed the method may return part of the collection, or may throw a
 	 * {@link ModelException}.
-	 * 
+	 *
 	 * @param m          the Model containing the collection to read.
 	 * @param head       the {@link Resource} that represents the list head, that is the start resource of the RDF
 	 *                   Collection to be read. May not be {@code null}.
@@ -154,7 +154,7 @@ public class RDFCollections {
 	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
 	 * statements making up the new RDF Collection will be reported to the supplied {@link Consumer} function.
-	 * 
+	 *
 	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
 	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
 	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
@@ -180,7 +180,7 @@ public class RDFCollections {
 	 * Converts the supplied {@link Iterable} to an <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF
 	 * Collection</a>, using the supplied {@code head} resource as the starting resource of the RDF Collection. The
 	 * statements making up the new RDF Collection will be reported to the supplied {@link Consumer} function.
-	 * 
+	 *
 	 * @param values   an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted to
 	 *                 an RDF Collection. May not be {@code null}. The method attempts to convert each value that is not
 	 *                 already an instance of {@link Value} to a {@link Literal}. This conversion will fail with a
@@ -197,7 +197,7 @@ public class RDFCollections {
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
 	 *      vocabulary</a>.
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
-	 * 
+	 *
 	 * @since 3.0
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
@@ -231,7 +231,7 @@ public class RDFCollections {
 	 * collection member {@link Value} to the supplied {@link Consumer} function. This method expects the RDF Collection
 	 * to be well-formed. If the collection is not well-formed the method may report only part of the collection, or may
 	 * throw a {@link ModelException}.
-	 * 
+	 *
 	 * @param m        the Model containing the collection to read.
 	 * @param head     the {@link Resource} that represents the list head, that is the start resource of the RDF
 	 *                 Collection to be read. May not be {@code null}.
@@ -262,7 +262,7 @@ public class RDFCollections {
 	 * Extracts the <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Collection</a> starting with the
 	 * supplied {@code head} resource from the supplied source {@link Model}. The statements making up the RDF
 	 * Collection will be added to the supplied statement collection, which will also be returned.
-	 * 
+	 *
 	 * @param sourceModel the source model, containing the RDF Collection to be read.
 	 * @param head        the {@link Resource} that represents the list head, that is the start resource of the RDF
 	 *                    Collection to be read. May not be {@code null}. a {@link Collection} of {@link Statement}
@@ -286,7 +286,7 @@ public class RDFCollections {
 	 * Extracts the <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Collection</a> starting with
 	 * supplied {@code head} resource from the supplied source {@link Model} and sends the statements that make up the
 	 * collection to the supplied {@link Consumer}.
-	 * 
+	 *
 	 * @param sourceModel the source model, containing the RDF Collection to be read.
 	 * @param head        the {@link Resource} that represents the list head, that is the start resource of the RDF
 	 *                    Collection to be read. May not be {@code null}. a {@link Collection} of {@link Statement}
@@ -309,7 +309,7 @@ public class RDFCollections {
 	 * statements that make up the collection to the supplied {@link Consumer} function. This method expects the RDF
 	 * Collection to be well-formed. If the collection is not well-formed the method may report only part of the
 	 * collection, or may throw an exception.
-	 * 
+	 *
 	 * @param statementSupplier  the source of the statements from which the RDF collection is to be read, specified as
 	 *                           a functional interface.
 	 * @param head               the {@link Resource} that represents the list head, that is the start resource of the

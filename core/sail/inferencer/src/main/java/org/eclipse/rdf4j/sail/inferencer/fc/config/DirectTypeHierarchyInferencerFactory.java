@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.sail.inferencer.fc.DirectTypeHierarchyInferencer;
 
 /**
  * A {@link SailFactory} that creates {@link DirectTypeHierarchyInferencer}s based on RDF configuration data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DirectTypeHierarchyInferencerFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "openrdf:DirectTypeHierarchyInferencer";

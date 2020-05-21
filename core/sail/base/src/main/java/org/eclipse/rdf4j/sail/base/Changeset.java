@@ -7,11 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -52,11 +58,15 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	/**
 	 * Statements that have been added as part of a transaction, but has not yet been committed.
+	 *
+	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
 	private Model approved;
 
 	/**
 	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
+	 *
+	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
 	private Model deprecated;
 
@@ -110,15 +120,29 @@ abstract class Changeset implements SailSink, ModelFactory {
 					contexts = new Resource[] { (Resource) ctxVar.getValue() };
 				}
 				for (Changeset changeset : prepend) {
-					Model approved = changeset.getApproved();
-					Model deprecated = changeset.getDeprecated();
-					if (approved != null && approved.contains(subj, pred, obj, contexts)
-							|| deprecated != null && deprecated.contains(subj, pred, obj, contexts)) {
+					if (changeset.hasApproved(subj, pred, obj, contexts)
+							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}
 			}
 		}
+	}
+
+	synchronized boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (approved == null) {
+			return false;
+		}
+
+		return approved.contains(subj, pred, obj, contexts);
+	}
+
+	synchronized boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (deprecated == null) {
+			return false;
+		}
+
+		return deprecated.contains(subj, pred, obj, contexts);
 	}
 
 	public synchronized void addRefback(SailDatasetImpl dataset) {
@@ -202,7 +226,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	public synchronized void clear(Resource... contexts) {
 		if (contexts != null && contexts.length == 0) {
 			if (approved != null) {
-				approved.remove(null, null, null);
+				approved.clear();
 			}
 			if (approvedContexts != null) {
 				approvedContexts.clear();
@@ -324,23 +348,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<StatementPattern> getObservations() {
-		return observations;
-	}
 
-	public synchronized Model getApproved() {
-		return approved;
-	}
+		return cloneSet(observations);
 
-	public synchronized Model getDeprecated() {
-		return deprecated;
 	}
 
 	public synchronized Set<Resource> getApprovedContexts() {
-		return approvedContexts;
+		return cloneSet(approvedContexts);
 	}
 
 	public synchronized Set<Resource> getDeprecatedContexts() {
-		return deprecatedContexts;
+		return cloneSet(deprecatedContexts);
 	}
 
 	public synchronized boolean isStatementCleared() {
@@ -352,14 +370,79 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<String> getRemovedPrefixes() {
-		return removedPrefixes;
+		return cloneSet(removedPrefixes);
 	}
 
 	public synchronized boolean isNamespaceCleared() {
 		return namespaceCleared;
 	}
 
-	public boolean hasDeprecated() {
+	public synchronized boolean hasDeprecated() {
 		return deprecated != null && !deprecated.isEmpty();
+	}
+
+	boolean isChanged() {
+		return approved != null || deprecated != null || approvedContexts != null
+				|| deprecatedContexts != null || addedNamespaces != null
+				|| removedPrefixes != null || statementCleared || namespaceCleared
+				|| observations != null;
+	}
+
+	synchronized List<Statement> getDeprecatedStatements() {
+		if (deprecated == null) {
+			return Collections.emptyList();
+		}
+		return new ArrayList<>(deprecated);
+	}
+
+	synchronized List<Statement> getApprovedStatements() {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+		return new ArrayList<>(approved);
+	}
+
+	synchronized boolean hasDeprecated(Statement statement) {
+		if (deprecated == null) {
+			return false;
+		}
+		return deprecated.contains(statement);
+	}
+
+	synchronized boolean hasApproved() {
+		return approved != null && !approved.isEmpty();
+	}
+
+	synchronized Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+
+		Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+
+		// This is a synchronized context, users of this method will be allowed to use the results at their leisure. We
+		// provide a copy of the data so that there will be no concurrent modification exceptions!
+		if (statements instanceof Collection) {
+			return new ArrayList<>((Collection<? extends Statement>) statements);
+		} else {
+			return StreamSupport
+					.stream(statements.spliterator(), false)
+					.collect(Collectors.toList());
+		}
+	}
+
+	synchronized void removeApproved(Statement next) {
+		if (approved != null) {
+			approved.remove(next);
+		}
+	}
+
+	private <T> Set<T> cloneSet(Set<T> deprecatedContexts) {
+		if (deprecatedContexts == null) {
+			return null;
+		}
+		return new HashSet<>(deprecatedContexts);
 	}
 }

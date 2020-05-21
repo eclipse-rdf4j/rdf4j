@@ -43,11 +43,10 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	protected ParsedIRI baseIRI;
 	protected Writer writer;
 	protected String defaultNamespace;
-	protected boolean writingStarted;
-	protected boolean headerWritten;
-	protected Resource lastWrittenSubject;
-	protected char quote;
-	protected boolean entityQuote;
+	protected boolean headerWritten = false;
+	protected Resource lastWrittenSubject = null;
+	protected char quote = '"';
+	protected boolean entityQuote = false;
 
 	/**
 	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
@@ -65,7 +64,10 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
-		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
+		super(out);
+		this.baseIRI = baseIRI;
+		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+		namespaceTable = new LinkedHashMap<>();
 	}
 
 	/**
@@ -87,24 +89,11 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 		this.baseIRI = baseIRI;
 		this.writer = writer;
 		namespaceTable = new LinkedHashMap<>();
-		writingStarted = false;
-		headerWritten = false;
-		lastWrittenSubject = null;
-		quote = '"';
-		entityQuote = false;
 	}
 
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
-	}
-
-	@Override
-	public void startRDF() throws RDFHandlerException {
-		if (writingStarted) {
-			throw new RDFHandlerException("Document writing has already started");
-		}
-		writingStarted = true;
 	}
 
 	protected void writeHeader() throws IOException {
@@ -158,10 +147,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet started");
-		}
-
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();
@@ -178,14 +164,12 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.flush();
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
-		} finally {
-			writingStarted = false;
-			headerWritten = false;
 		}
 	}
 
 	@Override
 	public void handleNamespace(String prefix, String name) {
+		checkWritingStarted();
 		setNamespace(prefix, name);
 	}
 
@@ -225,11 +209,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RDFHandlerException("Document writing has not yet been started");
-		}
-
+	protected void consumeStatement(Statement st) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -335,6 +315,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (!headerWritten) {
 				writeHeader();
@@ -402,7 +383,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write quoted attribute
-	 * 
+	 *
 	 * @param attName attribute name
 	 * @param value   string value
 	 * @throws IOException
@@ -419,7 +400,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write &gt;
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeEndOfStartTag() throws IOException {
@@ -428,7 +409,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write &gt; or /&gt;
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeEndOfEmptyTag() throws IOException {
@@ -454,7 +435,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Replace special characters in text with entities.
-	 * 
+	 *
 	 * @param chars text
 	 * @throws IOException
 	 */
@@ -471,7 +452,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write tab
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeIndent() throws IOException {
@@ -480,7 +461,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write newline character
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeNewLine() throws IOException {
@@ -490,7 +471,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML syntax
 	 * enforces the blank node id is a valid NCName.
-	 * 
+	 *
 	 * @param bNode a blank node identifier
 	 * @return the blank node identifier converted to a form that is a valid NCName.
 	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34 of the RDF/XML Syntax specification</a>

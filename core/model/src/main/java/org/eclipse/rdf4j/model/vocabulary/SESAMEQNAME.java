@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Defines constants for the Sesame QName schema namespace.
- * 
+ *
  * @author Peter Ansell
  */
 public class SESAMEQNAME {

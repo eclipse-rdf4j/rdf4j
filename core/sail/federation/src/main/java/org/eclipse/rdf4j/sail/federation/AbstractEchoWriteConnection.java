@@ -13,12 +13,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Echos all write operations to all members.
- * 
+ *
  * @author James Leigh
  */
 abstract class AbstractEchoWriteConnection extends AbstractFederationConnection {

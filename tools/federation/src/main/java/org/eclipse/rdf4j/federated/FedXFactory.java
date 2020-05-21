@@ -28,11 +28,11 @@ import org.slf4j.LoggerFactory;
 /**
  * FedX initialization factory methods for convenience: methods initialize the {@link FederationManager} and all
  * required FedX structures. See {@link FederationManager} for some a code snippet.
- * 
+ *
  * <p>
  * Use the {@link FedXFactory#newFederation()} builder to create an advanced and customized federation
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -42,11 +42,11 @@ public class FedXFactory {
 
 	/**
 	 * Create a federation with the provided sparql endpoints
-	 * 
+	 *
 	 * @param sparqlEndpoints the list of SPARQL endpoints
-	 * 
+	 *
 	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static FedXRepository createSparqlFederation(
@@ -57,11 +57,11 @@ public class FedXFactory {
 	/**
 	 * Create the federation with a specified data source configuration file (*.ttl). Federation members are constructed
 	 * from the data source configuration. Sample data source configuration files can be found in the documentation.
-	 * 
+	 *
 	 * @param dataConfig the location of the data source configuration
-	 * 
+	 *
 	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static FedXRepository createFederation(File dataConfig)
@@ -73,11 +73,11 @@ public class FedXFactory {
 	 * Create the federation by providing the endpoints to add. The fedx configuration can provide information about the
 	 * dataConfig to be used which may contain the default federation members.
 	 * <p>
-	 * 
+	 *
 	 * @param endpoints additional endpoints to be added, may be null or empty
-	 * 
+	 *
 	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static FedXRepository createFederation(
@@ -89,7 +89,7 @@ public class FedXFactory {
 	/**
 	 * Create a new customizable FedX federation. Once all configuration is supplied, the Federation can be created
 	 * using {@link #create()}
-	 * 
+	 *
 	 * @return the {@link FedXFactory} builder
 	 */
 	public static FedXFactory newFederation() {
@@ -134,7 +134,7 @@ public class FedXFactory {
 	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
 	 * {@link SPARQLRepositoryInformation}.
 	 * </p>
-	 * 
+	 *
 	 * @param model the model defining the federation members
 	 * @return the factory
 	 */
@@ -157,7 +157,11 @@ public class FedXFactory {
 	}
 
 	public FedXFactory withResolvableEndpoint(String repositoryId) {
-		members.add(EndpointFactory.loadResolvableRepository(repositoryId));
+		return withResolvableEndpoint(repositoryId, false);
+	}
+
+	public FedXFactory withResolvableEndpoint(String repositoryId, boolean writable) {
+		members.add(EndpointFactory.loadResolvableRepository(repositoryId, writable));
 		return this;
 	}
 
@@ -168,7 +172,7 @@ public class FedXFactory {
 
 	/**
 	 * Configure the FedX base directory at federation construction time.
-	 * 
+	 *
 	 * @param fedxBaseDir the fedx base directory
 	 * @return the {@link FedXFactory} instance
 	 */
@@ -179,11 +183,10 @@ public class FedXFactory {
 
 	/**
 	 * Create the federation using the provided configuration
-	 * 
+	 *
 	 * @return the configured {@link FedXRepository}
 	 */
 	public FedXRepository create() {
-
 		if (members.isEmpty()) {
 			log.info("Initializing federation without any pre-configured members");
 		}

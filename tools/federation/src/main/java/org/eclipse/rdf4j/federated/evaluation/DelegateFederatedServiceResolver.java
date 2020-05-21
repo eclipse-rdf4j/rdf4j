@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 /**
  * A {@link FederatedServiceResolver} which redirects SERVICE requests to the federation member (if the SERVICE IRI
  * correspond to a member) or to the provided delegate.
- * 
+ *
  * @author as
  *
  */
@@ -88,17 +88,18 @@ public class DelegateFederatedServiceResolver extends AbstractFederatedServiceRe
 	/**
 	 * Return the FedX endpoint corresponding to the given service URI. If there is no such endpoint in FedX, this
 	 * method returns null.
-	 * 
+	 *
 	 * Note that this method compares the endpoint URL first, however, that the name of the endpoint can be used as
 	 * identifier as well. Note that the name must be a valid URI, i.e. start with http://
-	 * 
+	 *
 	 * @param serviceUri
 	 * @return
 	 */
 	private Endpoint getFedXEndpoint(String serviceUri) {
 		Endpoint e = endpointManager.getEndpointByUrl(serviceUri);
-		if (e != null)
+		if (e != null) {
 			return e;
+		}
 		e = endpointManager.getEndpointByName(serviceUri);
 		return e;
 	}

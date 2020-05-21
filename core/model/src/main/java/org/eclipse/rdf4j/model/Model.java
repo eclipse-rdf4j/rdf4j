@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
  * <p>
  * Additional utility functionality for working with Model objects is available in the
  * {@link org.eclipse.rdf4j.model.util.Models Models} utility class.
- * 
+ *
  * @author James Leigh
  * @author Jeen Broekstra
  * @see org.eclipse.rdf4j.model.util.Models the Models utility class
@@ -31,14 +31,14 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * operations on the returned model "read through" to this model, and attempts to modify the returned model, whether
 	 * direct or via its iterator, result in an {@link UnsupportedOperationException}.
 	 * <p>
-	 * 
+	 *
 	 * @return an unmodifiable view of the specified set.
 	 */
 	public Model unmodifiable();
 
 	/**
 	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.
-	 * 
+	 *
 	 * @param prefix The new prefix.
 	 * @param name   The namespace name that the prefix maps to.
 	 * @return The {@link Namespace} object for the given namespace.
@@ -54,14 +54,14 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 
 	/**
 	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.
-	 * 
+	 *
 	 * @param namespace A {@link Namespace} object to use in this Model.
 	 */
 	public void setNamespace(Namespace namespace);
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
-	 * 
+	 *
 	 * @param prefix The namespace prefix of which the assocation with a namespace name is to be removed.
 	 * @return the previous namespace bound to the prefix or {@link Optional#empty()}
 	 */
@@ -82,7 +82,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * associated context,<br>
 	 * {@code model.contains(null, null, null, c1, c2, c3)} is true if any statements in this model have context
 	 * {@code c1}, {@code c2} or {@code c3} .
-	 * 
+	 *
 	 * @param subj     The subject of the statements to match, {@code null} to match statements with any subject.
 	 * @param pred     The predicate of the statements to match, {@code null} to match statements with any predicate.
 	 * @param obj      The object of the statements to match, {@code null} to match statements with any object.
@@ -106,7 +106,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * those to the model. If no contexts are specified, a single statement with no associated context is added. If this
 	 * Model is a filtered Model then null (if context empty) values are permitted and will use the corresponding
 	 * filtered values.
-	 * 
+	 *
 	 * @param subj     The statement's subject.
 	 * @param pred     The statement's predicate.
 	 * @param obj      The statement's object.
@@ -128,7 +128,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 
 	/**
 	 * Removes statements with the specified context exist in this model.
-	 * 
+	 *
 	 * @param context The context of the statements to remove.
 	 * @return <code>true</code> if one or more statements have been removed.
 	 */
@@ -148,7 +148,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * context,<br>
 	 * {@code model.remove(null, null, null, c1, c2, c3)} removes any statements in this model have context {@code c1},
 	 * {@code c2} or {@code c3}.
-	 * 
+	 *
 	 * @param subj     The subject of the statements to remove, {@code null} to remove statements with any subject.
 	 * @param pred     The predicate of the statements to remove, {@code null} to remove statements with any predicate.
 	 * @param obj      The object of the statements to remove, {@code null} to remove statements with any object.
@@ -167,12 +167,43 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 		return remove(subj, (IRI) pred, obj, contexts);
 	}
 
-	// Views
+	/**
+	 * Returns an {@link Iterable} over all {@link Statement}s in this Model that match the supplied criteria.
+	 * <p>
+	 * Examples:
+	 * <ul>
+	 * <li>{@code model.getStatements(s1, null, null)} matches all statements that have subject {@code s1}</li>
+	 * <li>{@code model.getStatements(s1, p1, null)} matches all statements that have subject {@code s1} and predicate
+	 * {@code p1}</li>
+	 * <li>{@code model.getStatements(null, null, null, c1)} matches all statements that have context {@code c1}</li>
+	 * <li>{@code model.getStatements(null, null, null, (Resource)null)} matches all statements that have no associated
+	 * context</li>
+	 * <li>{@code model.getStatements(null, null, null, c1, c2, c3)} matches all statements that have context
+	 * {@code c1}, {@code c2} or {@code c3}</li>
+	 * </ul>
+	 *
+	 * @param subject   The subject of the statements to match, {@code null} to match statements with any subject.
+	 * @param predicate The predicate of the statements to match, {@code null} to match statements with any predicate.
+	 * @param object    The object of the statements to match, {@code null} to match statements with any object.
+	 * @param contexts  The contexts of the statements to match. If no contexts are specified, statements will match
+	 *                  disregarding their context. If one or more contexts are specified, statements with a context
+	 *                  matching any one of these will match. To match statements without an associated context, specify
+	 *                  the value {@code null} and explicitly cast it to type {@code Resource}.
+	 * @return an {@link Iterable} over the statements in this Model that match the specified pattern.
+	 *
+	 * @since 3.2.0
+	 *
+	 * @see #filter(Resource, IRI, Value, Resource...)
+	 */
+	public default Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object,
+			Resource... contexts) {
+		return () -> filter(subject, predicate, object, contexts).iterator();
+	}
 
 	/**
-	 * Returns a view of the statements with the specified subject, predicate, object and (optionally) context. The
-	 * {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards. The
-	 * {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
+	 * Returns a filtered view of the statements with the specified subject, predicate, object and (optionally) context.
+	 * The {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards.
+	 * The {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
 	 * statements will match disregarding their context. If one or more contexts are specified, statements with a
 	 * context matching one of these will match. Note: to match statements without an associated context, specify the
 	 * value {@code null} and explicitly cast it to type {@code Resource}.
@@ -190,7 +221,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * context,<br>
 	 * {@code model.filter(null, null, null, c1, c2, c3)} matches all statements that have context {@code c1},
 	 * {@code c2} or {@code c3}.
-	 * 
+	 *
 	 * @param subj     The subject of the statements to match, {@code null} to match statements with any subject.
 	 * @param pred     The predicate of the statements to match, {@code null} to match statements with any predicate.
 	 * @param obj      The object of the statements to match, {@code null} to match statements with any object.
@@ -198,6 +229,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 disregarding their context. If one or more contexts are specified, statements with a context
 	 *                 matching one of these will match.
 	 * @return The statements that match the specified pattern.
+	 *
+	 * @see #getStatements(Resource, IRI, Value, Resource...)
 	 */
 	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
 
@@ -214,7 +247,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * is a subject value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
 	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
 	 * {@code pred} or {@code obj} are null.
-	 * 
+	 *
 	 * @return a set view of the subjects contained in this model
 	 */
 	public Set<Resource> subjects();
@@ -227,7 +260,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * is a predicate value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
 	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
 	 * {@code subj} or {@code obj} are null.
-	 * 
+	 *
 	 * @return a set view of the predicates contained in this model
 	 */
 	public Set<IRI> predicates();
@@ -240,7 +273,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * is an object value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
 	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
 	 * {@code subj} or {@code pred} are null.
-	 * 
+	 *
 	 * @return a set view of the objects contained in this model
 	 */
 	public Set<Value> objects();
@@ -253,12 +286,14 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * is a context value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
 	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
 	 * {@code subj} , {@code pred} or {@code obj} are null.
-	 * 
+	 *
 	 * @return a set view of the contexts contained in this model
 	 */
 	public default Set<Resource> contexts() {
 		Set<Resource> subjects = stream().map(st -> st.getContext()).collect(Collectors.toSet());
 		return subjects;
-	};
+	}
+
+	;
 
 }

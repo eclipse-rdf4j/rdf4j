@@ -7,11 +7,158 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import org.eclipse.rdf4j.query.parser.sparql.ast.*;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAdd;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAvg;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBNodeFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBaseDecl;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingValue;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingsClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNode;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNodePropertyList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBound;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCeil;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTClear;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCoalesce;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCollection;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCompare;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConcat;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstruct;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTContains;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCopy;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCount;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCreate;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDatasetClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDatatype;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDay;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteWhere;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDrop;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTEncodeForURI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTExistsFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFalse;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFloor;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFunctionCall;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphOrDefault;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphRefAll;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupConcat;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupCondition;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHavingClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHours;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRIFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIf;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIn;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInfix;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInlineData;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsBlank;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsIRI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsNumeric;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLang;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLangMatches;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLimit;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLoad;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLowerCase;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMD5;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMax;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMin;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinusGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinutes;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMonth;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMove;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNot;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotExistsFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotIn;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNow;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNumericLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOffset;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOptionalGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderCondition;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathAlternative;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathElt;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathMod;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathOneInPropertySet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathSequence;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPrefixDecl;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyListPath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQName;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuadsNotTriples;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRDFLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRand;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRegexExpression;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReplace;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRound;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA1;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA224;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA256;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA384;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA512;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSTRUUID;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSameTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSample;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSeconds;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrAfter;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrBefore;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrDt;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrEnds;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLang;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLen;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrStarts;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTString;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSubstr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSum;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTimezone;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubject;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTz;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUUID;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnionGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdate;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateSequence;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpperCase;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTYear;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilderVisitor;
+import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * Base class for visitors of the SPARQL AST.
- * 
+ *
  * @author arjohn
  */
 public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
@@ -735,4 +882,13 @@ public abstract class AbstractASTVisitor implements SyntaxTreeBuilderVisitor {
 		return node.childrenAccept(this, data);
 	}
 
+	@Override
+	public Object visit(ASTTripleRef node, Object data) throws VisitorException {
+		return node.childrenAccept(this, data);
+	}
+
+	@Override
+	public Object visit(ASTConstTripleRef node, Object data) throws VisitorException {
+		return node.childrenAccept(this, data);
+	}
 }

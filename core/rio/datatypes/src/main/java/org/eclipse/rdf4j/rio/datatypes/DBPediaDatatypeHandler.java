@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
  * An implementation of a datatype handler that can process DBPedia datatypes.
- * 
+ *
  * @author Peter Ansell
  */
 public class DBPediaDatatypeHandler implements DatatypeHandler {

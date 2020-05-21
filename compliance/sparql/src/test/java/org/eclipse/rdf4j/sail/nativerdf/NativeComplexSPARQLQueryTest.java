@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.parser.sparql.ComplexSPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 /**
  * @author jeen

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.rio.LanguageHandler;
  * <p>
  * This language handler normalises language tags to lower-case if
  * {@link #normalizeLanguage(String, String, ValueFactory)} is used.
- * 
+ *
  * @see <a href="https://tools.ietf.org/html/bcp47">BCP47</a>
  * @author Peter Ansell
  */

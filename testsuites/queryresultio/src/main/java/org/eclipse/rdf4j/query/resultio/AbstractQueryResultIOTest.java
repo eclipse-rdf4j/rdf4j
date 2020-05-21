@@ -28,6 +28,7 @@ import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
@@ -50,7 +51,7 @@ public abstract class AbstractQueryResultIOTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * 
+	 *
 	 */
 	public AbstractQueryResultIOTest() {
 		super();
@@ -66,7 +67,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Override this to customise how the tuple parsing is performed, particularly to test background and other parsing
 	 * strategies.
-	 * 
+	 *
 	 * @param format The {@link TupleQueryResultFormat} for the parser.
 	 * @param in     The InputStream to parse
 	 * @return A {@link TupleQueryResult} that can be parsed.
@@ -130,8 +131,11 @@ public abstract class AbstractQueryResultIOTest {
 		MapBindingSet solution9 = new MapBindingSet(bindingNames.size());
 		solution9.addBinding("a", vf.createLiteral("newline at the end \n", XMLSchema.STRING));
 
+		MapBindingSet solution10 = new MapBindingSet(bindingNames.size());
+		solution10.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
+
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4, solution5,
-				solution6, solution7, solution8, solution9);
+				solution6, solution7, solution8, solution9, solution10);
 
 		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);
 
@@ -164,6 +168,11 @@ public abstract class AbstractQueryResultIOTest {
 		solution5.addBinding("a", vf.createLiteral("''single-quoted string"));
 		solution5.addBinding("b", vf.createLiteral("\"\"double-quoted string"));
 		solution5.addBinding("c", vf.createLiteral("		unencoded tab characters followed by encoded \t\t"));
+
+		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());
+		solution6.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
+		solution6.addBinding("b", vf.createIRI("urn:test"));
+		solution6.addBinding("c", vf.createBNode("bnode1"));
 
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4,
 				solution5);
@@ -455,7 +464,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a tuple results set without specifying a {@link TupleQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -481,7 +490,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a TupleQueryResultFormat is not able to parse a BooleanQueryResultFormat using
 	 * the deprecated {@link TupleQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed through
 	 * an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @param matchingBooleanFormat A BooleanQueryResultFormat that matches the given TupleQueryResultFormat .
@@ -652,7 +661,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a boolean without specifying a {@link BooleanQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -672,7 +681,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a BooleanQueryResultFormat is not able to parse a TupleQueryResultFormat using
 	 * the deprecated {@link BooleanQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed
 	 * through an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param tqr
 	 * @param matchingTupleFormat A TupleQueryResultFormat that matches the given BooleanQueryResultFormat.

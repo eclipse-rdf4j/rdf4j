@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * Default {@link WriteStrategy} implementation for read only federations. In case a user attempts to perform a write
  * operation a {@link UnsupportedOperationException} is thrown.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -54,7 +54,8 @@ public class ReadOnlyWriteStrategy implements WriteStrategy {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
+	public void clear(Resource... contexts) throws RepositoryException {
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 	@Override
@@ -62,8 +63,8 @@ public class ReadOnlyWriteStrategy implements WriteStrategy {
 	}
 
 	@Override
-	public boolean isInitialized() {
-		return true;
+	public void clearNamespaces() throws RepositoryException {
+		throw new UnsupportedOperationException("Writing not supported to a federation: the federation is readonly.");
 	}
 
 }

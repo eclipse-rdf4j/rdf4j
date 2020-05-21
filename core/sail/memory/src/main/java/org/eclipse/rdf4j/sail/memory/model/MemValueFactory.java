@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
@@ -27,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
  * minimizing memory usage as a result.
- * 
+ *
  * @author Arjohn Kampman
  * @author David Huynh
  */
@@ -42,6 +43,12 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * objects, minimizing the number of objects in main memory.
 	 */
 	private final WeakObjectRegistry<MemIRI> uriRegistry = new WeakObjectRegistry<>();
+
+	/**
+	 * Registry containing the set of MemTriple objects as used by a MemoryStore. This registry enables the reuse of
+	 * objects, minimizing the number of objects in main memory.
+	 */
+	private final WeakObjectRegistry<MemTriple> tripleRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the reuse of
@@ -75,7 +82,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * Returns a previously created MemValue that is equal to the supplied value, or <tt>null</tt> if the supplied value
 	 * is a new value or is equal to <tt>null</tt>.
-	 * 
+	 *
 	 * @param value The MemValue equivalent of the supplied value, or <tt>null</tt>.
 	 * @return A previously created MemValue that is equal to <tt>value</tt>, or <tt>null</tt> if no such value exists
 	 *         or if <tt>value</tt> is equal to <tt>null</tt>.
@@ -100,6 +107,8 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getMemURI((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return getMemBNode((BNode) resource);
+		} else if (resource instanceof Triple) {
+			return getMemTriple((Triple) resource);
 		} else if (resource == null) {
 			return null;
 		} else {
@@ -153,7 +162,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
 	public Set<MemIRI> getMemURIs() {
@@ -165,7 +174,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemBNode objects.
 	 */
 	public Set<MemBNode> getMemBNodes() {
@@ -177,7 +186,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * <p>
 	 * <b>Warning:</b> This method is not synchronized. To iterate over the returned set in a thread-safe way, this
 	 * method should only be called while synchronizing on this object.
-	 * 
+	 *
 	 * @return An unmodifiable Set of MemURI objects.
 	 */
 	public Set<MemLiteral> getMemLiterals() {
@@ -188,7 +197,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Gets or creates a MemValue for the supplied Value. If the factory already contains a MemValue object that is
 	 * equivalent to the supplied value then this equivalent value will be returned. Otherwise a new MemValue will be
 	 * created, stored for future calls and then returned.
-	 * 
+	 *
 	 * @param value A Resource or Literal.
 	 * @return The existing or created MemValue.
 	 */
@@ -210,6 +219,8 @@ public class MemValueFactory extends AbstractValueFactory {
 			return getOrCreateMemURI((IRI) resource);
 		} else if (resource instanceof BNode) {
 			return getOrCreateMemBNode((BNode) resource);
+		} else if (resource instanceof Triple) {
+			return getOrCreateMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -380,6 +391,31 @@ public class MemValueFactory extends AbstractValueFactory {
 		}
 
 		return sharedLiteral;
+	}
+
+	/**
+	 * See {@link #getOrCreateMemValue(Value)} for description.
+	 */
+	private synchronized MemTriple getOrCreateMemTriple(Triple triple) {
+		MemTriple memTriple = getMemTriple(triple);
+
+		if (memTriple == null) {
+			// Create a MemTriple and add it to the registry
+			memTriple = new MemTriple(this, getOrCreateMemResource(triple
+					.getSubject()),
+					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+			boolean wasNew = tripleRegistry.add(memTriple);
+		}
+
+		return memTriple;
+	}
+
+	private synchronized MemTriple getMemTriple(Triple triple) {
+		if (isOwnMemValue(triple)) {
+			return (MemTriple) triple;
+		} else {
+			return tripleRegistry.get(triple);
+		}
 	}
 
 }

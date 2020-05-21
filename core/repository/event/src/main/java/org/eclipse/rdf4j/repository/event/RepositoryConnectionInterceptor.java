@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 /**
  * Interceptor interface for connection modification.
- * 
+ *
  * @author Herko ter Horst
  */
 public interface RepositoryConnectionInterceptor {

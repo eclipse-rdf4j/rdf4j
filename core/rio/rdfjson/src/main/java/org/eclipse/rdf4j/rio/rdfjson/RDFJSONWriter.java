@@ -40,7 +40,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * {@link RDFWriter} implementation for the RDF/JSON format
- * 
+ *
  * @author Peter Ansell p_ansell@yahoo.com
  */
 public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
@@ -54,6 +54,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
+		super(out);
 		this.outputStream = out;
 		this.actualFormat = actualFormat;
 	}
@@ -65,6 +66,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void endRDF() throws RDFHandlerException {
+		checkWritingStarted();
 		try {
 			if (this.writer != null) {
 				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
@@ -102,28 +104,31 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	public void handleComment(final String comment) throws RDFHandlerException {
+		checkWritingStarted();
 		// Comments are ignored.
 	}
 
 	@Override
 	public void handleNamespace(final String prefix, final String uri) throws RDFHandlerException {
+		checkWritingStarted();
 		// Namespace prefixes are not used in RDF/JSON.
 	}
 
 	@Override
-	public void handleStatement(final Statement statement) throws RDFHandlerException {
-		this.graph.add(statement);
+	public void consumeStatement(final Statement statement) throws RDFHandlerException {
+		graph.add(statement);
 	}
 
 	@Override
 	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
 		this.graph = new TreeModel();
 	}
 
 	/**
 	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be serialised
 	 * to JSON if there are also non-null contexts in the contexts array
-	 * 
+	 *
 	 * @param object   The RDF value to serialise
 	 * @param contexts The set of contexts that are relevant to this object, including null contexts as they are found.
 	 * @param jg       the {@link JsonGenerator} to write to.
@@ -172,7 +177,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
-	 * 
+	 *
 	 * @param uriOrBnode The resource to serialise to a string
 	 * @return The string value of the sesame resource
 	 */
@@ -217,7 +222,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
-	 * 
+	 *
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {

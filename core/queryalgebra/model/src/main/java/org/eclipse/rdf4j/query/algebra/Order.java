@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * An order operator that can be used to order bindings as specified by a set of value expressions.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Order extends UnaryTupleOperator {
@@ -120,4 +120,5 @@ public class Order extends UnaryTupleOperator {
 
 		return clone;
 	}
+
 }

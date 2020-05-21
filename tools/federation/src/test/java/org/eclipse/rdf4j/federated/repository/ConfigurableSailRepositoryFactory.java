@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.sail.config.SailRegistry;
 
 /**
  * See {@link SailRepositoryFactory}
- * 
+ *
  * @author Andreas Schwarte
  *
  */

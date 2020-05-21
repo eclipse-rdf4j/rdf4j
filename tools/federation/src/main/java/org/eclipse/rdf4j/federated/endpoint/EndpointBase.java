@@ -22,13 +22,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Base implementation for an {@link Endpoint}.
- * 
+ *
  * <p>
  * Provides implementation for the common behavior as well as connection management. Typically a fresh
  * {@link RepositoryConnection} is returned when invoking {@link #getConnection()}, however, it is configurable that a
  * managed (singleton) connection can be used.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see EndpointManager
  */
@@ -51,6 +51,7 @@ public abstract class EndpointBase implements Endpoint {
 		super();
 		this.repoInfo = repoInfo;
 		this.endpoint = endpoint;
+		this.writable = repoInfo.isWritable();
 		this.endpointClassification = endpointClassification;
 	}
 
@@ -107,8 +108,9 @@ public abstract class EndpointBase implements Endpoint {
 
 	@Override
 	public RepositoryConnection getConnection() {
-		if (!initialized)
+		if (!initialized) {
 			throw new FedXRuntimeException("Repository for endpoint " + getId() + " not initialized");
+		}
 		if (dependentConn != null) {
 			return this.dependentConn;
 		}
@@ -147,8 +149,9 @@ public abstract class EndpointBase implements Endpoint {
 
 	@Override
 	public void init(FederationContext federationContext) throws RepositoryException {
-		if (isInitialized())
+		if (isInitialized()) {
 			return;
+		}
 		Repository repo = getRepository();
 		tripleSource = TripleSourceFactory.tripleSourceFor(this, getType(), federationContext);
 		if (useSingleConnection()) {
@@ -159,11 +162,11 @@ public abstract class EndpointBase implements Endpoint {
 
 	/**
 	 * Whether to reuse the same {@link RepositoryConnection} throughout the lifetime of this Endpoint.
-	 * 
+	 *
 	 * <p>
 	 * Note that the {@link RepositoryConnection} is wrapped as {@link ManagedRepositoryConnection}
 	 * </p>
-	 * 
+	 *
 	 * @return indicator whether a single connection should be used
 	 */
 	protected boolean useSingleConnection() {
@@ -172,8 +175,9 @@ public abstract class EndpointBase implements Endpoint {
 
 	@Override
 	public void shutDown() throws RepositoryException {
-		if (!isInitialized())
+		if (!isInitialized()) {
 			return;
+		}
 		if (dependentConn != null) {
 			dependentConn.closeManagedConnection();
 			dependentConn = null;
@@ -192,23 +196,30 @@ public abstract class EndpointBase implements Endpoint {
 
 	@Override
 	public boolean equals(Object obj) {
-		if (this == obj)
+		if (this == obj) {
 			return true;
-		if (obj == null)
+		}
+		if (obj == null) {
 			return false;
-		if (getClass() != obj.getClass())
+		}
+		if (getClass() != obj.getClass()) {
 			return false;
+		}
 		EndpointBase other = (EndpointBase) obj;
 		if (getId() == null) {
-			if (other.getId() != null)
+			if (other.getId() != null) {
 				return false;
-		} else if (!getId().equals(other.getId()))
+			}
+		} else if (!getId().equals(other.getId())) {
 			return false;
+		}
 		if (getType() == null) {
-			if (other.getType() != null)
+			if (other.getType() != null) {
 				return false;
-		} else if (!getType().equals(other.getType()))
+			}
+		} else if (!getType().equals(other.getType())) {
 			return false;
+		}
 		return true;
 	}
 
@@ -220,7 +231,7 @@ public abstract class EndpointBase implements Endpoint {
 	/**
 	 * A wrapper for managed {@link RepositoryConnection}s which makes sure that {@link #close()} is a no-op, i.e. the
 	 * actual closing of the managed connection is controlled by the {@link Endpoint}.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */

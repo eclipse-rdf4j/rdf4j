@@ -8,12 +8,12 @@
 package org.eclipse.rdf4j.http.protocol;
 
 import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.rio.ntriples.NTriplesUtil;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 public abstract class Protocol {
 
@@ -76,7 +76,7 @@ public abstract class Protocol {
 
 	/**
 	 * Protocol version.
-	 * 
+	 *
 	 * <ul>
 	 * <li>10: since RDF4J 3.1.0</li>
 	 * <li>9: since RDF4J 3.0.0</li>
@@ -275,7 +275,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the protocol resource on the specified server.
-	 * 
+	 *
 	 * @param serverLocation the base location of a server implementing this REST protocol.
 	 * @return the location of the protocol resource on the specified server
 	 */
@@ -285,7 +285,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the server configuration resource on the specified server.
-	 * 
+	 *
 	 * @param serverLocation the base location of a server implementing this REST protocol.
 	 * @return the location of the server configuration resource on the specified server
 	 */
@@ -295,7 +295,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the repository list resource on the specified server.
-	 * 
+	 *
 	 * @param serverLocation the base location of a server implementing this REST protocol.
 	 * @return the location of the repository list resource on the specified server
 	 */
@@ -305,7 +305,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of a specific repository resource on the specified server.
-	 * 
+	 *
 	 * @param serverLocation the base location of a server implementing this REST protocol.
 	 * @param repositoryID   the ID of the repository
 	 * @return the location of a specific repository resource on the specified server
@@ -316,10 +316,10 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the config of a specific repository resource.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the configuration resource for the specified repository
-	 * 
+	 *
 	 */
 	public static final String getRepositoryConfigLocation(String repositoryLocation) {
 		return repositoryLocation + "/" + CONFIG;
@@ -327,7 +327,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the statements resource for a specific repository.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the statements resource for the specified repository
 	 */
@@ -337,7 +337,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the transaction resources for a specific repository.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the transaction resources for the specified repository
 	 */
@@ -347,7 +347,7 @@ public abstract class Protocol {
 
 	/**
 	 * Extracts the server location from the repository location.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the server resource for the specified repository.
 	 */
@@ -359,7 +359,7 @@ public abstract class Protocol {
 
 	/**
 	 * Extracts the repository ID from the repository location.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the ID of the repository.
 	 */
@@ -370,7 +370,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the contexts lists resource for a specific repository.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the contexts lists resource for the specified repository
 	 */
@@ -380,7 +380,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the namespaces lists resource for a specific repository on the specified server.
-	 * 
+	 *
 	 * @param repositoryLocation the base location of a server implementing this REST protocol.
 	 * @return the location of the namespaces lists resource for a specific repository on the specified server
 	 */
@@ -390,7 +390,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the namespace with the specified prefix for a specific repository on the specified server.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @param prefix             the namespace prefix
 	 * @return the location of the the namespace with the specified prefix for a specific repository on the specified
@@ -402,7 +402,7 @@ public abstract class Protocol {
 
 	/**
 	 * Get the location of the 'size' resource for a specific repository on the specified server.
-	 * 
+	 *
 	 * @param repositoryLocation the location of a repository implementing this REST protocol.
 	 * @return the location of the 'size' resource for a specific repository on the specified server
 	 */
@@ -412,24 +412,18 @@ public abstract class Protocol {
 
 	/**
 	 * Encodes a value in a canonical serialized string format, for use in a URL query parameter.
-	 * 
+	 *
 	 * @param value The value to encode, possibly <tt>null</tt>.
 	 * @return The protocol-serialized representation of the supplied value, or {@link #NULL_PARAM_VALUE} if the
 	 *         supplied value was <tt>null</tt>.
 	 */
 	public static String encodeValue(Value value) {
-		if (value instanceof BNode) {
-			// SES-2129 special treatment of blank node names to avoid problems with round-tripping.
-			return "_:" + ((BNode) value).getID();
-		}
-
-		// for everything else we just use N-Triples serialization.
 		return NTriplesUtil.toNTriplesString(value);
 	}
 
 	/**
 	 * Decode a previously encoded value.
-	 * 
+	 *
 	 * @param encodedValue the encoded value
 	 * @param valueFactory the factory to use for constructing the Value
 	 * @return the decoded Value
@@ -445,7 +439,7 @@ public abstract class Protocol {
 
 	/**
 	 * Decode a previously encoded Resource.
-	 * 
+	 *
 	 * @param encodedValue the encoded value
 	 * @param valueFactory the factory to use for constructing the Resource
 	 * @return the decoded Resource
@@ -461,7 +455,7 @@ public abstract class Protocol {
 
 	/**
 	 * Decode a previously encoded URI.
-	 * 
+	 *
 	 * @param encodedValue the encoded value
 	 * @param valueFactory the factory to use for constructing the URI
 	 * @return the decoded URI
@@ -477,7 +471,7 @@ public abstract class Protocol {
 
 	/**
 	 * Encodes a context resource for use in a URL.
-	 * 
+	 *
 	 * @param context The context to encode, possibly <tt>null</tt>.
 	 * @return The protocol-serialized representation of the supplied context, or {@link #NULL_PARAM_VALUE} if the
 	 *         supplied value was <tt>null</tt>.
@@ -492,7 +486,7 @@ public abstract class Protocol {
 
 	/**
 	 * Decode a previously encoded context Resource.
-	 * 
+	 *
 	 * @param encodedValue the encoded value
 	 * @param valueFactory the factory to use for constructing the Resource
 	 * @return the decoded Resource, or null if the encoded values was null or equal to {@link #NULL_PARAM_VALUE}
@@ -503,13 +497,18 @@ public abstract class Protocol {
 		} else if (NULL_PARAM_VALUE.equals(encodedValue)) {
 			return null;
 		} else {
-			return decodeResource(encodedValue, valueFactory);
+			Resource context = decodeResource(encodedValue, valueFactory);
+			// Context must be an IRI or BNode but never Triple
+			if (context instanceof Triple) {
+				throw new IllegalArgumentException("Invalid context value: " + encodedValue);
+			}
+			return context;
 		}
 	}
 
 	/**
 	 * Encode context resources for use in a URL.
-	 * 
+	 *
 	 * @param contexts the contexts to encode, must not be <tt>null</tt>.
 	 * @return the encoded contexts
 	 * @throws IllegalArgumentException If the <tt>contexts</tt> is <tt>null</tt>.
@@ -527,7 +526,7 @@ public abstract class Protocol {
 
 	/**
 	 * Decode previously encoded contexts.
-	 * 
+	 *
 	 * @param encodedValues the encoded values
 	 * @param valueFactory  the factory to use for constructing the Resources
 	 * @return the decoded Resources, or an empty array if the supplied <tt>encodedValues</tt> was <tt>null</tt>.

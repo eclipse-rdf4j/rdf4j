@@ -12,12 +12,12 @@ import org.eclipse.rdf4j.repository.Repository;
 
 /**
  * A specialized {@link Endpoint} that has a reference to a configured {@link Repository}.
- * 
+ *
  * <p>
  * Note that this implementation does not take care for the lifecycle of the repository. If the lifecycle of the
  * {@link Repository} should be managed by FedX, consider using {@link ManagedRepositoryEndpoint}
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

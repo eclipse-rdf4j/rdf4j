@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.junit.Test;
 
 public class TestServiceUpdateExprBuilder {

@@ -170,5 +170,23 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	public void meet(ZeroLengthPath node) throws X;
 
+	/**
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+	 *           implementations are expected to override.
+	 * @since 3.2.0
+	 */
+	public default void meet(TripleRef node) throws X {
+		// no-op
+	}
+
+	/**
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+	 *           implementations are expected to override.
+	 * @since 3.2.0
+	 */
+	public default void meet(ValueExprTripleRef node) throws X {
+		// no-op
+	}
+
 	public void meetOther(QueryModelNode node) throws X;
 }

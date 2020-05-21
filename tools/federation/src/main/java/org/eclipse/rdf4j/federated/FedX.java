@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
+import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.write.ReadOnlyWriteStrategy;
 import org.eclipse.rdf4j.federated.write.RepositoryWriteStrategy;
@@ -36,11 +37,11 @@ import org.slf4j.LoggerFactory;
  * a normal repository in a Sesame environment. The federation layer enables transparent access to the underlying
  * members as if they were a central repository.
  * <p>
- * 
+ *
  * For initialization of the federation and usage see {@link FederationManager}.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  */
 public class FedX extends AbstractSail implements RepositoryResolverClient {
 
@@ -70,7 +71,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	 * <p>
 	 * If the federation is already initialized, the given endpoint is explicitly initialized as well.
 	 * </p>
-	 * 
+	 *
 	 * @param endpoint
 	 */
 	protected void addMember(Endpoint endpoint) {
@@ -82,7 +83,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	/**
 	 * Remove a member from the federation (internal)
-	 * 
+	 *
 	 * @param endpoint
 	 * @return whether the member was removed
 	 */
@@ -93,19 +94,22 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	/**
 	 * Compute and return the {@link WriteStrategy} depending on the current federation configuration.
-	 * 
+	 *
 	 * The default implementation uses the {@link RepositoryWriteStrategy} with the first discovered writable
 	 * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
-	 * 
+	 *
 	 * @return the {@link WriteStrategy}
+	 * @throws FedXRuntimeException if the {@link WriteStrategy} could not be created
 	 */
 	public WriteStrategy getWriteStrategy() {
-		for (Endpoint e : members) {
-			if (e.isWritable()) {
-				return new RepositoryWriteStrategy(e.getRepository());
-			}
+		try {
+			return federationContext.getConfig()
+					.getWriteStrategyFactory()
+					.newInstance()
+					.create(members, federationContext);
+		} catch (Exception e) {
+			throw new FedXRuntimeException("Failed to instantiate write strategy: " + e.getMessage(), e);
 		}
-		return ReadOnlyWriteStrategy.INSTANCE;
 	}
 
 	@Override
@@ -162,7 +166,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	/**
 	 * Try to shut down all federation members.
-	 * 
+	 *
 	 * @throws FedXException if not all members could be shut down
 	 */
 	@Override
@@ -178,12 +182,13 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 			}
 		}
 
-		if (errors.size() > 0)
+		if (errors.size() > 0) {
 			throw new SailException("Federation could not be shut down. See logs for details.");
+		}
 	}
 
 	/**
-	 * 
+	 *
 	 * @return an unmodifiable view of the current members
 	 */
 	public List<Endpoint> getMembers() {

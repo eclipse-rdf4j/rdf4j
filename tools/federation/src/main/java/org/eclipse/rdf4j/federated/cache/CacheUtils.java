@@ -27,21 +27,25 @@ public class CacheUtils {
 	/**
 	 * Perform a "ASK" query for the provided statement to check if the endpoint can provide results. Update the cache
 	 * with the new information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoint
-	 * @param stmt
+	 * @param subj
+	 * @param pred
+	 * @param obj
+	 * @param queryInfo
+	 * @param contexts
 	 * @return
 	 * @throws OptimizationException
 	 */
 	private static boolean checkEndpointForResults(SourceSelectionCache cache, Endpoint endpoint, Resource subj,
-			IRI pred, Value obj, QueryInfo queryInfo)
+			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
 			throws OptimizationException {
 		try {
 			TripleSource t = endpoint.getTripleSource();
-			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo);
+			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo, contexts);
 
-			cache.updateInformation(new SubQuery(subj, pred, obj), endpoint, hasResults);
+			cache.updateInformation(new SubQuery(subj, pred, obj, contexts), endpoint, hasResults);
 
 			return hasResults;
 		} catch (Exception e) {
@@ -53,27 +57,31 @@ public class CacheUtils {
 	/**
 	 * Checks the cache if some endpoint can provide results to the subquery. If the cache has no knowledge a remote ask
 	 * query is performed and the cache is updated with appropriate information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoints
 	 * @param subj
 	 * @param pred
 	 * @param obj
+	 * @param queryInfo
+	 * @param contexts
 	 * @return whether some endpoint can provide results
 	 */
 	public static boolean checkCacheUpdateCache(SourceSelectionCache cache, List<Endpoint> endpoints, Resource subj,
 			IRI pred,
-			Value obj, QueryInfo queryInfo) {
+			Value obj, QueryInfo queryInfo, Resource... contexts) {
 
-		SubQuery q = new SubQuery(subj, pred, obj);
+		SubQuery q = new SubQuery(subj, pred, obj, contexts);
 
 		for (Endpoint e : endpoints) {
 			StatementSourceAssurance a = cache.getAssurance(q, e);
-			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS)
+			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
 				return true;
+			}
 			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
-					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo))
+					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -81,20 +89,22 @@ public class CacheUtils {
 	/**
 	 * Checks the cache for relevant statement sources to the provided statement. If the cache has no knowledge ask the
 	 * endpoint for further information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoints
 	 * @param subj
 	 * @param pred
 	 * @param obj
-	 * 
+	 * @param queryInfo
+	 * @param contexts
+	 *
 	 * @return the list of relevant statement sources
 	 */
 	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(SourceSelectionCache cache,
 			List<Endpoint> endpoints,
-			Resource subj, IRI pred, Value obj, QueryInfo queryInfo) {
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) {
 
-		SubQuery q = new SubQuery(subj, pred, obj);
+		SubQuery q = new SubQuery(subj, pred, obj, contexts);
 		List<StatementSource> sources = new ArrayList<>(endpoints.size());
 
 		for (Endpoint e : endpoints) {
@@ -105,8 +115,9 @@ public class CacheUtils {
 			} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
 
 				// check if the endpoint has results (statistics + ask request)
-				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo))
+				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
 					sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));
+				}
 			}
 		}
 		return sources;

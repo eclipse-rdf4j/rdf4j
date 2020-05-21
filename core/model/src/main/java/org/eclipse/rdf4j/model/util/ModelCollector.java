@@ -18,13 +18,13 @@ import java.util.stream.Collector;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.TreeModelFactory;
 
 /**
  * Collects a stream of Statements into a Model. By default a {@link org.eclipse.rdf4j.model.impl.LinkedHashModel
  * LinkedHashModel} will be returned.
- * 
+ *
  * @author Bart Hanssens
  */
 public class ModelCollector implements Collector<Statement, Model, Model> {
@@ -34,12 +34,12 @@ public class ModelCollector implements Collector<Statement, Model, Model> {
 	 * Constructor
 	 */
 	public ModelCollector() {
-		this.factory = new LinkedHashModelFactory();
+		this.factory = new DynamicModelFactory();
 	}
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param factory
 	 */
 	public ModelCollector(ModelFactory factory) {
@@ -48,7 +48,7 @@ public class ModelCollector implements Collector<Statement, Model, Model> {
 
 	/**
 	 * Convenience method to obtain a ModelCollector.
-	 * 
+	 *
 	 * @return a ModelCollector
 	 */
 	public static ModelCollector toModel() {
@@ -57,7 +57,7 @@ public class ModelCollector implements Collector<Statement, Model, Model> {
 
 	/**
 	 * Convenience method to obtain a ModelCollector, which will return a TreeModel.
-	 * 
+	 *
 	 * @return a ModelCollector
 	 */
 	public static ModelCollector toTreeModel() {

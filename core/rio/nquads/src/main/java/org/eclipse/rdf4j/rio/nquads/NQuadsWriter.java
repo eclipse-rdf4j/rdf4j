@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesWriter;
 
 /**
  * RDFWriter implementation for the {@link org.eclipse.rdf4j.rio.RDFFormat#NQUADS N-Quads} RDF format.
- * 
+ *
  * @author Joshua Shinavier
  */
 public class NQuadsWriter extends NTriplesWriter {
@@ -37,11 +37,7 @@ public class NQuadsWriter extends NTriplesWriter {
 	}
 
 	@Override
-	public void handleStatement(Statement st) throws RDFHandlerException {
-		if (!writingStarted) {
-			throw new RuntimeException("Document writing has not yet been started");
-		}
-
+	public void consumeStatement(Statement st) throws RDFHandlerException {
 		try {
 			// SUBJECT
 			writeValue(st.getSubject());

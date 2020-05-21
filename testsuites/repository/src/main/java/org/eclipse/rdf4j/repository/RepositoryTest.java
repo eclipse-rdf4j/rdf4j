@@ -25,7 +25,7 @@ import org.junit.rules.Timeout;
 
 /**
  * Integration test suite for implementations of Repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class RepositoryTest {
@@ -109,7 +109,7 @@ public abstract class RepositoryTest {
 
 	/**
 	 * Gets an (uninitialized) instance of the repository that should be tested.
-	 * 
+	 *
 	 * @return an uninitialized repository.
 	 */
 	protected abstract Repository createRepository() throws Exception;

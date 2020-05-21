@@ -115,13 +115,15 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
 				statement = sail.mapStatement(statement);
-				if (statement == null)
+				if (statement == null) {
 					return;
+				}
 				// we further only index statements where the Literal's datatype is
 				// accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.add(statement);
+				}
 			}
 		}
 
@@ -130,13 +132,15 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			// we only consider statements that contain literals
 			if (statement.getObject() instanceof Literal) {
 				statement = sail.mapStatement(statement);
-				if (statement == null)
+				if (statement == null) {
 					return;
+				}
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.remove(statement);
+				}
 			}
 		}
 	};

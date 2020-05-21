@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Utility class providing various methods to create Endpoints to be used as federation members.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -59,12 +59,12 @@ public class EndpointFactory {
 
 	/**
 	 * Construct a SPARQL endpoint using the the provided information.
-	 * 
+	 *
 	 * @param name     a descriptive name, e.g. http://dbpedia
 	 * @param endpoint the URL of the SPARQL endpoint, e.g. http://dbpedia.org/sparql
-	 * 
+	 *
 	 * @return an initialized {@link EndpointBase} containing the repository
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static Endpoint loadSPARQLEndpoint(String name, String endpoint) throws FedXException {
@@ -75,18 +75,19 @@ public class EndpointFactory {
 
 	/**
 	 * Construct a SPARQL endpoint using the the provided information and the host of the url as name.
-	 * 
+	 *
 	 * @param endpoint the URL of the SPARQL endpoint, e.g. http://dbpedia.org/sparql
-	 * 
+	 *
 	 * @return an initialized {@link EndpointBase} containing the repository
-	 * 
+	 *
 	 * @throws FedXException
 	 */
 	public static Endpoint loadSPARQLEndpoint(String endpoint) throws FedXException {
 		try {
 			String id = new URL(endpoint).getHost();
-			if (id.equals("localhost"))
+			if (id.equals("localhost")) {
 				id = id + "_" + new URL(endpoint).getPort();
+			}
 			return loadSPARQLEndpoint("http://" + id, endpoint);
 		} catch (MalformedURLException e) {
 			throw new FedXException("Malformed URL: " + endpoint);
@@ -94,45 +95,78 @@ public class EndpointFactory {
 	}
 
 	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName) throws FedXException {
+		return loadRemoteRepository(repositoryServer, repositoryName, false);
+	}
+
+	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName, boolean writable)
+			throws FedXException {
 		RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();
-		return repProvider.loadEndpoint(new RemoteRepositoryRepositoryInformation(repositoryServer, repositoryName));
+		RemoteRepositoryRepositoryInformation info = new RemoteRepositoryRepositoryInformation(repositoryServer,
+				repositoryName);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
 
 	}
 
 	/**
 	 * Load a {@link ResolvableEndpoint}
-	 * 
+	 *
 	 * <p>
 	 * The federation must be initialized with a {@link RepositoryResolver} ( see
 	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
 	 * the id provided by {@link Endpoint#getId()}
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * Note that the name is set to "http://" + repositoryId
 	 * </p>
-	 * 
+	 *
 	 * @param repositoryId the repository identifier
 	 * @return the configured {@link Endpoint}
 	 * @see ResolvableRepositoryProvider
 	 * @see ResolvableRepositoryInformation
 	 */
 	public static Endpoint loadResolvableRepository(String repositoryId) {
-		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();
-		return repProvider.loadEndpoint(new ResolvableRepositoryInformation(repositoryId));
+		return loadResolvableRepository(repositoryId, false);
 	}
 
 	/**
-	 * Load an {@link EndpointBase} for a given (configured) Repository.
+	 * Load a {@link ResolvableEndpoint}
+	 *
+	 * <p>
+	 * The federation must be initialized with a {@link RepositoryResolver} ( see
+	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
+	 * the id provided by {@link Endpoint#getId()}
+	 * </p>
+	 *
+	 * <p>
+	 * Note that the name is set to "http://" + repositoryId
+	 * </p>
+	 *
+	 * @param repositoryId the repository identifier
+	 * @param writable     whether to configure the endpoint as writable.
+	 * @return the configured {@link Endpoint}
+	 * @see ResolvableRepositoryProvider
+	 * @see ResolvableRepositoryInformation
+	 */
+	public static Endpoint loadResolvableRepository(String repositoryId, boolean writable) {
+		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();
+		ResolvableRepositoryInformation info = new ResolvableRepositoryInformation(repositoryId);
+		info.setWritable(writable);
+		return repProvider.loadEndpoint(info);
+	}
+
+	/**
+	 * Load an {@link Endpoint} for a given (configured) Repository.
 	 * <p>
 	 * Note that {@link EndpointType} is set to {@link EndpointType#Other}
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * If the repository is already initialized, it is assumed that the lifecycle is managed externally. Otherwise, FedX
 	 * will make sure to take care for the lifecycle of the repository, i.e. initialize and shutdown.
 	 * </p>
-	 * 
+	 *
 	 * @param id         the identifier, e.g. "myRepository"
 	 * @param repository the constructed repository
 	 * @return the initialized endpoint
@@ -154,18 +188,18 @@ public class EndpointFactory {
 
 	/**
 	 * Construct a NativeStore endpoint using the provided information.
-	 * 
+	 *
 	 * <p>
 	 * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
 	 * path is used, the repository is created on the fly (if necessary).
 	 * </p>
-	 * 
+	 *
 	 * @param name     a descriptive name, e.g. http://dbpedia
 	 * @param location the location of the data store, either absolute or relative in a "repositories" subfolder
 	 *                 {@link FedXRepository#getDataDir()}
-	 * 
+	 *
 	 * @return an initialized endpoint containing the repository
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static Endpoint loadNativeEndpoint(String name, File location) throws FedXException {
@@ -177,16 +211,16 @@ public class EndpointFactory {
 
 	/**
 	 * Construct a {@link NativeStore} endpoint using the provided information and the file location as name.
-	 * 
+	 *
 	 * <p>
 	 * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
 	 * path is used, the repository is created on the fly (if necessary).
 	 * </p>
-	 * 
+	 *
 	 * @param location the location of the data store
-	 * 
+	 *
 	 * @return an initialized endpoint containing the repository
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	public static Endpoint loadNativeEndpoint(File location) throws FedXException {
@@ -195,25 +229,26 @@ public class EndpointFactory {
 
 	/**
 	 * Utility function to load federation members from a data configuration file.
-	 * 
+	 *
 	 * <p>
 	 * A data configuration file provides information about federation members in form of turtle. Currently the types
 	 * NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to the documentation
 	 * in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
 	 * {@link SPARQLRepositoryInformation}.
 	 * </p>
-	 * 
+	 *
 	 * @param dataConfig
-	 * 
+	 *
 	 * @return a list of initialized endpoints, i.e. the federation members
-	 * 
+	 *
 	 * @throws IOException
 	 * @throws Exception
 	 */
 	public static List<Endpoint> loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
 
-		if (!dataConfig.exists())
+		if (!dataConfig.exists()) {
 			throw new FedXRuntimeException("File does not exist: " + dataConfig.getAbsolutePath());
+		}
 
 		Model graph = new TreeModel();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
@@ -235,7 +270,7 @@ public class EndpointFactory {
 	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
 	 * {@link SPARQLRepositoryInformation}.
 	 * </p>
-	 * 
+	 *
 	 * @param members
 	 * @param baseDir
 	 * @return list of endpoints
@@ -244,7 +279,7 @@ public class EndpointFactory {
 	public static List<Endpoint> loadFederationMembers(Model members, File baseDir) throws FedXException {
 
 		List<Endpoint> res = new ArrayList<>();
-		for (Statement st : members.filter(null, Vocabulary.FEDX.STORE, null)) {
+		for (Statement st : members.getStatements(null, Vocabulary.FEDX.STORE, null)) {
 			Endpoint e = loadEndpoint(members, st.getSubject(), st.getObject(), baseDir);
 			res.add(e);
 		}
@@ -285,9 +320,7 @@ public class EndpointFactory {
 			// TODO add reflection techniques to allow for flexibility
 			throw new UnsupportedOperationException("Operation not yet supported for generic type.");
 
-		}
-
-		else {
+		} else {
 			throw new FedXRuntimeException("Repository type not supported: " + repType.stringValue());
 		}
 
@@ -295,12 +328,12 @@ public class EndpointFactory {
 
 	/**
 	 * Construct a unique id for the provided SPARQL Endpoint, e.g
-	 * 
+	 *
 	 * http://dbpedia.org/ => %type%_dbpedia.org
-	 * 
+	 *
 	 * @param endpointID
 	 * @param type       the repository type, e.g. native, sparql, etc
-	 * 
+	 *
 	 * @return the ID for the SPARQL endpoint
 	 */
 	public static String getId(String endpointID, String type) {

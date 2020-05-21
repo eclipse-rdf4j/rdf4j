@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -15,7 +16,9 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -76,5 +79,38 @@ public class StatementsTest {
 		} catch (NullPointerException e) {
 			// fall through.
 		}
+	}
+
+	@Test
+	public void testRDFStarReification() {
+		Model rdfStarModel = RDFStarTestHelper.createRDFStarModel();
+
+		Model reifiedModel = RDFStarTestHelper.createRDFReificationModel();
+
+		Model convertedModel1 = new LinkedHashModel();
+		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
+		assertTrue("RDF* conversion to reification with implicit VF",
+				Models.isomorphic(reifiedModel, convertedModel1));
+
+		Model convertedModel2 = new LinkedHashModel();
+		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
+		assertTrue("RDF* conversion to reification with explicit VF",
+				Models.isomorphic(reifiedModel, convertedModel2));
+
+		Model convertedModel3 = new LinkedHashModel();
+		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
+				s, convertedModel3::add));
+		assertTrue("RDF* conversion to reification with explicit VF and custom BNode mapping",
+				Models.isomorphic(reifiedModel, convertedModel3));
+	}
+
+	@Test
+	public void testTripleToResourceMapper() {
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+		assertEquals("Identical triples must produce the same blank node",
+				Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
 	}
 }

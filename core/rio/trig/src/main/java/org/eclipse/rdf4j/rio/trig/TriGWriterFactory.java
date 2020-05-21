@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for TriG parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TriGWriterFactory implements RDFWriterFactory {

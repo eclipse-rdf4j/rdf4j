@@ -289,6 +289,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPredicateVar(getPredicateVar().clone());
 		clone.setObjectVar(getObjectVar().clone());
+		clone.setResultSizeEstimate(getResultSizeEstimate());
 
 		if (getContextVar() != null) {
 			clone.setContextVar(getContextVar().clone());
@@ -296,4 +297,5 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 		return clone;
 	}
+
 }

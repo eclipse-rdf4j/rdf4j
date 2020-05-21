@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.console.ConsoleState;
 
 /**
  * Print command
- * 
+ *
  * @author Dale Visser
  */
 public class PrintInfo extends ConsoleCommand {
@@ -34,7 +34,7 @@ public class PrintInfo extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 */

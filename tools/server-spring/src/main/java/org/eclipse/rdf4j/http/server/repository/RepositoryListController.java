@@ -32,7 +32,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for the list of repositories available on this server.
- * 
+ *
  * @author Herko ter Horst
  */
 public class RepositoryListController extends AbstractController {

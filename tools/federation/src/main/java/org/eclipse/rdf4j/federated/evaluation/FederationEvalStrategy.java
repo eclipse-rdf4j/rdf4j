@@ -80,6 +80,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -104,9 +105,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Base class for the Evaluation strategies.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see SailFederationEvalStrategy
  * @see SparqlFederationEvalStrategy
  *
@@ -145,7 +146,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	/**
 	 * Create the {@link SourceSelectionCache}
-	 * 
+	 *
 	 * @return the {@link SourceSelectionCache}
 	 * @see FedXConfig#getSourceSelectionCacheSpec()
 	 */
@@ -188,15 +189,16 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		info.optimize(query);
 
 		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null && !info.hasService()
-				&& queryInfo.getQueryType() != QueryType.UPDATE)
+		if (members.size() == 1 && queryInfo.getQuery() != null && propagateServices(info.getServices())
+				&& queryInfo.getQueryType() != QueryType.UPDATE) {
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
+		}
 
 		if (log.isTraceEnabled()) {
 			log.trace("Query before Optimization: " + query);
 		}
 
-		/* original sesame optimizers */
+		/* original RDF4J optimizers */
 		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later
 
 		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);
@@ -208,15 +210,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		/* custom optimizers, execute only when needed */
 
-		// if the query has a single relevant source (and if it is no a SERVICE query), evaluate at this source only
+		// if the query has a single relevant source (and if it is not a SERVICE query), evaluate at this source only
 		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
 		// write strategy
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
-		if (relevantSources.size() == 1 && !info.hasService() && queryInfo.getQueryType() != QueryType.UPDATE)
+		if (relevantSources.size() == 1 && propagateServices(info.getServices())
+				&& queryInfo.getQueryType() != QueryType.UPDATE) {
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
+		}
 
-		if (info.hasService())
+		if (info.hasService()) {
 			new ServiceOptimizer(queryInfo).optimize(query);
+		}
 
 		// optimize unions, if available
 		if (info.hasUnion()) {
@@ -235,8 +240,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// optimize Filters, if available
 		// Note: this is done after the join order is determined to ease filter pushing
-		if (info.hasFilter())
+		if (info.hasFilter()) {
 			new FilterOptimizer().optimize(query);
+		}
 
 		if (log.isTraceEnabled()) {
 			log.trace("Query after Optimization: " + query);
@@ -248,7 +254,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Perform source selection for all statements of the query. As a result of this method all statement nodes are
 	 * annotated with their relevant sources.
-	 * 
+	 *
 	 * @param members
 	 * @param cache
 	 * @param queryInfo
@@ -272,8 +278,27 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	}
 
 	/**
+	 * Whether to propagate a {@link SingleSourceQuery} containing SERVICE clauses. By default, the query is always
+	 * evaluated within the FedX engine if it contains a SERVICE clause.
+	 * <p>
+	 * Customized implementation may propagate a {@link SingleSourceQuery} including the SERVICE clause (e.g. for
+	 * Wikidata the Label service can only be accessed in the wikidata endpoint.
+	 * </p>
+	 *
+	 * @param serviceNodes
+	 * @return if <code>true</code>, a {@link SingleSourceQuery} containing SERVICE clauses is propagated as-is
+	 */
+	protected boolean propagateServices(List<Service> serviceNodes) {
+		boolean hasServices = serviceNodes != null && !serviceNodes.isEmpty();
+		if (hasServices) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Optimize {@link ExclusiveTupleExpr}, e.g. restructure the exclusive parts of the query AST.
-	 * 
+	 *
 	 * @param query
 	 * @param queryInfo
 	 * @param info
@@ -312,15 +337,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return evaluateLeftJoin((FedXLeftJoin) expr, bindings);
 		}
 
-		if (expr instanceof SingleSourceQuery)
+		if (expr instanceof SingleSourceQuery) {
 			return evaluateSingleSourceQuery((SingleSourceQuery) expr, bindings);
+		}
 
 		if (expr instanceof FedXService) {
 			return evaluateService((FedXService) expr, bindings);
 		}
 
-		if (expr instanceof EmptyResult)
+		if (expr instanceof EmptyResult) {
 			return new EmptyIteration<>();
+		}
 
 		return super.evaluate(expr, bindings);
 	}
@@ -328,20 +355,20 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Retrieve the statements matching the provided subject, predicate and object value from the federation members.
 	 * <p>
-	 * 
+	 *
 	 * For a bound statement, i.e. a statement with no free variables, the statement itself is returned if some member
 	 * has this statement, an empty iteration otherwise.
 	 * <p>
-	 * 
+	 *
 	 * If the statement has free variables, i.e. one of the provided arguments in <code>null</code>, the union of
 	 * results from relevant statement sources is constructed.
-	 * 
+	 *
 	 * @param subj
 	 * @param pred
 	 * @param obj
 	 * @param contexts
 	 * @return the statement iteration
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -350,15 +377,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
-		if (contexts.length != 0)
-			log.warn("Context queries are not yet supported by FedX.");
-
 		List<Endpoint> members = federationContext.getFederation().getMembers();
 
 		// a bound query: if at least one fed member provides results
 		// return the statement, otherwise empty result
 		if (subj != null && pred != null && obj != null) {
-			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo)) {
+			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo, contexts)) {
 				return new SingletonIteration<>(
 						FedXUtil.valueFactory().createStatement(subj, pred, obj));
 			}
@@ -367,10 +391,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// form the union of results from relevant endpoints
 		List<StatementSource> sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,
-				obj, queryInfo);
+				obj, queryInfo, contexts);
 
-		if (sources.isEmpty())
+		if (sources.isEmpty()) {
 			return new EmptyIteration<>();
+		}
 
 		if (sources.size() == 1) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());
@@ -434,7 +459,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	/**
 	 * Evaluate a {@link FedXLeftJoin} (i.e. an OPTIONAL clause)
-	 * 
+	 *
 	 * @param leftJoin
 	 * @param bindings
 	 * @return the resulting iteration
@@ -446,7 +471,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		/*
 		 * NOTE: this implementation is taken from StrictEvaluationStrategy.evaluate(LeftJoin, BindingSet)
-		 * 
+		 *
 		 * However, we have to take care for some concurrency scheduling to guarantee the order in which subqueries are
 		 * executed.
 		 */
@@ -501,15 +526,15 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	/**
 	 * Execute the join in a separate thread using some join executor.
-	 * 
+	 *
 	 * Join executors are for instance: - {@link SynchronousJoin} - {@link SynchronousBoundJoin} -
 	 * {@link ControlledWorkerJoin} - {@link ControlledWorkerBoundJoin}
 	 *
 	 * For endpoint federation use controlled worker bound join, for local federation use controlled worker join. The
 	 * other operators are there for completeness.
-	 * 
+	 *
 	 * Use {@link FederationEvalStrategy#executor} to execute the join (it is a runnable).
-	 * 
+	 *
 	 * @param joinScheduler
 	 * @param leftIter
 	 * @param rightArg
@@ -530,7 +555,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Evaluate an {@link ExclusiveTupleExpr}. The default implementation converts the given expression to a SELECT
 	 * query string and evaluates it at the source.
-	 * 
+	 *
 	 * @param expr
 	 * @param bindings
 	 * @return the result
@@ -561,13 +586,14 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
 			String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr, bindings,
 					filterValueExpr,
-					isEvaluated);
+					isEvaluated, expr.getQueryInfo().getDataset());
 			return t.getStatements(preparedQuery, bindings,
 					(isEvaluated.get() ? null : filterValueExpr), expr.getQueryInfo());
 		} catch (IllegalQueryException e) {
 			/* no projection vars, e.g. local vars only, can occur in joins */
-			if (t.hasStatements(expr, bindings))
+			if (t.hasStatements(expr, bindings)) {
 				return new SingleBindingSetIteration(bindings);
+			}
 			return new EmptyIteration<>();
 		}
 	}
@@ -575,7 +601,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Evaluate a bound join at the relevant endpoint, i.e. i.e. for a group of bindings retrieve results for the bound
 	 * statement from the relevant endpoints
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return the result iteration
@@ -587,7 +613,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	/**
 	 * Perform a grouped check at the relevant endpoints, i.e. for a group of bindings keep only those for which at
 	 * least one endpoint provides a result to the bound statement.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return the result iteration
@@ -598,9 +624,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 	/**
 	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.
-	 * 
+	 *
 	 * See {@link ControlledWorkerBoundJoin} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
-	 * 
+	 *
 	 * @param service
 	 * @param bindings
 	 * @return the result iteration
@@ -632,10 +658,12 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 
-		if (expr instanceof FilterExpr)
+		if (expr instanceof FilterExpr) {
 			return evaluate((FilterExpr) expr, bindings);
-		if (expr instanceof ConjunctiveFilterExpr)
+		}
+		if (expr instanceof ConjunctiveFilterExpr) {
 			return evaluate((ConjunctiveFilterExpr) expr, bindings);
+		}
 
 		return super.evaluate(expr, bindings);
 	}
@@ -664,18 +692,21 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			}
 		}
 
-		if (error != null)
+		if (error != null) {
 			throw error;
+		}
 
 		return BooleanLiteral.TRUE;
 	}
 
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(Object preparedQuery,
 			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
-		if (preparedQuery instanceof String)
+		if (preparedQuery instanceof String) {
 			return evaluateAtStatementSources((String) preparedQuery, statementSources, queryInfo);
-		if (preparedQuery instanceof TupleExpr)
+		}
+		if (preparedQuery instanceof TupleExpr) {
 			return evaluateAtStatementSources((TupleExpr) preparedQuery, statementSources, queryInfo);
+		}
 		throw new RuntimeException(
 				"Unsupported type for prepared query: " + preparedQuery.getClass().getCanonicalName());
 	}
@@ -692,9 +723,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
 				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), (FilterValueExpr) null,
 						queryInfo);
-			}
-
-			else {
+			} else {
 				WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 				for (StatementSource source : statementSources) {
@@ -728,9 +757,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 						.getEndpoint(statementSources.get(0).getEndpointID());
 				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();
 				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);
-			}
-
-			else {
+			} else {
 				WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 				for (StatementSource source : statementSources) {

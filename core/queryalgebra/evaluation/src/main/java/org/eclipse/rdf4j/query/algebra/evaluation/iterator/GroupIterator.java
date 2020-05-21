@@ -235,7 +235,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	/**
 	 * A unique key for a set of existing bindings.
-	 * 
+	 *
 	 * @author David Huynh
 	 */
 	protected class Key implements Serializable {

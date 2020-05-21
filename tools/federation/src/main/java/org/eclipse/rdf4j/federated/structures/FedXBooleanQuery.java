@@ -19,10 +19,10 @@ import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
 /**
  * Abstraction of a {@link SailBooleanQuery} which takes care for tracking the
  * {@link FedXRepositoryConnection#BINDING_ORIGINAL_MAX_EXECUTION_TIME} during evaluation.
- * 
+ *
  * All methods are delegated to the actual {@link SailBooleanQuery}.
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */
@@ -113,8 +113,8 @@ public class FedXBooleanQuery extends SailBooleanQuery {
 	}
 
 	@Override
-	public void setMaxExecutionTime(int maxExecutionTime) {
-		delegate.setMaxExecutionTime(maxExecutionTime);
+	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+		delegate.setMaxExecutionTime(maxExecutionTimeSeconds);
 	}
 
 	@Override

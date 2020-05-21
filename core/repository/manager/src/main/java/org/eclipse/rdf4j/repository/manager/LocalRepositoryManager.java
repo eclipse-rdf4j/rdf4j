@@ -13,7 +13,6 @@ import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSIT
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -70,7 +69,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 /**
  * An implementation of the {@link RepositoryManager} interface that operates directly on the repository data files in
  * the local file system.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class LocalRepositoryManager extends RepositoryManager {
@@ -112,7 +111,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Creates a new RepositoryManager that operates on the specfified base directory.
-	 * 
+	 *
 	 * @param baseDir The base directory where data for repositories can be stored, among other things.
 	 */
 	public LocalRepositoryManager(File baseDir) {
@@ -145,7 +144,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Gets the base dir against which to resolve relative paths.
-	 * 
+	 *
 	 * @throws MalformedURLException If the path cannot be parsed as a URL
 	 */
 	@Override
@@ -224,7 +223,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	/**
 	 * Resolves the specified path against the manager's base directory.
-	 * 
+	 *
 	 * @see #getBaseDir
 	 */
 	public File resolvePath(String path) {
@@ -266,7 +265,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * Creates the stack of Repository objects for the repository represented by the specified
 	 * {@link org.eclipse.rdf4j.repository.config.RepositoryImplConfig}. Uses a
 	 * {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} to create the repository and initialize it.
-	 * 
+	 *
 	 * @param config The node representing the to-be-created repository in the configuration.
 	 * @return The created repository, or <tt>null</tt> if no such repository exists.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration

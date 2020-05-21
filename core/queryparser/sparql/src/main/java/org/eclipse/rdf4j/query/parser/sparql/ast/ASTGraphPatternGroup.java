@@ -23,4 +23,15 @@ public class ASTGraphPatternGroup extends SimpleNode {
 	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data) throws VisitorException {
 		return visitor.visit(this, data);
 	}
+
+	@Override
+	public boolean isScopeChange() {
+		if (!(this.parent instanceof ASTExistsFunc
+				|| this.parent instanceof ASTNotExistsFunc
+				|| this.parent instanceof ASTGraphGraphPattern
+				|| this.parent instanceof ASTWhereClause)) {
+			return true;
+		}
+		return super.isScopeChange();
+	}
 }

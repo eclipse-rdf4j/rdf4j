@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.federated.exception;
 
 /**
- * 
+ *
  * @author Andreas Schwarte
  *
  */

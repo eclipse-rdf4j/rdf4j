@@ -60,7 +60,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.parse(model, implNode);
 
 		try {
-			Models.objectLiteral(model.filter(implNode, ProxyRepositorySchema.PROXIED_ID, null))
+			Models.objectLiteral(model.getStatements(implNode, ProxyRepositorySchema.PROXIED_ID, null))
 					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);

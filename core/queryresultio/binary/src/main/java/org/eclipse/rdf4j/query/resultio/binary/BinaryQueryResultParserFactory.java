@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 
 /**
  * A {@link TupleQueryResultParserFactory} for binary tuple query result parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BinaryQueryResultParserFactory implements TupleQueryResultParserFactory {

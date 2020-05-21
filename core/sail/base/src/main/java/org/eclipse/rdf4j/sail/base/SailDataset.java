@@ -13,13 +13,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A state of an {@link SailSource} at a point in time that will remain consistent until {@link #close()} is called. The
  * life cycle follows that of a read operation.
- * 
+ *
  * @author James Leigh
  */
 public interface SailDataset extends SailClosable {
@@ -35,7 +36,7 @@ public interface SailDataset extends SailClosable {
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this object.
-	 * 
+	 *
 	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
 	 * @throws SailException If this object encountered an error or unexpected situation internally.
 	 */
@@ -43,7 +44,7 @@ public interface SailDataset extends SailClosable {
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
-	 * 
+	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
 	 * @return The namespace name that is associated with the specified prefix, or <tt>null</tt> if there is no such
 	 *         namespace.
@@ -54,7 +55,7 @@ public interface SailDataset extends SailClosable {
 
 	/**
 	 * Returns the set of all unique context identifiers that are used to store statements.
-	 * 
+	 *
 	 * @return An iterator over the context identifiers, should not contain any duplicates.
 	 */
 	CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException;
@@ -63,7 +64,7 @@ public interface SailDataset extends SailClosable {
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
 	 * to statements matching one or more of the specified contexts.
-	 * 
+	 *
 	 * @param subj     A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred     A IRI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj      A Value specifying the object, or <tt>null</tt> for a wildcard.
@@ -74,5 +75,20 @@ public interface SailDataset extends SailClosable {
 	 */
 	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException;
+
+	/**
+	 * Gets all RDF* triples that have a specific subject, predicate and/or object. All three parameters may be null to
+	 * indicate wildcards.
+	 *
+	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
+	 * @param pred A IRI specifying the predicate, or <tt>null</tt> for a wildcard.
+	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @return An iterator over the relevant triples.
+	 * @throws SailException If the triple source failed to get the RDF* triples.
+	 */
+	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException {
+		throw new SailException("RDF* triple retrieval not supported by this store");
+	}
 
 }

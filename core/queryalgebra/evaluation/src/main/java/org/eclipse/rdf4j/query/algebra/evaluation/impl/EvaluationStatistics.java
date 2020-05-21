@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -28,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -129,10 +130,10 @@ public class EvaluationStatistics {
 				// more than one free variable in a single triple pattern
 				if (count == 1 && node.getServiceVars().size() > 1) {
 					cardinality = 100 + node.getServiceVars().size(); // TODO (should
-																		// be higher
-																		// than other
-																		// simple
-																		// stmts)
+					// be higher
+					// than other
+					// simple
+					// stmts)
 				} else {
 					// only very selective statements should be better than this
 					// => evaluate service expressions first
@@ -144,6 +145,13 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(StatementPattern sp) {
 			cardinality = getCardinality(sp);
+		}
+
+		@Override
+		public void meet(TripleRef tripleRef) {
+			cardinality = getSubjectCardinality(tripleRef.getSubjectVar())
+					* getPredicateCardinality(tripleRef.getPredicateVar())
+					* getObjectCardinality(tripleRef.getObjectVar());
 		}
 
 		protected double getCardinality(StatementPattern sp) {
@@ -280,5 +288,7 @@ public class EvaluationStatistics {
 		public void meet(StatementPattern node) throws RuntimeException {
 			count++;
 		}
-	};
+	}
+
+	;
 }

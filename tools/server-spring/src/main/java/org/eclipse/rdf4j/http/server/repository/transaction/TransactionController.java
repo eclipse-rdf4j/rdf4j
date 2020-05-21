@@ -90,7 +90,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for transaction creation on a repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TransactionController extends AbstractController {
@@ -298,7 +298,7 @@ public class TransactionController extends AbstractController {
 
 	/**
 	 * Get all statements and export them as RDF.
-	 * 
+	 *
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Transaction transaction, HttpServletRequest request,
@@ -393,7 +393,7 @@ public class TransactionController extends AbstractController {
 		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 		model.put(QueryResultView.FACTORY_KEY, factory);
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
-														// requests.
+		// requests.
 		return new ModelAndView(view, model);
 	}
 

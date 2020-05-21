@@ -46,7 +46,7 @@ public class MemBNode extends SimpleBNode implements MemResource {
 
 	/**
 	 * Creates a new MemBNode for a bnode ID.
-	 * 
+	 *
 	 * @param creator The object that is creating this MemBNode.
 	 * @param id      bnode ID.
 	 */

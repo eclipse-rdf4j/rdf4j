@@ -24,9 +24,11 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.getRepositoryID;
 import static org.eclipse.rdf4j.http.protocol.Protocol.getRepositoryLocation;
 import static org.eclipse.rdf4j.http.protocol.Protocol.getServerLocation;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.Test;
@@ -113,5 +115,35 @@ public class ProtocolTest {
 		BNode decodedNode = (BNode) Protocol.decodeValue(encodedBnode, vf);
 		assertEquals(bnode, decodedNode);
 
+		Triple triple1 = vf.createTriple(bnode, uri, vf.createLiteral(16));
+		String encodedTriple1 = Protocol.encodeValue(triple1);
+		Triple decodedTriple1 = (Triple) Protocol.decodeValue(encodedTriple1, vf);
+		assertEquals(triple1, decodedTriple1);
+
+		Triple triple2 = vf.createTriple(bnode, uri, triple1);
+		String encodedTriple2 = Protocol.encodeValue(triple2);
+		Triple decodedTriple2 = (Triple) Protocol.decodeValue(encodedTriple2, vf);
+		assertEquals(triple2, decodedTriple2);
+	}
+
+	@Test
+	public void testDecodeContext() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		assertEquals(vf.createBNode("bnode1"), Protocol.decodeContext("_:bnode1", vf));
+		assertEquals(vf.createIRI("urn:test"), Protocol.decodeContext("<urn:test>", vf));
+
+		// RDF* triples are resources but they can't be used as context values
+		try {
+			Protocol.decodeContext("<<<urn:a> <urn:b> <urn:c>>>", SimpleValueFactory.getInstance());
+			fail("Must fail with exception");
+		} catch (IllegalArgumentException e) {
+			// ignore
+		}
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void testParseIRIvsTriple() {
+		Protocol.decodeURI("<<<urn:a><urn:b><urn:c>>>", SimpleValueFactory.getInstance());
 	}
 }

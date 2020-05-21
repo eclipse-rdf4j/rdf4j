@@ -17,13 +17,14 @@ import ch.qos.logback.classic.Logger;
 
 /**
  * Console log level setting.
- * 
+ *
  * @author Bart Hanssens
  */
 public class LogLevel extends ConsoleSetting<String> {
 	public final static String NAME = "log";
 
 	private static final BiMap<String, Level> LOG_LEVELS;
+
 	static {
 		ImmutableBiMap.Builder<String, Level> logLevels = ImmutableBiMap.<String, Level>builder();
 

@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Algebra construct representing an empty union.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

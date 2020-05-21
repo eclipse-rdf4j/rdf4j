@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
  * An implementation of the {@link TupleQueryResult} interface that stores the complete query result in memory. The
  * query results in a MutableTupleQueryResult can be iterated over multiple times and can also be iterated over in
  * reverse order.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
@@ -61,7 +61,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * Creates a query result table with the supplied binding names. <em>The supplied list of binding names is assumed
 	 * to be constant</em>; care should be taken that the contents of this list doesn't change after supplying it to
 	 * this solution.
-	 * 
+	 *
 	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public MutableTupleQueryResult(Collection<String> bindingNames, Collection<? extends BindingSet> bindingSets) {
@@ -161,7 +161,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * {@link #previous}, if any. (If the table contains no binding sets, the new element becomes the sole element on
 	 * the table.) The new element is inserted before the implicit cursor: a subsequent call to <tt>next()</tt> would be
 	 * unaffected, and a subsequent call to <tt>previous()</tt> would return the new binding set.
-	 * 
+	 *
 	 * @param bindingSet The binding set to insert.
 	 */
 	public void insert(BindingSet bindingSet) {

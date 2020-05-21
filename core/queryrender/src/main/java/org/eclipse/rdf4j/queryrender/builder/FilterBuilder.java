@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * <p>
  * Builder class for creating a filter expression in a query.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */

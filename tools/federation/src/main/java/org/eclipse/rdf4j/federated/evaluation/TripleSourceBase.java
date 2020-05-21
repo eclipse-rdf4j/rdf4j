@@ -14,9 +14,14 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.GraphToBindingSetConversionIteration;
+import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
@@ -65,10 +70,11 @@ public abstract class TripleSourceBase implements TripleSource {
 			QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
+			final String baseURI = queryInfo.getBaseURI();
 			switch (queryType) {
 			case SELECT:
 				monitorRemoteRequest();
-				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery);
+				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 				applyBindings(tQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(tQuery);
 				configureInference(tQuery, queryInfo);
@@ -76,7 +82,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				return;
 			case CONSTRUCT:
 				monitorRemoteRequest();
-				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery);
+				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 				applyBindings(gQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(gQuery);
 				configureInference(gQuery, queryInfo);
@@ -86,7 +92,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				monitorRemoteRequest();
 				boolean hasResults = false;
 				try (RepositoryConnection _conn = conn) {
-					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery);
+					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 					applyBindings(bQuery, queryBindings);
 					applyMaxExecutionTimeUpperBound(bQuery);
 					configureInference(bQuery, queryInfo);
@@ -110,6 +116,46 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	@Override
+	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
+			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException,
+			QueryEvaluationException {
+
+		return withConnection((conn, resultHolder) -> {
+
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
+			applyMaxExecutionTimeUpperBound(query);
+			configureInference(query, queryInfo);
+
+			// evaluate the query
+			monitorRemoteRequest();
+			CloseableIteration<BindingSet, QueryEvaluationException> res = query.evaluate();
+			resultHolder.set(res);
+
+			// apply filter and/or insert original bindings
+			if (filterExpr != null) {
+				if (bindings.size() > 0) {
+					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+							this.strategy);
+				} else {
+					res = new FilteringIteration(filterExpr, res, this.strategy);
+				}
+				if (!res.hasNext()) {
+					Iterations.closeCloseable(res);
+					conn.close();
+					resultHolder.set(new EmptyIteration<>());
+					return;
+				}
+			} else if (bindings.size() > 0) {
+				res = new InsertBindingsIteration(res, bindings);
+			}
+
+			resultHolder.set(new ConsumingIteration(res));
+
+		});
+	}
+
+	@Override
 	public boolean hasStatements(Resource subj,
 			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
 		try (RepositoryConnection conn = endpoint.getConnection()) {
@@ -123,7 +169,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			QueryEvaluationException {
 
 		monitorRemoteRequest();
-		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings);
+		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getQueryInfo().getDataset());
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedAskQuery);
 			configureInference(query, group.getQueryInfo());
@@ -137,14 +183,15 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> booleanToBindingSetIteration(boolean hasResult) {
-		if (hasResult)
+		if (hasResult) {
 			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());
+		}
 		return new EmptyIteration<>();
 	}
 
 	/**
 	 * Set includeInferred depending on {@link QueryInfo#getIncludeInferred()}
-	 * 
+	 *
 	 * @param query
 	 * @param queryInfo
 	 */
@@ -161,7 +208,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Apply an upper bound of the maximum execution time using
 	 * {@link FedXUtil#applyMaxQueryExecutionTime(Operation, FederationContext)}.
-	 * 
+	 *
 	 * @param operation the operation
 	 */
 	protected void applyMaxExecutionTimeUpperBound(Operation operation) {
@@ -176,7 +223,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Convenience method to perform an operation on a {@link RepositoryConnection}. This method takes care for closing
 	 * resources as well error handling. The resulting iteration has to be supplied to the {@link ResultHolder}.
-	 * 
+	 *
 	 * @param operation the {@link ConnectionOperation}
 	 * @return the resulting iteration
 	 */
@@ -208,19 +255,19 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	/**
 	 * Interface defining the operation to be perform on the connection
-	 * 
+	 *
 	 * <p>
 	 * Typical pattern
 	 * </p>
-	 * 
+	 *
 	 * <pre>
 	 * CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res = withConnection((conn, resultHolder) -> {
 	 *  	// do something with conn
 	 * 		resultHolder.set(...)
 	 * });
-	 * 
+	 *
 	 * </pre>
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 * @param <T>
@@ -233,7 +280,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
 	 * that the result holder should also be set with temporary results to properly allow error handling.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 * @param <T>

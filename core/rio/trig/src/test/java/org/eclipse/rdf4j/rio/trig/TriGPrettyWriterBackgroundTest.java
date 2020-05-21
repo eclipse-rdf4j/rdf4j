@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * Unit tests for the TriG pretty printing functionality
- * 
+ *
  * @author Peter Ansell
  */
 public class TriGPrettyWriterBackgroundTest extends RDFWriterTest {

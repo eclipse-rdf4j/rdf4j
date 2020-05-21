@@ -46,7 +46,7 @@ public class TestProxyRepositoryFactory {
 		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"), RepositoryConfigSchema.NAMESPACE,
 				RDFFormat.TURTLE);
 		RepositoryConfig config = RepositoryConfig.create(graph,
-				Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+				Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
 						.orElseThrow(() -> new RepositoryConfigException("missing Repository instance in config")));
 		config.validate();
 		assertThat(config.getID()).isEqualTo("proxy");

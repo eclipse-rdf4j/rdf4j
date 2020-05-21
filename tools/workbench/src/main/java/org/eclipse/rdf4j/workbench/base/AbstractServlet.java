@@ -66,6 +66,7 @@ public abstract class AbstractServlet implements Servlet {
 	protected static final String APPLICATION_SPARQL_RESULTS_XML = "application/sparql-results+xml";
 
 	protected static final String TEXT_HTML = "text/html";
+	protected static final String TEXT_PLAIN = "text/plain";
 
 	protected static final String USER_AGENT = "User-Agent";
 
@@ -195,7 +196,7 @@ public abstract class AbstractServlet implements Servlet {
 	/**
 	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the result content type to the best
 	 * available match for that, returning a builder that can be used to write out the results.
-	 * 
+	 *
 	 * @param req          the current HTTP request
 	 * @param resp         the current HTTP response
 	 * @param outputStream TODO

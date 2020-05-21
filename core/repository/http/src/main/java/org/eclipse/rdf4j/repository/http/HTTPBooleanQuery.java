@@ -16,12 +16,13 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
  * UnautorizedException, the semantics of which is defined by the HTTP protocol.
- * 
+ *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  */
@@ -45,5 +46,10 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+		throw new UnsupportedOperationException();
 	}
 }

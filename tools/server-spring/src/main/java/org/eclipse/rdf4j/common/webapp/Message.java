@@ -18,7 +18,9 @@ public class Message {
 		ERROR,
 		WARN,
 		INFO
-	};
+	}
+
+	;
 
 	private Type type;
 

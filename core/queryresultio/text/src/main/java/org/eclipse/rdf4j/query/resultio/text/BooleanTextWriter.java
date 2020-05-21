@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 
 /**
  * Writer for the plain text boolean result format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanTextWriter extends AbstractQueryResultWriter implements BooleanQueryResultWriter {
@@ -119,7 +119,7 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	}
 
 	@Override
-	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
 		throw new UnsupportedOperationException("Cannot handle tuple results");
 	}
 

@@ -40,7 +40,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Base class for {@link RDFParser}s offering common functionality for RDF parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public abstract class AbstractRDFParser implements RDFParser {
@@ -70,6 +70,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * The ValueFactory to use for creating RDF model objects.
 	 */
 	protected ValueFactory valueFactory;
+
+	private ValueFactory originalValueFactory;
 
 	/**
 	 * The base URI for resolving relative URIs.
@@ -107,7 +109,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a new RDFParserBase that will use the supplied ValueFactory to create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	protected AbstractRDFParser(ValueFactory valueFactory) {
@@ -130,6 +132,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	@Override
 	public RDFParser setValueFactory(ValueFactory valueFactory) {
 		this.valueFactory = valueFactory;
+		this.originalValueFactory = valueFactory;
 		return this;
 	}
 
@@ -318,12 +321,13 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix or throws an {@link RDFParseException}.
-	 * 
+	 *
 	 * @throws RDFParseException if no namespace is associated with this prefix
 	 */
 	protected String getNamespace(String prefix) throws RDFParseException {
-		if (namespaceTable.containsKey(prefix))
+		if (namespaceTable.containsKey(prefix)) {
 			return namespaceTable.get(prefix);
+		}
 		String msg = "Namespace prefix '" + prefix + "' used but not defined";
 
 		if ("".equals(prefix)) {
@@ -342,6 +346,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 		baseURI = null;
 		nextBNodePrefix = createUniqueBNodePrefix();
 		namespaceTable.clear();
+		// Don't use the setter setValueFactory() as it will update originalValueFactory too
+		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
+			valueFactory = new RDFStarDecodingValueFactory(originalValueFactory);
+		} else {
+			valueFactory = originalValueFactory;
+		}
 
 		initializeNamespaceTableFromConfiguration();
 	}
@@ -356,7 +366,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Clears the map that keeps track of blank nodes that have been parsed. Normally, this map is clear when the
 	 * document has been parsed completely, but subclasses can clear the map at other moments too, for example when a
 	 * bnode scope ends.
-	 * 
+	 *
 	 * @deprecated Map is no longer used, call {@link #clear()} instead.
 	 */
 	@Deprecated
@@ -521,7 +531,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Creates a {@link Literal} object with the supplied parameters, using the lineNo and columnNo to enhance error
 	 * messages or exceptions that may be generated during the creation of the literal.
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(String, String, IRI, ParserConfig,
 	 *      ParseErrorListener, ValueFactory, long, long)
 	 */
@@ -566,7 +576,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a warning to the registered ParseErrorListener, if any. This method simply calls
-	 * {@link #reportWarning(String,long,long)} supplying <tt>-1</tt> for the line- and column number.
+	 * {@link #reportWarning(String, long, long)} supplying <tt>-1</tt> for the line- and column number.
 	 */
 	protected void reportWarning(String msg) {
 		reportWarning(msg, -1, -1);
@@ -587,7 +597,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
@@ -607,7 +617,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
@@ -634,7 +644,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param e               The exception whose message will be used for
 	 *                        {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
@@ -655,7 +665,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param e               The exception whose message will be used for
 	 *                        {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
@@ -683,7 +693,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
 	 * @param e               The exception whose message will be used for
@@ -709,7 +719,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <tt>ParseException</tt>
-	 * afterwards. This method simply calls {@link #reportFatalError(String,long,long)} supplying <tt>-1</tt> for the
+	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long)} supplying <tt>-1</tt> for the
 	 * line- and column number.
 	 */
 	protected void reportFatalError(String msg) throws RDFParseException {
@@ -731,7 +741,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * to the ParseErrorListener, assuming that it has already been reported when the original ParseException was
 	 * thrown.
 	 * <p>
-	 * This method simply calls {@link #reportFatalError(Exception,long,long)} supplying <tt>-1</tt> for the line- and
+	 * This method simply calls {@link #reportFatalError(Exception, long, long)} supplying <tt>-1</tt> for the line- and
 	 * column number.
 	 */
 	protected void reportFatalError(Exception e) throws RDFParseException {

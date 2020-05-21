@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
@@ -34,7 +34,7 @@ public interface RdfBlankNode extends RdfResource {
 
 	/**
 	 * an anonymous blank node
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> Blank node syntax</a>
 	 */
 	class AnonymousBlankNode implements RdfBlankNode {
@@ -46,7 +46,7 @@ public interface RdfBlankNode extends RdfResource {
 
 	/**
 	 * A blank node representing a resource that matches the contained set of predicate-object lists
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> Blank node syntax</a>
 	 */
 	class PropertiesBlankNode implements RdfBlankNode {
@@ -59,12 +59,12 @@ public interface RdfBlankNode extends RdfResource {
 		/**
 		 * Using the predicate-object and object list mechanisms, expand this blank node's pattern to include triples
 		 * consisting of this blank node as the subject, and the given predicate and object(s)
-		 * 
+		 *
 		 * @param predicate the predicate of the triple to add
 		 * @param objects   the object or objects of the triple to add
-		 * 
+		 *
 		 * @return this blank node
-		 * 
+		 *
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> Predicate-Object
 		 *      Lists</a>
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#objLists"> Object Lists</a>
@@ -77,10 +77,10 @@ public interface RdfBlankNode extends RdfResource {
 
 		/**
 		 * Add predicate-object lists to this blank node's pattern
-		 * 
+		 *
 		 * @param lists the {@link RdfPredicateObjectList}(s) to add
 		 * @return this blank node
-		 * 
+		 *
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> Predicate-Object
 		 *      Lists</a>
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#objLists"> Object Lists</a>
@@ -93,9 +93,9 @@ public interface RdfBlankNode extends RdfResource {
 
 		/**
 		 * convert this blank node to a triple pattern
-		 * 
+		 *
 		 * @return the triple pattern identified by this blank node
-		 * 
+		 *
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> blank node syntax</a>
 		 */
 		public TriplePattern toTp() {

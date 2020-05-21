@@ -38,7 +38,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for transaction creation on a repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TransactionStartController extends AbstractController {

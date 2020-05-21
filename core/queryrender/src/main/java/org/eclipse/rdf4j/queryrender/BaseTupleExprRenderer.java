@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * <p>
  * Base class for rendering RDF4J query API objects into strings.
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Exception> {
@@ -114,7 +114,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Render the ParsedQuery as a query string
-	 * 
+	 *
 	 * @param theQuery the parsed query to render
 	 * @return the query object rendered in the serql syntax
 	 * @throws Exception if there is an error while rendering
@@ -125,7 +125,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Render the TupleExpr as a query or query fragment depending on what kind of TupleExpr it is
-	 * 
+	 *
 	 * @param theExpr the expression to render
 	 * @return the TupleExpr rendered in the serql syntax
 	 * @throws Exception if there is an error while rendering
@@ -134,7 +134,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Render the given ValueExpr
-	 * 
+	 *
 	 * @param theExpr the expr to render
 	 * @return the rendered expression
 	 * @throws Exception if there is an error while rendering
@@ -144,7 +144,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	/**
 	 * Turn a ProjectionElemList for a construct query projection (three elements aliased as 'subject', 'predicate' and
 	 * 'object' in that order) into a StatementPattern.
-	 * 
+	 *
 	 * @param theList the elem list to render
 	 * @return the elem list for a construct projection as a statement pattern
 	 * @throws Exception if there is an exception while rendering
@@ -168,7 +168,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Scrub any illegal characters out of the variable name
-	 * 
+	 *
 	 * @param theName the potential variable name
 	 * @return the name scrubbed of any illegal characters
 	 */
@@ -178,7 +178,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Return the {@link ValueExpr} as a {@link Value} if possible.
-	 * 
+	 *
 	 * @param theValue the ValueExpr to convert
 	 * @return the expression as a Value, or null if it cannot be converted
 	 * @throws Exception if there is an error converting to a Value
@@ -200,7 +200,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Returns whether or not the results of scanning the query model indicates that this represents a select query
-	 * 
+	 *
 	 * @return true if its a select query, false if its a construct query
 	 */
 	protected boolean isSelect() {
@@ -218,7 +218,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 
 	/**
 	 * Return whether or not this projection looks like an spo binding for a construct query
-	 * 
+	 *
 	 * @param theList the projection element list to inspect
 	 * @return true if it has the format of a spo construct projection element, false otherwise
 	 */

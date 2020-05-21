@@ -9,14 +9,14 @@ package org.eclipse.rdf4j.common.webapp.navigation;
 
 /**
  * View represents a "leaf" in the navigation model, for example a page in a website.
- * 
+ *
  * @author Herko ter Horst
  */
 public class View extends AbstractNavigationNode {
 
 	/**
 	 * Construct a new view with the specified ID.
-	 * 
+	 *
 	 * @param id the ID of the view
 	 */
 	public View(String id) {

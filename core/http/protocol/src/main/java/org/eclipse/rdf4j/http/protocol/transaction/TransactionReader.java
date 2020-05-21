@@ -20,7 +20,7 @@ public class TransactionReader {
 
 	/**
 	 * parse the transaction from the serialization
-	 * 
+	 *
 	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
 	 * @throws IOException  If IO problems during parsing.
 	 */
@@ -36,7 +36,7 @@ public class TransactionReader {
 
 	/**
 	 * parse the transaction from the serialization
-	 * 
+	 *
 	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader or if the XML is faulty.
 	 * @throws IOException  If IO problems during parsing.
 	 */

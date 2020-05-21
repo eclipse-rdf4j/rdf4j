@@ -10,14 +10,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 /**
  * Interface used by {@link org.eclipse.rdf4j.sail.config.SailFactory} and
  * {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} that can make external SERVICE calls.
- * 
+ *
  * @author James Leigh
  */
 public interface FederatedServiceResolverClient {
 
 	/**
 	 * Sets the {@link FederatedServiceResolver} to use for this client.
-	 * 
+	 *
 	 * @param resolver The resolver to use.
 	 */
 	void setFederatedServiceResolver(FederatedServiceResolver resolver);

@@ -34,7 +34,7 @@ import org.xml.sax.SAXException;
 
 /**
  * Parses an RDF transaction document into a collection of {@link TransactionOperation} objects.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
@@ -62,7 +62,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	/**
 	 * get the parsed transaction
-	 * 
+	 *
 	 * @return the parsed transaction
 	 */
 	public Collection<TransactionOperation> getTxn() {

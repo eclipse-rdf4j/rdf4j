@@ -24,7 +24,7 @@ public class FileUtil {
 
 	/**
 	 * Gets the relative representations of a file compared to another.
-	 * 
+	 *
 	 * @param subj       The File to find the relative form for.
 	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
@@ -96,7 +96,7 @@ public class FileUtil {
 
 	/**
 	 * Gets the relative representations of a file compared to another.
-	 * 
+	 *
 	 * @param subj       The File to find the relative form for.
 	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
@@ -107,7 +107,7 @@ public class FileUtil {
 
 	/**
 	 * Gets the extension of the specified file name.
-	 * 
+	 *
 	 * @param fileName A file name.
 	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt> if the file name does not have a (valid)
 	 *         extension.
@@ -128,7 +128,7 @@ public class FileUtil {
 
 	/**
 	 * Checks whether the specified file name is a legal (DOS/Windows-) file name.
-	 * 
+	 *
 	 * @param fileName name of the file
 	 * @return true if all characters of the name are legal to use
 	 */
@@ -145,7 +145,7 @@ public class FileUtil {
 
 	/**
 	 * Checks whether the specified character is a legal (DOS/Windows-) file name character.
-	 * 
+	 *
 	 * @param c character to check
 	 * @return true if character is legal to use
 	 */
@@ -155,7 +155,7 @@ public class FileUtil {
 
 	/**
 	 * Copies the contents of file <tt>source</tt> to file <tt>destination</tt>.
-	 * 
+	 *
 	 * @param source      source file
 	 * @param destination destination file
 	 * @throws IOException
@@ -168,7 +168,7 @@ public class FileUtil {
 
 	/**
 	 * Creates a directory if it doesn't exist yet.
-	 * 
+	 *
 	 * @param dir The directory to create.
 	 * @throws IOException If the creation of the directory failed.
 	 */
@@ -180,7 +180,7 @@ public class FileUtil {
 
 	/**
 	 * Deletes a directory, recursively deleting all the files and subdirectories in it, or just a file.
-	 * 
+	 *
 	 * @param directory file or directory to delete
 	 * @return true if all files were deleted successfully.
 	 */
@@ -208,7 +208,7 @@ public class FileUtil {
 
 	/**
 	 * Deletes all files in the specified directory. Nothing happens when the specified File is not a directory.
-	 * 
+	 *
 	 * @param directory
 	 * @return true when all files in the specified directory were successfully deleted, when there where no files or
 	 *         when the specified file was not a directory.
@@ -232,7 +232,7 @@ public class FileUtil {
 	/**
 	 * Deletes all files and subdirectories in the specified directory. Nothing happens when the specified File is not a
 	 * directory.
-	 * 
+	 *
 	 * @param directory
 	 * @return true when all children were successfully deleted, when there were no children or when the file was not a
 	 *         directory.
@@ -253,7 +253,7 @@ public class FileUtil {
 	/**
 	 * Moves the given file and all files under it (if it's a directory) to the given location, excluding the given
 	 * collection of File objects!
-	 * 
+	 *
 	 * @param from     File or directory to be moved
 	 * @param to       The file or directory to rename to
 	 * @param excludes The File objects to be excluded; if a directory is excluded, all files under it are excluded as
@@ -298,7 +298,7 @@ public class FileUtil {
 
 	/**
 	 * Creates a new and empty directory in the default temp directory using the given prefix.
-	 * 
+	 *
 	 * @param prefix The prefix string to be used in generating the directory's name; must be at least three characters
 	 *               long.
 	 * @return A newly-created empty directory.
@@ -312,7 +312,7 @@ public class FileUtil {
 
 	/**
 	 * Deletes the specified directory and any files and directories in it recursively.
-	 * 
+	 *
 	 * @param dir The directory to remove.
 	 * @throws IOException If the directory could not be removed.
 	 */

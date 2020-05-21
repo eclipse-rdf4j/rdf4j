@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.io.Serializable;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Main interface for all query model nodes.
  */
@@ -17,72 +19,120 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	/**
 	 * Visits this node. The node reports itself to the visitor with the proper runtime type.
 	 */
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X;
+	<X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X;
 
 	/**
 	 * Visits the children of this node. The node calls {@link #visit(QueryModelVisitor)} on all of its child nodes.
 	 */
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X;
+	<X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X;
 
 	/**
 	 * Gets the node's parent.
-	 * 
+	 *
 	 * @return The parent node, if any.
 	 */
-	public QueryModelNode getParentNode();
+	QueryModelNode getParentNode();
 
 	/**
 	 * Sets the node's parent.
-	 * 
+	 *
 	 * @param parent The parent node for this node.
 	 */
-	public void setParentNode(QueryModelNode parent);
+	void setParentNode(QueryModelNode parent);
 
 	/**
 	 * Replaces one of the child nodes with a new node.
-	 * 
+	 *
 	 * @param current     The current child node.
 	 * @param replacement The new child node.
 	 * @throws IllegalArgumentException If <tt>current</tt> is not one of node's children.
 	 * @throws ClassCastException       If <tt>replacement</tt> is of an incompatible type.
 	 */
-	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement);
+	void replaceChildNode(QueryModelNode current, QueryModelNode replacement);
 
 	/**
 	 * Substitutes this node with a new node in the query model tree.
-	 * 
+	 *
 	 * @param replacement The new node.
 	 * @throws IllegalStateException If this node does not have a parent node.
 	 * @throws ClassCastException    If <tt>replacement</tt> is of an incompatible type.
 	 */
-	public void replaceWith(QueryModelNode replacement);
+	void replaceWith(QueryModelNode replacement);
 
 	/**
 	 * Returns <tt>true</tt> if this query model node and its children are recursively equal to <tt>o</tt> and its
 	 * children.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
 	 * Returns an indented print of the node tree, starting from this node.
 	 */
 	@Override
-	public String toString();
+	String toString();
 
 	/**
 	 * Returns the signature of this query model node. Signatures normally include the node's name and any parameters,
 	 * but not parent or child nodes. This method is used by {@link #toString()}.
-	 * 
+	 *
 	 * @return The node's signature, e.g. <tt>SLICE (offset=10, limit=10)</tt>.
 	 */
-	public String getSignature();
+	String getSignature();
 
 	/**
 	 * Returns a (deep) clone of this query model node. This method recursively clones the entire node tree, starting
 	 * from this nodes.
-	 * 
+	 *
 	 * @return A deep clone of this query model node.
 	 */
-	public QueryModelNode clone();
+	QueryModelNode clone();
+
+	/**
+	 * Returns the number of tuples that this QueryNode predicts will be outputted. For a StatementPattern this would be
+	 * the estimated cardinality provided by the EvaluationStatistics. For a Join the would be the resulting number of
+	 * joined tuples.
+	 *
+	 * @return rows
+	 */
+	@Experimental
+	default double getResultSizeEstimate() {
+		return -1;
+	}
+
+	@Experimental
+	default void setResultSizeEstimate(double rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getResultSizeActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setResultSizeActual(long resultSizeActual) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostEstimate() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostEstimate(double costEstimate) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getTotalTimeNanosActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setTotalTimeNanosActual(long totalTime) {
+		// no-op
+	}
+
 }

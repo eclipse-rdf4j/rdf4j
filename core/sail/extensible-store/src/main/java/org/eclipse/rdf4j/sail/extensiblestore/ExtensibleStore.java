@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics.EvaluationStatisticsEnum;
+import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,14 +53,17 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleStore.class);
 
-	private ExtensibleSailStore sailStore;
+	protected ExtensibleSailStore sailStore;
 
 	protected N namespaceStore;
 
 	protected T dataStructure;
-	protected T dataStructureInferred;
 
 	final boolean cacheEnabled;
+
+	private EvaluationStrategyFactory evalStratFactory;
+	private SPARQLServiceResolver dependentServiceResolver;
+	private FederatedServiceResolver serviceResolver;
 
 	public ExtensibleStore() {
 		this(true);
@@ -79,15 +84,13 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 
 		DataStructureInterface dataStructure = Objects.requireNonNull(this.dataStructure);
-		DataStructureInterface dataStructureInferred = Objects.requireNonNull(this.dataStructureInferred);
 
 		if (cacheEnabled) {
 			dataStructure = new ReadCache(dataStructure);
-			dataStructureInferred = new ReadCache(dataStructureInferred);
 		}
 
-		sailStore = new ExtensibleSailStore(dataStructure, dataStructureInferred,
-				Objects.requireNonNull(namespaceStore));
+		sailStore = new ExtensibleSailStore(dataStructure,
+				Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType(), getExtensibleStatementHelper());
 
 		sailStore.init();
 		namespaceStore.init();
@@ -105,7 +108,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
-
+		this.serviceResolver = resolver;
 	}
 
 	@Override
@@ -113,25 +116,14 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		return SimpleValueFactory.getInstance();
 	}
 
-	private EvaluationStrategyFactory evalStratFactory;
-
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
 		if (evalStratFactory == null) {
 			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
-		evalStratFactory.setQuerySolutionCacheThreshold(0);
+		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
+		evalStratFactory.setTrackResultSize(isTrackResultSize());
 		return evalStratFactory;
 	}
-
-	/**
-	 * independent life cycle
-	 */
-	private FederatedServiceResolver serviceResolver;
-
-	/**
-	 * dependent life cycle
-	 */
-	private SPARQLServiceResolver dependentServiceResolver;
 
 	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
 		if (serviceResolver == null) {
@@ -145,7 +137,6 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 
 	public void setEvaluationStrategyFactory(EvaluationStrategyFactory evalStratFactory) {
 		this.evalStratFactory = evalStratFactory;
-
 	}
 
 	@Override
@@ -153,8 +144,16 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		sailStore.close();
 		sailStore = null;
 		dataStructure = null;
-		dataStructureInferred = null;
 		namespaceStore = null;
+	}
+
+	// override this method to change which evaluation statistics to use
+	public EvaluationStatisticsEnum getEvaluationStatisticsType() {
+		return EvaluationStatisticsEnum.dynamic;
+	}
+
+	public ExtensibleStatementHelper getExtensibleStatementHelper() {
+		return ExtensibleStatementHelper.getDefaultImpl();
 	}
 
 }

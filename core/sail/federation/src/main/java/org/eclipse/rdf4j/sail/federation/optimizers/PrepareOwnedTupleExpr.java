@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
 /**
  * Remove redundant {@link OwnedTupleExpr}.
- * 
+ *
  * @author James Leigh
  */
 public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {
@@ -260,11 +260,11 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 				// no owner
 				builder = null; // NOPMD
 			} else if (builder != null) {
-				if (TupleExprs.isGraphPatternGroup(arg)) {
+				if (TupleExprs.isVariableScopeChange(arg)) {
 					builder.append("{");
 				}
 				builder.append(pattern);
-				if (TupleExprs.isGraphPatternGroup(arg)) {
+				if (TupleExprs.isVariableScopeChange(arg)) {
 					builder.append("}");
 				}
 				builder.append("\n");
@@ -288,11 +288,11 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 
 		leftArg.visit(this);
 		if (patternNode != null) {
-			if (TupleExprs.isGraphPatternGroup(leftArg)) {
+			if (TupleExprs.isVariableScopeChange(leftArg)) {
 				builder.append("{");
 			}
 			builder.append(pattern);
-			if (TupleExprs.isGraphPatternGroup(leftArg)) {
+			if (TupleExprs.isVariableScopeChange(leftArg)) {
 				builder.append("}");
 			}
 			builder.append("\n");
@@ -300,11 +300,11 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 			vars.putAll(variables);
 			rightArg.visit(this);
 			if (patternNode != null) {
-				if (TupleExprs.isGraphPatternGroup(rightArg)) {
+				if (TupleExprs.isVariableScopeChange(rightArg)) {
 					builder.append("{");
 				}
 				builder.append(pattern);
-				if (TupleExprs.isGraphPatternGroup(rightArg)) {
+				if (TupleExprs.isVariableScopeChange(rightArg)) {
 					builder.append("}");
 				}
 				builder.append("\n");

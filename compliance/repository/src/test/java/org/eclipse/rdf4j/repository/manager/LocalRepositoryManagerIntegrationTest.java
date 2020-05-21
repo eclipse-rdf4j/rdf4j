@@ -40,7 +40,7 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * Integration tests for {@link LocalRepositoryManager}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerIntegrationTest {

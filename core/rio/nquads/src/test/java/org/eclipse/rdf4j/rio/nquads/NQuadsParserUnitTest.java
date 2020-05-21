@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
  * JUnit test for the N-Quads parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class NQuadsParserUnitTest extends AbstractNQuadsParserUnitTest {

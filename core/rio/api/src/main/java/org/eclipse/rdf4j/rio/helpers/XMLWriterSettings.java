@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating writer settings that XML writers may support.
- * 
+ *
  * @author Peter Ansell
  */
 public class XMLWriterSettings {
@@ -25,7 +25,7 @@ public class XMLWriterSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.include_xml_pi}
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
 	 */
@@ -39,7 +39,7 @@ public class XMLWriterSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.include_root_rdf_tag}
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-complete-document">RDF/XML
 	 *      specification</a>
 	 */
@@ -60,7 +60,7 @@ public class XMLWriterSettings {
 	/**
 	 * Boolean setting for RDF/XML Writer to determine if the character used to quote attribute values, (single quote or
 	 * double quote) is also replaced within text nodes by it's corresponding entity.
-	 * 
+	 *
 	 * <p>
 	 * Defaults to false.
 	 * <p>

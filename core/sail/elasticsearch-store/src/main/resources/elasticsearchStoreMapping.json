@@ -40,6 +40,9 @@
       },
       "context_BNode": {
         "type": "boolean"
+      },
+      "inferred": {
+        "type": "boolean"
       }
     }
   }

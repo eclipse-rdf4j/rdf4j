@@ -42,7 +42,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for the list of namespace definitions for a repository.
- * 
+ *
  * @author Herko ter Horst
  */
 public class NamespacesController extends AbstractController {

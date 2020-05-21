@@ -26,8 +26,9 @@ public class MonitoringUtil {
 	private static MonitoringService getMonitoringService(FederationContext federationContext)
 			throws FedXRuntimeException {
 		Monitoring m = federationContext.getMonitoringService();
-		if (m instanceof MonitoringService)
+		if (m instanceof MonitoringService) {
 			return (MonitoringService) m;
+		}
 		throw new FedXRuntimeException("Monitoring is currently disabled for this system.");
 	}
 

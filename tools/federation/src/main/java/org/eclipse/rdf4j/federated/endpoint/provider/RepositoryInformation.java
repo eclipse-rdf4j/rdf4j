@@ -18,6 +18,8 @@ public class RepositoryInformation {
 	private EndpointType type = EndpointType.Other; // the endpoint type, default Other
 	private EndpointConfiguration endpointConfiguration; // optional configuration settings for the endpoint
 
+	private boolean writable;
+
 	public RepositoryInformation(String id, String name, String location, EndpointType type) {
 		props.setProperty("id", id);
 		props.setProperty("name", name);
@@ -70,5 +72,19 @@ public class RepositoryInformation {
 
 	public void setType(EndpointType type) {
 		this.type = type;
+	}
+
+	/**
+	 * @return the writable
+	 */
+	public boolean isWritable() {
+		return writable;
+	}
+
+	/**
+	 * @param writable the writable to set
+	 */
+	public void setWritable(boolean writable) {
+		this.writable = writable;
 	}
 }

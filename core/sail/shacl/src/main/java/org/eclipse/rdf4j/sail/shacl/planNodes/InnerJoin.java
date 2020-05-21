@@ -311,8 +311,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		PlanNode[] planNodes = { joined, discardedLeft, discardedRight, left, right };
 
 		for (PlanNode planNode : planNodes) {
-			if (planNode != null)
+			if (planNode != null) {
 				planNode.receiveLogger(validationExecutionLogger);
+			}
 		}
 
 	}

@@ -30,9 +30,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Represents statements that can produce results at a some particular endpoints, the statement sources.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see StatementSource
  */
 public class StatementSourcePattern extends FedXStatementPattern {
@@ -75,12 +75,13 @@ public class StatementSourcePattern extends FedXStatementPattern {
 				 * efficient to use getStatements(subj, pred, obj) instead of evaluating a prepared query.
 				 */
 
-				if (t.usePreparedQuery()) {
+				if (t.usePreparedQuery(this, queryInfo)) {
 
 					// queryString needs to be constructed only once for a given bindingset
 					if (preparedQuery == null) {
 						try {
-							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated);
+							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
+									queryInfo.getDataset());
 						} catch (IllegalQueryException e1) {
 							/* all vars are bound, this must be handled as a check query, can occur in joins */
 							CloseableIteration<BindingSet, QueryEvaluationException> res = handleStatementSourcePatternCheck(
@@ -127,8 +128,9 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					.getEndpointManager()
 					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			if (t.hasStatements(this, bindings, queryInfo))
+			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {
 				return new SingleBindingSetIteration(bindings);
+			}
 		}
 
 		return new EmptyIteration<>();

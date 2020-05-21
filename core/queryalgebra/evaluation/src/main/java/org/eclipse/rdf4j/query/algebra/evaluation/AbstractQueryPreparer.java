@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -126,6 +127,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				}
 			}
 		}
+
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
+		}
 	}
 
 	class TupleQueryImpl extends AbstractParserQuery implements TupleQuery {
@@ -179,6 +185,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				throws QueryEvaluationException, TupleQueryResultHandlerException {
 			TupleQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
+		}
+
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -283,6 +294,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException {
 			GraphQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
+		}
+
+		@Override
+		public Explanation explain(Explanation.Level level) {
+			throw new UnsupportedOperationException();
 		}
 	}
 

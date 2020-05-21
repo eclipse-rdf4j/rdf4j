@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * A MemoryStore-specific extension of Literal giving it node properties.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class MemLiteral extends SimpleLiteral implements MemValue {
@@ -40,7 +40,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 
 	/**
 	 * Creates a new Literal which will get the supplied label.
-	 * 
+	 *
 	 * @param creator The object that is creating this MemLiteral.
 	 * @param label   The label for this literal.
 	 */
@@ -51,7 +51,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 
 	/**
 	 * Creates a new Literal which will get the supplied label and language code.
-	 * 
+	 *
 	 * @param creator The object that is creating this MemLiteral.
 	 * @param label   The label for this literal.
 	 * @param lang    The language code of the supplied label.
@@ -63,7 +63,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 
 	/**
 	 * Creates a new Literal which will get the supplied label and datatype.
-	 * 
+	 *
 	 * @param creator  The object that is creating this MemLiteral.
 	 * @param label    The label for this literal.
 	 * @param datatype The datatype of the supplied label.

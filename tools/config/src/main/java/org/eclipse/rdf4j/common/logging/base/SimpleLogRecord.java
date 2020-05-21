@@ -52,7 +52,7 @@ public class SimpleLogRecord implements LogRecord {
 
 	/**
 	 * Set log level
-	 * 
+	 *
 	 * @param level
 	 */
 	public void setLevel(LogLevel level) {
@@ -61,7 +61,7 @@ public class SimpleLogRecord implements LogRecord {
 
 	/**
 	 * Set message
-	 * 
+	 *
 	 * @param message text
 	 */
 	public void setMessage(String message) {
@@ -70,7 +70,7 @@ public class SimpleLogRecord implements LogRecord {
 
 	/**
 	 * Set stack trace as list of strings
-	 * 
+	 *
 	 * @param stackTrace list of strings
 	 */
 	public void setStackTrace(List<String> stackTrace) {
@@ -79,7 +79,7 @@ public class SimpleLogRecord implements LogRecord {
 
 	/**
 	 * Set thread name
-	 * 
+	 *
 	 * @param threadName
 	 */
 	public void setThreadName(String threadName) {
@@ -88,7 +88,7 @@ public class SimpleLogRecord implements LogRecord {
 
 	/**
 	 * Set date time
-	 * 
+	 *
 	 * @param time time
 	 */
 	public void setTime(Date time) {

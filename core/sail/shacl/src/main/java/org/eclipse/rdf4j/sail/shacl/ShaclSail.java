@@ -50,6 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 //@formatter:off
+
 /**
  * A {@link Sail} implementation that adds support for the Shapes Constraint Language (SHACL).
  * <p>
@@ -131,7 +132,7 @@ import org.slf4j.LoggerFactory;
  *  			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
  *  			try {
  *  				connection.commit();
- *  			} catch (RepositoryException exception) {
+ *            } catch (RepositoryException exception) {
  *  				Throwable cause = exception.getCause();
  *  				if (cause instanceof ShaclSailValidationException) {
  *  					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
@@ -139,11 +140,11 @@ import org.slf4j.LoggerFactory;
  *  					// use validationReport or validationReportModel to understand validation violations
  *
  *  					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *  				}
+ *                }
  *  				throw exception;
- *  			}
- *  		}
- *  	}
+ *            }
+ *        }
+ *    }
  * }
  * </pre>
  *
@@ -399,6 +400,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+
+		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
+		if (shaclSailConnection.isEmpty()) {
+			return;
+		}
 
 		long prevSize;
 		long currentSize = shaclSailConnection.size();

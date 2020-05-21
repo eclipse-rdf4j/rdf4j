@@ -14,14 +14,14 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 /**
  * Provides concurrent access to tuple results as they are being parsed.
- * 
+ *
  * @author James Leigh
  * @deprecated Use {@link org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult} instead.
  */
 @Deprecated
 public class BackgroundTupleResult extends org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult {
 	public BackgroundTupleResult(TupleQueryResultParser parser, InputStream in) {
-		this(new QueueCursor<BindingSet>(10), parser, in);
+		this(new QueueCursor<>(10), parser, in);
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {

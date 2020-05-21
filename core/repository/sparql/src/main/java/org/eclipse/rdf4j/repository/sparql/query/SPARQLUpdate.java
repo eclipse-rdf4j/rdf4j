@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
 /**
  * Update operation of the {@link SPARQLRepository}
- * 
+ *
  * @author Jeen Broekstra
  * @author Andreas Schwarte
  */

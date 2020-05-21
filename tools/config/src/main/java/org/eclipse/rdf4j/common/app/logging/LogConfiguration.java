@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.common.logging.LogReader;
 
 /**
  * Configuration settings for application logging.
- * 
+ *
  * @author Herko ter Horst
  */
 public interface LogConfiguration extends Configuration {
@@ -40,28 +40,28 @@ public interface LogConfiguration extends Configuration {
 
 	/**
 	 * The base location on the file system for logging configuration and data
-	 * 
+	 *
 	 * @return the base location on the file system for logging configuration and data
 	 */
 	public abstract File getBaseDir();
 
 	/**
 	 * The location on the file system where logging configuration is stored.
-	 * 
+	 *
 	 * @return the location on the file system where logging configuration is stored
 	 */
 	public abstract File getConfDir();
 
 	/**
 	 * The location on the file system where logging data is stored.
-	 * 
+	 *
 	 * @return the location on the file system where logging data is stored
 	 */
 	public abstract File getLoggingDir();
 
 	/**
 	 * A reader that can read logging information as stored by the specific logger's appender.
-	 * 
+	 *
 	 * @param appender Name of the appender to which the LogReader is attached
 	 * @return a reader that can read logging information as stored by the logger configured through this
 	 *         LogConfiguration
@@ -70,35 +70,35 @@ public interface LogConfiguration extends Configuration {
 
 	/**
 	 * Default (fallback) LogReader instance.
-	 * 
+	 *
 	 * @return default (fallback) LogReader instance.
 	 */
 	public abstract LogReader getDefaultLogReader();
 
 	/**
 	 * Is debug logging enabled?
-	 * 
+	 *
 	 * @return true if debug logging is enabled, false otherwise
 	 */
 	public abstract boolean isDebugLoggingEnabled();
 
 	/**
 	 * Enable or disable debug logging.
-	 * 
+	 *
 	 * @param enabled set to true if debug logging should be enabled, set to false otherwise
 	 */
 	public abstract void setDebugLoggingEnabled(boolean enabled);
 
 	/**
 	 * Set application configuration
-	 * 
+	 *
 	 * @param config application configuration
 	 */
 	public abstract void setAppConfiguration(AppConfiguration config);
 
 	/**
 	 * Get application configuration
-	 * 
+	 *
 	 * @return application configuration
 	 */
 	public abstract AppConfiguration getAppConfiguration();

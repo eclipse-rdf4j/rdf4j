@@ -186,8 +186,9 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
 
 	synchronized Model getDelegate() {
-		if (disk == null)
+		if (disk == null) {
 			return memory;
+		}
 		return disk;
 	}
 

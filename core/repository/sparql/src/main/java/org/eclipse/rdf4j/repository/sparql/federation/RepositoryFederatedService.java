@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Federated Service wrapping the {@link Repository} to communicate with a SPARQL endpoint.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class RepositoryFederatedService implements FederatedService {
@@ -51,7 +51,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * A convenience iteration for SERVICE expression which evaluates intermediate results in batches and manages all
 	 * results. Uses {@link JoinExecutorBase} facilities to guarantee correct access to the final results
-	 * 
+	 *
 	 * @author as
 	 */
 	private class BatchingServiceIteration extends JoinExecutorBase<BindingSet> {
@@ -93,7 +93,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Helper iteration to evaluate a block of {@link BindingSet}s using the simple
 	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -123,7 +123,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Wrapper iteration which closes a {@link RepositoryConnection} upon {@link #close()}
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -234,7 +234,7 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 
 			if (service.isSilent()) {
-				return new SilentIteration<BindingSet, QueryEvaluationException>(result);
+				return new SilentIteration<>(result);
 			} else {
 				return result;
 			}
@@ -363,7 +363,7 @@ public class RepositoryFederatedService implements FederatedService {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
 			TupleQueryResult res = null;
 			query.setMaxExecutionTime(60); // TODO how to retrieve max query value
-											// from actual setting?
+			// from actual setting?
 			res = query.evaluate();
 
 			if (relevantBindingNames.isEmpty()) {
@@ -371,7 +371,7 @@ public class RepositoryFederatedService implements FederatedService {
 				// product
 			} else {
 				result = new ServiceJoinConversionIteration(res, allBindings); // common
-																				// join
+				// join
 			}
 
 			if (useFreshConnection) {
@@ -426,7 +426,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Evaluate the service expression for the given lists of bindings using {@link FallbackServiceIteration}, i.e.
 	 * basically as a simple join without VALUES clause.
-	 * 
+	 *
 	 * @param service     the SERVICE
 	 * @param allBindings all bindings to be processed
 	 * @param baseUri     the base URI
@@ -448,7 +448,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
 	 * projection if it is not already present.
-	 * 
+	 *
 	 * @param queryString  the SELECT query string from the SERVICE node
 	 * @param valuesClause the constructed VALUES clause
 	 * @return the final String
@@ -487,7 +487,7 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param boundJoinBlockSize the bound join block size, 0 to evaluate all in a single request
 	 */
 	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
@@ -495,7 +495,7 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param flag whether to use a fresh {@link RepositoryConnection} for each individual query
 	 */
 	public void setUseFreshConnection(boolean flag) {
@@ -530,7 +530,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Return a fresh {@link RepositoryConnection} from the configured repository.
-	 * 
+	 *
 	 * @return connection
 	 * @throws RepositoryException
 	 */
@@ -541,7 +541,7 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Retrieve a (re-usable) connection. If it is not yet created, open a fresh connection. Note that this connection
 	 * is closed automatically when shutting this service.
-	 * 
+	 *
 	 * @return connection
 	 * @throws RepositoryException
 	 */
@@ -558,7 +558,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 * bound by an input binding.
 	 * <p>
 	 * If the resulting list is empty, the cross product needs to be formed.
-	 * 
+	 *
 	 * @param bindings
 	 * @param serviceVars
 	 * @return the list of relevant bindings (if empty: the cross product needs to be formed)
@@ -582,7 +582,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 * Computes the VALUES clause for the set of relevant input bindings. The VALUES clause is attached to a subquery
 	 * for block-nested-loop evaluation. Implementation note: we use a special binding to mark the rowIndex of the input
 	 * binding.
-	 * 
+	 *
 	 * @param bindings
 	 * @param relevantBindingNames
 	 * @return a string with the VALUES clause for the given set of relevant input bindings
@@ -604,8 +604,8 @@ public class RepositoryFederatedService implements FederatedService {
 		for (BindingSet b : bindings) {
 			sb.append(" (");
 			sb.append("\"").append(rowIdx++).append("\" "); // identification of
-															// the row for post
-															// processing
+			// the row for post
+			// processing
 			for (String bName : relevantBindingNames) {
 				QueryStringUtil.appendValueAsString(sb, b.getValue(bName)).append(" ");
 			}

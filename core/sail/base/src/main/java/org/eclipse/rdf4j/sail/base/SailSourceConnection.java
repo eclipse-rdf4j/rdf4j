@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -32,6 +34,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -122,6 +127,19 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	 */
 	private volatile FederatedServiceResolver federatedServiceResolver;
 
+	// The context that represents the unnamed graph
+	static final Resource[] NULL_CTX = new Resource[] { null };
+
+	// Track the result sizes generated when evaluating a query, used by explain(...)
+	private boolean trackResultSize;
+
+	// By default all tuple expressions are cloned before being optimized and executed. We don't want to do this for
+	// .explain(...) since we need to retrieve the optimized or executed plan.
+	private boolean cloneTupleExpression = true;
+
+	// Track the time used when evaluating a query, used by explain(...)
+	private boolean trackTime;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -193,8 +211,10 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
-		// Clone the tuple expression to allow for more aggresive optimizations
-		tupleExpr = tupleExpr.clone();
+		if (cloneTupleExpression) {
+			// Clone the tuple expression to allow for more aggressive optimizations
+			tupleExpr = tupleExpr.clone();
+		}
 
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow the
@@ -204,8 +224,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iter1 = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iter2 = null;
+		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
 
 		boolean allGood = false;
 		try {
@@ -214,42 +233,148 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
+			if (trackResultSize) {
+				strategy.setTrackResultSize(trackResultSize);
+			}
+
+			if (trackTime) {
+				strategy.setTrackTime(trackTime);
+			}
 
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 
-			iter1 = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance());
-			iter2 = interlock(iter1, rdfDataset, branch);
+			iteration = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance());
+			iteration = interlock(iteration, rdfDataset, branch);
 			allGood = true;
-			return iter2;
+			return iteration;
 		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
 		} finally {
 			if (!allGood) {
+
 				try {
-					if (iter2 != null) {
-						iter2.close();
+					if (iteration != null) {
+						iteration.close();
 					}
 				} finally {
 					try {
-						if (iter1 != null) {
-							iter1.close();
+						if (rdfDataset != null) {
+							rdfDataset.close();
 						}
 					} finally {
-						try {
-							if (rdfDataset != null) {
-								rdfDataset.close();
-							}
-						} finally {
-							if (branch != null) {
-								branch.close();
-							}
+						if (branch != null) {
+							branch.close();
 						}
 					}
+
 				}
 			}
 		}
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		boolean queryTimedOut = false;
+
+		try {
+
+			switch (level) {
+			case Timed:
+				this.trackTime = true;
+				this.trackResultSize = true;
+				this.cloneTupleExpression = false;
+
+				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				break;
+
+			case Executed:
+				this.trackResultSize = true;
+				this.cloneTupleExpression = false;
+
+				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+				break;
+
+			case Optimized:
+				this.cloneTupleExpression = false;
+
+				evaluate(tupleExpr, dataset, bindings, includeInferred).close();
+
+				break;
+
+			case Unoptimized:
+				break;
+
+			default:
+				throw new UnsupportedOperationException("Unsupported query explanation level: " + level);
+
+			}
+
+		} finally {
+			this.cloneTupleExpression = true;
+			this.trackResultSize = false;
+			this.trackTime = false;
+		}
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		tupleExpr.visit(converter);
+
+		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut);
+
+	}
+
+	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+			boolean includeInferred, int timeoutSeconds) {
+
+		AtomicBoolean timedOut = new AtomicBoolean(false);
+
+		Thread currentThread = Thread.currentThread();
+
+		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
+		// execution
+		Thread selfInterruptOnTimeoutThread = new Thread(() -> {
+			try {
+				TimeUnit.SECONDS.sleep(timeoutSeconds);
+				currentThread.interrupt();
+				timedOut.set(true);
+			} catch (InterruptedException ignored) {
+
+			}
+		});
+
+		try {
+			selfInterruptOnTimeoutThread.start();
+
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = evaluate(tupleExpr,
+					dataset, bindings, includeInferred)) {
+				while (evaluate.hasNext()) {
+					if (Thread.interrupted()) {
+						break;
+					}
+					evaluate.next();
+				}
+			} catch (Exception e) {
+				if (!timedOut.get()) {
+					throw e;
+				}
+			}
+
+			return timedOut.get();
+
+		} finally {
+			selfInterruptOnTimeoutThread.interrupt();
+			try {
+				// make sure selfInterruptOnTimeoutThread finishes
+				selfInterruptOnTimeoutThread.join();
+			} catch (InterruptedException ignored) {
+			}
+
+			// clear interrupted flag;
+			Thread.interrupted();
+		}
+
 	}
 
 	@Override
@@ -544,9 +669,9 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			}
 			boolean modified = false;
 			if (contexts.length == 0) {
-				if (!hasStatement(explicitOnlyDataset, subj, pred, obj)) {
+				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {
 					// only add inferred statements that aren't already explicit
-					if (!hasStatement(inferredOnlyDataset, subj, pred, obj)) {
+					if (!hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX)) {
 						// only report inferred statements that don't already
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
@@ -578,7 +703,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 0) {
-			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj)) {
+			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
 			sink.approve(subj, pred, obj, null);

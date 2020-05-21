@@ -24,6 +24,8 @@ public class SimpleNode implements Node {
 
 	protected SyntaxTreeBuilder parser;
 
+	private boolean isScopeChange = false;
+
 	public SimpleNode(int id) {
 		this.id = id;
 		children = new ArrayList<>();
@@ -83,7 +85,7 @@ public class SimpleNode implements Node {
 
 	/**
 	 * Replaces this node with the supplied one in the AST.
-	 * 
+	 *
 	 * @param newNode The replacement node.
 	 */
 	public void jjtReplaceWith(Node newNode) {
@@ -107,7 +109,7 @@ public class SimpleNode implements Node {
 
 	/**
 	 * Gets the (first) child of this node that is of the specific type.
-	 * 
+	 *
 	 * @param type The type of the child node that should be returned.
 	 * @return The (first) child node of the specified type, or <tt>null</tt> if no such child node was found.
 	 */
@@ -195,5 +197,21 @@ public class SimpleNode implements Node {
 		} catch (IOException e) {
 			throw new RuntimeException("Unexpected I/O error while writing to StringWriter", e);
 		}
+	}
+
+	/**
+	 * Check if this AST node constitutes a variable scope change.
+	 *
+	 * @return the isScopeChange
+	 */
+	public boolean isScopeChange() {
+		return isScopeChange;
+	}
+
+	/**
+	 * @param isScopeChange the isScopeChange to set
+	 */
+	public void setScopeChange(boolean isScopeChange) {
+		this.isScopeChange = isScopeChange;
 	}
 }

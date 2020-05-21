@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Vocabulary constants for the <a href="https://www.w3.org/TR/skos-reference/#xl">SKOS eXtension for Labels
  * (SKOS-XL)</a>.
- * 
+ *
  * @see <a href="https://www.w3.org/TR/skos-reference/#xl">Appendix B of SKOS Simple Knowledge Organization System
  *      Reference</a>
  * @author Manuel Fiorelli
@@ -42,7 +42,7 @@ public class SKOSXL {
 
 	/**
 	 * The skosxl:Label class.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-Label">The skosxl:Label Class</a>
 	 */
 	public static final IRI LABEL;
@@ -51,7 +51,7 @@ public class SKOSXL {
 
 	/**
 	 * The skosxl:literalForm property.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-Label">The skosxl:Label Class</a>
 	 */
 	public static final IRI LITERAL_FORM;
@@ -60,21 +60,21 @@ public class SKOSXL {
 
 	/**
 	 * The skosxl:prefLabel property.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI PREF_LABEL;
 
 	/**
 	 * The skosxl:altLabel property.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI ALT_LABEL;
 
 	/**
 	 * The skosxl:hiddenLabel property.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-labels">Preferred, Alternate and Hidden skosxl:Labels</a>
 	 */
 	public static final IRI HIDDEN_LABEL;
@@ -83,7 +83,7 @@ public class SKOSXL {
 
 	/**
 	 * The skosxl:labelRelation relation.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/skos-reference/#xl-label-relations">Links Between skosxl:Labels</a>
 	 */
 	public static final IRI LABEL_RELATION;

@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Wrap an inner iteration and suppress exceptions silently
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @deprecated since 3.1.2. Use {@link org.eclipse.rdf4j.common.iteration.SilentIteration } instead.
  */
 @Deprecated

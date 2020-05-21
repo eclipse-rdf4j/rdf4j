@@ -36,7 +36,7 @@ import org.junit.rules.Timeout;
 
 /**
  * Custom (non-manifest) tests for TriG parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class TriGParserCustomTest {

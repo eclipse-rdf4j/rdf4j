@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * This implementation uses the SPARQL 1.1 VALUES operator for the bound-join evaluation
  * </p>
  * s
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -65,16 +65,18 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			throws QueryEvaluationException {
 
 		// we can omit the bound join handling
-		if (bindings.size() == 1)
+		if (bindings.size() == 1) {
 			return evaluate(stmt, bindings.get(0));
+		}
 
 		FilterValueExpr filterExpr = null;
-		if (stmt instanceof FilterTuple)
+		if (stmt instanceof FilterTuple) {
 			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+		}
 
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated);
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = null;
 		try {
@@ -84,8 +86,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			if (filterExpr != null && !isEvaluated.get()) {
 				result = new BoundJoinVALUESConversionIteration(result, bindings); // apply conversion
 				result = new FilteringIteration(filterExpr, result, this); // apply filter
-				if (!result.hasNext())
+				if (!result.hasNext()) {
 					return new EmptyIteration<>();
+				}
 			} else {
 				result = new BoundJoinVALUESConversionIteration(result, bindings);
 			}
@@ -99,7 +102,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 	/**
 	 * Alternative evaluation implementation using UNION. Nowadays we use a VALUES clause based implementation
-	 * 
+	 *
 	 * @deprecated
 	 */
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern_UNION(
@@ -107,16 +110,18 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			throws QueryEvaluationException {
 
 		// we can omit the bound join handling
-		if (bindings.size() == 1)
+		if (bindings.size() == 1) {
 			return evaluate(stmt, bindings.get(0));
+		}
 
 		FilterValueExpr filterExpr = null;
-		if (stmt instanceof FilterTuple)
+		if (stmt instanceof FilterTuple) {
 			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+		}
 
 		Boolean isEvaluated = false;
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundUnion((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated);
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
@@ -125,8 +130,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 		if (filterExpr != null && !isEvaluated) {
 			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
 			result = new FilteringIteration(filterExpr, result, this); // apply filter
-			if (!result.hasNext())
+			if (!result.hasNext()) {
 				return new EmptyIteration<>();
+			}
 		} else {
 			result = new BoundJoinConversionIteration(result, bindings);
 		}
@@ -139,10 +145,12 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			CheckStatementPattern stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
-		if (bindings.size() == 1)
+		if (bindings.size() == 1) {
 			return stmt.evaluate(bindings.get(0));
+		}
 
-		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
+		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings,
+				stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
 				stmt.getStatementSources(), stmt.getQueryInfo());
@@ -174,7 +182,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		try {
 			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
-					isEvaluated);
+					isEvaluated, group.getQueryInfo().getDataset());
 			return tripleSource.getStatements(preparedQuery, bindings,
 					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {

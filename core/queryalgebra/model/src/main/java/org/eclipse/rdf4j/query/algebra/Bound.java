@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * The BOUND function, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#func-bound">SPARQL Query Language
  * for RDF</a>; checks if a variable is bound.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Bound extends AbstractQueryModelNode implements ValueExpr {
@@ -41,7 +41,7 @@ public class Bound extends AbstractQueryModelNode implements ValueExpr {
 
 	/**
 	 * Gets the argument of this unary value operator.
-	 * 
+	 *
 	 * @return The operator's argument.
 	 */
 	public Var getArg() {
@@ -50,7 +50,7 @@ public class Bound extends AbstractQueryModelNode implements ValueExpr {
 
 	/**
 	 * Sets the argument of this unary value operator.
-	 * 
+	 *
 	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setArg(Var arg) {

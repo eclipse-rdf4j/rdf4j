@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -220,6 +221,11 @@ public class ValidatingValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
 		return delegate.createStatement(subject, predicate, object, context);
+	}
+
+	@Override
+	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+		return delegate.createTriple(subject, predicate, object);
 	}
 
 	private boolean isMember(int[][] set, int cp) {
