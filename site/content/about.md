@@ -33,46 +33,59 @@ though for most usecases the NativeStore will be considerably faster.
 
 On top of these core databases, RDF4J offers a number of functional extensions. These extensions add functionality such as improved full-text search, RDFS inferencing, rule-based reasoning and validation using SHACL/SPIN, and geospatial querying support. For more information see the [RDF4J documentation](/documentation).
 
-The core databases are mainly intended for small to medium-sized datasets. However, RDF4J-compatible databases are developed by several third parties, both open-source/free and commercial, and they often offer better scalability or other extended features. Because these triplestores are compatible with the RDF4J APIs, you will be able to switch your project to a different database with a minimal amount of code changes.
+## Third party database solutions
 
-## Ontotext GraphDB
+The core RDF4J databases are mainly intended for small to medium-sized datasets. However, RDF4J-compatible databases are developed by several third parties, both open-source/free and commercial, and they often offer better scalability or other extended features. Because these triplestores are compatible with the RDF4J APIs, you will be able to switch your project to a different database with a minimal amount of code changes. Here, we list a few options, in no particular order of preference.
 
-<a href="http://www.ontotext.com/"><img src="/images/logos/ontotext.svg" alt="Ontotext" class="logo-vendor"></a>
-[Ontotext GraphDB](http://www.ontotext.com/products/ontotext-graphdb/) is a leading RDF triplestore built on OWL (Ontology Web Language) standards.  GraphDB handles massive loads, queries and OWL inferencing in real time. Ontotext offers GraphDB in several editions, including  GraphDB™ Free, GraphDB™ Standard and GraphDB™ Enterprise. Since release 8, GraphDB is fully compatible with the RDF4J framework.
+### Ontotext GraphDB
 
-## Halyard
+[Ontotext GraphDB](http://www.ontotext.com/products/ontotext-graphdb/) is a leading RDF triplestore built on OWL (Ontology Web Language) standards.  GraphDB handles massive loads, queries and OWL inferencing in real time. Ontotext offers GraphDB in several editions, including  GraphDB™ Free, GraphDB™ Standard and GraphDB™ Enterprise. 
+
+Ontotext are a long-term contributor to the RDF4J project.
+
+### Halyard
 
 [Halyard](https://merck.github.io/Halyard/) is an RDF4J-based horizontally scalable triplestore with full support for named graphs and SPARQL, implemented on top of Apache HBase.
 
-## Stardog
+### Stardog
 
-<a href="http://www.stardog.com/"><img src="/images/logos/stardog.svg" alt="Stardog" class="logo-vendor"></a>
 [Stardog](http://www.stardog.com/) is a fast, lightweight, pure Java RDF store for mission-critical apps. It supports highly scalable storage and retrieval as well as OWL reasoning.
 
-## Amazon Neptune
+### Amazon Neptune
 
-[Amazone Neptune](https://aws.amazon.com/neptune/) is Amazon Neptune is a fast, reliable, fully managed graph database service that makes it easy to build and run applications that work with highly connected datasets. 
+[Amazone Neptune](https://aws.amazon.com/neptune/) is a fast, reliable, fully managed graph database service on Amazon Web Services (AWS) that makes it easy to build and run applications that work with highly connected datasets. 
 
-## Systap Blazegraph™
+### Systap Blazegraph™
 
-<a href="http://www.blazegraph.com/"><img src="/images/logos/blazegraph.png" alt="Blazegraph" height="100" class="logo-vendor"></a>
 [Blazegraph](http://www.blazegraph.com/) (formerly known as Bigdata) is an enterprise graph database by Systap, LLC that provides a horizontally scaling storage and retrieval solution for very large volumes of RDF.
 
-## MarkLogic RDF4J API
+### MarkLogic RDF4J API
 
 The [MarkLogic RDF4J API](https://github.com/marklogic/marklogic-rdf4j) is a full-featured, easy-to-use interface, that provides access to the MarkLogic triplestore via the RDF4J APIs. It offers several additional features such as permissions, and combination queries. More details can be found in the [MarkLogic Developer documentation](https://docs.marklogic.com/guide/semantics/clientAPIs#id_23335).
 
-## Strabon
+### Strabon
 
 [Strabon](http://www.strabon.di.uoa.gr/) is a spatiotemporal RDF store based on RDF4J. You can use it to store linked geospatial data that changes over time and pose queries using two popular extensions of SPARQL. Strabon supports spatial datatypes enabling the serialization of geometric objects in OGC standards WKT and GML. It also offers spatial and temporal selections, spatial and temporal joins, a rich set of spatial functions similar to those offered by geospatial relational database systems and support for multiple Coordinate Reference Systems. Strabon can be used to model temporal domains and concepts such as events, facts that change over time etc. through its support for valid time of triples, and a rich set of temporal functions.
 
-## Openlink Virtuoso RDF4J Provider
+### Openlink Virtuoso RDF4J Provider
 
 The [Openlink Virtuoso RDF4J Provider](http://vos.openlinksw.com/owiki/wiki/VOS/VirtSesame2Provider) is a fully operational Native Graph Model Storage Provider for the Eclipse RDF4J Framework, allowing users of Virtuoso to leverage the Eclipse RDF4J framework to modify, query, and reason with the Virtuoso quad store using the Java language.
 
 # Related projects
 
-Several projects extend or make use of RDF4J in some way, and provide additional functionality on top of the core RDF4J framework.
+Several projects extend or make use of RDF4J in some way, and provide additional functionality on top of the core RDF4J framework. Here, we offer a non-exhaustive list of such projects, both commercial and free/open-source.
+
+## metaphactory
+
+[metaphactory](https://www.metaphacts.com/product) supports knowledge graph management, rapid application development, and end-user oriented interaction. metaphactory runs on top of your on-premise, cloud, or managed graph database and offers capabilities and features to support the entire lifecycle of dealing with knowledge graphs. It is a commercial platform with RDF4J at its core. 
+
+The metaphactory platform is developed by [metaphacts GmbH](https://www.metaphacts.com/), who are a significant contributor to the RDF4J project.
+
+## Neosemantics
+
+[Neosemantics](https://neo4j.com/labs/neosemantics-rdf/) is a plugin that enables the use of RDF in Neo4j. You can use it to import existing RDF datasets, build integrations with RDF generating endpoints or easily construct RDF endpoints on Neo4j, and more.
+
+## Other
 
 - [Apache Marmotta](http://marmotta.apache.org/)<br>
   a Linked Data publication platform.
@@ -80,8 +93,6 @@ Several projects extend or make use of RDF4J in some way, and provide additional
   a library that transforms structured sources to RDF based and declared in an RML mapping.
 - [KOMMA](http://komma.enilink.net/)<br>
   a framework for the management and editing of RDF, RDFS and OWL. It provides Object-Triple-Mapping (comparable to JPA), an Editing framework, Eclipse RCP and RAP integration, on top of Eclipse RDF4J.
-- [Neosemantics](https://github.com/jbarrasa/neosemantics)<br>
-  Neo4J extension to importing RDF into Neo4j and exposing graphs as RDF.
 - [RDF4J Schema Generator](https://github.com/ansell/rdf4j-schema-generator)<br>
   a command line tool and maven plugin to generate vocabulary java classes from RDFS or OWL.
 - [RML-Mapper](https://github.com/RMLio/RML-Mapper)<br>
