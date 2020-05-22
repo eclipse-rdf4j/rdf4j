@@ -90,7 +90,7 @@ public abstract class PathPropertyShape extends PropertyShape {
 
 			} else {
 				logger.warn(
-						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
+						"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <{}> shape has been deactivated! \n{}",
 						id,
 						describe(connection, path));
 			}
@@ -110,8 +110,10 @@ public abstract class PathPropertyShape extends PropertyShape {
 				try (Stream<Statement> stream = connection.getStatements(path, null, null).stream()) {
 
 					boolean complexPath = stream
-							.map(Statement::getPredicate)
-							.anyMatch(unsupportedComplexPathPredicates::contains);
+							.anyMatch(statement -> {
+								return unsupportedComplexPathPredicates.contains(statement.getPredicate())
+										|| statement.getObject() instanceof BNode;
+							});
 
 					if (complexPath) {
 						return false;
