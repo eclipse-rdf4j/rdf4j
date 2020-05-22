@@ -6,11 +6,11 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:IdAndUsernameAreBothFunctionalProperties
+ex:IdAndUsernameAreFunctionalPropertiesTogether
 	a sh:NodeShape  ;
 	sh:targetObjectsOf ex:id, ex:username ;
 	sh:property [
-	        sh:and (
+	        sh:or (
 	                [
 	                        sh:path [sh:inversePath ex:id] ;
                  		sh:maxCount 1 ;

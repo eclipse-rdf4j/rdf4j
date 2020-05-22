@@ -107,6 +107,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxCount/not2",
 		"test-cases/maxCount/notNot",
 		"test-cases/maxCount/simple",
+		"test-cases/maxCount/simpleInversePath",
 		"test-cases/maxCount/targetNode",
 		"test-cases/maxExclusive/simple",
 		"test-cases/maxExclusiveMinLength/not",
@@ -126,6 +127,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/nodeKind/validateTarget",
 		"test-cases/or/class",
 		"test-cases/or/class2",
+		"test-cases/or/class2InversePath",
 		"test-cases/or/classValidateTarget",
 		"test-cases/or/datatype",
 		"test-cases/or/datatype2",
@@ -149,7 +151,9 @@ abstract public class AbstractShaclTest {
 		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
 		"test-cases/uniqueLang/simple",
-		"test-cases/functionalProperty/singleFunctional"
+		"test-cases/functionalProperty/singleFunctional",
+		"test-cases/functionalProperty/multipleFunctional",
+		"test-cases/functionalProperty/multipleFunctionalOr"
 	)
 		.distinct()
 		.sorted()

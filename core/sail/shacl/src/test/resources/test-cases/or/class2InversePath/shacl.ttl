@@ -6,11 +6,15 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:IdIsAFunctionalProperty
+ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetObjectsOf ex:id ;
-	sh:property [
-		sh:path [sh:inversePath ex:id] ;
-		sh:maxCount 1 ;
-	] .
+	sh:targetClass ex:Person ;
+	sh:property  ex:personShapeOr.
 
+
+ex:personShapeOr
+                sh:path [sh:inversePath ex:inverseKnows];
+                sh:not [sh:and (
+                    [sh:not [sh:class ex:Person]]
+                     [sh:not [sh:class ex:Animal]]
+                  ) ]. # reduces to sh:or by demorgan

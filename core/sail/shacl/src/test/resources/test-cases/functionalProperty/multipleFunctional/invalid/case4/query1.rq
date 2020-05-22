@@ -11,7 +11,11 @@ INSERT DATA {
         ex:validPerson1 ex:username 1 .
 
         ex:validPerson2 ex:id 2 .
-        ex:validPerson2 ex:username 1 .
+        ex:validPerson2 ex:username 2 .
+
+        ex:validPerson3 ex:id 3 .
+        ex:validPerson3 ex:username 3 .
+
 
 }
 

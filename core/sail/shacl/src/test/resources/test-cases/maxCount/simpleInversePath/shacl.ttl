@@ -6,11 +6,11 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:IdIsAFunctionalProperty
+ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetObjectsOf ex:id ;
+	sh:targetClass ex:Person ;
 	sh:property [
-		sh:path [sh:inversePath ex:id] ;
-		sh:maxCount 1 ;
-	] .
+		sh:path [sh:inversePath ex:knows ] ;
+                sh:maxCount 3
+    	] .
 
