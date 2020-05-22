@@ -33,6 +33,24 @@ public class RDFContainers {
 		consumeContainer(containerType, values, container, st -> sink.add(st), contexts);
 		return sink;
 	}
+
+	public static <C extends Collection<Statement>> C asRDF(IRI containerType, Iterable<?> values, Resource container, C sink,
+                                                            ValueFactory vf, Resource... contexts) {
+
+		Objects.requireNonNull(sink);
+		consumeContainer(containerType, values, container, st -> sink.add(st), vf, contexts);
+		return sink;
+	}
+
+	public static <C extends Collection<Value>> C asValues(IRI containerType, final Model m, Resource container, C collection,
+			Resource... contexts) throws ModelException {
+		Objects.requireNonNull(collection, "collection may not be null");
+
+		consumeValues(m, container, containerType, v -> collection.add(v), contexts);
+
+		return collection;
+	}
+
 	public static void consumeContainer(IRI containerType, Iterable<?> values, Resource container, Consumer<Statement> consumer,
 			Resource... contexts) {
 		consumeContainer(containerType, values, container, consumer, SimpleValueFactory.getInstance(), contexts);
@@ -71,6 +89,8 @@ public class RDFContainers {
 		return vf.createIRI(RDF.NAMESPACE, "_" + elementCounter);
 	}
 
+
+
 	public static void consumeValues(final Model m, Resource container, IRI containerType, Consumer<Value> consumer, Resource... contexts)
 			throws ModelException {
 		Objects.requireNonNull(consumer, "consumer may not be null");
@@ -92,11 +112,49 @@ public class RDFContainers {
 		}, exceptionSupplier, contexts);
 	}
 
+	public static <C extends Collection<Statement>> C getContainer(IRI containerType, Model sourceModel, Resource head, C sink,
+			Resource... contexts) {
+		Objects.requireNonNull(sourceModel, "input model may not be null");
+		extract(containerType, sourceModel, head, st -> sink.add(st), contexts);
+		return sink;
+	}
+
 	public static void extract(IRI containerType, Model sourceModel, Resource container, Consumer<Statement> consumer, Resource... contexts) {
+		Objects.requireNonNull(sourceModel, "source model may not be null");
+		GetStatementOptional statementSupplier = (s, p, o,
+				c) -> ((Model) sourceModel).filter(s, p, o, c).stream().findAny();
+		extract(containerType, statementSupplier, container, consumer, Models::modelException, contexts);
 	}
 
 	public static <E extends RDF4JException> void extract(IRI containerType, GetStatementOptional statementSupplier, Resource container,
 														  Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
 														  Resource... contexts) throws E {
+		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(container, "list head may not be null");
+		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		Resource current = container;
+		final Set<Value> encountered = new HashSet<>();
+
+		for (int annotatedMembershipPropertyCounter = 1; true ; annotatedMembershipPropertyCounter++) {
+
+
+			IRI annotatedMembershipPredicate = getAnnotatedMemberPredicate(vf, annotatedMembershipPropertyCounter);
+			if (statementSupplier.get(container, annotatedMembershipPredicate, null, contexts).equals(Optional.empty())) {
+				break;
+			}
+			Statement statement = statementSupplier.get(container, annotatedMembershipPredicate, null, contexts).get();
+
+			if (containerType.equals(RDF.ALT)) {
+				if (encountered.contains(statement.getObject())) {
+					throw exceptionSupplier.apply("rdf:alt cannot contain duplicate values").get();
+				}
+				encountered.add(statement.getObject());
+			}
+
+			collectionConsumer.accept(statement);
+		}
 	}
 }
