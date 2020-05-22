@@ -8,16 +8,18 @@
 
 package org.eclipse.rdf4j.model.util;
 
+import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 /**
  * TODO add documentation
@@ -47,7 +49,9 @@ public class RDFContainers {
 				Objects.equals(containerType, RDF.BAG) ||
 				Objects.equals(containerType, RDF.SEQ);
 
-		assert validType: "containerType should be one of ALT, BAG or SEQ";
+		if (!validType) {
+			throw new RuntimeException("containerType should be one of ALT, BAG or SEQ");
+		}
 
 		Statements.consume(vf, current, RDF.TYPE, containerType, consumer, contexts);
 
@@ -56,10 +60,43 @@ public class RDFContainers {
 		while (iter.hasNext()) {
 			Object o = iter.next();
 			Value v = o instanceof Value ? (Value) o : Literals.createLiteralOrFail(vf, o);
-			IRI elementCounterPredicate = vf.createIRI(RDF.NAMESPACE, "_" + elementCounter);
+			IRI elementCounterPredicate = getAnnotatedMemberPredicate(vf, elementCounter);
 			elementCounter++;
 			Statements.consume(vf, current, elementCounterPredicate, v, consumer, contexts);
 			Statements.consume(vf, (Resource) v, RDFS.MEMBER, current, consumer, contexts);
 		}
+	}
+
+	private static IRI getAnnotatedMemberPredicate(ValueFactory vf, int elementCounter) {
+		return vf.createIRI(RDF.NAMESPACE, "_" + elementCounter);
+	}
+
+	public static void consumeValues(final Model m, Resource container, IRI containerType, Consumer<Value> consumer, Resource... contexts)
+			throws ModelException {
+		Objects.requireNonNull(consumer, "consumer may not be null");
+		Objects.requireNonNull(m, "input model may not be null");
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		GetStatementOptional statementSupplier = (s, p, o, c) -> m.filter(s, p, o, c).stream().findAny();
+		Function<String, Supplier<ModelException>> exceptionSupplier = Models::modelException;
+
+		// TODO add proper documentation
+		Pattern annotatedMembershipPredicatePattern = Pattern.compile("^" + vf.createIRI(RDF.NAMESPACE, "_") + "[1-9][0-9]*$");
+
+		extract(containerType, statementSupplier, container, st -> {
+			if (RDFS.MEMBER.equals(st.getPredicate()) ||
+				annotatedMembershipPredicatePattern.matcher(st.getPredicate().toString()).matches()) {
+				consumer.accept(st.getObject());
+			}
+		}, exceptionSupplier, contexts);
+	}
+
+	public static void extract(IRI containerType, Model sourceModel, Resource container, Consumer<Statement> consumer, Resource... contexts) {
+	}
+
+	public static <E extends RDF4JException> void extract(IRI containerType, GetStatementOptional statementSupplier, Resource container,
+														  Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
+														  Resource... contexts) throws E {
 	}
 }
