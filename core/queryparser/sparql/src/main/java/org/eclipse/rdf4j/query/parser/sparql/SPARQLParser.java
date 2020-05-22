@@ -130,22 +130,22 @@ public class SPARQLParser implements QueryParser {
 
 					String datablock = "";
 					if (updateExpr instanceof InsertData) {
-						InsertData insertDataExpr = (InsertData)updateExpr;
+						InsertData insertDataExpr = (InsertData) updateExpr;
 						parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, null);
 						parser.setLineNumberOffset(insertDataExpr.getLineNumberOffset());
 						datablock = insertDataExpr.getDataBlock();
 					} else if (updateExpr instanceof DeleteData) {
-						DeleteData deleteDataExpr = (DeleteData)updateExpr;
+						DeleteData deleteDataExpr = (DeleteData) updateExpr;
 						parser.setLineNumberOffset(deleteDataExpr.getLineNumberOffset());
 						parser.setAllowBlankNodes(false);
 						datablock = deleteDataExpr.getDataBlock();
 					}
-					if(!datablock.equals("")){
+
+					if (!datablock.equals("")) {
 						parser.parse(new StringReader(datablock), "");
 					}
 
 					update.addUpdateExpr(updateExpr);
-
 
 					// associate updateExpr with the correct dataset (if any)
 					Dataset dataset = DatasetDeclProcessor.process(uc);

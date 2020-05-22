@@ -1754,7 +1754,12 @@ public abstract class SPARQLUpdateTest {
 	public void testInvalidInsertUpdate() {
 		RepositoryConnection connection = rep.getConnection();
 		Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
-//			Assert.assertEquals(7, rdfpe.getLineNumber());
+	}
+
+	@Test(expected = MalformedQueryException.class)
+	public void testInvalidDeleteUpdate() {
+		RepositoryConnection connection = rep.getConnection();
+		Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }");
 	}
 
 	/*

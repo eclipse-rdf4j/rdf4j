@@ -5,18 +5,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql;
 
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.Update;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Assert;
-import org.junit.Test;
-
-import junit.framework.TestCase;
-
 /**
  * @author Jeen Broekstra
  */
@@ -29,7 +17,7 @@ import junit.framework.TestCase;
 //		throws Exception
 //	{
 //		server = new HTTPMemServer();
-//		
+//
 //		try {
 //			server.start();
 //			super.setUp();
@@ -58,51 +46,9 @@ import junit.framework.TestCase;
 //	@Ignore
 //	@Test
 //	@Override
-//	public void testAutoCommitHandling() 
+//	public void testAutoCommitHandling()
 //	{
 //		// transaction isolation is not supported for HTTP connections. disabling test.
 //		System.err.println("temporarily disabled testAutoCommitHandling() for HTTPRepository");
 //	}
 //}
-public class SPARQLRepositorySparqlUpdateTest extends TestCase {
-
-	private Repository m_repository;
-
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		m_repository = new SailRepository(new MemoryStore());
-	}
-
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
-		m_repository.shutDown();
-	}
-
-	// @Test (expected = org.eclipse.rdf4j.rio.RDFParseException.class)
-	@Test
-	public void testInvalidInsertUpdate() {
-		RepositoryConnection connection = m_repository.getConnection();
-		try {
-			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
-		} catch (Exception e) {
-			e.printStackTrace();
-//			System.out.println(e.printStackTrace());
-//			Assert.assertEquals(7, rdfpe.getLineNumber());
-		}
-		//RDFParseException rdfpe
-
-	}
-
-	// @Test (expected = org.eclipse.rdf4j.rio.RDFParseException.class)
-	@Test
-	public void testInvalidDeleteUpdate() {
-		RepositoryConnection connection = m_repository.getConnection();
-		try {
-			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }");
-		} catch (RDFParseException rdfpe) {
-			Assert.assertEquals(1, rdfpe.getLineNumber());
-		}
-	}
-}
