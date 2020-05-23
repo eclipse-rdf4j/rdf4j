@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
  * ConjunctiveFilterExpr maintains a list of conjunctive (i.e. AND connected) constraints.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -32,11 +32,13 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 	}
 
 	public ConjunctiveFilterExpr(Collection<FilterExpr> expressions) {
-		if (expressions.size() < 2)
+		if (expressions.size() < 2) {
 			throw new IllegalArgumentException("Conjunctive Expression must have at least two arguments.");
+		}
 		this.expressions = new ArrayList<>(expressions.size());
-		for (FilterExpr expr : expressions)
+		for (FilterExpr expr : expressions) {
 			addExpression(expr);
+		}
 	}
 
 	public void addExpression(FilterExpr expr) {
@@ -63,8 +65,9 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		super.visitChildren(visitor);
-		for (FilterExpr expr : expressions)
+		for (FilterExpr expr : expressions) {
 			expr.getExpression().visit(visitor);
+		}
 	}
 
 }

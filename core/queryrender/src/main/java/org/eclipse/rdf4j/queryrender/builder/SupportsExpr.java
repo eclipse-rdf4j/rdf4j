@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * <p>
  * Interface for something that supports the ability to turn itself into a Sesame TupleExpr.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */

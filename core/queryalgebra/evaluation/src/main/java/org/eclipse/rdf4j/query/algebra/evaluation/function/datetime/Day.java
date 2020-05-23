@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 /**
  * The SPARQL built-in {@link Function} DAY, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-day">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Day implements Function {

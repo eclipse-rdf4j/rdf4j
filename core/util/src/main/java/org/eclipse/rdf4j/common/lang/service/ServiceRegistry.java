@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A registry that stores services by some key. Upon initialization, the registry searches for service description files
  * at <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself accordingly.
- * 
+ *
  * @see javax.imageio.spi.ServiceRegistry
  * @author Arjohn Kampman
  */
@@ -61,7 +61,7 @@ public abstract class ServiceRegistry<K, S> {
 	/**
 	 * Adds a service to the registry. Any service that is currently registered for the same key (as specified by
 	 * {@link #getKey(Object)}) will be replaced with the new service.
-	 * 
+	 *
 	 * @param service The service that should be added to the registry.
 	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there was no
 	 *         such service.
@@ -72,7 +72,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Removes a service from the registry.
-	 * 
+	 *
 	 * @param service The service be removed from the registry.
 	 */
 	public void remove(S service) {
@@ -81,7 +81,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Gets the service for the specified key, if any.
-	 * 
+	 *
 	 * @param key The key identifying which service to get.
 	 * @return The service for the specified key, or {@link Optional#empty()} if no such service is avaiable.
 	 */
@@ -91,7 +91,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Checks whether a service for the specified key is available.
-	 * 
+	 *
 	 * @param key The key identifying which service to search for.
 	 * @return <tt>true</tt> if a service for the specific key is available, <tt>false</tt> otherwise.
 	 */
@@ -101,7 +101,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Gets all registered services.
-	 * 
+	 *
 	 * @return An unmodifiable collection containing all registered servivces.
 	 */
 	public Collection<S> getAll() {
@@ -110,7 +110,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Gets the set of registered keys.
-	 * 
+	 *
 	 * @return An unmodifiable set containing all registered keys.
 	 */
 	public Set<K> getKeys() {
@@ -119,7 +119,7 @@ public abstract class ServiceRegistry<K, S> {
 
 	/**
 	 * Gets the key for the specified service.
-	 * 
+	 *
 	 * @param service The service to get the key for.
 	 * @return The key for the specified service.
 	 */

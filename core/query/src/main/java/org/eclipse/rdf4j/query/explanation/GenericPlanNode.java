@@ -222,6 +222,8 @@ public class GenericPlanNode {
 		this.algorithm = algorithm;
 	}
 
+	private static int prettyBoxDrawingType = 0;
+
 	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
@@ -229,7 +231,16 @@ public class GenericPlanNode {
 	 */
 	@Override
 	public String toString() {
+		return getHumanReadable(0);
+	}
 
+	/**
+	 *
+	 * @param prettyBoxDrawingType for deciding if we should use single or double walled character for drawing the
+	 *                             connectors between nodes in the query plan. Eg. ├ or ╠ and ─ o
+	 * @return
+	 */
+	private String getHumanReadable(int prettyBoxDrawingType) {
 		StringBuilder sb = new StringBuilder();
 
 		if (timedOut != null && timedOut) {
@@ -249,10 +260,54 @@ public class GenericPlanNode {
 		}
 		appendCostAnnotation(sb);
 		sb.append(newLine);
-		plans.forEach(child -> sb.append(Arrays.stream(child.toString().split(newLine))
-				.map(c -> "   " + c)
-				.reduce((a, b) -> a + newLine + b)
-				.orElse("") + newLine));
+
+		// we use box-drawing characters to "group" nodes in the plan visually when there are exactly two child plans
+		// and
+		// the child plans contain child plans
+		if (plans.size() == 2 && plans.stream().anyMatch(p -> !p.plans.isEmpty())) {
+
+			String start;
+			String horizontal;
+			String vertical;
+			String end;
+
+			if (prettyBoxDrawingType % 2 == 0) {
+				start = "╠";
+				horizontal = "══";
+				vertical = "║";
+				end = "╚";
+			} else {
+				start = "├";
+				horizontal = "──";
+				vertical = "│";
+				end = "└";
+			}
+
+			String left = plans.get(0).getHumanReadable(prettyBoxDrawingType + 1);
+			String right = plans.get(1).getHumanReadable(prettyBoxDrawingType + 1);
+			{
+				String[] split = left.split(newLine);
+				sb.append(start).append(horizontal).append(split[0]).append(newLine);
+				for (int i = 1; i < split.length; i++) {
+					sb.append(vertical).append("  ").append(split[i]).append(newLine);
+				}
+			}
+
+			{
+				String[] split = right.split(newLine);
+				sb.append(end).append(horizontal).append(split[0]).append(newLine);
+				for (int i = 1; i < split.length; i++) {
+					sb.append("   ").append(split[i]).append(newLine);
+				}
+			}
+
+		} else {
+			plans.forEach(
+					child -> sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))
+							.map(c -> "   " + c)
+							.reduce((a, b) -> a + newLine + b)
+							.orElse("") + newLine));
+		}
 
 		return sb.toString();
 	}

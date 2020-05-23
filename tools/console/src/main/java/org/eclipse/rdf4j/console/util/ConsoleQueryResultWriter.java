@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
  * Write query results to console
- * 
+ *
  * @author Bart Hanssens
  */
 public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
@@ -40,7 +40,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param consoleWidth console width
 	 */

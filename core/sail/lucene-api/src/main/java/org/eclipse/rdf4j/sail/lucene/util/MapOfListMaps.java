@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * @author andriy.nikolov
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -28,7 +28,7 @@ public class MapOfListMaps<Index1Type, Index2Type, DataType> {
 	private final Map<Index1Type, Map<Index2Type, List<DataType>>> data;
 
 	/**
-	 * 
+	 *
 	 */
 	public MapOfListMaps() {
 		data = new HashMap<>();
@@ -38,8 +38,9 @@ public class MapOfListMaps<Index1Type, Index2Type, DataType> {
 		Map<Index2Type, List<DataType>> intermediateMap = data.get(key1);
 		if (intermediateMap != null) {
 			List<DataType> tmp = intermediateMap.get(key2);
-			if (tmp != null)
+			if (tmp != null) {
 				return tmp;
+			}
 		}
 		return Collections.emptyList();
 	}

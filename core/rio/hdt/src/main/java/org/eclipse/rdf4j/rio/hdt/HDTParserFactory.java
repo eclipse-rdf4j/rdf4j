@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 
 /**
  * An {@link RDFParserFactory} for HDT parsers.
- * 
+ *
  * @author Bart Hanssens
  */
 public class HDTParserFactory implements RDFParserFactory {

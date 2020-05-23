@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 
 /**
  * An {@link RDFParserFactory} for N3 parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class N3ParserFactory implements RDFParserFactory {

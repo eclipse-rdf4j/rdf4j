@@ -17,7 +17,6 @@ import java.net.URL;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;

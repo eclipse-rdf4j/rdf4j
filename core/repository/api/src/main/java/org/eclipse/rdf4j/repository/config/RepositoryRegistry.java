@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link RepositoryFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RepositoryRegistry extends ServiceRegistry<String, RepositoryFactory> {
@@ -26,7 +26,7 @@ public class RepositoryRegistry extends ServiceRegistry<String, RepositoryFactor
 
 	/**
 	 * Gets the default RepositoryRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static RepositoryRegistry getInstance() {

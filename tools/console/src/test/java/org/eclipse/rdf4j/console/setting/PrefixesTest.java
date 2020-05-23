@@ -18,7 +18,7 @@ import org.mockito.ArgumentCaptor;
 
 /**
  * Test namespace prefixes setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class PrefixesTest extends AbstractSettingTest {

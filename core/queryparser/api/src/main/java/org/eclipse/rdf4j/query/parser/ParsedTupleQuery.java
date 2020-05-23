@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A query formulated in the OpenRDF query algebra that produces a set of tuples as its result.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ParsedTupleQuery extends ParsedQuery {
@@ -30,7 +30,7 @@ public class ParsedTupleQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new tuple query for the supplied tuple expression.
-	 * 
+	 *
 	 * @param tupleExpr A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedTupleQuery(TupleExpr tupleExpr) {
@@ -39,7 +39,7 @@ public class ParsedTupleQuery extends ParsedQuery {
 
 	/**
 	 * Creates a new tuple query for the supplied tuple expression.
-	 * 
+	 *
 	 * @param tupleExpr A tuple expression representing the query, formulated in OpenRDF Query Algebra objects.
 	 */
 	public ParsedTupleQuery(String sourceString, TupleExpr tupleExpr) {

@@ -9,27 +9,27 @@ package org.eclipse.rdf4j.console;
 
 /**
  * Help interface
- * 
+ *
  * @author Bart Hanssens
  */
 public interface Help {
 	/**
 	 * Get the name of the command
-	 * 
+	 *
 	 * @return string
 	 */
 	public String getName();
 
 	/**
 	 * Get short description, small enough to fit on one console row
-	 * 
+	 *
 	 * @return string
 	 */
 	public String getHelpShort();
 
 	/**
 	 * Get long description
-	 * 
+	 *
 	 * @return string, can be multiple lines
 	 */
 	public String getHelpLong();

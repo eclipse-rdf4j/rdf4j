@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.rio;
 
 /**
  * A RDFParserFactory returns {@link RDFParser}s for a specific RDF format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface RDFParserFactory {

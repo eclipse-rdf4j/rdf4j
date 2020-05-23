@@ -391,8 +391,9 @@ public class SolrIndexTest {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (String f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f))
+			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				return;
+			}
 		}
 		fail("Statement not found in document " + statement);
 	}

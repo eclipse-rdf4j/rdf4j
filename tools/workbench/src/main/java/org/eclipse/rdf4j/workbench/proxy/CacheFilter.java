@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Resource cache expiry filter for Tomcat 6, based on code authored by Saket Kumar.
- * 
+ *
  * @see <a href="http://bit.ly/tomcat-6-caching">Enable Caching in Tomcat 6</a>
  * @author Dale Visser
  */
@@ -37,7 +37,7 @@ public class CacheFilter implements Filter {
 
 	/**
 	 * Maximum allowed expiry lifetime in seconds, set to one year according to the advice in RFC 2616.
-	 * 
+	 *
 	 * @see <a href="https://www.ietf.org/rfc/rfc2616.txt">RFC 2616: HTTP/1.1</a>
 	 */
 	public final static long MAX_EXPIRY = (365 * 24 + 6) * 60 * 60;
@@ -65,7 +65,7 @@ public class CacheFilter implements Filter {
 	 * Parse the Cache-Control configuration parameter as a long integer, and set the filter expiry value, modulo the
 	 * minimum and maximum expiry constraints. If the configuration parameter is not present, or not a valid long
 	 * integer value, then no Cache-Control headers will be applied by the filter.
-	 * 
+	 *
 	 * @see #MIN_EXPIRY
 	 * @see #MAX_EXPIRY
 	 */

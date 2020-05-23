@@ -9,13 +9,13 @@ package org.eclipse.rdf4j.query;
 
 /**
  * An exception indicating that a string could not be parsed into an operation of the expected type by the parser.
- * 
+ *
  * @author jeen
  */
 public class IncompatibleOperationException extends MalformedQueryException {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = -4926665776729656410L;
 

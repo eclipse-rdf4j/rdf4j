@@ -12,24 +12,24 @@ import java.io.InputStream;
 
 /**
  * Variable byte encoding for numbers.
- * 
+ *
  * A variable number of bytes is used to encode (unsigned) numeric values, the first bit (MSB) of each byte indicates if
  * there are more bytes to read, the other 7 bits are used to encode the value.
- * 
+ *
  * In this implementation, the MSB is set to <code>1</code> if this byte is the last one.
- * 
+ *
  * E.g: <code>10000001</code> is value 1, <code>00000001 10000001</code> is 128 (decimal). Note that the value is stored
  * little-endian, so in this example <code>10000001 00000001</code>.
- * 
+ *
  * @author Bart.Hanssens
- * 
+ *
  * @see <a href="https://nlp.stanford.edu/IR-book/html/htmledition/variable-byte-codes-1.html">Variable byte codes</a>
  */
 public class VByte {
 	/**
 	 * Checks if the most significant bit is set. If this bit is zero, then the next byte must also be read to decode
 	 * the number.
-	 * 
+	 *
 	 * @param b
 	 * @return true if there is a next byte
 	 */
@@ -39,7 +39,7 @@ public class VByte {
 
 	/**
 	 * Decode a series of encoded bytes, with a maximum of 8 bytes
-	 * 
+	 *
 	 * @param bytes byte array
 	 * @param len   number of bytes to decode
 	 * @return long value
@@ -59,7 +59,7 @@ public class VByte {
 
 	/**
 	 * Decode a maximum of 8 bytes from the input stream.
-	 * 
+	 *
 	 * @param is input stream
 	 * @return decode value
 	 * @throws IOException
@@ -76,7 +76,7 @@ public class VByte {
 
 	/**
 	 * Decode a maximum of 8 bytes from a byte array.
-	 * 
+	 *
 	 * @param b     byte array
 	 * @param start starting position
 	 * @return decode value
@@ -94,7 +94,7 @@ public class VByte {
 
 	/**
 	 * Calculate the number of bytes needed for encoding a value
-	 * 
+	 *
 	 * @param value numeric value
 	 * @return number of bytes
 	 */

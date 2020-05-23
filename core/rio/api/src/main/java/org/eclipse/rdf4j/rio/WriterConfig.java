@@ -11,7 +11,7 @@ import java.io.Serializable;
 
 /**
  * A container object for easy setting and passing of {@link RDFWriter} configuration options.
- * 
+ *
  * @author Jeen Broekstra
  * @author Peter Ansell
  */

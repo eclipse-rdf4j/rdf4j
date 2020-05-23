@@ -17,7 +17,7 @@ public class OrderElem extends AbstractQueryModelNode {
 	 *-----------*/
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = -6573481604435459287L;
 

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 class SizeComparator implements Comparator<BindingSet>, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 1L;
 

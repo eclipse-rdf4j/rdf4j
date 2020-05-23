@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a boolean value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */

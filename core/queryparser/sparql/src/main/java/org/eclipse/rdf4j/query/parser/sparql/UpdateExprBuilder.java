@@ -59,7 +59,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * Extension of TupleExprBuilder that builds Update Expressions.
  *
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -341,8 +341,9 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		deleteExpr.visit(collector);
 		for (Var var : collector.getCollectedVars()) {
 			// skip vars that are provided by ValueExprTripleRef - added as Extentsion
-			if (tripleVars.containsKey(var.getName()))
+			if (tripleVars.containsKey(var.getName())) {
 				continue;
+			}
 			if (var.isAnonymous() && !var.hasValue()) {
 				// blank node in delete pattern, not allowed by SPARQL spec.
 				throw new VisitorException("DELETE clause may not contain blank nodes");

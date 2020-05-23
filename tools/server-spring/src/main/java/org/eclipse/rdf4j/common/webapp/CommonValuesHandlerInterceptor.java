@@ -19,7 +19,7 @@ import org.springframework.web.servlet.ModelAndView;
  * Interceptor that inserts some commonly used values into the model. The inserted values are: - path, equal to
  * request.getContextPath() (e.g. /context) - basePath, equal to the fully qualified context path (e.g.
  * http://www.example.com/context/) - currentYear, equal to the current year
- * 
+ *
  * @author Herko ter Horst
  */
 public class CommonValuesHandlerInterceptor implements HandlerInterceptor {

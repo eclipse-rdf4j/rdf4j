@@ -15,19 +15,19 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * Log64
- * 
+ *
  * It contains the data part of the {@link HDTArray}, followed by the 32-bit CRC calculated over this data.
- * 
+ *
  * Data structure:
- * 
+ *
  * <pre>
  * ...+---------+-------+
  *    | entries | CRC32 |
  * ...+---------+-------+
  * </pre>
- * 
+ *
  * Entries are stored little-endian, with each entry using <code>nrbits</code> bits
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTArrayLog64 extends HDTArray {

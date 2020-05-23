@@ -15,7 +15,7 @@ import org.junit.Test;
 
 /**
  * Unit tests for {@link ShaclSailFactory}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ShaclSailFactoryTest {

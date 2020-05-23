@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A forward-chaining inferencer that infers new statements using a SPARQL or SeRQL graph query.
- * 
+ *
  * @author Dale Visser
  */
 public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
@@ -66,7 +66,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Create a new custom inferencer.
-	 * 
+	 *
 	 * @param language    language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
@@ -82,7 +82,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Create a new custom inferencer.
-	 * 
+	 *
 	 * @param baseSail    an underlying Sail, such as another inferencer or a SailRepository
 	 * @param language    language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
@@ -99,7 +99,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Called in order to set all the fields needed for the inferencer to function.
-	 * 
+	 *
 	 * @param language    language that <tt>queryText</tt> and <tt>matcherText</tt> are expressed in
 	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
 	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
@@ -157,7 +157,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Exposed for test purposes.
-	 * 
+	 *
 	 * @return a computed collection of the statement subjects that, when added or removed, trigger an update of
 	 *         inferred statements
 	 */
@@ -167,7 +167,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Exposed for test purposes.
-	 * 
+	 *
 	 * @return a computed collection of the statement predicates that, when added or removed, trigger an update of
 	 *         inferred statements
 	 */
@@ -177,7 +177,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 	/**
 	 * Exposed for test purposes.
-	 * 
+	 *
 	 * @return a computed collection of the statement objects that, when added or removed, trigger an update of inferred
 	 *         statements
 	 */

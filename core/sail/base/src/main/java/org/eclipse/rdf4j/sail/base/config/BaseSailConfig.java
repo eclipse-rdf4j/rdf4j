@@ -7,7 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base.config;
 
-import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.*;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.NAMESPACE;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;

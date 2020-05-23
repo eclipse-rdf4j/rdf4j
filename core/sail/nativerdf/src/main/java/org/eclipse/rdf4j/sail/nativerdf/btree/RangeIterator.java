@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 class RangeIterator implements RecordIterator, NodeListener {
 
 	/**
-	 * 
+	 *
 	 */
 	private final BTree tree;
 

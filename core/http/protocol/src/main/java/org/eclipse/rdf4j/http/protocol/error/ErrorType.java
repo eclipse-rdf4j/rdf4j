@@ -15,7 +15,7 @@ import java.util.Map;
  */
 public class ErrorType {
 
-	private static final Map<String, ErrorType> registry = new HashMap<String, ErrorType>();
+	private static final Map<String, ErrorType> registry = new HashMap<>();
 
 	public static final ErrorType MALFORMED_QUERY = register("MALFORMED QUERY");
 

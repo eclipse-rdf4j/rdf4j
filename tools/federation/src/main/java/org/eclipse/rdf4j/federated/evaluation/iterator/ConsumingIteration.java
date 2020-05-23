@@ -21,10 +21,10 @@ import com.google.common.collect.Lists;
  * A specialized {@link CloseableIteration} that consumes part (or the entire input iteration if it fits into the
  * buffer) and keeps data for further processing in memory. If the buffer is full, the remaining items will be read from
  * the iteration lazily.
- * 
+ *
  * This implementation can be used to avoid blocking behavior in HTTP connection streams, i.e. to process results in
  * memory and close the underlying HTTP stream.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

@@ -43,7 +43,7 @@ import org.junit.runners.Parameterized.Parameters;
 /**
  * The test verifies the evaluation of TripleRef nodes through evaluation strategy that uses a tripleSource implementing
  * either {@link TripleSource} or {@link RDFStarTripleSource} interfaces
- * 
+ *
  * @author damyan.ognyanov
  *
  */
@@ -59,7 +59,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	public boolean bRDFStarData;
 
 	// the triples over which the evaluations is carried
-	private ArrayList<Triple> triples = new ArrayList<Triple>();
+	private ArrayList<Triple> triples = new ArrayList<>();
 
 	ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -72,7 +72,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	/**
 	 * this class does it all over a collection of triples but do not IMPLEMENT either TripleSource nor
 	 * RDFStarTripleSource The sources for the eval strategies just forward the evaluation to an instance of that
-	 * 
+	 *
 	 * @author damyan.ognyanov
 	 *
 	 */
@@ -153,7 +153,9 @@ public class EvaluationStrategyWithRDFStarTest {
 			return null;
 		}
 
-	};
+	}
+
+	;
 
 	@Before
 	public void setUp() throws Exception {
@@ -223,11 +225,11 @@ public class EvaluationStrategyWithRDFStarTest {
 		// case check all unbound
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
 				new EmptyBindingSet())) {
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				expected.add(fromTriple(t));
 			});
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
@@ -240,13 +242,13 @@ public class EvaluationStrategyWithRDFStarTest {
 	public void testSubjVarBound() {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
 				createWithVarValue(tripleRefNode.getSubjectVar(), vf.createIRI("urn:a")))) {
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getSubject().equals(vf.createIRI("urn:a"))) {
 					expected.add(fromTriple(t));
 				}
 			});
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
@@ -260,13 +262,13 @@ public class EvaluationStrategyWithRDFStarTest {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
 				createWithVarValue(tripleRefNode.getPredicateVar(), vf.createIRI("urn:p")))) {
 
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getPredicate().equals(vf.createIRI("urn:p"))) {
 					expected.add(fromTriple(t));
 				}
 			});
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
@@ -280,13 +282,13 @@ public class EvaluationStrategyWithRDFStarTest {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
 				createWithVarValue(tripleRefNode.getObjectVar(), vf.createIRI("urn:b")))) {
 
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getObject().equals(vf.createIRI("urn:b"))) {
 					expected.add(fromTriple(t));
 				}
 			});
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
@@ -302,13 +304,13 @@ public class EvaluationStrategyWithRDFStarTest {
 
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode, set)) {
 
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getObject().equals(vf.createIRI("urn:c")) && t.getSubject().equals(vf.createIRI("urn:a:2"))) {
 					expected.add(fromTriple(t));
 				}
 			});
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}
@@ -324,9 +326,9 @@ public class EvaluationStrategyWithRDFStarTest {
 
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode, set)) {
 
-			ArrayList<BindingSet> expected = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> expected = new ArrayList<>();
 			expected.add(fromTriple(triple));
-			ArrayList<BindingSet> received = new ArrayList<BindingSet>();
+			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());
 			}

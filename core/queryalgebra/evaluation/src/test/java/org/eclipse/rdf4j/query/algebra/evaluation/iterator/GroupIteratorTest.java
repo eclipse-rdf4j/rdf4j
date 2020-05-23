@@ -42,12 +42,14 @@ public class GroupIteratorTest {
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 
 	private final static BindingSetAssignment EMPTY_ASSIGNMENT;
+
 	static {
 		EMPTY_ASSIGNMENT = new BindingSetAssignment();
 		EMPTY_ASSIGNMENT.setBindingSets(Collections.emptyList());
 	}
 
 	private final static BindingSetAssignment NONEMPTY_ASSIGNMENT;
+
 	static {
 		NONEMPTY_ASSIGNMENT = new BindingSetAssignment();
 		ArrayList<BindingSet> list = new ArrayList<>();

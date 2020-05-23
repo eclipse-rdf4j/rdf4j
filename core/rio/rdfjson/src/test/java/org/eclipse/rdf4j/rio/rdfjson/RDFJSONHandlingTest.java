@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Test for error handling by RDFJSON Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFJSONHandlingTest extends AbstractParserHandlingTest {

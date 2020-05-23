@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.federated.endpoint;
 
 /**
  * Classify endpoints into remote or local ones.
- * 
+ *
  * @author Andreas Schwarte
  */
 public enum EndpointClassification {

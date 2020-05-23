@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation that clears the whole repository.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class ClearOperation extends ContextOperation implements Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = -1570893715836564121L;
 

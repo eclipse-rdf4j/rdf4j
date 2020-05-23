@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.common.text;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.junit.Test;

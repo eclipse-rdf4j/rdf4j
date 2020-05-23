@@ -20,8 +20,9 @@ public class Demo2 {
 
 	public static void main(String[] args) throws Exception {
 
-		if (System.getProperty("log4j.configuration") == null)
+		if (System.getProperty("log4j.configuration") == null) {
 			System.setProperty("log4j.configuration", "file:local/log4j.properties");
+		}
 
 		File dataConfig = new File("local/LifeScience-FedX-SPARQL.ttl");
 		Repository repo = FedXFactory.createFederation(dataConfig);

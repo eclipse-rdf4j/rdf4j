@@ -27,7 +27,7 @@ public class CacheUtils {
 	/**
 	 * Perform a "ASK" query for the provided statement to check if the endpoint can provide results. Update the cache
 	 * with the new information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoint
 	 * @param subj
@@ -57,7 +57,7 @@ public class CacheUtils {
 	/**
 	 * Checks the cache if some endpoint can provide results to the subquery. If the cache has no knowledge a remote ask
 	 * query is performed and the cache is updated with appropriate information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoints
 	 * @param subj
@@ -75,11 +75,13 @@ public class CacheUtils {
 
 		for (Endpoint e : endpoints) {
 			StatementSourceAssurance a = cache.getAssurance(q, e);
-			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS)
+			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {
 				return true;
+			}
 			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
-					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts))
+					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -87,7 +89,7 @@ public class CacheUtils {
 	/**
 	 * Checks the cache for relevant statement sources to the provided statement. If the cache has no knowledge ask the
 	 * endpoint for further information.
-	 * 
+	 *
 	 * @param cache
 	 * @param endpoints
 	 * @param subj
@@ -95,7 +97,7 @@ public class CacheUtils {
 	 * @param obj
 	 * @param queryInfo
 	 * @param contexts
-	 * 
+	 *
 	 * @return the list of relevant statement sources
 	 */
 	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(SourceSelectionCache cache,
@@ -113,8 +115,9 @@ public class CacheUtils {
 			} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {
 
 				// check if the endpoint has results (statistics + ask request)
-				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts))
+				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
 					sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));
+				}
 			}
 		}
 		return sources;

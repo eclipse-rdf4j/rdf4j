@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Specialized {@link SailRepository} that allows configuration of various behaviors, e.g. fail after N operations.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

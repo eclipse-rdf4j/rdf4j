@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Interface for a cost model used in {@link StatementGroupAndJoinOptimizer}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -21,7 +21,7 @@ public interface FedXCostModel {
 
 	/**
 	 * Return the estimated cost for the given {@link TupleExpr}
-	 * 
+	 *
 	 * @param tupleExpr
 	 * @param joinVars
 	 * @return the cost associated to the tupleExpr

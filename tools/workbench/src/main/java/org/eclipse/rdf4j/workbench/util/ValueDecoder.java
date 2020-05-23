@@ -30,7 +30,7 @@ class ValueDecoder {
 
 	/**
 	 * Creates an instance of ValueDecoder.
-	 * 
+	 *
 	 * @param repository to get namespaces from
 	 * @param factory    to generate values
 	 */
@@ -41,7 +41,7 @@ class ValueDecoder {
 
 	/**
 	 * Decode the given string into a {@link org.eclipse.rdf4j.model.Value}.
-	 * 
+	 *
 	 * @param string representation of an RDF value
 	 * @return the parsed value, or null if the string is null, empty, only whitespace, or
 	 *         {@link java.lang.String#equals(Object)} "null".

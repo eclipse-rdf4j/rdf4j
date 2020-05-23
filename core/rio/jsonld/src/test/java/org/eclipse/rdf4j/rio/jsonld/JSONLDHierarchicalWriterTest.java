@@ -265,7 +265,7 @@ public class JSONLDHierarchicalWriterTest {
 
 	/**
 	 * Verify output hierarchy does not duplicate nodes B and C.
-	 * 
+	 *
 	 * @throws IOException
 	 * @see https://github.com/eclipse/rdf4j/issues/1283
 	 */
@@ -353,8 +353,9 @@ public class JSONLDHierarchicalWriterTest {
 		@Override
 		public void write(int b) throws IOException {
 			if (Arrays.binarySearch(toIgnore, b) < 0) {
-				while (Arrays.binarySearch(toIgnore, charInFile = is.read()) >= 0)
+				while (Arrays.binarySearch(toIgnore, charInFile = is.read()) >= 0) {
 					;
+				}
 				assertEquals("Files are equal", charInFile, b);
 			}
 		}

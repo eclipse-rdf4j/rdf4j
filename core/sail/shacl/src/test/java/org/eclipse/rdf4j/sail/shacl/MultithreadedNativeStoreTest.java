@@ -40,4 +40,5 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 		}
 		return nativeStore;
 	}
+
 }

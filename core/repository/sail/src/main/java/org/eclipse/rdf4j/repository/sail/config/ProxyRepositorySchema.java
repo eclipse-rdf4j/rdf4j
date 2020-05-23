@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * Defines constants for the HTTPRepository schema which is used by {@link ProxyRepositoryFactory}s to initialize
  * {@link org.eclipse.rdf4j.repository.sail.ProxyRepository}s.
- * 
+ *
  * @author Dale Visser
  */
 public class ProxyRepositorySchema {

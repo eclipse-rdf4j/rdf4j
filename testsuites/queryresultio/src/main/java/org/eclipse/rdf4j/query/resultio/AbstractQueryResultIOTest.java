@@ -51,7 +51,7 @@ public abstract class AbstractQueryResultIOTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * 
+	 *
 	 */
 	public AbstractQueryResultIOTest() {
 		super();
@@ -67,7 +67,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Override this to customise how the tuple parsing is performed, particularly to test background and other parsing
 	 * strategies.
-	 * 
+	 *
 	 * @param format The {@link TupleQueryResultFormat} for the parser.
 	 * @param in     The InputStream to parse
 	 * @return A {@link TupleQueryResult} that can be parsed.
@@ -464,7 +464,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a tuple results set without specifying a {@link TupleQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -490,7 +490,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a TupleQueryResultFormat is not able to parse a BooleanQueryResultFormat using
 	 * the deprecated {@link TupleQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed through
 	 * an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @param matchingBooleanFormat A BooleanQueryResultFormat that matches the given TupleQueryResultFormat .
@@ -661,7 +661,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a boolean without specifying a {@link BooleanQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -681,7 +681,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a BooleanQueryResultFormat is not able to parse a TupleQueryResultFormat using
 	 * the deprecated {@link BooleanQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed
 	 * through an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param tqr
 	 * @param matchingTupleFormat A TupleQueryResultFormat that matches the given BooleanQueryResultFormat.

@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.optimizers;
 
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -27,7 +25,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */

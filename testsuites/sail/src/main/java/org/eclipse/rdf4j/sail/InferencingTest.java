@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import static org.junit.Assert.fail;
-
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -244,7 +242,7 @@ public abstract class InferencingTest {
 
 	/**
 	 * Gets an instance of the Sail that should be tested.
-	 * 
+	 *
 	 * @return a SailRepo.
 	 */
 	protected abstract Sail createSail();

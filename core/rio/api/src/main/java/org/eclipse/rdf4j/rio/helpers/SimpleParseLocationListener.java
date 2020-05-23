@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.ParseLocationListener;
 
 /**
  * A simple implementation of {@link ParseLocationListener}.
- * 
+ *
  * @author Peter Ansell
  */
 public class SimpleParseLocationListener implements ParseLocationListener {

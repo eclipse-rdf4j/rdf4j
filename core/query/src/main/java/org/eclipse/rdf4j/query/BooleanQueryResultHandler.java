@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query;
 /**
  * An interface that indicates that this QueryResultHandler is capable of handling boolean results using the
  * {@link #handleBoolean(boolean)} method.
- * 
+ *
  * @author Peter Ansell
  */
 public interface BooleanQueryResultHandler extends QueryResultHandler {

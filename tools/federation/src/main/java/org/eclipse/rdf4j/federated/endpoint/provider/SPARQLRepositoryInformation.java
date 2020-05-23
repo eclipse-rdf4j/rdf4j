@@ -20,32 +20,32 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  * <p>
  * Format:
  * </p>
- * 
+ *
  * <pre>
  * &#64;prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
  * &#64;prefix fedx: <http://www.fluidops.com/config/fedx#>.
- * 
+ *
  * <%name%> a sd:Service ;
  *  	fedx:store "SPARQLEndpoint";
  *  	sd:endpoint "%location%"
- * 
+ *
  * <http://DBpedia> a sd:Service ;
  *  	fedx:store "SPARQLEndpoint";
  *  	sd:endpoint "http://dbpedia.org/sparql".
  * </pre>
- * 
+ *
  * Note: the id is constructed from the name: http://dbpedia.org/ => sparql_dbpedia.org
  * <p>
- * 
- * 
+ *
+ *
  * The following properties can be used to define additional endpoint settings.
  * <p>
- * 
+ *
  * <pre>
  * fedx:supportsASKQueries => "true"|"false" (default: true)
  * </pre>
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */
@@ -82,8 +82,9 @@ public class SPARQLRepositoryInformation extends RepositoryInformation {
 
 			if (graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES, FedXUtil.literal("false"))
 					|| graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES,
-							FedXUtil.valueFactory().createLiteral(false)))
+							FedXUtil.valueFactory().createLiteral(false))) {
 				c.setSupportsASKQueries(false);
+			}
 
 			setEndpointConfiguration(c);
 		}
@@ -95,7 +96,7 @@ public class SPARQLRepositoryInformation extends RepositoryInformation {
 
 	/**
 	 * Derive an identifier from the endpoint
-	 * 
+	 *
 	 * @param endpoint
 	 * @return the identifier
 	 */

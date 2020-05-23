@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
  * Note that this class is a fully equivalent copy of
  * {@link org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration}, and is only included here to avoid
  * a circular dependency between the algebra-evaluation module and the sparql-repository module.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -48,10 +48,11 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 
 		if (currentInputBinding == null) {
 			inputBindingsIterator = inputBindings.iterator();
-			if (resultIteration.hasNext())
+			if (resultIteration.hasNext()) {
 				currentInputBinding = resultIteration.next();
-			else
+			} else {
 				return null; // no more results
+			}
 		}
 
 		if (inputBindingsIterator.hasNext()) {
@@ -59,8 +60,9 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 			SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(next.size() + currentInputBinding.size());
 			res.addAll(next);
 			res.addAll(currentInputBinding);
-			if (!inputBindingsIterator.hasNext())
+			if (!inputBindingsIterator.hasNext()) {
 				currentInputBinding = null;
+			}
 			return res;
 		}
 

@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 
 /**
  * A {@link TupleQueryResultParserFactory} for parsers of SPARQL/XML tuple query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SPARQLResultsXMLParserFactory implements TupleQueryResultParserFactory {

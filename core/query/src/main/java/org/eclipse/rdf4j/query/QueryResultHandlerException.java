@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * The super class of exceptions originating from {@link QueryResultHandler} implementations.
- * 
+ *
  * @author Peter Ansell
  */
 public class QueryResultHandlerException extends RDF4JException {
@@ -20,7 +20,7 @@ public class QueryResultHandlerException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultHandlerException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public QueryResultHandlerException(String msg) {
@@ -29,7 +29,7 @@ public class QueryResultHandlerException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param t The cause of the exception.
 	 */
 	public QueryResultHandlerException(Throwable t) {
@@ -38,7 +38,7 @@ public class QueryResultHandlerException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param msg An error message.
 	 * @param t   The cause of the exception.
 	 */

@@ -23,14 +23,14 @@ import org.xml.sax.SAXParseException;
 
 /**
  * Utilities to make working with DOM documents easier.
- * 
+ *
  * @author Herko ter Horst
  */
 public class DocumentUtil {
 
 	/**
 	 * Create a Document representing the XML file at the specified location.
-	 * 
+	 *
 	 * @param location the location of an XML document
 	 * @return a Document representing the XML file
 	 * @throws IOException when there was a problem retrieving or parsing the document.
@@ -41,7 +41,7 @@ public class DocumentUtil {
 
 	/**
 	 * Create a Document representing the XML file at the specified location.
-	 * 
+	 *
 	 * @param location       the location of an XML document
 	 * @param validating     whether the XML parser used in the construction of the document should validate the XML
 	 * @param namespaceAware whether the XML parser used in the construction of the document should be aware of
@@ -55,7 +55,7 @@ public class DocumentUtil {
 
 	/**
 	 * Create a Document representing the XML file at the specified location.
-	 * 
+	 *
 	 * @param location the location of an XML document
 	 * @param schema   a Schama instance to validate against
 	 * @return a Document representing the XML file

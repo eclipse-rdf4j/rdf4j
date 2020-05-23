@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
  * A utility class for evaluation of mathematical expressions on RDF literals.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MathUtil {
@@ -39,7 +39,7 @@ public class MathUtil {
 
 	/**
 	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
-	 * 
+	 *
 	 * @param leftLit  a numeric datatype literal
 	 * @param rightLit a numeric datatype literal
 	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
@@ -172,7 +172,7 @@ public class MathUtil {
 	/**
 	 * Returns the decimal expansion scale used in division operations resulting in a decimal value with non-terminating
 	 * decimal expansion. By default, this value is set to 24.
-	 * 
+	 *
 	 * @return The decimal expansion scale.
 	 */
 	public static int getDecimalExpansionScale() {
@@ -182,7 +182,7 @@ public class MathUtil {
 	/**
 	 * Sets the decimal expansion scale used in divisions resulting in a decimal value with non-terminating decimal
 	 * expansion.
-	 * 
+	 *
 	 * @param decimalExpansionScale The decimal expansion scale to set. Note that a mimimum of 18 is required to stay
 	 *                              compliant with the XPath specification of xsd:decimal operations.
 	 */

@@ -13,7 +13,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.List;
 
 import org.eclipse.rdf4j.IsolationLevel;
@@ -192,12 +191,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	private void enableQuadModeOnConnection(SPARQLConnection con) throws Exception {
 		Field quadModeField = SPARQLConnection.class.getDeclaredField("quadMode");
 		quadModeField.setAccessible(true);
-
-		// remove final modifier from field
-		Field modifiersField = Field.class.getDeclaredField("modifiers");
-		modifiersField.setAccessible(true);
-		modifiersField.setInt(quadModeField, quadModeField.getModifiers() & ~Modifier.FINAL);
-
 		quadModeField.set(con, true);
 	}
 

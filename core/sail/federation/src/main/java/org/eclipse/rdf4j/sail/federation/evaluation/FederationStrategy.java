@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.OwnedTupleExpr;
 
 /**
  * Evaluates Join, LeftJoin and Union in parallel and only evaluate if {@link OwnedTupleExpr} is the given member.
- * 
+ *
  * @see ParallelJoinCursor
  * @see ParallelLeftJoinCursor
  * @author James Leigh

@@ -24,29 +24,31 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * Various utility functions to handle filter expressions.
- * 
+ *
  * NOTE: currently only implemented for {@link Compare}, other filter expressions need to be added. If an unexpected
  * filter expression occurs, the filter evaluation is done locally.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FilterUtils {
 
 	/**
 	 * Returns a SPARQL representation of the provided expression,
-	 * 
+	 *
 	 * e.g Compare(?v, "<", 3) is converted to "?v < '3'"
-	 * 
+	 *
 	 * @param filterExpr
 	 * @return the SPARQL string
 	 * @throws FilterConversionException
 	 */
 	public static String toSparqlString(FilterValueExpr filterExpr) throws FilterConversionException {
 
-		if (filterExpr instanceof FilterExpr)
+		if (filterExpr instanceof FilterExpr) {
 			return toSparqlString((FilterExpr) filterExpr);
-		if (filterExpr instanceof ConjunctiveFilterExpr)
+		}
+		if (filterExpr instanceof ConjunctiveFilterExpr) {
 			return toSparqlString((ConjunctiveFilterExpr) filterExpr);
+		}
 
 		throw new RuntimeException("Unsupported type: " + filterExpr.getClass().getCanonicalName());
 	}
@@ -64,8 +66,9 @@ public class FilterUtils {
 		sb.append("( ");
 		for (FilterExpr expr : filterExpr.getExpressions()) {
 			append(expr.getExpression(), sb);
-			if (++count < filterExpr.getExpressions().size())
+			if (++count < filterExpr.getExpressions().size()) {
 				sb.append(" && ");
+			}
 		}
 		sb.append(" )");
 
@@ -74,10 +77,12 @@ public class FilterUtils {
 
 	public static ValueExpr toFilter(FilterValueExpr filterExpr) throws FilterConversionException {
 
-		if (filterExpr instanceof FilterExpr)
+		if (filterExpr instanceof FilterExpr) {
 			return toFilter((FilterExpr) filterExpr);
-		if (filterExpr instanceof ConjunctiveFilterExpr)
+		}
+		if (filterExpr instanceof ConjunctiveFilterExpr) {
 			return toFilter((ConjunctiveFilterExpr) filterExpr);
+		}
 
 		throw new RuntimeException("Unsupported type: " + filterExpr.getClass().getCanonicalName());
 	}
@@ -147,10 +152,12 @@ public class FilterUtils {
 
 	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
 
-		if (value instanceof IRI)
+		if (value instanceof IRI) {
 			return appendURI(sb, (IRI) value);
-		if (value instanceof Literal)
+		}
+		if (value instanceof Literal) {
 			return appendLiteral(sb, (Literal) value);
+		}
 
 		// XXX check for other types ? BNode ?
 		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());

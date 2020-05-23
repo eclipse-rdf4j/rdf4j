@@ -38,7 +38,7 @@ public class QueryEvaluationUtil {
 	 * false if the operand value is NaN or is numerically equal to zero; otherwise the EBV is true.
 	 * <li>All other arguments, including unbound arguments, produce a type error.
 	 * </ul>
-	 * 
+	 *
 	 * @param value Some value.
 	 * @return The EBV of <tt>value</tt>.
 	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
@@ -116,7 +116,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Compares the supplied {@link Literal} arguments using the supplied operator, using strict (minimally-conforming)
 	 * SPARQL 1.1 operator behavior.
-	 * 
+	 *
 	 * @param leftLit  the left literal argument of the comparison.
 	 * @param rightLit the right literal argument of the comparison.
 	 * @param operator the comparison operator to use.
@@ -131,7 +131,7 @@ public class QueryEvaluationUtil {
 
 	/**
 	 * Compares the supplied {@link Literal} arguments using the supplied operator.
-	 * 
+	 *
 	 * @param leftLit  the left literal argument of the comparison.
 	 * @param rightLit the right literal argument of the comparison.
 	 * @param operator the comparison operator to use.
@@ -343,7 +343,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied value is a "plain literal". A "plain literal" is a literal with no datatype and
 	 * optionally a language tag.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#dfn-plain-literal">RDF Literal
 	 *      Documentation</a>
 	 */
@@ -358,7 +358,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied value is a "simple literal". A "simple literal" is a literal with no language tag nor
 	 * datatype.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Value v) {
@@ -372,7 +372,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied literal is a "simple literal". A "simple literal" is a literal with no language tag
 	 * and the datatype {@link XMLSchema#STRING}.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
@@ -382,7 +382,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied literal is a "string literal". A "string literal" is either a simple literal, a plain
 	 * literal with language tag, or a literal with datatype xsd:string.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Value v) {
@@ -395,7 +395,7 @@ public class QueryEvaluationUtil {
 
 	/**
 	 * Checks whether the supplied two literal arguments are 'argument compatible' according to the SPARQL definition.
-	 * 
+	 *
 	 * @param arg1 the first argument
 	 * @param arg2 the second argument
 	 * @return true iff the two supplied arguments are argument compatible, false otherwise
@@ -424,7 +424,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied literal is a "string literal". A "string literal" is either a simple literal, a plain
 	 * literal with language tag, or a literal with datatype xsd:string.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {

@@ -17,7 +17,7 @@ import org.junit.Test;
 
 /**
  * Unit tests on {@link org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class XMLDatatypeUtilTest {

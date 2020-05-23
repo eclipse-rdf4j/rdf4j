@@ -29,7 +29,7 @@ import org.junit.Test;
 
 /**
  * Tests for {@link Literals}.
- * 
+ *
  * @author Peter Ansell
  */
 public class LiteralsTest {

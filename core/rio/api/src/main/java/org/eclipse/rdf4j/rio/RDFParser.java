@@ -60,7 +60,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed RDF data.
-	 * 
+	 *
 	 * @param valueFactory The value factory that the parser should use.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -68,7 +68,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets the RDFHandler that will handle the parsed RDF data.
-	 * 
+	 *
 	 * @param handler The RDFHandler to handle the parsed data.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -76,7 +76,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
-	 * 
+	 *
 	 * @param el The ParseErrorListener that will be notified of errors or warnings.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -84,7 +84,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets the ParseLocationListener that will be notified of the parser's progress during the parse process.
-	 * 
+	 *
 	 * @param ll The ParseLocationListener that will be notified of the parser's progress.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -92,7 +92,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets all supplied parser configuration options.
-	 * 
+	 *
 	 * @param config a parser configuration object.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -100,7 +100,7 @@ public interface RDFParser {
 
 	/**
 	 * Retrieves the current parser configuration as a single object.
-	 * 
+	 *
 	 * @return a parser configuration object representing the current configuration of the parser.
 	 */
 	public ParserConfig getParserConfig();
@@ -112,7 +112,7 @@ public interface RDFParser {
 
 	/**
 	 * Set a setting on the parser, and return this parser object to allow chaining.
-	 * 
+	 *
 	 * @param setting The setting to change.
 	 * @param value   The value to change.
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
@@ -121,7 +121,7 @@ public interface RDFParser {
 
 	/**
 	 * Sets whether the parser should verify the data it parses (default value is <tt>true</tt>).
-	 * 
+	 *
 	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
 	 *             {@link BasicParserSettings#NORMALIZE_DATATYPE_VALUES} instead.
@@ -137,7 +137,7 @@ public interface RDFParser {
 	/**
 	 * Sets whether the parser should stop immediately if it finds an error in the data (default value is
 	 * <tt>true</tt>).
-	 * 
+	 *
 	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link ParserConfig#addNonFatalError(RioSetting)} to
 	 *             select which errors will not always fail the parse prematurely.
 	 */
@@ -150,7 +150,7 @@ public interface RDFParser {
 	 * datatyped literals. If set to <em>verify</em>, any literals with known (XML Schema built-in) datatypes are
 	 * checked to see if their values are valid. If set to <em>normalize</em>, the literal values are not only checked,
 	 * but also normalized to their canonical representation. The default value is <em>verify</em>.
-	 * 
+	 *
 	 * @param datatypeHandling A datatype handling option.
 	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
@@ -161,7 +161,7 @@ public interface RDFParser {
 
 	/**
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param in      The InputStream from which to read the data.
 	 * @param baseURI The URI associated with the data in the InputStream.
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
@@ -172,7 +172,7 @@ public interface RDFParser {
 
 	/**
 	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param reader  The Reader from which to read the data.
 	 * @param baseURI The URI associated with the data in the InputStream.
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.

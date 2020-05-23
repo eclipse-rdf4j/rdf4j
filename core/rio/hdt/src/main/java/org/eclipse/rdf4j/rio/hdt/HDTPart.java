@@ -17,17 +17,17 @@ import java.util.zip.CheckedInputStream;
 
 /**
  * Helper class for different HDT parts.
- * 
+ *
  * Each part starts with <code>$HDT</code>, followed by a byte indicating the type of the part.
- * 
+ *
  * Structure:
- * 
+ *
  * <pre>
  * +------+------+
  * | $HDT | type |
  * +------+------+
  * </pre>
- * 
+ *
  * @author Bart Hanssens
  */
 abstract class HDTPart {
@@ -40,7 +40,7 @@ abstract class HDTPart {
 
 		/**
 		 * Get value associated with this type
-		 * 
+		 *
 		 * @return value 1,2 or 3
 		 */
 		protected byte getValue() {
@@ -63,7 +63,7 @@ abstract class HDTPart {
 
 	/**
 	 * Parse from input stream
-	 * 
+	 *
 	 * @param is
 	 * @throws IOException
 	 */
@@ -71,8 +71,8 @@ abstract class HDTPart {
 
 	/**
 	 * Get properties, if any.
-	 * 
-	 * @return key,value map
+	 *
+	 * @return key, value map
 	 */
 	protected Map<String, String> getProperties() {
 		return properties;
@@ -80,7 +80,7 @@ abstract class HDTPart {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param name part name
 	 * @param pos  starting position in input stream
 	 */
@@ -98,7 +98,7 @@ abstract class HDTPart {
 
 	/**
 	 * Get a string for debugging purposes, containing the name and starting position of this part.
-	 * 
+	 *
 	 * @return string
 	 */
 	protected String getDebugPartStr() {
@@ -110,7 +110,7 @@ abstract class HDTPart {
 
 	/**
 	 * Check start of part for <code>$HDT</code> and the byte indicating the type
-	 * 
+	 *
 	 * @param is    input stream
 	 * @param ctype control type
 	 * @throws IOException
@@ -130,7 +130,7 @@ abstract class HDTPart {
 
 	/**
 	 * Check for <code>null</code> terminated format string.
-	 * 
+	 *
 	 * @param is
 	 * @param format
 	 * @throws IOException
@@ -146,7 +146,7 @@ abstract class HDTPart {
 
 	/**
 	 * Read null terminated series of bytes
-	 * 
+	 *
 	 * @param is input stream
 	 * @return
 	 * @throws IOException
@@ -167,7 +167,7 @@ abstract class HDTPart {
 
 	/**
 	 * Get the first position of the NULL byte within an array of bytes
-	 * 
+	 *
 	 * @param b     byte array
 	 * @param start position to start from
 	 * @return position of first NULL byte
@@ -184,9 +184,9 @@ abstract class HDTPart {
 	/**
 	 * Get the properties from the input stream, reading at most BUFLEN bytes. The properties are encoded as a
 	 * <code>key=value;</code> string and must be <code>null</code> terminated.
-	 * 
+	 *
 	 * @param is input stream
-	 * @return key,value map
+	 * @return key, value map
 	 * @throws IOException
 	 */
 	protected static Map<String, String> getProperties(InputStream is) throws IOException {
@@ -195,7 +195,7 @@ abstract class HDTPart {
 
 	/**
 	 * Get properties as a key, value map
-	 * 
+	 *
 	 * @param props
 	 * @return
 	 */
@@ -218,7 +218,7 @@ abstract class HDTPart {
 	/**
 	 * Get the positive integer value from a property map. Throw an exception when the property is missing, or less than
 	 * 1.
-	 * 
+	 *
 	 * @param props property map
 	 * @param prop  name of the property
 	 * @param name  display name of the property
@@ -242,7 +242,7 @@ abstract class HDTPart {
 
 	/**
 	 * Compare the calculated checksum to the expected one.
-	 * 
+	 *
 	 * @param cis checked input stream
 	 * @param is  (unchecked) input stream
 	 * @param len number of bytes of the checksum

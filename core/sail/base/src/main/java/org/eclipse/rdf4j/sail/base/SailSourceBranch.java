@@ -11,6 +11,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
@@ -350,10 +351,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private boolean isChanged(Changeset change) {
-		return change.getApproved() != null || change.getDeprecated() != null || change.getApprovedContexts() != null
-				|| change.getDeprecatedContexts() != null || change.getAddedNamespaces() != null
-				|| change.getRemovedPrefixes() != null || change.isStatementCleared() || change.isNamespaceCleared()
-				|| change.getObservations() != null;
+		return change.isChanged();
 	}
 
 	private SailDataset derivedFromSerializable(IsolationLevel level) throws SailException {
@@ -483,13 +481,13 @@ class SailSourceBranch implements SailSource {
 		if (deprecatedContexts != null && !deprecatedContexts.isEmpty()) {
 			sink.clear(deprecatedContexts.toArray(new Resource[0]));
 		}
-		Model deprecated = change.getDeprecated();
+		List<Statement> deprecated = change.getDeprecatedStatements();
 		if (deprecated != null) {
 			for (Statement st : deprecated) {
 				sink.deprecate(st);
 			}
 		}
-		Model approved = change.getApproved();
+		List<Statement> approved = change.getApprovedStatements();
 		if (approved != null) {
 			for (Statement st : approved) {
 				sink.approve(st);

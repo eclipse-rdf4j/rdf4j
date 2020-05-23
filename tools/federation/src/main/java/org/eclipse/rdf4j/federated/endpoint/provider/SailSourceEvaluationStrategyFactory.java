@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
  * All other types of {@link TupleExpr} are optimized and evaluated through the configured delegate strategy, i.e.
  * typically the one provided by the sail itself.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see NativeStoreProvider
  */
@@ -78,7 +78,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 	/**
 	 * {@link EvaluationStrategy} that can handle {@link PrecompiledQueryNode} without prior optimization. All other
 	 * {@link TupleExpr} are handled in the respective delegate.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */

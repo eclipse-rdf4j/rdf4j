@@ -10,9 +10,6 @@
 	<packaging>war</packaging>
 	<name>RDF4J Repository compliance tests</name>
 	<description>Compliance testing for the Repository API implementations</description>
-	<properties>
-		<jetty.version>9.4.19.v20190610</jetty.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
 
 /**
  * Generic interface to create {@link Endpoint}s from a repository information.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * An abstract superclass for N-ary value operators.
- * 
+ *
  * @author Jeen
  */
 public abstract class NAryValueOperator extends AbstractQueryModelNode implements ValueExpr {
@@ -35,7 +35,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	/**
 	 * Creates a new N-Ary value operator.
-	 * 
+	 *
 	 * @param args The operator's list of arguments, must not be <tt>null</tt>.
 	 */
 	protected NAryValueOperator(List<ValueExpr> args) {

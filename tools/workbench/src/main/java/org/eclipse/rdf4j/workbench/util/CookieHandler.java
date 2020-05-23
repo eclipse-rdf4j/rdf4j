@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handles cookies for TransformationServlet.
- * 
+ *
  * @author Dale Visser
  */
 public class CookieHandler {
@@ -80,7 +80,7 @@ public class CookieHandler {
 
 	/**
 	 * Add a 'total_result_count' cookie. Used by both QueryServlet and ExploreServlet.
-	 * 
+	 *
 	 * @param req  the request object
 	 * @param resp the response object
 	 * @value the value to give the cookie

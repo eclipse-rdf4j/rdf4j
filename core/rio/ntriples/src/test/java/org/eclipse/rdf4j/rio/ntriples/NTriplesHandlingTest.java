@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Test for error handling by N-Triples Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class NTriplesHandlingTest extends AbstractParserHandlingTest {

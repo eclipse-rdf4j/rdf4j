@@ -240,7 +240,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Internal method that differentiates between the pretty-print and streaming writer cases.
-	 * 
+	 *
 	 * @param st                     The next statement to write
 	 * @param endRDFCalled           True if endRDF has been called before this method is called. This is used to buffer
 	 *                               statements for pretty-printing before dumping them when all statements have been
@@ -376,7 +376,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is suitable
 	 * for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be shortened in
 	 * this context.
-	 * 
+	 *
 	 * @param val        The {@link Value} to write.
 	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
 	 *                   {@link BNode} .
@@ -406,7 +406,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace definition that
 	 * is suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be
 	 * shortened in this context.
-	 * 
+	 *
 	 * @param res        The {@link Resource} to write.
 	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
 	 *                   {@link BNode} .

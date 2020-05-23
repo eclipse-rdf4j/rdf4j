@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 
 /**
  * Utility functions for working with vocabularies.
- * 
+ *
  * @author Bart Hanssens
  */
 public class Vocabularies {

@@ -25,7 +25,7 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 		return collector.getTripleRefs();
 	}
 
-	private Map<String, Object> tripleRefs = new HashMap<String, Object>();
+	private Map<String, Object> tripleRefs = new HashMap<>();
 
 	public Map<String, Object> getTripleRefs() {
 		return tripleRefs;
@@ -53,7 +53,8 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 			tripleRefs.put(((TripleRef) node).getExprVar().getName(), (TripleRef) node);
 		} else if (node instanceof ValueExprTripleRef) {
 			tripleRefs.put(((ValueExprTripleRef) node).getExtVarName(), node);
-		} else
+		} else {
 			super.meetOther(node);
+		}
 	}
 }

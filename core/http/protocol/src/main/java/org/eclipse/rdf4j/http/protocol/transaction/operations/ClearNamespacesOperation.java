@@ -14,14 +14,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation that removes all namespace declarations.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class ClearNamespacesOperation implements TransactionOperation, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 804163331093326031L;
 

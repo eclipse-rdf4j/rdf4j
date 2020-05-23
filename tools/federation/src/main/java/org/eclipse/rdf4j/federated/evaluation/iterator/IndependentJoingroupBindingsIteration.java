@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Inserts original bindings into the result.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class IndependentJoingroupBindingsIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -42,8 +42,9 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 			result = computeResult();
 		}
 
-		if (currentIdx >= result.size())
+		if (currentIdx >= result.size()) {
 			return null;
+		}
 
 		return result.get(currentIdx++);
 	}
@@ -59,20 +60,22 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 
 			BindingSet bIn = iter.next();
 
-			if (bIn.size() != 1)
+			if (bIn.size() != 1) {
 				throw new RuntimeException(
 						"For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size()
 								+ ": " + bIn);
+			}
 
 			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());
 			int bIndex = Integer.parseInt(b.getName().substring(b.getName().lastIndexOf('_') + 1));
 
-			if (bIndex == 0)
+			if (bIndex == 0) {
 				a_res.add(b);
-			else if (bIndex == 1)
+			} else if (bIndex == 1) {
 				b_res.add(b);
-			else
+			} else {
 				throw new RuntimeException("Unexpected binding value.");
+			}
 		}
 
 		ArrayList<BindingSet> res = new ArrayList<>(a_res.size() * b_res.size());

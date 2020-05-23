@@ -383,7 +383,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write quoted attribute
-	 * 
+	 *
 	 * @param attName attribute name
 	 * @param value   string value
 	 * @throws IOException
@@ -400,7 +400,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write &gt;
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeEndOfStartTag() throws IOException {
@@ -409,7 +409,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write &gt; or /&gt;
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeEndOfEmptyTag() throws IOException {
@@ -435,7 +435,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Replace special characters in text with entities.
-	 * 
+	 *
 	 * @param chars text
 	 * @throws IOException
 	 */
@@ -452,7 +452,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write tab
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeIndent() throws IOException {
@@ -461,7 +461,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Write newline character
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void writeNewLine() throws IOException {
@@ -471,7 +471,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML syntax
 	 * enforces the blank node id is a valid NCName.
-	 * 
+	 *
 	 * @param bNode a blank node identifier
 	 * @return the blank node identifier converted to a form that is a valid NCName.
 	 * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/#rdf-id">section 7.2.34 of the RDF/XML Syntax specification</a>

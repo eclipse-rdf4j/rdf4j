@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The IF function, as defined in SPARQL 1.1 Query.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class If extends AbstractQueryModelNode implements ValueExpr {
@@ -55,7 +55,7 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 
 	/**
 	 * Gets the argument of this unary value operator.
-	 * 
+	 *
 	 * @return The operator's argument.
 	 */
 	public ValueExpr getCondition() {
@@ -64,7 +64,7 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 
 	/**
 	 * Sets the condition argument of this unary value operator.
-	 * 
+	 *
 	 * @param condition The (new) condition argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setCondition(ValueExpr condition) {

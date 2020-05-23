@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
  * <p>
  * The Repository lifecycle is assumed to be managed externally.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

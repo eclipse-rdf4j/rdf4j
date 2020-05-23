@@ -21,7 +21,6 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -50,7 +49,7 @@ import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
  * allow comments to be used inside triple constructs that extend over multiple lines, but the author's own parser
  * deviates from this too.</li>
  * </ul>
- * 
+ *
  * @author Arjohn Kampman
  * @author Peter Ansell
  */
@@ -671,7 +670,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a quoted string, which is either a "normal string" or a """long string""".
-	 * 
+	 *
 	 * @return string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -711,7 +710,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a "normal string". This method requires that the opening character has already been parsed.
-	 * 
+	 *
 	 * @return parsed string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -1330,7 +1329,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but prevents
 	 * the additional char array garbage for BMP codepoints.
-	 * 
+	 *
 	 * @param dst       the destination in which to append the characters
 	 * @param codePoint the codepoint to be appended
 	 */

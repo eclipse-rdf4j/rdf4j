@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
  * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value} creation methods
  * by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and type-optimized subclasses
  * (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
@@ -247,7 +247,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	/**
 	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar and the
 	 * appropriate datatype as parameters.
-	 * 
+	 *
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
 	 * @see XMLDatatypeUtil#qnameToURI(javax.xml.namespace.QName)

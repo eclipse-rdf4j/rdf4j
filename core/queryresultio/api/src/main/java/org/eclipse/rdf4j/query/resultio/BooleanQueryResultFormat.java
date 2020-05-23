@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
  * Represents the concept of a boolean query result serialization format. Boolean query result formats are identified by
  * a {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
  * can specify a (default) character encoding.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultFormat extends QueryResultFormat {
@@ -56,7 +56,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name     The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
 	 *                 format.
@@ -68,7 +68,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name     The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
 	 *                 format.
@@ -81,7 +81,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name           The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
 	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
@@ -97,7 +97,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Creates a new BooleanQueryResultFormat object.
-	 * 
+	 *
 	 * @param name           The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
 	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for

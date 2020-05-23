@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * A base {@link NotifyingSail} implementation that takes care of common sail tasks, including proper closing of active
  * connections and a grace period for active connections during shutdown of the store.
- * 
+ *
  * @author Herko ter Horst
  * @author jeen
  * @author Arjohn Kampman

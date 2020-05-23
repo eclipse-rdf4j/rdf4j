@@ -30,10 +30,12 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -48,7 +50,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Tests for SPARQL 1.1 Update functionality.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class SPARQLUpdateTest {
@@ -1717,12 +1719,43 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 	}
 
+	@Test
+	public void contextualInsertDeleteData()
+			throws RepositoryException, MalformedQueryException, UpdateExecutionException {
+		StringBuilder insert = new StringBuilder();
+		insert.append(getNamespaceDeclarations());
+		insert.append("INSERT DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \"alice@example.org\" .} ");
+
+		SimpleDataset ds = new SimpleDataset();
+		ds.setDefaultInsertGraph(graph2);
+		ds.addDefaultRemoveGraph(graph2);
+
+		Update updInsert = con.prepareUpdate(QueryLanguage.SPARQL, insert.toString());
+		updInsert.setDataset(ds);
+		updInsert.execute();
+
+		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));
+		assertTrue(con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
+
+		StringBuilder update = new StringBuilder();
+		update.append(getNamespaceDeclarations());
+		update.append("DELETE DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \"alice@example.org\" .} ");
+
+		Update updDelete = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
+		updDelete.setDataset(ds);
+		updDelete.execute();
+
+		String msg = "statement should have been deleted.";
+		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));
+		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
+	}
+
 	/*
 	 * @Test public void testLoad() throws Exception { String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml>"; String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
 	 * operation.execute(); assertTrue(con.hasStatement(null, RDF.TYPE, f.createURI(ns, "Family"), true)); }
-	 * 
+	 *
 	 * @Test public void testLoadIntoGraph() throws Exception { String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml> INTO GRAPH <" + ns + "> "; Update operation =
@@ -1746,7 +1779,7 @@ public abstract class SPARQLUpdateTest {
 
 	/**
 	 * Get a set of useful namespace prefix declarations.
-	 * 
+	 *
 	 * @return namespace prefix declarations for rdf, rdfs, dc, foaf and ex.
 	 */
 	protected String getNamespaceDeclarations() {
@@ -1764,7 +1797,7 @@ public abstract class SPARQLUpdateTest {
 
 	/**
 	 * Creates, initializes and clears a repository.
-	 * 
+	 *
 	 * @return an initialized empty repository.
 	 * @throws Exception
 	 */
@@ -1781,7 +1814,7 @@ public abstract class SPARQLUpdateTest {
 	/**
 	 * Create a new Repository object. Subclasses are expected to implement this method to supply the test case with a
 	 * specific Repository type and configuration.
-	 * 
+	 *
 	 * @return a new (uninitialized) Repository
 	 * @throws Exception
 	 */

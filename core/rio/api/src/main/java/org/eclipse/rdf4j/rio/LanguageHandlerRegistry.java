@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
  * Registry of {@link LanguageHandler}s.
- * 
+ *
  * @author Peter Ansell
  */
 public class LanguageHandlerRegistry extends ServiceRegistry<String, LanguageHandler> {
@@ -26,7 +26,7 @@ public class LanguageHandlerRegistry extends ServiceRegistry<String, LanguageHan
 
 	/**
 	 * Gets the default LanguageHandlerRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static LanguageHandlerRegistry getInstance() {

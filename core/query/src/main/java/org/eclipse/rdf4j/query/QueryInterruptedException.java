@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query;
 /**
  * An exception indicating that the evaluation of a query has been interrupted, for example because it took too long to
  * complete.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryInterruptedException extends QueryEvaluationException {

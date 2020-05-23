@@ -17,7 +17,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Puts the entire <tt>source</tt> array in the <tt>target</tt> array at offset <tt>offset</tt>.
-	 * 
+	 *
 	 * @param source source array
 	 * @param target target array
 	 * @param offset non-negative offset
@@ -28,7 +28,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Gets the subarray from <tt>array</tt> that starts at <tt>offset</tt>.
-	 * 
+	 *
 	 * @param array  source array
 	 * @param offset non-negative offset
 	 * @return byte array
@@ -39,7 +39,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Gets the subarray of length <tt>length</tt> from <tt>array</tt> that starts at <tt>offset</tt>.
-	 * 
+	 *
 	 * @param array  byte array
 	 * @param offset non-negative offset
 	 * @param length length
@@ -53,7 +53,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Put an integer value (padded) in a byte array at a specific offset.
-	 * 
+	 *
 	 * @param value  integer value
 	 * @param array  byte array
 	 * @param offset non-negative offset
@@ -67,7 +67,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Get an integer value from a byte array at a specific offset.
-	 * 
+	 *
 	 * @param array  byte array
 	 * @param offset non-negative offset
 	 * @return integer value
@@ -79,7 +79,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Put a long value (padded) in a byte array at a specific offset.
-	 * 
+	 *
 	 * @param value  long value
 	 * @param array  byte array
 	 * @param offset non-negative offset
@@ -97,7 +97,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Get a long value from a byte array at a specific offset.
-	 * 
+	 *
 	 * @param array  byte array
 	 * @param offset offset
 	 * @return long value
@@ -111,7 +111,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Retrieve a byte from a byte array.
-	 * 
+	 *
 	 * @param a         the byte array to look in
 	 * @param fromIndex the position from which to start looking
 	 * @param toIndex   the position up to which to look
@@ -137,7 +137,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Look for a sequence of bytes in a byte array.
-	 * 
+	 *
 	 * @param a         the byte array to look in
 	 * @param fromIndex the position from which to start looking
 	 * @param toIndex   the position up to which to look
@@ -178,7 +178,7 @@ public class ByteArrayUtil {
 	/**
 	 * Checks whether <tt>value</tt> matches <tt>pattern</tt> with respect to the bits specified by <tt>mask</tt>. In
 	 * other words: this method returns true if <tt>(value[i] ^ pattern[i]) &amp; mask[i] == 0</tt> for all i.
-	 * 
+	 *
 	 * @param value   byte array
 	 * @param mask
 	 * @param pattern pattern
@@ -196,7 +196,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Checks whether <tt>subValue</tt> matches the region in <tt>superValue</tt> starting at offset <tt>offset</tt>.
-	 * 
+	 *
 	 * @param subValue   value to search for
 	 * @param superValue byte array
 	 * @param offset     non-negative offset
@@ -214,7 +214,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Compares two regions of bytes, indicating whether one is larger than the other.
-	 * 
+	 *
 	 * @param array1    The first byte array.
 	 * @param startIdx1 The start of the region in the first array.
 	 * @param array2    The second byte array.
@@ -233,7 +233,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Convert a byte array to a vector of bits.
-	 * 
+	 *
 	 * @param array byte array
 	 * @return bitset
 	 */
@@ -255,7 +255,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Convert a bitset to a byte array.
-	 * 
+	 *
 	 * @param bitSet bitset (should not be null)
 	 * @return byte array
 	 */
@@ -271,7 +271,7 @@ public class ByteArrayUtil {
 
 	/**
 	 * Create a byte mask, setting bit bitNo to 1 and other bits to 0.
-	 * 
+	 *
 	 * @param bitNo bit
 	 * @return byte mask
 	 */
@@ -283,7 +283,7 @@ public class ByteArrayUtil {
 	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two hexadecimals per
 	 * byte. As a result, the length of the resulting string is guaranteed to be twice the length of the supplied byte
 	 * array.
-	 * 
+	 *
 	 * @param array byte array
 	 * @return hexadecimal string
 	 */

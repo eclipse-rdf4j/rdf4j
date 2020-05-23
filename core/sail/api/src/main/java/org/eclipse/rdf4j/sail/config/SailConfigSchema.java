@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Defines constants for the Sail repository schema which are used to initialize repositories.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailConfigSchema {

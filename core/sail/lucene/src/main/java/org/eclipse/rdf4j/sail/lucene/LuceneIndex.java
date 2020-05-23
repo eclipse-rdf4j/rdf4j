@@ -92,7 +92,7 @@ import com.google.common.collect.Sets;
 /**
  * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
  * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
- * 
+ *
  * @see LuceneSail
  */
 public class LuceneIndex extends AbstractLuceneIndex {
@@ -140,7 +140,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Constructor for keeping backwards compatibility.
-	 * 
+	 *
 	 * @param directory
 	 * @param analyzer
 	 */
@@ -150,7 +150,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Creates a new LuceneIndex.
-	 * 
+	 *
 	 * @param directory  The Directory in which an index can be found and/or in which index files are written.
 	 * @param analyzer   The Analyzer that will be used for tokenizing strings to index and queries.
 	 * @param similarity The Similarity that will be used for scoring.
@@ -499,7 +499,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
-	 * 
+	 *
 	 * @param subject
 	 * @param context
 	 * @return document
@@ -517,7 +517,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
+	 *
 	 * @param subject
 	 * @return list of documents
 	 * @throws IOException
@@ -530,7 +530,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes an ID in a Document.
-	 * 
+	 *
 	 * @param id
 	 * @param document
 	 */
@@ -540,7 +540,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Add the "context" value to the doc
-	 * 
+	 *
 	 * @param context  the context or null, if null-context
 	 * @param document the document
 	 */
@@ -552,7 +552,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes the resource ID in a Document.
-	 * 
+	 *
 	 * @param resourceId
 	 * @param document
 	 */
@@ -578,7 +578,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * invalidate readers, free them if possible (readers that are still open by a {@link LuceneQueryConnection} will
 	 * not be closed. Synchronized on oldmonitors because it manipulates them
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private void invalidateReaders() throws IOException {
@@ -629,14 +629,16 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				String[] idArray;
 				int count = 0;
 				for (int i = 0; i < reader.maxDoc(); i++) {
-					if (isDeleted(reader, i))
+					if (isDeleted(reader, i)) {
 						continue;
+					}
 					doc = readDocument(reader, i, null);
 					totalFields += doc.getFields().size();
 					count++;
 					idArray = doc.getValues("id");
-					for (String id : idArray)
+					for (String id : idArray) {
 						ids.add(id);
+					}
 
 				}
 
@@ -685,7 +687,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Parse the passed query. To be removed, no longer used.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -704,7 +706,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Parse the passed query.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -824,7 +826,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Returns the lucene hit with the given id of the respective lucene query
-	 * 
+	 *
 	 * @param docId        the id of the document to return
 	 * @param fieldsToLoad
 	 * @return the requested hit, or null if it fails
@@ -871,7 +873,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
+	 *
 	 * @param resource
 	 * @param query
 	 * @return top documents
@@ -888,7 +890,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
-	 * 
+	 *
 	 * @param query
 	 * @return top documents
 	 * @throws IOException
@@ -906,14 +908,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private QueryParser getQueryParser(IRI propertyURI) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser
-			// which
-			// has the TEXT_FIELD_NAME as the default field
+		// if we have no property given, we create a default query parser
+		// which
+		// has the TEXT_FIELD_NAME as the default field
+		{
 			return new QueryParser(SearchFields.TEXT_FIELD_NAME, this.queryAnalyzer);
-		else
-			// otherwise we create a query parser that has the given property as
-			// the default field
+		} else
+		// otherwise we create a query parser that has the given property as
+		// the default field
+		{
 			return new QueryParser(SearchFields.getPropertyField(propertyURI), this.queryAnalyzer);
+		}
 	}
 
 	/**
@@ -1008,7 +1013,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public synchronized void clear() throws IOException {
@@ -1018,8 +1023,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// clear
 		// the old IndexReaders/Searchers are not outdated
 		invalidateReaders();
-		if (indexWriter != null)
+		if (indexWriter != null) {
 			indexWriter.close();
+		}
 
 		// crate new writer
 		IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
@@ -1036,7 +1042,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Method produces {@link IndexWriterConfig} using settings.
-	 * 
+	 *
 	 * @return
 	 */
 	private IndexWriterConfig getIndexWriterConfig() {

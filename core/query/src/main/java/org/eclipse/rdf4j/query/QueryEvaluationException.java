@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception indicating that the evaluation of a query failed.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryEvaluationException extends RDF4JException {
@@ -24,7 +24,7 @@ public class QueryEvaluationException extends RDF4JException {
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public QueryEvaluationException(String msg) {
@@ -33,7 +33,7 @@ public class QueryEvaluationException extends RDF4JException {
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param cause The cause of the exception.
 	 */
 	public QueryEvaluationException(Throwable cause) {
@@ -42,7 +42,7 @@ public class QueryEvaluationException extends RDF4JException {
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param msg   An error message.
 	 * @param cause The cause of the exception.
 	 */

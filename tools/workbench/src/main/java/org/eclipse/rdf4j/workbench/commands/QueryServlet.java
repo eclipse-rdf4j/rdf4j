@@ -81,11 +81,11 @@ public class QueryServlet extends TransformationServlet {
 
 	// Poor Man's Cache: At the very least, garbage collection can clean up keys
 	// followed by values whenever the JVM faces memory pressure.
-	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<String, String>());
+	private static Map<String, String> queryCache = Collections.synchronizedMap(new WeakHashMap<>());
 
 	/**
 	 * For testing purposes only.
-	 * 
+	 *
 	 * @param testQueryCache cache to use instead of the production cache instance
 	 */
 	protected static void substituteQueryCache(Map<String, String> testQueryCache) {
@@ -112,7 +112,7 @@ public class QueryServlet extends TransformationServlet {
 
 	/**
 	 * Initialize this instance of the servlet.
-	 * 
+	 *
 	 * @param config configuration passed in by the application container
 	 */
 	@Override
@@ -151,7 +151,7 @@ public class QueryServlet extends TransformationServlet {
 	 * <p>
 	 * Note: This is a separate method for testing purposes.
 	 * </p>
-	 * 
+	 *
 	 * @param queryText the text received as the value for the parameter 'query'
 	 */
 	protected boolean shouldWriteQueryCookie(String queryText) {

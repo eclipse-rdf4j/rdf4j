@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -335,4 +336,33 @@ public class SPARQLParserTest {
 
 	}
 
+	@Test
+	public void testWildCardPathComplexSubjectHandling() {
+
+		String query = "PREFIX : <http://example.org/>\n ASK { ?a (:comment/^(:subClassOf|(:type/:label))/:type)* ?b } ";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+		Slice slice = (Slice) tupleExpr;
+
+		ArbitraryLengthPath path = (ArbitraryLengthPath) slice.getArg();
+		Var pathStart = path.getSubjectVar();
+		Var pathEnd = path.getObjectVar();
+
+		assertThat(pathStart.getName()).isEqualTo("a");
+		assertThat(pathEnd.getName()).isEqualTo("b");
+
+		Join pathSequence = (Join) path.getPathExpression();
+		Join innerJoin = (Join) pathSequence.getLeftArg();
+		Var commentObjectVar = ((StatementPattern) innerJoin.getLeftArg()).getObjectVar();
+
+		Union union = (Union) innerJoin.getRightArg();
+		Var subClassOfSubjectVar = ((StatementPattern) union.getLeftArg()).getSubjectVar();
+		assertThat(subClassOfSubjectVar).isNotEqualTo(commentObjectVar);
+
+		Var subClassOfObjectVar = ((StatementPattern) union.getLeftArg()).getObjectVar();
+
+		assertThat(subClassOfObjectVar).isEqualTo(commentObjectVar);
+	}
 }

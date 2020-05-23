@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The LABEL function, which selects the label of literals.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Label extends UnaryValueOperator {

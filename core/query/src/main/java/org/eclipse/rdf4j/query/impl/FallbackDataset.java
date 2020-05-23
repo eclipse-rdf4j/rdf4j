@@ -19,15 +19,17 @@ import org.eclipse.rdf4j.query.Dataset;
 public class FallbackDataset implements Dataset, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 5866540736738270376L;
 
 	public static Dataset fallback(Dataset primary, Dataset fallback) {
-		if (primary == null)
+		if (primary == null) {
 			return fallback;
-		if (fallback == null)
+		}
+		if (fallback == null) {
 			return primary;
+		}
 		return new FallbackDataset(primary, fallback);
 	}
 
@@ -45,32 +47,36 @@ public class FallbackDataset implements Dataset, Serializable {
 	@Override
 	public Set<IRI> getDefaultGraphs() {
 		Set<IRI> set = primary.getDefaultGraphs();
-		if (set == null || set.isEmpty())
+		if (set == null || set.isEmpty()) {
 			return fallback.getDefaultGraphs();
+		}
 		return set;
 	}
 
 	@Override
 	public Set<IRI> getNamedGraphs() {
 		Set<IRI> set = primary.getNamedGraphs();
-		if (set == null || set.isEmpty())
+		if (set == null || set.isEmpty()) {
 			return fallback.getNamedGraphs();
+		}
 		return set;
 	}
 
 	@Override
 	public IRI getDefaultInsertGraph() {
 		IRI graph = primary.getDefaultInsertGraph();
-		if (graph == null)
+		if (graph == null) {
 			return fallback.getDefaultInsertGraph();
+		}
 		return graph;
 	}
 
 	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
 		Set<IRI> set = primary.getDefaultRemoveGraphs();
-		if (set == null || set.isEmpty())
+		if (set == null || set.isEmpty()) {
 			return fallback.getDefaultRemoveGraphs();
+		}
 		return set;
 	}
 

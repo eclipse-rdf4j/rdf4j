@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * Base class for any FedX Exception.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

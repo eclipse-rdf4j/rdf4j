@@ -16,7 +16,7 @@ import org.junit.Test;
 
 /**
  * Test for the utility methods in {@link TurtleUtil}.
- * 
+ *
  * @author Peter Ansell
  */
 public class TurtleUtilTest {

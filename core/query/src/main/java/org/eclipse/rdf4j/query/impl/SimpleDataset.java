@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.Dataset;
 
 /**
  * A simple implementation of the {@link Dataset} interface.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -50,7 +50,7 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	/**
 	 * Removes a graph URI from the set of default remove graph URIs.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultRemoveGraph(IRI graphURI) {
@@ -86,7 +86,7 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	/**
 	 * Removes a graph URI from the set of default graph URIs.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultGraph(IRI graphURI) {
@@ -110,7 +110,7 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	/**
 	 * Removes a graph URI from the set of named graph URIs.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
 	 */
 	public boolean removeNamedGraph(IRI graphURI) {

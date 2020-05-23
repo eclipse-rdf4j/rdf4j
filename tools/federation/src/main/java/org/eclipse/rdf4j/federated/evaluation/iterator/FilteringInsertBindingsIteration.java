@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Filters iteration according to specified filterExpr and inserts original bindings into filtered results.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FilteringInsertBindingsIteration extends FilteringIteration {
@@ -33,8 +33,9 @@ public class FilteringInsertBindingsIteration extends FilteringIteration {
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
 		BindingSet next = super.next();
-		if (next == null)
+		if (next == null) {
 			return null;
+		}
 		QueryBindingSet res = new QueryBindingSet(bindings.size() + next.size());
 		res.addAll(bindings);
 		res.addAll(next);

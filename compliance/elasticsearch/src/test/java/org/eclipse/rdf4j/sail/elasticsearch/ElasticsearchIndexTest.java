@@ -40,7 +40,6 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 @ClusterScope(numDataNodes = 1)
@@ -443,15 +442,17 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	private void assertStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			fail("Missing document " + statement.getSubject());
+		}
 		assertStatement(statement, document);
 	}
 
 	private void assertNoStatement(Statement statement) throws Exception {
 		SearchDocument document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			return;
+		}
 		assertNoStatement(statement, document);
 	}
 
@@ -463,8 +464,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (String f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f))
+			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				return;
+			}
 		}
 		fail("Statement not found in document " + statement);
 	}
@@ -475,11 +477,13 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	 */
 	private void assertNoStatement(Statement statement, SearchDocument document) {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
-		if (fields == null)
+		if (fields == null) {
 			return;
+		}
 		for (String f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f))
+			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				fail("Statement should not be found in document " + statement);
+			}
 		}
 
 	}

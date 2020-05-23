@@ -25,14 +25,14 @@ public class QueryLanguage {
 
 	/**
 	 * SeRQL (Sesame RDF Query Language) is a Sesame-specific query language for RDF, which predates SPARQL.
-	 * 
+	 *
 	 * @see <a href="http://rdf4j.org/doc/serql">The SeRQL user manual</a>
 	 */
 	public static final QueryLanguage SERQL = new QueryLanguage("SeRQL");
 
 	/**
 	 * SPARQL (Simple Protocol and RDF Query Language) is a W3C Recommendation for querying and updating RDF data.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-overview/">SPARQL 1.1 Overview</a>
 	 */
 	public static final QueryLanguage SPARQL = new QueryLanguage("SPARQL");
@@ -40,7 +40,7 @@ public class QueryLanguage {
 	/**
 	 * SeRQO (Sesame RDF Query Language - Objects) is a Sesame-specific query language using a syntax suited less for
 	 * human editing but for easy transfer over the wire.
-	 * 
+	 *
 	 * @deprecated since 2.0. This language is no longer actively supported.
 	 */
 	@Deprecated
@@ -53,7 +53,7 @@ public class QueryLanguage {
 	/**
 	 * List of known query languages.
 	 */
-	private static List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<QueryLanguage>(4);
+	private static List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<>(4);
 
 	/*--------------------*
 	 * Static initializer *
@@ -78,7 +78,7 @@ public class QueryLanguage {
 
 	/**
 	 * Registers the specified query language.
-	 * 
+	 *
 	 * @param name The name of the query language, e.g. "SPARQL".
 	 */
 	public static QueryLanguage register(String name) {
@@ -96,7 +96,7 @@ public class QueryLanguage {
 
 	/**
 	 * Returns the query language whose name matches the specified name.
-	 * 
+	 *
 	 * @param qlName A query language name.
 	 * @return The query language whose name matches the specified name, or <tt>null</tt> if there is no such query
 	 *         language.
@@ -126,7 +126,7 @@ public class QueryLanguage {
 
 	/**
 	 * Creates a new QueryLanguage object.
-	 * 
+	 *
 	 * @param name The (case-insensitive) name of the query language, e.g. "SPARQL".
 	 */
 	public QueryLanguage(String name) {
@@ -141,7 +141,7 @@ public class QueryLanguage {
 
 	/**
 	 * Gets the name of this query language.
-	 * 
+	 *
 	 * @return A human-readable format name, e.g. "SPARQL".
 	 */
 	public String getName() {

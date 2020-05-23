@@ -25,7 +25,7 @@ public class GZipUtil {
 
 	/**
 	 * Check if a stream is a GZIP stream, by checking the first bytes of the stream.
-	 * 
+	 *
 	 * @param in input stream
 	 * @return true if a stream is a GZIP stream
 	 * @throws IOException

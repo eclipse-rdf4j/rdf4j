@@ -21,7 +21,7 @@ import ch.qos.logback.classic.Logger;
 
 /**
  * Test log level setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class LogLevelTest extends AbstractSettingTest {

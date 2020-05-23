@@ -11,13 +11,13 @@ import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception indicating that the execution of an update failed.
- * 
+ *
  * @author Jeen
  */
 public class UpdateExecutionException extends RDF4JException {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 7969399526232927434L;
 
@@ -27,7 +27,7 @@ public class UpdateExecutionException extends RDF4JException {
 
 	/**
 	 * Creates a new UpdateExecutionException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public UpdateExecutionException(String msg) {
@@ -36,7 +36,7 @@ public class UpdateExecutionException extends RDF4JException {
 
 	/**
 	 * Creates a new {@link UpdateExecutionException} wrapping another exception.
-	 * 
+	 *
 	 * @param cause the cause of the exception
 	 */
 	public UpdateExecutionException(Throwable cause) {
@@ -45,7 +45,7 @@ public class UpdateExecutionException extends RDF4JException {
 
 	/**
 	 * Creates a new {@link UpdateExecutionException} wrapping another exception.
-	 * 
+	 *
 	 * @param msg   and error message.
 	 * @param cause the cause of the exception
 	 */

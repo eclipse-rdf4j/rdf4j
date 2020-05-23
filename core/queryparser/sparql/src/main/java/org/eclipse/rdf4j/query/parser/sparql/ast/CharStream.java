@@ -24,7 +24,7 @@ public interface CharStream {
 	@Deprecated
 	/**
 	 * Returns the column position of the character last read.
-	 * 
+	 *
 	 * @deprecated
 	 * @see #getEndColumn
 	 */
@@ -33,7 +33,7 @@ public interface CharStream {
 	@Deprecated
 	/**
 	 * Returns the line number of the character last read.
-	 * 
+	 *
 	 * @deprecated
 	 * @see #getEndLine
 	 */

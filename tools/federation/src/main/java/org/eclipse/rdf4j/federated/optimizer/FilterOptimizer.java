@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Filter optimizer to push down FILTER expressions as far as possible.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -90,8 +90,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 				filter.getArg().visit(filterExprVst);
 
 				// if the filter expr. is handled in the stmt we do not have to keep it
-				if (filterExprVst.canRemove())
+				if (filterExprVst.canRemove()) {
 					continue;
+				}
 
 				remainingExpr.add(filterExpr.getExpression());
 
@@ -103,13 +104,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 		if (remainingExpr.isEmpty()) {
 			filter.replaceWith(filter.getArg()); // remove the filter
-		}
-
-		else if (remainingExpr.size() == 1) {
+		} else if (remainingExpr.size() == 1) {
 			filter.setCondition(remainingExpr.get(0)); // just apply the remaining condition
-		}
-
-		else {
+		} else {
 
 			// construct conjunctive value expr
 			And root = new And();
@@ -144,14 +141,15 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 			And and = (And) expr;
 			getConjunctiveExpressions(and.getLeftArg(), conjExpr);
 			getConjunctiveExpressions(and.getRightArg(), conjExpr);
-		} else
+		} else {
 			conjExpr.add(expr);
+		}
 	}
 
 	/**
 	 * returns true if this filter can be used for optimization. Currently no conjunctive or disjunctive expressions are
 	 * supported.
-	 * 
+	 *
 	 * @param e
 	 * @return whether the expression is compatible
 	 */
@@ -180,8 +178,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 		@Override
 		public void meet(Var var) {
-			if (var.getValue() == null)
+			if (var.getValue() == null) {
 				vars.add(var.getName());
+			}
 			super.meet(var);
 		}
 	}
@@ -211,13 +210,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 					node.visitChildren(this);
 				}
 				handleFilter((FilterTuple) node, filterExpr);
-			}
-
-			else if (node instanceof StatementTupleExpr) {
+			} else if (node instanceof StatementTupleExpr) {
 				return;
-			}
-
-			else {
+			} else {
 				super.meetOther(node);
 			}
 		}
@@ -226,19 +221,20 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 			/*
 			 * CompareEQ expressions are inserted as bindings if possible
-			 * 
+			 *
 			 * if the filtertuple contains all vars of the filterexpr, we can evaluate the filter expr safely on the
 			 * filterTuple
-			 * 
+			 *
 			 * if there is no intersection of variables, the filter is irrelevant for this expr
-			 * 
+			 *
 			 * if there is some intersection, we cannot remove the filter and have to keep it in the query plan for
 			 * postfiltering
 			 */
 			int intersected = 0;
 			for (String filterVar : expr.getVars()) {
-				if (filterTuple.getFreeVars().contains(filterVar))
+				if (filterTuple.getFreeVars().contains(filterVar)) {
 					intersected++;
+				}
 			}
 
 			// filter expression is irrelevant for this expression
@@ -268,7 +264,7 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		/**
 		 * Bind the given compare filter expression in the tuple expression, i.e. insert the value as binding for the
 		 * respective variable.
-		 * 
+		 *
 		 * @param filterTuple
 		 * @param cmp
 		 * @return
@@ -287,8 +283,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 			// since for instance subj can only be URIs (i.e. literals are
 			// not allowed). For other types the Filter remains in place.
 
-			if (isVarLeft && isVarRight)
+			if (isVarLeft && isVarRight) {
 				return false;
+			}
 
 			if (isVarLeft && cmp.getRightArg() instanceof ValueConstant) {
 				String varName = ((Var) cmp.getLeftArg()).getName();

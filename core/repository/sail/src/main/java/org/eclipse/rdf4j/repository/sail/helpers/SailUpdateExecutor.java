@@ -67,7 +67,7 @@ import org.slf4j.LoggerFactory;
  * Implementation of {@link SailUpdate#execute()} using
  * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and other {@link SailConnection} methods.
  * LOAD is handled at the Repository API level because it requires access to the Rio parser.
- * 
+ *
  * @author jeen
  * @author James Leigh
  * @see SailConnection#startUpdate(UpdateContext)
@@ -93,7 +93,7 @@ public class SailUpdateExecutor {
 	 * Implementation of {@link SailUpdate#execute()} using
 	 * {@link SailConnection#evaluate(TupleExpr, Dataset, BindingSet, boolean)} and other {@link SailConnection}
 	 * methods.
-	 * 
+	 *
 	 * @param con        Used to read data from and write data to.
 	 * @param vf         Used to create {@link BNode}s
 	 * @param loadConfig

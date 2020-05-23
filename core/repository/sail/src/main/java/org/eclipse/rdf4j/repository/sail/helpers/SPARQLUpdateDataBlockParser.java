@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.rio.trigstar.TriGStarParser;
  * <li>it does not require curly braces around the default graph.
  * <li>it adds support for RDF* triples (from TriG*).</li>
  * </ul>
- * 
+ *
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/TR/sparql11-query/#rInsertData">SPARQL 1.1 Grammar production for INSERT DATA</a>
  * @see <a href="http://www.w3.org/TR/sparql11-query/#rDeleteData">SPARQL 1.1 Grammar production for DELETE DATA</a>
@@ -50,7 +50,7 @@ public class SPARQLUpdateDataBlockParser extends TriGStarParser {
 
 	/**
 	 * Creates a new parser that will use the supplied ValueFactory to create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	public SPARQLUpdateDataBlockParser(ValueFactory valueFactory) {

@@ -28,7 +28,6 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
-import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -49,7 +48,7 @@ import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DeleteBenchmark {
 
-//	@Param({ "100", "1000", "10000" })
+	// @Param({ "100", "1000", "10000" })
 	public int NUMBER_OF_STATEMENTS = 10000;
 
 	private static EmbeddedElastic embeddedElastic;

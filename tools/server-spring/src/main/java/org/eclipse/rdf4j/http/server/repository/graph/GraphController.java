@@ -48,7 +48,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for manipulating the named graphs in a repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class GraphController extends AbstractController {
@@ -122,7 +122,7 @@ public class GraphController extends AbstractController {
 
 	/**
 	 * Get all statements and export them as RDF.
-	 * 
+	 *
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,

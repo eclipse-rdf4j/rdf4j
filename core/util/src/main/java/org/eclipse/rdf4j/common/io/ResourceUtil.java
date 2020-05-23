@@ -21,7 +21,7 @@ import java.util.Properties;
 import java.util.Set;
 
 import javax.imageio.ImageIO;
-import javax.swing.ImageIcon;
+import javax.swing.*;
 
 /**
  * ResourceUtil is a utility class for retrieving resources (images, property-files, etc) from the classpath.
@@ -30,7 +30,7 @@ public class ResourceUtil {
 
 	/**
 	 * The URL to the specified resource
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return the URL to the specified resource, or null if the resource could not be found
 	 */
@@ -58,7 +58,7 @@ public class ResourceUtil {
 
 	/**
 	 * Get the URLs for a resource name using the class loaders of the current thread and of the caller.
-	 * 
+	 *
 	 * @param resourceName
 	 * @return set of URLs
 	 * @throws IOException
@@ -80,7 +80,7 @@ public class ResourceUtil {
 
 	/**
 	 * Add an enumeration of URLs to a set of URLs
-	 * 
+	 *
 	 * @param result result set
 	 * @param urls   urls to add
 	 */
@@ -94,7 +94,7 @@ public class ResourceUtil {
 
 	/**
 	 * Get an inputstream on the specified resource.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return an inputstream on the specified resource, or null if the resource could not be found
 	 */
@@ -122,7 +122,7 @@ public class ResourceUtil {
 	 * Retrieve the String contents of the specified resource, obtained by opening in inputstream on the resource and
 	 * then interpreting the bytes contained in the inputstream as if they represented characters. This may not make
 	 * sense on all resources. There is no "magic" in this method to read anything other than plain text.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return the String contents of the specified resource, or null if the specified resource could not be found
 	 * @throws IOException when something goes wrong trying to read the resource
@@ -145,7 +145,7 @@ public class ResourceUtil {
 
 	/**
 	 * Retrieve an image icon resource.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return an image icon, or null if the specified resource could not be found
 	 */
@@ -162,7 +162,7 @@ public class ResourceUtil {
 
 	/**
 	 * Retrieve an image resource
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return an image, or null if the specified resource could not be found
 	 */
@@ -181,7 +181,7 @@ public class ResourceUtil {
 
 	/**
 	 * Retrieve a properties resource.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @return a Properties object representing the contents of the resource, or null if the specified resource could
 	 *         not be found
@@ -203,7 +203,7 @@ public class ResourceUtil {
 
 	/**
 	 * Store a resource to a file on the file system.
-	 * 
+	 *
 	 * @param resourceName the name of the resource
 	 * @param output       the file to write to
 	 * @throws IOException if there was a problem reading the resource or writing to the file
@@ -217,7 +217,7 @@ public class ResourceUtil {
 
 	/**
 	 * Retrieve the calling class of a method in this class.
-	 * 
+	 *
 	 * @return the calling class of a method in this class, or this class if no other class could be determined.
 	 */
 	private static Class<?> getCaller() {
@@ -246,6 +246,7 @@ public class ResourceUtil {
 	private static final class CallerResolver extends SecurityManager {
 
 		private static final CallerResolver INSTANCE;
+
 		static {
 			try {
 				INSTANCE = new CallerResolver();

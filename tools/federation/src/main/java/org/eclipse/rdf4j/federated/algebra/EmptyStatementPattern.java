@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 
 /**
  * EmptyStatementPattern represents a statement that cannot produce any results for the registered endpoints.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

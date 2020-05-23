@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * An extension of {@link SimpleLiteral} that stores an integer value using a {@link BigInteger} object.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class IntegerLiteral extends SimpleLiteral {

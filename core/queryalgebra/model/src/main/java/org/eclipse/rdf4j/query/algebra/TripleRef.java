@@ -13,11 +13,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-
 /** Triple lookup reference. Allow retrieval of RDF* triples **/
 public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 

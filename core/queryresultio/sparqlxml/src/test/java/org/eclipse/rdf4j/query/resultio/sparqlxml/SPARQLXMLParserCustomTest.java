@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
@@ -22,7 +24,7 @@ import org.junit.Test;
 
 /**
  * Custom tests for SPARQL/XML Parser.
- * 
+ *
  * @author Michael Grove
  * @author Peter Ansell
  */
@@ -30,7 +32,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with the default ParserConfig settings. Ie, setParserConfig is not called.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -59,7 +61,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with unrelated ParserConfig settings
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -90,7 +92,7 @@ public class SPARQLXMLParserCustomTest {
 
 	/**
 	 * Test with Secure processing setting on.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -124,7 +126,7 @@ public class SPARQLXMLParserCustomTest {
 	 * IMPORTANT: Only turn this on to verify it is still working, as there is no way to safely perform this test.
 	 * <p>
 	 * WARNING: This test will cause an OutOfMemoryException when it eventually fails, as it will eventually fail.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Ignore

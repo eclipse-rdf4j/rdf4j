@@ -152,7 +152,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Get the additional HTTP headers which will be used
-	 * 
+	 *
 	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
@@ -163,7 +163,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
 	 * unusual server configurations. This will only take effect on connections subsequently returned by
 	 * {@link #getConnection()}.
-	 * 
+	 *
 	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
@@ -240,7 +240,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * overriding the {@link SPARQLProtocolSession} 's default preference. Setting this parameter is not necessary in
 	 * most cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
 	 * efficient format available.
-	 * 
+	 *
 	 * @param format the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
 	 *               stated.
 	 */
@@ -250,7 +250,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Indicates the current preferred {@link TupleQueryResultFormat}.
-	 * 
+	 *
 	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
@@ -265,7 +265,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * <p>
 	 * Use with caution: if set to a format that does not support context serialization any context info contained in
 	 * the query result will be lost.
-	 * 
+	 *
 	 * @param format the preferred {@link RDFFormat}. If set to 'null' no explicit preference will be stated.
 	 */
 	public void setPreferredRDFFormat(final RDFFormat format) {
@@ -274,7 +274,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Indicates the current preferred {@link RDFFormat}.
-	 * 
+	 *
 	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public RDFFormat getPreferredRDFFormat() {
@@ -283,7 +283,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Set the username and password to use for authenticating with the remote repository.
-	 * 
+	 *
 	 * @param username the username. Setting this to null will disable authentication.
 	 * @param password the password. Setting this to null will disable authentication.
 	 */
@@ -322,7 +322,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
-	 * 
+	 *
 	 * @return a HTTPClient object.
 	 */
 	protected RDF4JProtocolSession createHTTPClient() {
@@ -348,7 +348,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when communicating
 	 * with an older Sesame Server).
-	 * 
+	 *
 	 * @return <code>true</code> if the Server does not support the extended transaction protocol, <code>false</code>
 	 *         otherwise.
 	 * @throws RepositoryException if something went wrong while querying the server for the protocol version.

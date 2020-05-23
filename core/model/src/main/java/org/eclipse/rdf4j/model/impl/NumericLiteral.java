@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a numeric value to avoid parsing.
- * 
+ *
  * @author David Huynh
  */
 public class NumericLiteral extends SimpleLiteral {

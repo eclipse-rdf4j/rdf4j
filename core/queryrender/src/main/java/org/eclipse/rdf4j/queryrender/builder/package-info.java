@@ -7,7 +7,7 @@
  *******************************************************************************/
 /**
  * This package is deprecated. Use the new rdf4j-sparqlbuilder module for query building instead.
- * 
+ *
  * @see org.eclipse.rdf4j.sparqlbuilder
  */
 @Deprecated

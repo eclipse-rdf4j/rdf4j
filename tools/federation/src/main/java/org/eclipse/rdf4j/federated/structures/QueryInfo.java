@@ -26,9 +26,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Structure to maintain query information during evaluation, is attached to algebra nodes. Each instance is uniquely
  * attached to the query.
- * 
+ *
  * The queryId can be used to abort tasks belonging to a particular evaluation.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -60,7 +60,7 @@ public class QueryInfo {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param query
 	 * @param queryType
 	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
@@ -122,7 +122,7 @@ public class QueryInfo {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the {@link FederationContext} in which this query is executed
 	 */
 	public FederationContext getFederationContext() {
@@ -130,7 +130,7 @@ public class QueryInfo {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the maximum remaining time in ms until the query runs into a timeout. If negative, timeout has been
 	 *         reached
 	 */
@@ -150,7 +150,7 @@ public class QueryInfo {
 
 	/**
 	 * Register a new scheduled task for this query.
-	 * 
+	 *
 	 * @param task
 	 * @throws QueryEvaluationException if the query has been aborted or closed
 	 */
@@ -164,7 +164,7 @@ public class QueryInfo {
 	/**
 	 * Mark the query as aborted and abort all scheduled (future) tasks known at this point in time. Also do not accept
 	 * any new scheduled tasks
-	 * 
+	 *
 	 */
 	public synchronized void abort() {
 		if (done) {
@@ -178,7 +178,7 @@ public class QueryInfo {
 	/**
 	 * Close this query. If exists, all scheduled (future) tasks known at this point in time are aborted. Also do not
 	 * accept any new scheduled tasks
-	 * 
+	 *
 	 */
 	public synchronized void close() {
 

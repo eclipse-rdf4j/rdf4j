@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Base class for common parallel executors such as {@link JoinExecutorBase} and {@link UnionExecutorBase}.
- * 
+ *
  * @author Andreas Schwarte
  *
  * @param <T>
@@ -60,8 +60,9 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	public final void run() {
 		evaluationThread = Thread.currentThread();
 
-		if (log.isTraceEnabled())
+		if (log.isTraceEnabled()) {
 			log.trace("Performing execution of " + getDisplayId() + ", thread: " + evaluationThread.getName());
+		}
 
 		try {
 			performExecution();
@@ -74,15 +75,16 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 			rightQueue.done();
 		}
 
-		if (log.isTraceEnabled())
+		if (log.isTraceEnabled()) {
 			log.trace(getDisplayId() + " is finished.");
+		}
 	}
 
 	/**
 	 * Perform the parallel execution.
-	 * 
+	 *
 	 * Note that this method must block until the execution is completed.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	protected abstract void performExecution() throws Exception;
@@ -90,8 +92,9 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	@Override
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
 		/* optimization: avoid adding empty results */
-		if (res instanceof EmptyIteration<?, ?>)
+		if (res instanceof EmptyIteration<?, ?>) {
 			return;
+		}
 
 		try {
 			rightQueue.put(res);
@@ -137,7 +140,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	/**
 	 * Checks whether the query execution has run into a timeout. If so, a {@link QueryInterruptedException} is thrown.
-	 * 
+	 *
 	 * @throws QueryInterruptedException
 	 */
 	protected void checkTimeout() throws QueryInterruptedException {
@@ -165,7 +168,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	/**
 	 * Return true if this executor is finished or aborted
-	 * 
+	 *
 	 * @return whether the executor is finished
 	 */
 	@Override
@@ -190,7 +193,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the executor type, e.g. "Join". Default "Executor"
 	 */
 	protected String getExecutorType() {
