@@ -463,11 +463,18 @@ public class GenericPlanNode {
 		sb.append("</table>>").append(" shape=plaintext];").append(newLine);
 		for (int i = 0; i < plans.size(); i++) {
 			GenericPlanNode p = plans.get(i);
+			String linkLabel = "index " + i;
+
+			if (plans.size() == 2) {
+				linkLabel = i == 0 ? "left" : "right";
+			} else if (plans.size() == 1) {
+				linkLabel = "";
+			}
 			sb.append("   ")
 					.append(getUUID())
 					.append(" -> ")
 					.append(p.getUUID())
-					.append(" [label=\"index " + i + "\"]")
+					.append(" [label=\"" + linkLabel + "\"]")
 					.append(" ;")
 					.append(newLine);
 		}
