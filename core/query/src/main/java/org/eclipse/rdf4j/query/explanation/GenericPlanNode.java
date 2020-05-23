@@ -15,6 +15,8 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 /**
  * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
  *
@@ -441,6 +443,7 @@ public class GenericPlanNode {
 		return "#FFFFFF";
 	}
 
+	@JsonIgnore
 	public String getUUID() {
 		return UUID;
 	}
