@@ -125,4 +125,17 @@ public class Section6Test extends BaseExamples {
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) )"));
 	}
 
+	@Test
+	public void example_6_8() {
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
+
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.lt(price, Expressions.multiply(Expressions.subtract(Rdf.literalOf(20),
+						Rdf.literalOf(2)), Rdf.literalOf(5))))
+				.optional();
+
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
+		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ( 20 - 2 ) * 5 ) )"));
+	}
 }
