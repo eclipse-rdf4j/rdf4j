@@ -10,12 +10,14 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trigstar.TriGStarParser;
+import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 
 /**
  * An extension of {@link TriGStarParser} that processes data in the format specified in the SPARQL 1.1 grammar for Quad
@@ -70,7 +72,90 @@ public class SPARQLUpdateDataBlockParser extends TriGStarParser {
 
 	@Override
 	protected void parseGraph() throws RDFParseException, RDFHandlerException, IOException {
-		super.parseGraph();
+		int c = readCodePoint();
+		int c2 = peekCodePoint();
+		Resource contextOrSubject = null;
+		boolean foundContextOrSubject = false;
+		if (c == '[') {
+			skipWSC();
+			c2 = readCodePoint();
+			if (c2 == ']') {
+				contextOrSubject = createNode();
+				foundContextOrSubject = true;
+				skipWSC();
+			} else {
+				unread(c2);
+				unread(c);
+			}
+			c = readCodePoint();
+		} else if (c == '<' || TurtleUtil.isPrefixStartChar(c) || (c == ':' && c2 != '-') || (c == '_' && c2 == ':')) {
+			unread(c);
+
+			Value value = parseValue();
+
+			if (value instanceof Resource) {
+				contextOrSubject = (Resource) value;
+				foundContextOrSubject = true;
+			} else {
+				// NOTE: If a user parses Turtle using TriG, then the following
+				// could actually be "Illegal subject name", but it should still
+				// hold
+				reportFatalError("Illegal graph name: " + value);
+			}
+
+			skipWSC();
+			c = readCodePoint();
+		} else {
+			setContext(null);
+		}
+
+		if (c == '{') {
+			setContext(contextOrSubject);
+
+			c = skipWSC();
+
+			if (c != '}') {
+				parseTriples();
+
+				c = skipWSC();
+
+				while (c == '.') {
+					readCodePoint();
+
+					c = skipWSC();
+
+					if (c == '}') {
+						break;
+					}
+
+					parseTriples();
+
+					c = skipWSC();
+				}
+
+				verifyCharacterOrFail(c, "}");
+			}
+		} else {
+			setContext(null);
+
+			// Did not turn out to be a graph, so assign it to subject instead
+			// and
+			// parse from here to triples
+			if (foundContextOrSubject) {
+				subject = contextOrSubject;
+				unread(c);
+				parsePredicateObjectList();
+			}
+			// Or if we didn't recognise anything, just parse as Turtle
+			else {
+				unread(c);
+				parseTriples();
+			}
+		}
+
+		if (c == '.' || c == '}') {
+			readCodePoint();
+		}
 		skipOptionalPeriod();
 	}
 
