@@ -18,6 +18,8 @@ import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatternNotTriples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+import org.hamcrest.CoreMatchers;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class Section6Test extends BaseExamples {
@@ -73,7 +75,21 @@ public class Section6Test extends BaseExamples {
 				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-		p();
+		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 50 && ?price > 30 )"));
 	}
 
+	@Test
+	public void example_6_5() {
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
+
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.or(Expressions.lt(price, 20),
+						Expressions.and(Expressions.gt(price, 50),
+						Expressions.or(Expressions.gt(price, 60), Expressions.lt(price, 70))))).optional();
+
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
+		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 20 || ( ?price > 50 &&" +
+				" ( ?price > 60 || ?price < 70 ) ) )"));
+	}
 }
