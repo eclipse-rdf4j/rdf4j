@@ -23,7 +23,7 @@ abstract class Operation<T extends Operation<T>> extends Expression<T> {
 	Operation(SparqlOperator operator, int operandLimit) {
 		super(operator);
 		this.operandLimit = operandLimit;
-		if (operator.toString().equals("AND")) {
+		if (operator == ConnectiveOperator.AND) {
 			parenthesize();
 		}
 	}
