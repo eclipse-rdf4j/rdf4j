@@ -95,18 +95,34 @@ public class Section6Test extends BaseExamples {
 				" ( ?price > 60 || ?price < 70 ) ) )"));
 	}
 
-    @Test
-    public void example_6_6() {
-        Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
-        Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
+	@Test
+	public void example_6_6() {
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
-        GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-                .filter(Expressions.or(Expressions.lt(price, Expressions.subtract(Rdf.literalOf(20),
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.or(Expressions.lt(price, Expressions.subtract(Rdf.literalOf(20),
 						Expressions.multiply(Rdf.literalOf(2), Rdf.literalOf(5)))),
-                        Expressions.lt(price, 50))).optional();
+						Expressions.lt(price, 50)))
+				.optional();
 
-        query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
-        Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 - ( 2 * 5 ) )"));
-    }
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
+		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 - ( 2 * 5 ) )"));
+	}
+
+	@Test
+	public void example_6_7() {
+		Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS)), ns = SparqlBuilder.prefix("ns", iri(EXAMPLE_ORG_NS));
+		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
+
+		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
+				.filter(Expressions.or(Expressions.lt(price, Expressions.add(Rdf.literalOf(20),
+						Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
+						Expressions.lt(price, 50)))
+				.optional();
+
+		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
+		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) )"));
+	}
 
 }
