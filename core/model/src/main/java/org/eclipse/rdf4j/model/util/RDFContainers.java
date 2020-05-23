@@ -237,7 +237,7 @@ public class RDFContainers {
 			IRI elementCounterPredicate = getAnnotatedMemberPredicate(vf, elementCounter);
 			elementCounter++;
 			Statements.consume(vf, current, elementCounterPredicate, v, consumer, contexts);
-			Statements.consume(vf, (Resource) v, RDFS.MEMBER, current, consumer, contexts);
+			Statements.consume(vf, current, RDFS.MEMBER, v, consumer, contexts);
 		}
 	}
 
