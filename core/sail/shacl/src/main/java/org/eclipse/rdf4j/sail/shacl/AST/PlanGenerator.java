@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
 /**
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public interface PlanGenerator {
 

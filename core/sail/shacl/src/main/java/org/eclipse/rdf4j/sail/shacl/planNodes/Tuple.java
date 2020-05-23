@@ -22,7 +22,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 
 /**
- * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
+ * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class Tuple implements Comparable<Tuple> {
 

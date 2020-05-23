@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
  * The AST (Abstract Syntax Tree) node that represents a sh:minCount property nodeShape restriction.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class MinCountPropertyShape extends PathPropertyShape {
 

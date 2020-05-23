@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
  * support for complex paths.
  *
- * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class InversePath extends Path {
 

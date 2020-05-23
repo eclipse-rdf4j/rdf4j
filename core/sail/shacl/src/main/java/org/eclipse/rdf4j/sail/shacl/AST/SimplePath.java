@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
  * support for complex paths.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class SimplePath extends Path {
 
