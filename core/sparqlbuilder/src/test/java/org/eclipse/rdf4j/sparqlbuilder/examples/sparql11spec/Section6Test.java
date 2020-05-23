@@ -86,7 +86,8 @@ public class Section6Test extends BaseExamples {
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
 				.filter(Expressions.or(Expressions.lt(price, 20),
 						Expressions.and(Expressions.gt(price, 50),
-						Expressions.or(Expressions.gt(price, 60), Expressions.lt(price, 70))))).optional();
+								Expressions.or(Expressions.gt(price, 60), Expressions.lt(price, 70)))))
+				.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 20 || ( ?price > 50 &&" +
