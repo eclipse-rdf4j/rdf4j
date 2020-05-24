@@ -8,18 +8,18 @@
 
 package org.eclipse.rdf4j.model.util;
 
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
+
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-
-import java.util.*;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Supplier;
-import java.util.regex.Pattern;
 
 /**
  * Utilities for working with RDF Containers and converting to/from Java {@link Collection} classes.
@@ -80,7 +80,7 @@ public class RDFContainers {
 	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
 	 *      vocabulary</a>.
 	 */
-	public static <C extends Collection<Statement>> C asRDF(IRI containerType, Iterable<?> values, Resource container,
+	public static <C extends Collection<Statement>> C toRDF(IRI containerType, Iterable<?> values, Resource container,
 			C sink,
 			Resource... contexts) {
 
@@ -116,7 +116,7 @@ public class RDFContainers {
 	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
 	 *      vocabulary</a>.
 	 */
-	public static <C extends Collection<Statement>> C asRDF(IRI containerType, Iterable<?> values, Resource container,
+	public static <C extends Collection<Statement>> C toRDF(IRI containerType, Iterable<?> values, Resource container,
 			C sink,
 			ValueFactory vf, Resource... contexts) {
 
@@ -144,7 +144,7 @@ public class RDFContainers {
 	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
 	 *      vocabulary</a>.
 	 */
-	public static <C extends Collection<Value>> C asValues(IRI containerType, final Model m, Resource container,
+	public static <C extends Collection<Value>> C toValues(IRI containerType, final Model m, Resource container,
 			C collection,
 			Resource... contexts) throws ModelException {
 		Objects.requireNonNull(collection, "collection may not be null");
@@ -209,7 +209,7 @@ public class RDFContainers {
 	 *      vocabulary</a>.
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 *
-	 * @since 3.0
+	 * @since 3.3.0
 	 */
 	public static void consumeContainer(IRI containerType, Iterable<?> values, Resource container,
 			Consumer<Statement> consumer,
@@ -224,7 +224,7 @@ public class RDFContainers {
 				Objects.equals(containerType, RDF.SEQ);
 
 		if (!validType) {
-			throw new RuntimeException("containerType should be one of ALT, BAG or SEQ");
+			throw new ModelException("containerType should be one of ALT, BAG or SEQ");
 		}
 
 		Statements.consume(vf, current, RDF.TYPE, containerType, consumer, contexts);
