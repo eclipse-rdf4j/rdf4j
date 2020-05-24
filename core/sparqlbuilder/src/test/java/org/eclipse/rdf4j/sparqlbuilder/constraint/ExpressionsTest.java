@@ -42,15 +42,16 @@ public class ExpressionsTest {
 	@Test
 	public void testArithmeticExpression() {
 		Expression expression = Expressions.lt(Rdf.literalOf(30), Expressions.subtract(
-				Expressions.divide(Rdf.literalOf(100),Rdf.literalOf(20)),
+				Expressions.divide(Rdf.literalOf(100), Rdf.literalOf(20)),
 				Expressions.multiply(Rdf.literalOf(2),
-						Expressions.add(Rdf.literalOf(5),Rdf.literalOf(3)))));
+						Expressions.add(Rdf.literalOf(5), Rdf.literalOf(3)))));
 
 		assertEquals(expression.getQueryString(), "30 < ( ( 100 / 20 ) - ( 2 * ( 5 + 3 ) ) )");
 	}
+
 	@Test
 	public void testArithmeticAndLogicalExpression() {
-		Expression expression = Expressions.or(Expressions.lt(30, Expressions.add(Rdf.literalOf(20),
+		Expression expression = Expressions.or(Expressions.lt(Rdf.literalOf(30), Expressions.add(Rdf.literalOf(20),
 				Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
 				Expressions.lt(Rdf.literalOf(30), Rdf.literalOf(50)));
 
