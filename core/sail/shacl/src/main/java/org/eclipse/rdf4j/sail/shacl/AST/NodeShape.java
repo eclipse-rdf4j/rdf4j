@@ -17,6 +17,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -188,9 +189,22 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					}
 
 					if (!shaclProperties.target.isEmpty()) {
-						shaclProperties.target.forEach(sparqlTarget -> propertyShapes
-								.add(new SparqlTarget(shapeId, connection, shaclProperties.deactivated,
-										sparqlTarget)));
+						shaclProperties.target
+								.forEach(sparqlTarget -> {
+									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
+										propertyShapes.add(new SparqlTarget(shapeId, connection,
+												shaclProperties.deactivated, sparqlTarget));
+									}
+									if (connection.hasStatement(sparqlTarget, RDF.TYPE, DASH.AllObjectsTarget, true)) {
+										propertyShapes.add(
+												new AllObjectsTarget(shapeId, connection, shaclProperties.deactivated));
+									}
+									if (connection.hasStatement(sparqlTarget, RDF.TYPE, DASH.AllSubjectsTarget, true)) {
+										propertyShapes.add(new AllSubjectsTarget(shapeId, connection,
+												shaclProperties.deactivated));
+									}
+
+								});
 
 					}
 

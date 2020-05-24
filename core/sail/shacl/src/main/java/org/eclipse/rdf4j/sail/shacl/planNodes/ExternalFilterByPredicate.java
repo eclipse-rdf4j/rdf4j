@@ -53,7 +53,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 			Tuple next = null;
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
