@@ -945,13 +945,6 @@
 					<lineEnding>LF</lineEnding>
 					<skipHtmlFormatting>true</skipHtmlFormatting>
 				</configuration>
-				<executions>
-					<execution>
-						<goals>
-							<goal>validate</goal>
-						</goals>
-					</execution>
-				</executions>
 			</plugin>
 		</plugins>
 		<extensions>
