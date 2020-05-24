@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
@@ -76,7 +76,7 @@ public class PrefixDeclProcessor {
 				+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE)
-				+ insertDefaultPrefix(prefixMap, "xsd", XMLSchema.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "xsd", XSD.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "fn", FN.NAMESPACE);
 
 		ASTUnparsedQuadDataBlock dataBlock = null;

@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.SESAMEQNAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -439,7 +439,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		// rdf:langString datatype is handled implicitly above
 		else {
 			IRI datatype = literal.getDatatype();
-			boolean ignoreDatatype = datatype.equals(XMLSchema.STRING) && xsdStringToPlainLiteral();
+			boolean ignoreDatatype = datatype.equals(XSD.STRING) && xsdStringToPlainLiteral();
 			if (!ignoreDatatype) {
 				if (isQName(datatype)) {
 					writeQName(datatype);

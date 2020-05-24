@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -44,7 +44,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 				// separately, see
 				// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
 				BigInteger integerValue = null;
-				if (XMLSchema.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
+				if (XSD.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
 					integerValue = literal.decimalValue().toBigInteger();
 				} else {
 					integerValue = literal.integerValue();
@@ -54,7 +54,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 				} catch (ArithmeticException | NumberFormatException e) {
 					throw typeError(literal, e);
 				}
-			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XSD.BOOLEAN)) {
 				try {
 					return createTypedLiteral(valueFactory, literal.booleanValue())
 							.orElseThrow(() -> typeError(literal, null));

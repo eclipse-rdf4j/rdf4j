@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
@@ -108,13 +108,13 @@ public class SPARQLJSONParserCustomTest {
 	private final IRI testBindingValueIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
 
 	private final Literal testBindingValueNotANumber = SimpleValueFactory.getInstance()
-			.createLiteral("NaN", XMLSchema.DOUBLE);
+			.createLiteral("NaN", XSD.DOUBLE);
 
 	private final Literal testBindingValueLiteralNumber = SimpleValueFactory.getInstance()
-			.createLiteral("42", XMLSchema.INTEGER);
+			.createLiteral("42", XSD.INTEGER);
 
 	private final Literal testBindingValueLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
-			.createLiteral("42\u0009", XMLSchema.STRING);
+			.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
 	public void setUp() throws Exception {

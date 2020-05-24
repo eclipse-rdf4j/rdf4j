@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -615,7 +615,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
-		Literal lit = vf.createLiteral(Integer.toString(i), XMLSchema.INTEGER);
+		Literal lit = vf.createLiteral(Integer.toString(i), XSD.INTEGER);
 		connection.addStatement(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
 				vf.createIRI("http://test#context_" + i));
 	}

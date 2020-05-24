@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Utility methods for N-Triples encoding/decoding.
@@ -567,7 +567,7 @@ public class NTriplesUtil {
 			// language literals we display the type for backwards compatibility
 			// Append the literal's datatype
 			IRI datatype = lit.getDatatype();
-			boolean ignoreDatatype = datatype.equals(XMLSchema.STRING) && xsdStringToPlainLiteral;
+			boolean ignoreDatatype = datatype.equals(XSD.STRING) && xsdStringToPlainLiteral;
 			if (!ignoreDatatype) {
 				appendable.append("^^");
 				append(lit.getDatatype(), appendable);

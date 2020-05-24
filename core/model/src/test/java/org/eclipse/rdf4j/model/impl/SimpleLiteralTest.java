@@ -14,7 +14,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -69,8 +69,8 @@ public class SimpleLiteralTest {
 				lit1.hashCode(), lit2.hashCode());
 
 		// datatyped literals
-		SimpleLiteral lit3 = new SimpleLiteral("10.0", XMLSchema.DECIMAL);
-		SimpleLiteral lit4 = new SimpleLiteral("10.0", XMLSchema.DECIMAL);
+		SimpleLiteral lit3 = new SimpleLiteral("10.0", XSD.DECIMAL);
+		SimpleLiteral lit4 = new SimpleLiteral("10.0", XSD.DECIMAL);
 
 		assertEquals(lit3, lit4);
 		assertEquals("hashCode() should return identical values for literals for which equals() is true",
@@ -87,7 +87,7 @@ public class SimpleLiteralTest {
 		SimpleLiteral lit1en = new SimpleLiteral("a", "en");
 		assertFalse(lit1.equals(lit1en));
 
-		SimpleLiteral lit1dt = new SimpleLiteral("a", XMLSchema.DECIMAL);
+		SimpleLiteral lit1dt = new SimpleLiteral("a", XSD.DECIMAL);
 		assertFalse(lit1.equals(lit1dt));
 
 		// language tags case sensitivity
@@ -101,7 +101,7 @@ public class SimpleLiteralTest {
 	public final void testStringLiteralEqualsHashCode() {
 		// in RDF 1.1, there is no distinction between plain and string-typed literals.
 		SimpleLiteral lit1 = new SimpleLiteral("a");
-		SimpleLiteral lit2 = new SimpleLiteral("a", XMLSchema.STRING);
+		SimpleLiteral lit2 = new SimpleLiteral("a", XSD.STRING);
 
 		assertEquals(lit1, lit2);
 		assertEquals(lit1.hashCode(), lit2.hashCode());
@@ -124,7 +124,7 @@ public class SimpleLiteralTest {
 		Literal test = new SimpleLiteral("");
 		assertEquals("", test.getLabel());
 		assertFalse(test.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, test.getDatatype());
+		assertEquals(XSD.STRING, test.getDatatype());
 	}
 
 	/**
@@ -140,7 +140,7 @@ public class SimpleLiteralTest {
 		Literal test = new SimpleLiteral(testBuilder.toString());
 		assertEquals(testBuilder.toString(), test.getLabel());
 		assertFalse(test.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, test.getDatatype());
+		assertEquals(XSD.STRING, test.getDatatype());
 	}
 
 	/**
@@ -215,7 +215,7 @@ public class SimpleLiteralTest {
 	@Test
 	public final void testStringIRINullString() throws Exception {
 		String label = null;
-		IRI datatype = XMLSchema.STRING;
+		IRI datatype = XSD.STRING;
 
 		thrown.expect(NullPointerException.class);
 		new SimpleLiteral(label, datatype);
@@ -246,7 +246,7 @@ public class SimpleLiteralTest {
 		Literal test = new SimpleLiteral(label, datatype);
 		assertEquals("", test.getLabel());
 		assertFalse(test.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, test.getDatatype());
+		assertEquals(XSD.STRING, test.getDatatype());
 	}
 
 	/**

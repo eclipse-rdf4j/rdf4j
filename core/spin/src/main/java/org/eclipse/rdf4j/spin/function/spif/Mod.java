@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.SPIF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.BinaryFunction;
 
@@ -51,24 +51,24 @@ public class Mod extends BinaryFunction {
 		// per the SPARQL/XPATH spec
 		IRI commonDatatype;
 
-		if (leftDatatype.equals(XMLSchema.DOUBLE) || rightDatatype.equals(XMLSchema.DOUBLE)) {
-			commonDatatype = XMLSchema.DOUBLE;
-		} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
-			commonDatatype = XMLSchema.FLOAT;
-		} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
-			commonDatatype = XMLSchema.DECIMAL;
+		if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
+			commonDatatype = XSD.DOUBLE;
+		} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
+			commonDatatype = XSD.FLOAT;
+		} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {
+			commonDatatype = XSD.DECIMAL;
 		} else {
-			commonDatatype = XMLSchema.INTEGER;
+			commonDatatype = XSD.INTEGER;
 		}
-		if (XMLSchema.DOUBLE.equals(commonDatatype)) {
+		if (XSD.DOUBLE.equals(commonDatatype)) {
 			double left = leftLit.doubleValue();
 			double right = rightLit.doubleValue();
 			return valueFactory.createLiteral(left % right);
-		} else if (XMLSchema.FLOAT.equals(commonDatatype)) {
+		} else if (XSD.FLOAT.equals(commonDatatype)) {
 			float left = leftLit.floatValue();
 			float right = rightLit.floatValue();
 			return valueFactory.createLiteral(left % right);
-		} else if (XMLSchema.DECIMAL.equals(commonDatatype)) {
+		} else if (XSD.DECIMAL.equals(commonDatatype)) {
 			BigDecimal left = leftLit.decimalValue();
 			BigDecimal right = rightLit.decimalValue();
 			return valueFactory.createLiteral(left.remainder(right, MathContext.UNLIMITED));

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
@@ -51,7 +51,7 @@ public class TestValueDecoder {
 		// mapping.
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		when(connection.getNamespace(RDFS.PREFIX)).thenReturn(RDFS.NAMESPACE);
-		when(connection.getNamespace(XMLSchema.PREFIX)).thenReturn(XMLSchema.NAMESPACE);
+		when(connection.getNamespace(XSD.PREFIX)).thenReturn(XSD.NAMESPACE);
 		Repository repository = mock(Repository.class);
 		when(repository.getConnection()).thenReturn(connection);
 		decoder = new ValueDecoder(repository, factory);
@@ -92,7 +92,7 @@ public class TestValueDecoder {
 
 	@Test
 	public final void testLiteralWithURIType() throws BadRequestException {
-		Value value = decoder.decodeValue("\"1\"^^<" + XMLSchema.INT + ">");
+		Value value = decoder.decodeValue("\"1\"^^<" + XSD.INT + ">");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral(1));
 	}

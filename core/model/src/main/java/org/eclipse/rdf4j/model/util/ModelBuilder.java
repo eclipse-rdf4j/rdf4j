@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Builder to facilitate easier creation of new RDF {@link Model} objects via a fluent interface. All methods returning
@@ -181,8 +181,8 @@ public class ModelBuilder {
 	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
 	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
 	 *                  is available, the method creates a literal with the string representation of the supplied object
-	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  as the value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean} ,
+	 *                  {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
@@ -199,7 +199,7 @@ public class ModelBuilder {
 		}
 
 		if (objectValue == null) {
-			model.setNamespace(XMLSchema.NS);
+			model.setNamespace(XSD.NS);
 			objectValue = Literals.createLiteral(SimpleValueFactory.getInstance(), object);
 		}
 
@@ -224,8 +224,8 @@ public class ModelBuilder {
 	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
 	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
 	 *                  is available, the method creates a literal with the string representation of the supplied object
-	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  as the value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean} ,
+	 *                  {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
@@ -251,8 +251,8 @@ public class ModelBuilder {
 	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
 	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
 	 *                  is available, the method creates a literal with the string representation of the supplied object
-	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  as the value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean} ,
+	 *                  {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @see #namedGraph(Resource)
@@ -273,8 +273,8 @@ public class ModelBuilder {
 	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
 	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
 	 *                  is available, the method creates a literal with the string representation of the supplied object
-	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  as the value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean} ,
+	 *                  {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @throws ModelException if the current subject is not set using {@link #subject(Resource)} or
@@ -299,8 +299,8 @@ public class ModelBuilder {
 	 *                  prefix, it is mapped to an IRI. Otherwise a typed {@link Literal} is created out of the supplied
 	 *                  object, mapping the runtime type of the object to the appropriate XML Schema type. If no mapping
 	 *                  is available, the method creates a literal with the string representation of the supplied object
-	 *                  as the value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}
-	 *                  , {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 *                  as the value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean} ,
+	 *                  {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
 	 *                  {@link XMLGregorianCalendar } , and {@link Date}.
 	 * @return this {@link ModelBuilder}
 	 * @throws ModelException if the current subject is not set using {@link #subject(Resource)} or
@@ -363,7 +363,7 @@ public class ModelBuilder {
 	}
 
 	private Namespace[] getDefaultNamespaces() {
-		return new Namespace[] { RDF.NS, RDFS.NS, OWL.NS, XMLSchema.NS, DCTERMS.NS, DC.NS, FOAF.NS, SKOS.NS };
+		return new Namespace[] { RDF.NS, RDFS.NS, OWL.NS, XSD.NS, DCTERMS.NS, DC.NS, FOAF.NS, SKOS.NS };
 	}
 
 }

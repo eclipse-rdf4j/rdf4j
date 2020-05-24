@@ -14,7 +14,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -48,10 +48,10 @@ public class TzTest {
 	public void testEvaluate1() {
 		try {
 
-			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
+			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XSD.DATETIME));
 
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 
 			assertEquals("-05:00", result.getLabel());
 
@@ -65,10 +65,10 @@ public class TzTest {
 	public void testEvaluate2() {
 		try {
 
-			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815Z", XMLSchema.DATETIME));
+			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815Z", XSD.DATETIME));
 
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 
 			assertEquals("Z", result.getLabel());
 
@@ -82,10 +82,10 @@ public class TzTest {
 	public void testEvaluate3() {
 		try {
 
-			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815", XMLSchema.DATETIME));
+			Literal result = tz.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815", XSD.DATETIME));
 
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 
 			assertEquals("", result.getLabel());
 
