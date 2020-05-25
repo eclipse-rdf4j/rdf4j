@@ -58,7 +58,12 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 							break;
 						}
 
-						backup(backSlashCnt);
+						if(backSlashCnt%2==1){
+							backup(backSlashCnt+1);
+						}
+						else {
+							backup(backSlashCnt);
+						}
 						return '\\';
 					}
 				} catch (java.io.IOException e) {
