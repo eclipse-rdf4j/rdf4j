@@ -11,4 +11,4 @@
 ##################################################################
 
 <http://mycorp.example.com/papers/NobelPaper1> <http://purl.org/metadata/dublin_core#Title> "\n    Ramifications of\n       <apply xmlns=\"http://www.w3.org/TR/REC-mathml\">\n      <power></power>\n      <apply>\n\t<plus></plus>\n\t<ci>a</ci>\n\t<ci>b</ci>\n      </apply>\n      <cn>2</cn>\n    </apply>\n    to World Peace\n  "^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral> .
-<http://mycorp.example.com/papers/NobelPaper1> <http://purl.org/metadata/dublin_core#Creator> "David Hume" . 
+<http://mycorp.example.com/papers/NobelPaper1> <http://purl.org/metadata/dublin_core#Creator> "David Hume" .
