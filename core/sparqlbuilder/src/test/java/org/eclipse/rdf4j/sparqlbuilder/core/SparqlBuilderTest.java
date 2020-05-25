@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) ${year} Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -46,7 +46,6 @@ public class SparqlBuilderTest {
 						Expressions.and(Expressions.lt(price, Rdf.literalOf(50)),
 								Expressions.gt(price, Rdf.literalOf(30)))))
 				.optional();
-		System.out.println(query);
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 50 && ?price > 30 )"));
 	}
