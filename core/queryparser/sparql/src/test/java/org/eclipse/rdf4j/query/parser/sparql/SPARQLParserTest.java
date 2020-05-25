@@ -19,6 +19,8 @@ import static org.junit.Assert.fail;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -379,8 +381,6 @@ public class SPARQLParserTest {
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 
 		System.out.println(tupleExpr.toString());
-
-		assertTrue(tupleExpr instanceof Projection);
 
 	}
 }
