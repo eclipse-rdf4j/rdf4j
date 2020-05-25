@@ -373,7 +373,6 @@ public class RDFContainers {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		Resource current = container;
-		final Set<Value> encountered = new HashSet<>();
 
 		for (int annotatedMembershipPropertyCounter = 1; true; annotatedMembershipPropertyCounter++) {
 
@@ -383,13 +382,6 @@ public class RDFContainers {
 				break;
 			}
 			Statement statement = statementSupplier.get(container, annotatedMembershipPredicate, null, contexts).get();
-
-			if (containerType.equals(RDF.ALT)) {
-				if (encountered.contains(statement.getObject())) {
-					throw exceptionSupplier.apply("rdf:alt cannot contain duplicate values").get();
-				}
-				encountered.add(statement.getObject());
-			}
 
 			collectionConsumer.accept(statement);
 		}
