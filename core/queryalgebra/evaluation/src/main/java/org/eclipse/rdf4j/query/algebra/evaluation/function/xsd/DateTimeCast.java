@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -29,7 +29,7 @@ public class DateTimeCast extends CastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.DATETIME;
+		return XSD.DATETIME;
 	}
 
 	@Override
@@ -43,7 +43,7 @@ public class DateTimeCast extends CastFunction {
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 
-			if (datatype.equals(XMLSchema.DATE)) {
+			if (datatype.equals(XSD.DATE)) {
 				// If ST is xs:date, then let SYR be eg:convertYearToString(
 				// fn:year-from-date( SV )), let SMO be eg:convertTo2CharString(
 				// fn:month-from-date( SV )), let SDA be eg:convertTo2CharString(
@@ -93,7 +93,7 @@ public class DateTimeCast extends CastFunction {
 							dtBuilder.append(minutes);
 						}
 
-						return vf.createLiteral(dtBuilder.toString(), XMLSchema.DATETIME);
+						return vf.createLiteral(dtBuilder.toString(), XSD.DATETIME);
 					} else {
 						throw typeError(literal, null);
 					}

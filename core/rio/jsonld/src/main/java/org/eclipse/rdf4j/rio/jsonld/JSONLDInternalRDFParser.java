@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 import com.github.jsonldjava.core.JsonLdConsts;
 import com.github.jsonldjava.core.JsonLdError;
@@ -62,7 +62,7 @@ class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {
 			// In RDF-1.1, RDF-1.0 Plain Literals are now Typed Literals with
 			// type xsd:String
 			if (!literal.getLanguage().isPresent() && datatype == null) {
-				datatype = XMLSchema.STRING.stringValue();
+				datatype = XSD.STRING.stringValue();
 			}
 
 			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null), graphName);

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -51,7 +51,7 @@ public class Minutes implements Function {
 
 					int minutes = calValue.getMinute();
 					if (DatatypeConstants.FIELD_UNDEFINED != minutes) {
-						return valueFactory.createLiteral(String.valueOf(minutes), XMLSchema.INTEGER);
+						return valueFactory.createLiteral(String.valueOf(minutes), XSD.INTEGER);
 					} else {
 						throw new ValueExprEvaluationException("can not determine minutes from value: " + argValue);
 					}

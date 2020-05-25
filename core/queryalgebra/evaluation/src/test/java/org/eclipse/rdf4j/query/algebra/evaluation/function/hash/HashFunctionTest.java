@@ -14,7 +14,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Test;
 
@@ -37,7 +37,7 @@ public abstract class HashFunctionTest {
 			Literal hash = getHashFunction().evaluate(f, f.createLiteral(getToHash()));
 
 			assertNotNull(hash);
-			assertEquals(XMLSchema.STRING, hash.getDatatype());
+			assertEquals(XSD.STRING, hash.getDatatype());
 
 			assertEquals(hash.getLabel(), getExpectedDigest());
 		} catch (ValueExprEvaluationException e) {
@@ -49,10 +49,10 @@ public abstract class HashFunctionTest {
 	@Test
 	public void testEvaluate2() {
 		try {
-			Literal hash = getHashFunction().evaluate(f, f.createLiteral(getToHash(), XMLSchema.STRING));
+			Literal hash = getHashFunction().evaluate(f, f.createLiteral(getToHash(), XSD.STRING));
 
 			assertNotNull(hash);
-			assertEquals(XMLSchema.STRING, hash.getDatatype());
+			assertEquals(XSD.STRING, hash.getDatatype());
 
 			assertEquals(hash.getLabel(), getExpectedDigest());
 		} catch (ValueExprEvaluationException e) {
@@ -64,7 +64,7 @@ public abstract class HashFunctionTest {
 	@Test
 	public void testEvaluate3() {
 		try {
-			getHashFunction().evaluate(f, f.createLiteral("4", XMLSchema.INTEGER));
+			getHashFunction().evaluate(f, f.createLiteral("4", XSD.INTEGER));
 
 			fail("incompatible operand should have resulted in type error.");
 		} catch (ValueExprEvaluationException e) {

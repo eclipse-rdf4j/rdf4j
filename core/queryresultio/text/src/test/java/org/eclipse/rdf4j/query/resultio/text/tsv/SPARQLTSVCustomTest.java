@@ -16,7 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -37,8 +37,8 @@ public class SPARQLTSVCustomTest {
 	/**
 	 * Only Literals with the XML Schema numeric types should be simplified.
 	 * <p>
-	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XMLSchema#STRING} is implied and hence is not
-	 * generally represented.
+	 * NOTE: This will fail when using RDF-1.1, as the datatype {@link XSD#STRING} is implied and hence is not generally
+	 * represented.
 	 *
 	 * @throws Exception
 	 */
@@ -48,7 +48,7 @@ public class SPARQLTSVCustomTest {
 		List<String> bindingNames = Arrays.asList("test");
 		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
 				Arrays.asList(new ListBindingSet(bindingNames,
-						SimpleValueFactory.getInstance().createLiteral("1", XMLSchema.STRING))));
+						SimpleValueFactory.getInstance().createLiteral("1", XSD.STRING))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"^^<http://www.w3.org/2001/XMLSchema#string>\n", result);
 	}

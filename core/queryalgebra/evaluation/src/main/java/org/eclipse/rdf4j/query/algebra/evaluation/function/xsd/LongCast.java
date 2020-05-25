@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:long</tt> .
@@ -25,7 +25,7 @@ public class LongCast extends IntegerCastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.LONG;
+		return XSD.LONG;
 	}
 
 	@Override

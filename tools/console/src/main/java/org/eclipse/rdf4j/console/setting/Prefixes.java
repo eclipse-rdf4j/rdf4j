@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.TIME;
 import org.eclipse.rdf4j.model.vocabulary.VCARD4;
 import org.eclipse.rdf4j.model.vocabulary.VOID;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Namespace prefix setting
@@ -55,7 +55,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		DEFAULT.add(TIME.NS);
 		DEFAULT.add(VCARD4.NS);
 		DEFAULT.add(VOID.NS);
-		DEFAULT.add(XMLSchema.NS);
+		DEFAULT.add(XSD.NS);
 	}
 
 	@Override

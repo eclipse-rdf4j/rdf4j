@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
@@ -200,7 +200,7 @@ public class RDFParserHelper {
 				else if (workingDatatype != null) {
 					result = valueFactory.createLiteral(workingLabel, workingDatatype);
 				} else {
-					result = valueFactory.createLiteral(workingLabel, XMLSchema.STRING);
+					result = valueFactory.createLiteral(workingLabel, XSD.STRING);
 				}
 			} catch (Exception e) {
 				reportFatalError(e, lineNo, columnNo, errListener);

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.DOAP;
 import org.eclipse.rdf4j.model.vocabulary.EARL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -63,7 +63,7 @@ public class EarlReport {
 		con.begin();
 
 		con.setNamespace("rdf", RDF.NAMESPACE);
-		con.setNamespace("xsd", XMLSchema.NAMESPACE);
+		con.setNamespace("xsd", XSD.NAMESPACE);
 		con.setNamespace("doap", DOAP.NAMESPACE);
 		con.setNamespace("earl", EARL.NAMESPACE);
 		con.setNamespace("dcterms", DCTERMS.NAMESPACE);
@@ -78,7 +78,7 @@ public class EarlReport {
 		con.add(releaseNode, DOAP.NAME, vf.createLiteral("Sesame 2.7.0"));
 		SimpleDateFormat xsdDataFormat = new SimpleDateFormat("yyyy-MM-dd");
 		String currentDate = xsdDataFormat.format(new Date());
-		con.add(releaseNode, DOAP.CREATED, vf.createLiteral(currentDate, XMLSchema.DATE));
+		con.add(releaseNode, DOAP.CREATED, vf.createLiteral(currentDate, XSD.DATE));
 
 		asserterNode = vf.createBNode();
 		con.add(asserterNode, RDF.TYPE, EARL.SOFTWARE);

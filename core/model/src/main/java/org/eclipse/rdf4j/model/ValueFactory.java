@@ -14,7 +14,7 @@ import java.util.Date;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
@@ -91,7 +91,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
-	 * object must be {@link XMLSchema#STRING}.
+	 * object must be {@link XSD#STRING}.
 	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
 	 */
@@ -110,8 +110,8 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
-	 *                 this literal.
+	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
+	 *                 literal.
 	 */
 	public Literal createLiteral(String label, IRI datatype);
 
@@ -119,8 +119,8 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XMLSchema#STRING} will be assigned to
-	 *                 this literal.
+	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
+	 *                 literal.
 	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
 	 */
 	@Deprecated

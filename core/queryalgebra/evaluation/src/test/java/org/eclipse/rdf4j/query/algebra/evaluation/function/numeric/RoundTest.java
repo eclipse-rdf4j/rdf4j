@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -80,7 +80,7 @@ public class RoundTest {
 		try {
 			BigDecimal bd = new BigDecimal(1234567.567);
 
-			Literal rounded = round.evaluate(f, f.createLiteral(bd.toPlainString(), XMLSchema.DECIMAL));
+			Literal rounded = round.evaluate(f, f.createLiteral(bd.toPlainString(), XSD.DECIMAL));
 
 			BigDecimal roundValue = rounded.decimalValue();
 

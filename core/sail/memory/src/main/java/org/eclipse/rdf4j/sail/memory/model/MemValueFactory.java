@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -286,17 +286,17 @@ public class MemValueFactory extends AbstractValueFactory {
 				try {
 					if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
 						memLiteral = new IntegerMemLiteral(this, label, literal.integerValue(), datatype);
-					} else if (datatype.equals(XMLSchema.DECIMAL)) {
+					} else if (datatype.equals(XSD.DECIMAL)) {
 						memLiteral = new DecimalMemLiteral(this, label, literal.decimalValue(), datatype);
-					} else if (datatype.equals(XMLSchema.FLOAT)) {
+					} else if (datatype.equals(XSD.FLOAT)) {
 						memLiteral = new NumericMemLiteral(this, label, literal.floatValue(), datatype);
-					} else if (datatype.equals(XMLSchema.DOUBLE)) {
+					} else if (datatype.equals(XSD.DOUBLE)) {
 						memLiteral = new NumericMemLiteral(this, label, literal.doubleValue(), datatype);
-					} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+					} else if (datatype.equals(XSD.BOOLEAN)) {
 						memLiteral = new BooleanMemLiteral(this, label, literal.booleanValue());
-					} else if (datatype.equals(XMLSchema.DATETIME)) {
+					} else if (datatype.equals(XSD.DATETIME)) {
 						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
-					} else if (datatype.equals(XMLSchema.DATETIMESTAMP)) {
+					} else if (datatype.equals(XSD.DATETIMESTAMP)) {
 						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
 					} else {
 						memLiteral = new MemLiteral(this, label, datatype);

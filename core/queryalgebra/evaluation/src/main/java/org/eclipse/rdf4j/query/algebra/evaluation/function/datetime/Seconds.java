@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -57,7 +57,7 @@ public class Seconds implements Function {
 						String str = (fraction == null) ? String.valueOf(seconds)
 								: String.valueOf(fraction.doubleValue() + seconds);
 
-						return valueFactory.createLiteral(str, XMLSchema.DECIMAL);
+						return valueFactory.createLiteral(str, XSD.DECIMAL);
 					} else {
 						throw new ValueExprEvaluationException("can not determine minutes from value: " + argValue);
 					}

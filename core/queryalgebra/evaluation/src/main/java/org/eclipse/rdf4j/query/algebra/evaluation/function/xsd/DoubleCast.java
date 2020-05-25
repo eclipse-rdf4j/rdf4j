@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 /**
@@ -39,7 +39,7 @@ public class DoubleCast extends CastFunction {
 				} catch (NumberFormatException e) {
 					throw new ValueExprEvaluationException(e.getMessage(), e);
 				}
-			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XSD.BOOLEAN)) {
 				try {
 					return valueFactory.createLiteral(literal.booleanValue() ? 1.0 : 0.0);
 				} catch (IllegalArgumentException e) {
@@ -53,7 +53,7 @@ public class DoubleCast extends CastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.DOUBLE;
+		return XSD.DOUBLE;
 	}
 
 	@Override

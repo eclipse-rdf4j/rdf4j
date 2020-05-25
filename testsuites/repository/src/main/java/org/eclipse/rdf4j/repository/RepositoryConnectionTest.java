@@ -59,7 +59,7 @@ import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -855,7 +855,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testGetStatementsMalformedTypedLiteral() throws Exception {
-		Literal invalidIntegerLiteral = vf.createLiteral("the number four", XMLSchema.INTEGER);
+		Literal invalidIntegerLiteral = vf.createLiteral("the number four", XSD.INTEGER);
 		try {
 			IRI pred = vf.createIRI(URN_PRED);
 			testCon.add(bob, pred, invalidIntegerLiteral);

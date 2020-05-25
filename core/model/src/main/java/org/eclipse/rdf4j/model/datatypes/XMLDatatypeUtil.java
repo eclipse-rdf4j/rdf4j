@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Provides methods for handling the standard XML Schema datatypes.
@@ -74,16 +74,16 @@ public class XMLDatatypeUtil {
 	 * @return true if the datatype is a primitive type
 	 */
 	public static boolean isPrimitiveDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DATETIME)
-				|| datatype.equals(XMLSchema.TIME) || datatype.equals(XMLSchema.DATE)
-				|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GYEAR)
-				|| datatype.equals(XMLSchema.GMONTHDAY) || datatype.equals(XMLSchema.GDAY)
-				|| datatype.equals(XMLSchema.GMONTH) || datatype.equals(XMLSchema.STRING)
-				|| datatype.equals(XMLSchema.BOOLEAN) || datatype.equals(XMLSchema.BASE64BINARY)
-				|| datatype.equals(XMLSchema.HEXBINARY) || datatype.equals(XMLSchema.FLOAT)
-				|| datatype.equals(XMLSchema.DECIMAL) || datatype.equals(XMLSchema.DOUBLE)
-				|| datatype.equals(XMLSchema.ANYURI) || datatype.equals(XMLSchema.QNAME)
-				|| datatype.equals(XMLSchema.NOTATION);
+		return datatype.equals(XSD.DURATION) || datatype.equals(XSD.DATETIME)
+				|| datatype.equals(XSD.TIME) || datatype.equals(XSD.DATE)
+				|| datatype.equals(XSD.GYEARMONTH) || datatype.equals(XSD.GYEAR)
+				|| datatype.equals(XSD.GMONTHDAY) || datatype.equals(XSD.GDAY)
+				|| datatype.equals(XSD.GMONTH) || datatype.equals(XSD.STRING)
+				|| datatype.equals(XSD.BOOLEAN) || datatype.equals(XSD.BASE64BINARY)
+				|| datatype.equals(XSD.HEXBINARY) || datatype.equals(XSD.FLOAT)
+				|| datatype.equals(XSD.DECIMAL) || datatype.equals(XSD.DOUBLE)
+				|| datatype.equals(XSD.ANYURI) || datatype.equals(XSD.QNAME)
+				|| datatype.equals(XSD.NOTATION);
 	}
 
 	/**
@@ -93,20 +93,20 @@ public class XMLDatatypeUtil {
 	 * @return true if the datatype is a derived type
 	 */
 	public static boolean isDerivedDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.NORMALIZEDSTRING) || datatype.equals(XMLSchema.TOKEN)
-				|| datatype.equals(XMLSchema.LANGUAGE) || datatype.equals(XMLSchema.NMTOKEN)
-				|| datatype.equals(XMLSchema.NMTOKENS) || datatype.equals(XMLSchema.NAME)
-				|| datatype.equals(XMLSchema.NCNAME) || datatype.equals(XMLSchema.ID)
-				|| datatype.equals(XMLSchema.IDREF) || datatype.equals(XMLSchema.IDREFS)
-				|| datatype.equals(XMLSchema.ENTITY) || datatype.equals(XMLSchema.ENTITIES)
-				|| datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG)
-				|| datatype.equals(XMLSchema.INT) || datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
-				|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
-				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
-				|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
-				|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE)
-				|| datatype.equals(XMLSchema.DAYTIMEDURATION) || datatype.equals(XMLSchema.YEARMONTHDURATION)
-				|| datatype.equals(XMLSchema.DATETIMESTAMP);
+		return datatype.equals(XSD.NORMALIZEDSTRING) || datatype.equals(XSD.TOKEN)
+				|| datatype.equals(XSD.LANGUAGE) || datatype.equals(XSD.NMTOKEN)
+				|| datatype.equals(XSD.NMTOKENS) || datatype.equals(XSD.NAME)
+				|| datatype.equals(XSD.NCNAME) || datatype.equals(XSD.ID)
+				|| datatype.equals(XSD.IDREF) || datatype.equals(XSD.IDREFS)
+				|| datatype.equals(XSD.ENTITY) || datatype.equals(XSD.ENTITIES)
+				|| datatype.equals(XSD.INTEGER) || datatype.equals(XSD.LONG)
+				|| datatype.equals(XSD.INT) || datatype.equals(XSD.SHORT) || datatype.equals(XSD.BYTE)
+				|| datatype.equals(XSD.NON_POSITIVE_INTEGER) || datatype.equals(XSD.NEGATIVE_INTEGER)
+				|| datatype.equals(XSD.NON_NEGATIVE_INTEGER) || datatype.equals(XSD.POSITIVE_INTEGER)
+				|| datatype.equals(XSD.UNSIGNED_LONG) || datatype.equals(XSD.UNSIGNED_INT)
+				|| datatype.equals(XSD.UNSIGNED_SHORT) || datatype.equals(XSD.UNSIGNED_BYTE)
+				|| datatype.equals(XSD.DAYTIMEDURATION) || datatype.equals(XSD.YEARMONTHDURATION)
+				|| datatype.equals(XSD.DATETIMESTAMP);
 	}
 
 	/**
@@ -138,7 +138,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a decimal datatype
 	 */
 	public static boolean isDecimalDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.DECIMAL) || isIntegerDatatype(datatype);
+		return datatype.equals(XSD.DECIMAL) || isIntegerDatatype(datatype);
 	}
 
 	/**
@@ -149,12 +149,12 @@ public class XMLDatatypeUtil {
 	 * @return true if it is an integer type
 	 */
 	public static boolean isIntegerDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG) || datatype.equals(XMLSchema.INT)
-				|| datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
-				|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
-				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
-				|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
-				|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE);
+		return datatype.equals(XSD.INTEGER) || datatype.equals(XSD.LONG) || datatype.equals(XSD.INT)
+				|| datatype.equals(XSD.SHORT) || datatype.equals(XSD.BYTE)
+				|| datatype.equals(XSD.NON_POSITIVE_INTEGER) || datatype.equals(XSD.NEGATIVE_INTEGER)
+				|| datatype.equals(XSD.NON_NEGATIVE_INTEGER) || datatype.equals(XSD.POSITIVE_INTEGER)
+				|| datatype.equals(XSD.UNSIGNED_LONG) || datatype.equals(XSD.UNSIGNED_INT)
+				|| datatype.equals(XSD.UNSIGNED_SHORT) || datatype.equals(XSD.UNSIGNED_BYTE);
 	}
 
 	/**
@@ -164,7 +164,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a floating point type
 	 */
 	public static boolean isFloatingPointDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.FLOAT) || datatype.equals(XMLSchema.DOUBLE);
+		return datatype.equals(XSD.FLOAT) || datatype.equals(XSD.DOUBLE);
 	}
 
 	/**
@@ -176,10 +176,10 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a calendar type
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATE) || datatype.equals(XMLSchema.TIME)
-				|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GMONTHDAY)
-				|| datatype.equals(XMLSchema.GYEAR) || datatype.equals(XMLSchema.GMONTH)
-				|| datatype.equals(XMLSchema.GDAY) || datatype.equals(XMLSchema.DATETIMESTAMP);
+		return datatype.equals(XSD.DATETIME) || datatype.equals(XSD.DATE) || datatype.equals(XSD.TIME)
+				|| datatype.equals(XSD.GYEARMONTH) || datatype.equals(XSD.GMONTHDAY)
+				|| datatype.equals(XSD.GYEAR) || datatype.equals(XSD.GMONTH)
+				|| datatype.equals(XSD.GDAY) || datatype.equals(XSD.DATETIMESTAMP);
 
 	}
 
@@ -192,8 +192,8 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a duration type
 	 */
 	public static boolean isDurationDatatype(IRI datatype) {
-		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DAYTIMEDURATION)
-				|| datatype.equals(XMLSchema.YEARMONTHDURATION);
+		return datatype.equals(XSD.DURATION) || datatype.equals(XSD.DAYTIMEDURATION)
+				|| datatype.equals(XSD.YEARMONTHDURATION);
 	}
 
 	/**
@@ -221,69 +221,69 @@ public class XMLDatatypeUtil {
 	public static boolean isValidValue(String value, IRI datatype) {
 		boolean result = true;
 
-		if (datatype.equals(XMLSchema.DECIMAL)) {
+		if (datatype.equals(XSD.DECIMAL)) {
 			result = isValidDecimal(value);
-		} else if (datatype.equals(XMLSchema.INTEGER)) {
+		} else if (datatype.equals(XSD.INTEGER)) {
 			result = isValidInteger(value);
-		} else if (datatype.equals(XMLSchema.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
 			result = isValidNegativeInteger(value);
-		} else if (datatype.equals(XMLSchema.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
 			result = isValidNonPositiveInteger(value);
-		} else if (datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
 			result = isValidNonNegativeInteger(value);
-		} else if (datatype.equals(XMLSchema.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
 			result = isValidPositiveInteger(value);
-		} else if (datatype.equals(XMLSchema.LONG)) {
+		} else if (datatype.equals(XSD.LONG)) {
 			result = isValidLong(value);
-		} else if (datatype.equals(XMLSchema.INT)) {
+		} else if (datatype.equals(XSD.INT)) {
 			result = isValidInt(value);
-		} else if (datatype.equals(XMLSchema.SHORT)) {
+		} else if (datatype.equals(XSD.SHORT)) {
 			result = isValidShort(value);
-		} else if (datatype.equals(XMLSchema.BYTE)) {
+		} else if (datatype.equals(XSD.BYTE)) {
 			result = isValidByte(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_LONG)) {
+		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
 			result = isValidUnsignedLong(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_INT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
 			result = isValidUnsignedInt(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
 			result = isValidUnsignedShort(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
 			result = isValidUnsignedByte(value);
-		} else if (datatype.equals(XMLSchema.FLOAT)) {
+		} else if (datatype.equals(XSD.FLOAT)) {
 			result = isValidFloat(value);
-		} else if (datatype.equals(XMLSchema.DOUBLE)) {
+		} else if (datatype.equals(XSD.DOUBLE)) {
 			result = isValidDouble(value);
-		} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+		} else if (datatype.equals(XSD.BOOLEAN)) {
 			result = isValidBoolean(value);
-		} else if (datatype.equals(XMLSchema.DATETIME)) {
+		} else if (datatype.equals(XSD.DATETIME)) {
 			result = isValidDateTime(value);
-		} else if (datatype.equals(XMLSchema.DATETIMESTAMP)) {
+		} else if (datatype.equals(XSD.DATETIMESTAMP)) {
 			result = isValidDateTimeStamp(value);
-		} else if (datatype.equals(XMLSchema.DATE)) {
+		} else if (datatype.equals(XSD.DATE)) {
 			result = isValidDate(value);
-		} else if (datatype.equals(XMLSchema.TIME)) {
+		} else if (datatype.equals(XSD.TIME)) {
 			result = isValidTime(value);
-		} else if (datatype.equals(XMLSchema.GDAY)) {
+		} else if (datatype.equals(XSD.GDAY)) {
 			result = isValidGDay(value);
-		} else if (datatype.equals(XMLSchema.GMONTH)) {
+		} else if (datatype.equals(XSD.GMONTH)) {
 			result = isValidGMonth(value);
-		} else if (datatype.equals(XMLSchema.GMONTHDAY)) {
+		} else if (datatype.equals(XSD.GMONTHDAY)) {
 			result = isValidGMonthDay(value);
-		} else if (datatype.equals(XMLSchema.GYEAR)) {
+		} else if (datatype.equals(XSD.GYEAR)) {
 			result = isValidGYear(value);
-		} else if (datatype.equals(XMLSchema.GYEARMONTH)) {
+		} else if (datatype.equals(XSD.GYEARMONTH)) {
 			result = isValidGYearMonth(value);
-		} else if (datatype.equals(XMLSchema.DURATION)) {
+		} else if (datatype.equals(XSD.DURATION)) {
 			result = isValidDuration(value);
-		} else if (datatype.equals(XMLSchema.DAYTIMEDURATION)) {
+		} else if (datatype.equals(XSD.DAYTIMEDURATION)) {
 			result = isValidDayTimeDuration(value);
-		} else if (datatype.equals(XMLSchema.YEARMONTHDURATION)) {
+		} else if (datatype.equals(XSD.YEARMONTHDURATION)) {
 			result = isValidYearMonthDuration(value);
-		} else if (datatype.equals(XMLSchema.QNAME)) {
+		} else if (datatype.equals(XSD.QNAME)) {
 			result = isValidQName(value);
-		} else if (datatype.equals(XMLSchema.ANYURI)) {
+		} else if (datatype.equals(XSD.ANYURI)) {
 			result = isValidAnyURI(value);
-		} else if (datatype.equals(XMLSchema.LANGUAGE)) {
+		} else if (datatype.equals(XSD.LANGUAGE)) {
 			result = Literals.isValidLanguageTag(value);
 		}
 
@@ -792,43 +792,43 @@ public class XMLDatatypeUtil {
 	public static String normalize(String value, IRI datatype) {
 		String result = value;
 
-		if (datatype.equals(XMLSchema.DECIMAL)) {
+		if (datatype.equals(XSD.DECIMAL)) {
 			result = normalizeDecimal(value);
-		} else if (datatype.equals(XMLSchema.INTEGER)) {
+		} else if (datatype.equals(XSD.INTEGER)) {
 			result = normalizeInteger(value);
-		} else if (datatype.equals(XMLSchema.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
 			result = normalizeNegativeInteger(value);
-		} else if (datatype.equals(XMLSchema.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
 			result = normalizeNonPositiveInteger(value);
-		} else if (datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
 			result = normalizeNonNegativeInteger(value);
-		} else if (datatype.equals(XMLSchema.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
 			result = normalizePositiveInteger(value);
-		} else if (datatype.equals(XMLSchema.LONG)) {
+		} else if (datatype.equals(XSD.LONG)) {
 			result = normalizeLong(value);
-		} else if (datatype.equals(XMLSchema.INT)) {
+		} else if (datatype.equals(XSD.INT)) {
 			result = normalizeInt(value);
-		} else if (datatype.equals(XMLSchema.SHORT)) {
+		} else if (datatype.equals(XSD.SHORT)) {
 			result = normalizeShort(value);
-		} else if (datatype.equals(XMLSchema.BYTE)) {
+		} else if (datatype.equals(XSD.BYTE)) {
 			result = normalizeByte(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_LONG)) {
+		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
 			result = normalizeUnsignedLong(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_INT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
 			result = normalizeUnsignedInt(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
 			result = normalizeUnsignedShort(value);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
 			result = normalizeUnsignedByte(value);
-		} else if (datatype.equals(XMLSchema.FLOAT)) {
+		} else if (datatype.equals(XSD.FLOAT)) {
 			result = normalizeFloat(value);
-		} else if (datatype.equals(XMLSchema.DOUBLE)) {
+		} else if (datatype.equals(XSD.DOUBLE)) {
 			result = normalizeDouble(value);
-		} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+		} else if (datatype.equals(XSD.BOOLEAN)) {
 			result = normalizeBoolean(value);
-		} else if (datatype.equals(XMLSchema.DATETIME)) {
+		} else if (datatype.equals(XSD.DATETIME)) {
 			result = normalizeDateTime(value);
-		} else if (datatype.equals(XMLSchema.ANYURI)) {
+		} else if (datatype.equals(XSD.ANYURI)) {
 			result = collapseWhiteSpace(value);
 		}
 
@@ -1362,39 +1362,39 @@ public class XMLDatatypeUtil {
 	 *------------------*/
 
 	public static int compare(String value1, String value2, IRI datatype) {
-		if (datatype.equals(XMLSchema.DECIMAL)) {
+		if (datatype.equals(XSD.DECIMAL)) {
 			return compareDecimals(value1, value2);
-		} else if (datatype.equals(XMLSchema.INTEGER)) {
+		} else if (datatype.equals(XSD.INTEGER)) {
 			return compareIntegers(value1, value2);
-		} else if (datatype.equals(XMLSchema.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
 			return compareNegativeIntegers(value1, value2);
-		} else if (datatype.equals(XMLSchema.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
 			return compareNonPositiveIntegers(value1, value2);
-		} else if (datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
 			return compareNonNegativeIntegers(value1, value2);
-		} else if (datatype.equals(XMLSchema.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
 			return comparePositiveIntegers(value1, value2);
-		} else if (datatype.equals(XMLSchema.LONG)) {
+		} else if (datatype.equals(XSD.LONG)) {
 			return compareLongs(value1, value2);
-		} else if (datatype.equals(XMLSchema.INT)) {
+		} else if (datatype.equals(XSD.INT)) {
 			return compareInts(value1, value2);
-		} else if (datatype.equals(XMLSchema.SHORT)) {
+		} else if (datatype.equals(XSD.SHORT)) {
 			return compareShorts(value1, value2);
-		} else if (datatype.equals(XMLSchema.BYTE)) {
+		} else if (datatype.equals(XSD.BYTE)) {
 			return compareBytes(value1, value2);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_LONG)) {
+		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
 			return compareUnsignedLongs(value1, value2);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_INT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
 			return compareUnsignedInts(value1, value2);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
 			return compareUnsignedShorts(value1, value2);
-		} else if (datatype.equals(XMLSchema.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
 			return compareUnsignedBytes(value1, value2);
-		} else if (datatype.equals(XMLSchema.FLOAT)) {
+		} else if (datatype.equals(XSD.FLOAT)) {
 			return compareFloats(value1, value2);
-		} else if (datatype.equals(XMLSchema.DOUBLE)) {
+		} else if (datatype.equals(XSD.DOUBLE)) {
 			return compareDoubles(value1, value2);
-		} else if (datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATETIMESTAMP)) {
+		} else if (datatype.equals(XSD.DATETIME) || datatype.equals(XSD.DATETIMESTAMP)) {
 			return compareDateTime(value1, value2);
 		} else {
 			throw new IllegalArgumentException("datatype is not ordered");
@@ -1973,27 +1973,27 @@ public class XMLDatatypeUtil {
 	 */
 	public static IRI qnameToURI(QName qname) {
 		if (DatatypeConstants.DATETIME.equals(qname)) {
-			return XMLSchema.DATETIME;
+			return XSD.DATETIME;
 		} else if (DatatypeConstants.DATE.equals(qname)) {
-			return XMLSchema.DATE;
+			return XSD.DATE;
 		} else if (DatatypeConstants.TIME.equals(qname)) {
-			return XMLSchema.TIME;
+			return XSD.TIME;
 		} else if (DatatypeConstants.GYEARMONTH.equals(qname)) {
-			return XMLSchema.GYEARMONTH;
+			return XSD.GYEARMONTH;
 		} else if (DatatypeConstants.GMONTHDAY.equals(qname)) {
-			return XMLSchema.GMONTHDAY;
+			return XSD.GMONTHDAY;
 		} else if (DatatypeConstants.GYEAR.equals(qname)) {
-			return XMLSchema.GYEAR;
+			return XSD.GYEAR;
 		} else if (DatatypeConstants.GMONTH.equals(qname)) {
-			return XMLSchema.GMONTH;
+			return XSD.GMONTH;
 		} else if (DatatypeConstants.GDAY.equals(qname)) {
-			return XMLSchema.GDAY;
+			return XSD.GDAY;
 		} else if (DatatypeConstants.DURATION.equals(qname)) {
-			return XMLSchema.DURATION;
+			return XSD.DURATION;
 		} else if (DatatypeConstants.DURATION_DAYTIME.equals(qname)) {
-			return XMLSchema.DAYTIMEDURATION;
+			return XSD.DAYTIMEDURATION;
 		} else if (DatatypeConstants.DURATION_YEARMONTH.equals(qname)) {
-			return XMLSchema.YEARMONTHDURATION;
+			return XSD.YEARMONTHDURATION;
 		} else {
 			throw new IllegalArgumentException("QName cannot be mapped to an XML Schema URI: " + qname.toString());
 		}

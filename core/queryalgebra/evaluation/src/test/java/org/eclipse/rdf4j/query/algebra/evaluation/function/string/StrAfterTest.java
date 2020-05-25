@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -95,14 +95,14 @@ public class StrAfterTest {
 	@Test
 	public void testEvaluate4() {
 
-		Literal leftArg = f.createLiteral("foobar", XMLSchema.STRING);
+		Literal leftArg = f.createLiteral("foobar", XSD.STRING);
 		Literal rightArg = f.createLiteral("b");
 
 		try {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("ar", result.getLabel());
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -113,13 +113,13 @@ public class StrAfterTest {
 	public void testEvaluate4a() {
 
 		Literal leftArg = f.createLiteral("foobar");
-		Literal rightArg = f.createLiteral("b", XMLSchema.STRING);
+		Literal rightArg = f.createLiteral("b", XSD.STRING);
 
 		try {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
 
 			assertEquals("ar", result.getLabel());
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -129,8 +129,8 @@ public class StrAfterTest {
 	@Test
 	public void testEvaluate5() {
 
-		Literal leftArg = f.createLiteral("foobar", XMLSchema.STRING);
-		Literal rightArg = f.createLiteral("b", XMLSchema.DATE);
+		Literal leftArg = f.createLiteral("foobar", XSD.STRING);
+		Literal rightArg = f.createLiteral("b", XSD.DATE);
 
 		try {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);
@@ -205,7 +205,7 @@ public class StrAfterTest {
 	@Test
 	public void testEvaluate10() {
 		Literal leftArg = f.createLiteral("foobar", "en");
-		Literal rightArg = f.createLiteral("b", XMLSchema.STRING);
+		Literal rightArg = f.createLiteral("b", XSD.STRING);
 
 		try {
 			Literal result = strAfterFunc.evaluate(f, leftArg, rightArg);

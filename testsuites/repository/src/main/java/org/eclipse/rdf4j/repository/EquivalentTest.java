@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -49,9 +49,9 @@ public abstract class EquivalentTest {
 
 	private static Literal xyz_EN = vf.createLiteral("xyz", "EN");
 
-	private static Literal xyz_string = vf.createLiteral("xyz", XMLSchema.STRING);
+	private static Literal xyz_string = vf.createLiteral("xyz", XSD.STRING);
 
-	private static Literal xyz_integer = vf.createLiteral("xyz", XMLSchema.INTEGER);
+	private static Literal xyz_integer = vf.createLiteral("xyz", XSD.INTEGER);
 
 	private static Literal xyz_unknown = vf.createLiteral("xyz", vf.createIRI("http://example/unknown"));
 
@@ -63,9 +63,9 @@ public abstract class EquivalentTest {
 
 	private static Literal abc_EN = vf.createLiteral("abc", "EN");
 
-	private static Literal abc_string = vf.createLiteral("abc", XMLSchema.STRING);
+	private static Literal abc_string = vf.createLiteral("abc", XSD.STRING);
 
-	private static Literal abc_integer = vf.createLiteral("abc", XMLSchema.INTEGER);
+	private static Literal abc_integer = vf.createLiteral("abc", XSD.INTEGER);
 
 	private static Literal abc_unknown = vf.createLiteral("abc", vf.createIRI("http://example/unknown"));
 
