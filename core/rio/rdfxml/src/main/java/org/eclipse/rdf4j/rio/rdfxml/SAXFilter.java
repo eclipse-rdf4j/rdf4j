@@ -558,13 +558,42 @@ class SAXFilter implements ContentHandler {
 				String prefix = unknownPrefixesInXMLLiteral.get(i);
 				String namespace = topElement.getNamespace(prefix);
 				if (namespace != null) {
+					System.out.println(prefix);
+					System.out.println(namespace);
 					appendNamespaceDecl(contextPrefixes, prefix, namespace);
 				}
 			}
 
 			// Insert this String before the first '>' character
-			int endOfFirstStartTag = charBuf.indexOf(">");
-			charBuf.insert(endOfFirstStartTag, contextPrefixes.toString());
+			//int endOfFirstStartTag = charBuf.indexOf(">");
+
+			System.out.println("Charbuf before insert: ");
+			System.out.println(charBuf.toString());
+
+			//charBuf.insert(endOfFirstStartTag, contextPrefixes.toString());
+			int i = 0;
+			while(i<charBuf.length()){
+				char ch = charBuf.charAt(i);
+				//System.out.println(i);
+				if(ch == '<'){
+					if((i+1) < charBuf.length()){
+						char nextChar = charBuf.charAt(i+1);
+						if(nextChar != '/'){
+							//System.out.println(nextChar);
+							//System.out.println(charBuf.substring(i));
+							int endOfFirstStartTag = charBuf.substring(i).indexOf(">");
+							//System.out.println(endOfFirstStartTag);
+							charBuf.insert(endOfFirstStartTag + i, contextPrefixes.toString());
+						}
+					}
+				}
+				i += 1;
+			}
+
+			System.out.println("Charbuf after insert: ");
+			System.out.println(charBuf);
+
+
 		}
 
 		unknownPrefixesInXMLLiteral.clear();
