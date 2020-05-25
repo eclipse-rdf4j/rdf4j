@@ -153,6 +153,7 @@ public class SPARQLUpdateDataBlockParser extends TriGStarParser {
 			}
 		}
 
+		c = peekCodePoint();
 		if (c == '.' || c == '}') {
 			readCodePoint();
 		}
