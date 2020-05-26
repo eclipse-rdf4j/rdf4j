@@ -295,7 +295,7 @@ abstract public class AbstractShaclTest {
 				connection.begin(isolationLevel);
 				ValueFactory vf = connection.getValueFactory();
 				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
-						vf.createLiteral("123", XMLSchema.INTEGER), vf.createBNode());
+						vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
 				try {
 					connection.commit();
 				} catch (RepositoryException sailException) {
