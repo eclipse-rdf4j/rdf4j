@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
-
 // reference to a Triple
 public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueExpr {
 

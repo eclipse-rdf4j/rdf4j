@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Inserts original bindings into the result.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class InsertBindingsIteration extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {

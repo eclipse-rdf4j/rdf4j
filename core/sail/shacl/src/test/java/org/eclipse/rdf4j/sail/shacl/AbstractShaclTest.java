@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -374,7 +374,7 @@ abstract public class AbstractShaclTest {
 					LinkedHashModel model = stream.collect(Collectors.toCollection(LinkedHashModel::new));
 					model.setNamespace("ex", "http://example.com/ns#");
 					model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
-					model.setNamespace(XMLSchema.PREFIX, XMLSchema.NAMESPACE);
+					model.setNamespace(XSD.PREFIX, XSD.NAMESPACE);
 					model.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
 					model.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 

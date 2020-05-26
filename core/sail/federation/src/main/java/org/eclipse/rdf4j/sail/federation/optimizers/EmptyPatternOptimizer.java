@@ -32,7 +32,7 @@ import com.google.common.base.MoreObjects;
 
 /**
  * Remove StatementPatterns that have no statements.
- * 
+ *
  * @author James Leigh
  */
 public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryException> implements QueryOptimizer {

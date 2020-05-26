@@ -35,7 +35,7 @@ public class Connections {
 	/**
 	 * Retrieve all {@link Statement}s that together form the RDF Collection starting with the supplied start resource
 	 * and send them to the supplied {@link Consumer}.
-	 * 
+	 *
 	 * @param conn               the {@link RepositoryConnection} to use for statement retrieval.
 	 * @param head               the start resource of the RDF Collection. May not be {@code null}.
 	 * @param collectionConsumer a {@link Consumer} function to which all retrieved statements will be reported. May not
@@ -59,7 +59,7 @@ public class Connections {
 	/**
 	 * Retrieve all {@link Statement}s that together form the RDF Collection starting with the supplied starting
 	 * resource.
-	 * 
+	 *
 	 * @param conn                the {@link RepositoryConnection} to use for statement retrieval.
 	 * @param head                the start resource of the RDF Collection. May not be {@code null}.
 	 * @param statementCollection a {@link Collection} of {@link Statement}s (for example, a {@link Model}) to which all
@@ -85,7 +85,7 @@ public class Connections {
 	 * Retrieve a single {@link Statement} matching with the supplied subject, predicate, object and context(s) from the
 	 * given {@link RepositoryConnection}. If more than one Statement matches, any one Statement is selected and
 	 * returned.
-	 * 
+	 *
 	 * @param conn      the {@link RepositoryConnection} from which to retrieve the statement.
 	 * @param subject   the subject to which the statement should match. May be {@code null}.
 	 * @param predicate the predicate to which the statement should match. May be {@code null}.

@@ -38,7 +38,7 @@ class Atts {
 
 	/**
 	 * Creates a new <tt>Atts</tt> object.
-	 * 
+	 *
 	 * @param size The initial size of the array for storing attributes.
 	 */
 	public Atts(int size) {
@@ -58,7 +58,7 @@ class Atts {
 
 	/**
 	 * Get an iterator on the attributes.
-	 * 
+	 *
 	 * @return an Iterator over Att objects.
 	 */
 	public Iterator<Att> iterator() {
@@ -67,7 +67,7 @@ class Atts {
 
 	/**
 	 * Gets the attribute with the specified QName.
-	 * 
+	 *
 	 * @param qName The QName of an attribute.
 	 * @return The attribute with the specified QName, or <tt>null</tt> if no such attribute could be found.
 	 */
@@ -85,7 +85,7 @@ class Atts {
 
 	/**
 	 * Gets the attribute with the specified namespace and local name.
-	 * 
+	 *
 	 * @param namespace The namespace of an attribute.
 	 * @param localName The local name of an attribute.
 	 * @return The attribute with the specified namespace and local name, or <tt>null</tt> if no such attribute could be
@@ -105,7 +105,7 @@ class Atts {
 
 	/**
 	 * Removes the attribute with the specified QName and returns it.
-	 * 
+	 *
 	 * @param qName The QName of an attribute.
 	 * @return The removed attribute, or <tt>null</tt> if no attribute with the specified QName could be found.
 	 */
@@ -124,7 +124,7 @@ class Atts {
 
 	/**
 	 * Removes the attribute with the specified namespace and local name and returns it.
-	 * 
+	 *
 	 * @param namespace The namespace of an attribute.
 	 * @param localName The local name of an attribute.
 	 * @return The removed attribute, or <tt>null</tt> if no attribute with the specified namespace and local name could

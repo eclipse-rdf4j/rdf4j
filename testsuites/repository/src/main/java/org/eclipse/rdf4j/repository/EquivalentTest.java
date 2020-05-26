@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -49,9 +49,9 @@ public abstract class EquivalentTest {
 
 	private static Literal xyz_EN = vf.createLiteral("xyz", "EN");
 
-	private static Literal xyz_string = vf.createLiteral("xyz", XMLSchema.STRING);
+	private static Literal xyz_string = vf.createLiteral("xyz", XSD.STRING);
 
-	private static Literal xyz_integer = vf.createLiteral("xyz", XMLSchema.INTEGER);
+	private static Literal xyz_integer = vf.createLiteral("xyz", XSD.INTEGER);
 
 	private static Literal xyz_unknown = vf.createLiteral("xyz", vf.createIRI("http://example/unknown"));
 
@@ -63,9 +63,9 @@ public abstract class EquivalentTest {
 
 	private static Literal abc_EN = vf.createLiteral("abc", "EN");
 
-	private static Literal abc_string = vf.createLiteral("abc", XMLSchema.STRING);
+	private static Literal abc_string = vf.createLiteral("abc", XSD.STRING);
 
-	private static Literal abc_integer = vf.createLiteral("abc", XMLSchema.INTEGER);
+	private static Literal abc_integer = vf.createLiteral("abc", XSD.INTEGER);
 
 	private static Literal abc_unknown = vf.createLiteral("abc", vf.createIRI("http://example/unknown"));
 
@@ -148,8 +148,9 @@ public abstract class EquivalentTest {
 	public static Collection<Object[]> params() {
 		LinkedList<Object[]> params = new LinkedList<>();
 		for (String row : matrix.split("\n")) {
-			if (row.contains("_:"))
+			if (row.contains("_:")) {
 				continue;
+			}
 			String[] fields = row.split("\t", 3);
 			if (fields[2].contains("neq")) {
 				params.add(new Object[] { NEQ, fields[0], fields[1] });
@@ -217,36 +218,50 @@ public abstract class EquivalentTest {
 
 	private static Value getTerm(String label) {
 		if (label.contains("xyz")) {
-			if (label.contains("integer"))
+			if (label.contains("integer")) {
 				return xyz_integer;
-			if (label.contains("string"))
+			}
+			if (label.contains("string")) {
 				return xyz_string;
-			if (label.contains("unknown"))
+			}
+			if (label.contains("unknown")) {
 				return xyz_unknown;
-			if (label.contains("en"))
+			}
+			if (label.contains("en")) {
 				return xyz_en;
-			if (label.contains("EN"))
+			}
+			if (label.contains("EN")) {
 				return xyz_EN;
-			if (label.contains(":xyz"))
+			}
+			if (label.contains(":xyz")) {
 				return xyz_uri;
-			if (label.contains("\"xyz\""))
+			}
+			if (label.contains("\"xyz\"")) {
 				return xyz_simple;
+			}
 		}
 		if (label.contains("abc")) {
-			if (label.contains("integer"))
+			if (label.contains("integer")) {
 				return abc_integer;
-			if (label.contains("string"))
+			}
+			if (label.contains("string")) {
 				return abc_string;
-			if (label.contains("unknown"))
+			}
+			if (label.contains("unknown")) {
 				return abc_unknown;
-			if (label.contains("en"))
+			}
+			if (label.contains("en")) {
 				return abc_en;
-			if (label.contains("EN"))
+			}
+			if (label.contains("EN")) {
 				return abc_EN;
-			if (label.contains(":abc"))
+			}
+			if (label.contains(":abc")) {
 				return abc_uri;
-			if (label.contains("\"abc\""))
+			}
+			if (label.contains("\"abc\"")) {
 				return abc_simple;
+			}
 		}
 		throw new AssertionError(label);
 	}
@@ -255,12 +270,15 @@ public abstract class EquivalentTest {
 		boolean eq = evaluate(EQ);
 		boolean neq = evaluate(NEQ);
 		assertTrue(!eq || !neq);
-		if (eq && !neq)
+		if (eq && !neq) {
 			return EQ;
-		if (!eq && neq)
+		}
+		if (!eq && neq) {
 			return NEQ;
-		if (!eq && !neq)
+		}
+		if (!eq && !neq) {
 			return IND;
+		}
 		throw new AssertionError();
 	}
 

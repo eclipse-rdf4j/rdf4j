@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * An immutable empty BindingSet.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class EmptyBindingSet implements BindingSet {

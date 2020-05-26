@@ -34,7 +34,7 @@ import junit.framework.TestSuite;
 
 /**
  * JUnit test for the RDFJSON Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class RDFJSONParserTestCase {

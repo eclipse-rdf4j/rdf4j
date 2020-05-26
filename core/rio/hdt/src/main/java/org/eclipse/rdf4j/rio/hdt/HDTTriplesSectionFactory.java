@@ -11,7 +11,7 @@ import java.io.IOException;
 
 /**
  * HDT Array factory.
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTTriplesSectionFactory {

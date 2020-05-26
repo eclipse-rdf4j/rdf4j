@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation to remove statements matching specific pattern of subject, predicate and object.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class RemoveStatementsOperation extends StatementOperation implements Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 1497684375399016153L;
 

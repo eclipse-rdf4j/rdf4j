@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * <p>
  * This is required for instance if the resulting iteration is not fully consumed.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see QueryInfo#close()
  * @see ParallelTask#cancel()

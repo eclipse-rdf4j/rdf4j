@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * A negated property set is a SPARQL construction of the form {?X !(uri|^uri) ?Y}. This class is a temporary
  * representation used by the parser. It is converted by the TupleExprBuilder into a set of joins and filters on regular
  * statement patterns.
- * 
+ *
  * @author Jeen
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */

@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 
 /**
  * An {@link RDFParserFactory} for Binary RDF parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BinaryRDFParserFactory implements RDFParserFactory {

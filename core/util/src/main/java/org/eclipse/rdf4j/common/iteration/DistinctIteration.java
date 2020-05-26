@@ -31,7 +31,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 
 	/**
 	 * Creates a new DistinctIterator.
-	 * 
+	 *
 	 * @param iter The underlying iterator.
 	 */
 	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {

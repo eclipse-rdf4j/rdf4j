@@ -25,7 +25,7 @@ class HDTBitmap extends HDTPart {
 
 	/**
 	 * Get bit
-	 * 
+	 *
 	 * @param i
 	 * @return 0 or 1
 	 */
@@ -39,7 +39,7 @@ class HDTBitmap extends HDTPart {
 
 	/**
 	 * Get number of entries in this bitmap
-	 * 
+	 *
 	 * @return positive integer value
 	 */
 	protected int size() {

@@ -14,12 +14,12 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 
 /**
  * Default implementation of {@link WriteStrategyFactory}.
- * 
+ *
  * <p>
  * The default implementation uses the {@link RepositoryWriteStrategy} with the first discovered writable
  * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.common.text;
 public class ASCIIUtil {
 	/**
 	 * Checks whether the supplied character is a letter or number.
-	 * 
+	 *
 	 * @param c character
 	 * @return true if the character is a letter or a number
 	 * @see #isLetter
@@ -26,7 +26,7 @@ public class ASCIIUtil {
 
 	/**
 	 * Checks whether the supplied character is a letter.
-	 * 
+	 *
 	 * @param c character
 	 * @return true if the character is in the range [a-z] or [A-Z]
 	 */
@@ -36,7 +36,7 @@ public class ASCIIUtil {
 
 	/**
 	 * Checks whether the supplied character is an upper-case letter.
-	 * 
+	 *
 	 * @param c character
 	 * @return true if the character is in the range [A-Z]
 	 */
@@ -46,7 +46,7 @@ public class ASCIIUtil {
 
 	/**
 	 * Checks whether the supplied character is an lower-case letter.
-	 * 
+	 *
 	 * @param c character
 	 * @return true if the character is in the range [a-z]
 	 */
@@ -56,7 +56,7 @@ public class ASCIIUtil {
 
 	/**
 	 * Checks whether the supplied character is a number.
-	 * 
+	 *
 	 * @param c character
 	 * @return true if the character is in the range [0-9]
 	 */
@@ -66,7 +66,7 @@ public class ASCIIUtil {
 
 	/**
 	 * Check whether the supplied character is a Hexadecimal character.
-	 * 
+	 *
 	 * @param c character
 	 * @return <code>true</code> if c is a hexadecimal character, <code>false</code> otherwise.
 	 */

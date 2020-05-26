@@ -33,5 +33,7 @@ public class SpinSailSchema {
 	}
 
 	private SpinSailSchema() {
-	};
+	}
+
+	;
 }

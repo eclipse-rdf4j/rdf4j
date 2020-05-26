@@ -63,7 +63,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Create the application configuration.
-	 * 
+	 *
 	 * @param applicationId the ID of the application
 	 */
 	public AppConfiguration(final String applicationId) {
@@ -73,7 +73,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Create the application configuration.
-	 * 
+	 *
 	 * @param applicationId the ID of the application
 	 * @param version       the application's version
 	 */
@@ -84,7 +84,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Create the application configuration.
-	 * 
+	 *
 	 * @param applicationId the ID of the application
 	 * @param longName      the long name of the application
 	 */
@@ -95,7 +95,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Create the application configuration.
-	 * 
+	 *
 	 * @param applicationId the ID of the application
 	 * @param longName      the long name of the application
 	 * @param version       the application's version
@@ -138,7 +138,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Initialize configuration and proxy settings, optionally load (logback) logging
-	 * 
+	 *
 	 * @param loadLogConfig load logging configuration
 	 * @throws IOException
 	 */
@@ -172,7 +172,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the name of the application (e.g. "AutoFocus" or "Metadata Server").
-	 * 
+	 *
 	 * @return the name of the application
 	 */
 	public String getApplicationId() {
@@ -181,7 +181,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set the application ID string
-	 * 
+	 *
 	 * @param applicationId string
 	 */
 	public final void setApplicationId(final String applicationId) {
@@ -190,7 +190,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set the name of the data directory
-	 * 
+	 *
 	 * @param dataDirName
 	 */
 	public void setDataDirName(final String dataDirName) {
@@ -199,7 +199,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the long name of the application (e.g. "Aduna AutoFocus" or "OpenRDF Sesame Server").
-	 * 
+	 *
 	 * @return the long name of the application
 	 */
 	public String getLongName() {
@@ -208,7 +208,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set the long name of the application.
-	 * 
+	 *
 	 * @param longName the new name
 	 */
 	public final void setLongName(final String longName) {
@@ -218,7 +218,7 @@ public class AppConfiguration implements Configuration {
 	/**
 	 * Get the full name of the application, which consists of the long name and the version number (e.g. "Aduna
 	 * AutoFocus 4.0-beta1" or "OpenRDF Sesame Webclient 2.0")
-	 * 
+	 *
 	 * @return the full name of the application
 	 */
 	public String getFullName() {
@@ -237,7 +237,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the version of the application.
-	 * 
+	 *
 	 * @return the version of the application
 	 */
 	public AppVersion getVersion() {
@@ -249,7 +249,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set the version of the application.
-	 * 
+	 *
 	 * @param version the new version
 	 */
 	public final void setVersion(final AppVersion version) {
@@ -259,7 +259,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the command line arguments of the application.
-	 * 
+	 *
 	 * @return A String array, as (typically) specified to the main method.
 	 */
 	public String[] getCommandLineArgs() {
@@ -268,7 +268,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set the command line arguments specified to the application.
-	 * 
+	 *
 	 * @param args A String array containing the arguments as specified to the main method.
 	 */
 	public void setCommandLineArgs(final String[] args) {
@@ -277,7 +277,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the data directory as File
-	 * 
+	 *
 	 * @return data directory
 	 */
 	public File getDataDir() {
@@ -286,7 +286,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get logging configuration
-	 * 
+	 *
 	 * @return log configuration
 	 */
 	public LogConfiguration getLogConfiguration() {
@@ -295,7 +295,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get proxy settings
-	 * 
+	 *
 	 * @return proxy settings
 	 */
 	public ProxySettings getProxySettings() {
@@ -304,7 +304,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Set proxy settings
-	 * 
+	 *
 	 * @param proxySettings proxy settings
 	 */
 	public void setProxySettings(final ProxySettings proxySettings) {
@@ -331,7 +331,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Load and instantiate the logging configuration.
-	 * 
+	 *
 	 * @return the logging configuration
 	 * @throws ClassNotFoundException
 	 * @throws IllegalAccessException
@@ -353,7 +353,7 @@ public class AppConfiguration implements Configuration {
 
 	/**
 	 * Get the properties
-	 * 
+	 *
 	 * @return Returns the properties.
 	 */
 	public Properties getProperties() {

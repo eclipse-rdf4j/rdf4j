@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
  * A RDFHandler that can be used to collect reported statements in collections.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ContextStatementCollector extends AbstractRDFHandler {
@@ -48,7 +48,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 * LinkedHashMap to store the reported namespaces.
 	 */
 	public ContextStatementCollector(ValueFactory vf, Resource... contexts) {
-		this(new ArrayList<Statement>(), vf, contexts);
+		this(new ArrayList<>(), vf, contexts);
 	}
 
 	/**

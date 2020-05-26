@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * Convert RDF file from one format to another
- * 
+ *
  * @author Bart Hanssens
  */
 public class Convert extends ConsoleCommand {
@@ -55,7 +55,7 @@ public class Convert extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param settings
@@ -76,7 +76,7 @@ public class Convert extends ConsoleCommand {
 
 	/**
 	 * Get working dir setting.
-	 * 
+	 *
 	 * @return path of working dir
 	 */
 	private Path getWorkDir() {
@@ -85,7 +85,7 @@ public class Convert extends ConsoleCommand {
 
 	/**
 	 * Convert a file
-	 * 
+	 *
 	 * @param fileFrom file name
 	 * @param fileTo   file name
 	 */

@@ -49,9 +49,9 @@ import com.google.common.base.MoreObjects;
 
 /**
  * Search for Join, LeftJoin, and Union arguments that can be evaluated in a single member.
- * 
+ *
  * @author James Leigh
- * 
+ *
  * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
 @Deprecated

@@ -42,7 +42,7 @@ import com.github.jsonldjava.utils.JsonUtils;
 
 /**
  * An RDFWriter that links to {@link JSONLDInternalRDFParser}.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
@@ -193,7 +193,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Add name space prefixes to JSON-LD context, empty prefix gets the '@vocab' prefix
-	 * 
+	 *
 	 * @param ctx        context
 	 * @param namespaces set of RDF name spaces
 	 */

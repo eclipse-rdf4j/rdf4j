@@ -13,10 +13,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
@@ -140,9 +138,7 @@ public class RDFXMLParserTest {
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
 			parser.parse(in, "");
-		}
-
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			assertEquals(
 					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
 					e.getMessage());

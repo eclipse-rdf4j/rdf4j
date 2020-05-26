@@ -18,13 +18,13 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Returns an {@link Endpoint} for an already configured {@link Repository}.
- * 
+ *
  * <p>
  * If the repository is already initialized, it is assumed that the lifecycle is managed externally (see
  * {@link RepositoryEndpoint}. Otherwise, FedX will make sure to take care for the lifecycle of the repository, i.e.
  * initialize and shutdown (see {@link ManagedRepositoryEndpoint}).
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see RepositoryEndpoint
  * @see ManagedRepositoryEndpoint

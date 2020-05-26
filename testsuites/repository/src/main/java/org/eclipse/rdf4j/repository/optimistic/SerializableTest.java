@@ -36,7 +36,7 @@ import org.junit.Test;
 
 /**
  * Tests on behavior of SERIALIZABLE transactions.
- * 
+ *
  * @author jeen
  *
  */

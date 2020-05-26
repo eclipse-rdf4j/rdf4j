@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
@@ -27,7 +27,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL variable with a specific alias.
-	 * 
+	 *
 	 * @param varName the alias of the variable
 	 * @return a new SPARQL variable
 	 */
@@ -37,7 +37,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL assignment
-	 * 
+	 *
 	 * @param exp the expression to evaluate
 	 * @param var the variable to bind the expression value to
 	 * @return an Assignment object
@@ -48,7 +48,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Base declaration
-	 * 
+	 *
 	 * @param iri the base iri
 	 * @return a Base object
 	 */
@@ -58,7 +58,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Prefix declaration
-	 * 
+	 *
 	 * @param alias the alias of the prefix
 	 * @param iri   the iri the alias refers to
 	 * @return a Prefix object
@@ -69,7 +69,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL default Prefix declaration
-	 * 
+	 *
 	 * @param iri the default iri prefix
 	 * @return a Prefix object
 	 */
@@ -79,7 +79,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create SPARQL Prefix declaration from the given {@link Namespace}.
-	 * 
+	 *
 	 * @param namespace the {@link Namespace} to convert to a prefix declaration.
 	 * @return a Prefix object.
 	 */
@@ -89,7 +89,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL default Prefix declaration
-	 * 
+	 *
 	 * @param iri the default iri prefix as an {@link IRI}.
 	 * @return a Prefix object
 	 */
@@ -99,7 +99,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Prefix clause
-	 * 
+	 *
 	 * @param prefixes prefix declarations to add to this Prefix clause
 	 * @return a new
 	 */
@@ -109,7 +109,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a default graph reference
-	 * 
+	 *
 	 * @param iri the source of the graph
 	 * @return a From clause
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset"> RDF Datasets</a>
@@ -131,7 +131,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a dataset declaration
-	 * 
+	 *
 	 * @param graphs
 	 * @return a new dataset clause
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset"> RDF Datasets</a>
@@ -142,7 +142,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL projection
-	 * 
+	 *
 	 * @param projectables projectable elements to add to the projection
 	 * @return a Projection
 	 */
@@ -152,7 +152,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL graph template
-	 * 
+	 *
 	 * @param triples triples to add to the template
 	 * @return a new SPARQL graph template
 	 */
@@ -162,7 +162,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL query pattern
-	 * 
+	 *
 	 * @param patterns graph patterns to add to the query pattern
 	 * @return a new Query Pattern
 	 */
@@ -172,7 +172,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Group By clause
-	 * 
+	 *
 	 * @param groupables the group conditions
 	 * @return a Group By clause
 	 */
@@ -182,7 +182,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Order clause
-	 * 
+	 *
 	 * @param conditions the order conditions
 	 * @return an Order By clause
 	 */
@@ -192,7 +192,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a SPARQL Having clause
-	 * 
+	 *
 	 * @param expressions the having conditions
 	 * @return a Having clause
 	 */
@@ -202,7 +202,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create an ascending SPARQL order condition
-	 * 
+	 *
 	 * @param orderOn the order comparator
 	 * @return an ASC() order condition
 	 */
@@ -212,7 +212,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a descending SPARQL order condition
-	 * 
+	 *
 	 * @param orderOn the order comparator
 	 * @return a DESC() order condition
 	 */
@@ -222,7 +222,7 @@ public class SparqlBuilder {
 
 	/**
 	 * Create a TriplesTemplate instance, for use with Construct and Update queries
-	 * 
+	 *
 	 * @param triples the triples to include in the triples template
 	 * @return a TriplesTemplate of the given triples
 	 */

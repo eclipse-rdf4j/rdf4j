@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
 
 /**
  * An RDF predicate-object list collection
- * 
+ *
  * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> Predicate-Object Lists</a>
  * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#objLists"> Object Lists</a>
  */
@@ -21,14 +21,16 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 
 	RdfPredicateObjectListCollection() {
 		super(DELIMITER);
-	};
+	}
+
+	;
 
 	/**
 	 * add predicate-object lists to this collection
-	 * 
+	 *
 	 * @param predicate the predicate of the predicate-object list to add
 	 * @param objects   the object or objects to add
-	 * 
+	 *
 	 * @return this instance
 	 */
 	public RdfPredicateObjectListCollection andHas(RdfPredicate predicate, RdfObject... objects) {
@@ -37,7 +39,7 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 
 	/**
 	 * add predicate-object lists to this collection
-	 * 
+	 *
 	 * @param lists the {@link RdfPredicateObjectList}'s to add to this collection
 	 * @return this instance
 	 */

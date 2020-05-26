@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.util.Models;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -442,15 +442,15 @@ public class QueryResults extends Iterations {
 							&& XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)
 							&& XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {
 						Integer compareResult = null;
-						if (dt1.equals(XMLSchema.DOUBLE)) {
+						if (dt1.equals(XSD.DOUBLE)) {
 							compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());
-						} else if (dt1.equals(XMLSchema.FLOAT)) {
+						} else if (dt1.equals(XSD.FLOAT)) {
 							compareResult = Float.compare(leftLit.floatValue(), rightLit.floatValue());
-						} else if (dt1.equals(XMLSchema.DECIMAL)) {
+						} else if (dt1.equals(XSD.DECIMAL)) {
 							compareResult = leftLit.decimalValue().compareTo(rightLit.decimalValue());
 						} else if (XMLDatatypeUtil.isIntegerDatatype(dt1)) {
 							compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
-						} else if (dt1.equals(XMLSchema.BOOLEAN)) {
+						} else if (dt1.equals(XSD.BOOLEAN)) {
 							Boolean leftBool = leftLit.booleanValue();
 							Boolean rightBool = rightLit.booleanValue();
 							compareResult = leftBool.compareTo(rightBool);

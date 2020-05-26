@@ -18,7 +18,7 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public TupleQueryResultHandlerException(String msg) {
@@ -27,7 +27,7 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param cause The cause of the exception.
 	 */
 	public TupleQueryResultHandlerException(Throwable cause) {
@@ -36,7 +36,7 @@ public class TupleQueryResultHandlerException extends QueryResultHandlerExceptio
 
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param msg   An error message.
 	 * @param cause The cause of the exception.
 	 */

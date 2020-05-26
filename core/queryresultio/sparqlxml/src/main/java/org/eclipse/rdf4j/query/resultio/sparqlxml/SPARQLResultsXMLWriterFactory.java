@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 
 /**
  * A {@link TupleQueryResultWriterFactory} for writers of SPARQL/XML tuple query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SPARQLResultsXMLWriterFactory implements TupleQueryResultWriterFactory {

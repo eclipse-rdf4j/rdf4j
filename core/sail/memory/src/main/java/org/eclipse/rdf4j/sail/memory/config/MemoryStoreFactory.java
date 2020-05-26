@@ -16,14 +16,14 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
  * A {@link SailFactory} that creates {@link MemoryStore}s based on RDF configuration data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class MemoryStoreFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "openrdf:MemoryStore";

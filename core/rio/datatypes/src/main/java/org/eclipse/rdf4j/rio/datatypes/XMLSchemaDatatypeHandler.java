@@ -12,14 +12,14 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
- * An implementation of a datatype handler that can process {@link XMLSchema} datatypes.
+ * An implementation of a datatype handler that can process {@link XSD} datatypes.
  * <p>
  * Implemented using {@link XMLDatatypeUtil}.
- * 
+ *
  * @author Peter Ansell
  */
 public class XMLSchemaDatatypeHandler implements DatatypeHandler {

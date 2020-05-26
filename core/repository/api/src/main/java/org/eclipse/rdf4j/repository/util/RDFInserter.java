@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 /**
  * An RDFHandler that adds RDF data to a repository.
- * 
+ *
  * @author jeen
  */
 public class RDFInserter extends AbstractRDFInserter {
@@ -36,7 +36,7 @@ public class RDFInserter extends AbstractRDFInserter {
 	/**
 	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon statements
 	 * that are reported to it.
-	 * 
+	 *
 	 * @param con The connection to use for the add operations.
 	 */
 	public RDFInserter(RepositoryConnection con) {

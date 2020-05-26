@@ -69,7 +69,7 @@ import junit.framework.TestSuite;
 
 /**
  * A SPARQL query test suite, created by reading in a W3C working-group style manifest.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class SPARQLQueryTest extends TestCase {

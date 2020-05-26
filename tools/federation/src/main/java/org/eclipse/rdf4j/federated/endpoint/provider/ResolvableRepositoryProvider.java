@@ -16,13 +16,13 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
 
 /**
  * An {@link EndpointProvider} for a {@link ResolvableEndpoint}.
- * 
+ *
  * <p>
  * The federation must be initialized with a {@link RepositoryResolver} ( see
  * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with the id
  * provided by {@link Endpoint#getId()}
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

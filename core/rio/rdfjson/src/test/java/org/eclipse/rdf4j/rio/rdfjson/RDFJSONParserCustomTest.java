@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfjson;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.Reader;
 import java.io.StringReader;
@@ -19,7 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -36,7 +40,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * Custom (non-manifest) tests for RDF/JSON parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFJSONParserCustomTest {
@@ -107,13 +111,13 @@ public class RDFJSONParserCustomTest {
 	private final IRI testObjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
 
 	private final Literal testObjectLiteralNotANumber = SimpleValueFactory.getInstance()
-			.createLiteral("NaN", XMLSchema.DOUBLE);
+			.createLiteral("NaN", XSD.DOUBLE);
 
 	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance()
-			.createLiteral("42", XMLSchema.INTEGER);
+			.createLiteral("42", XSD.INTEGER);
 
 	private final Literal testObjectLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
-			.createLiteral("42\u0009", XMLSchema.STRING);
+			.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
 	public void setUp() throws Exception {

@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11SyntaxTest;
 
 import junit.framework.Test;
 

@@ -7,7 +7,7 @@
  *******************************************************************************/
 /**
  * Unit tests for the OpenRDF Console application.
- * 
+ *
  * @author Dale Visser
  */
 package org.eclipse.rdf4j.console;

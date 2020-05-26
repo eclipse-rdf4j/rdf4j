@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * ParserSettings for the N-Triples parser features.
  * <p>
  * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
- * 
+ *
  * @author Peter Ansell
  */
 public class NTriplesParserSettings {
@@ -36,7 +36,7 @@ public class NTriplesParserSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines}
-	 * 
+	 *
 	 * @deprecated use {@link #FAIL_ON_INVALID_LINES} instead.
 	 */
 	@Deprecated

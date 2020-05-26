@@ -14,14 +14,14 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Maven-related utility methods.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class MavenUtil {
 
 	/**
 	 * Loads the Maven <tt>pom.properties</tt> for the specified artifact.
-	 * 
+	 *
 	 * @param groupId    The artifact's group ID.
 	 * @param artifactId The artifact's ID.
 	 * @return The parsed pom properties, or <tt>null</tt> if the resource could not be found.
@@ -34,7 +34,7 @@ public class MavenUtil {
 
 	/**
 	 * Loads the version number from the <tt>pom.properties</tt> file for the specified artifact.
-	 * 
+	 *
 	 * @param groupId        The artifact's group ID.
 	 * @param artifactId     The artifact's ID.
 	 * @param defaultVersion The version number to return in case no version number was found.

@@ -84,6 +84,7 @@ public class SimpleSAXParser {
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
+
 	/**
 	 * Creates a new SimpleSAXParser that will use the supplied <tt>XMLReader</tt> for parsing the XML. One must set a
 	 * <tt>SimpleSAXListener</tt> on this object before calling one of the <tt>parse()</tt> methods.
@@ -113,6 +114,7 @@ public class SimpleSAXParser {
 	/*---------*
 	 * Methods *
 	 *---------*/
+
 	/**
 	 * Sets the (new) listener that should receive any events from this parser. This listener will replace any
 	 * previously set listener.
@@ -203,8 +205,8 @@ public class SimpleSAXParser {
 	class SimpleSAXDefaultHandler extends DefaultHandler {
 
 		/*-----------*
-		* Variables *
-		*-----------*/
+		 * Variables *
+		 *-----------*/
 		/**
 		 * StringBuilder used to collect text during parsing.
 		 */
@@ -221,8 +223,8 @@ public class SimpleSAXParser {
 		private Map<String, String> deferredAttributes = null;
 
 		/*--------------*
-		* Constructors *
-		*--------------*/
+		 * Constructors *
+		 *--------------*/
 		public SimpleSAXDefaultHandler() {
 			super();
 		}

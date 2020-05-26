@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * A {@link DelegatingRepository} implementation that, by default, forwards all method calls to its delegate.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */

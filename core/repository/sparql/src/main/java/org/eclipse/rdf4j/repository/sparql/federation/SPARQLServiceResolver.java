@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
  * <p>
  * Lookup can be done via the serviceUrl using the method {@link #getService(String)}. If there is no service for the
  * specified url, a {@link SPARQLFederatedService} is created and registered for future use.
- * 
+ *
  * @author Andreas Schwarte
  * @author James Leigh
  */

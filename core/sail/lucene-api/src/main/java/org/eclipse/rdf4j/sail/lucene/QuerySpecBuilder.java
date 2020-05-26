@@ -251,8 +251,9 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			}
 		}
 		// remove the result from the list, to filter out superflous patterns
-		if (result != null)
+		if (result != null) {
 			patterns.remove(result);
+		}
 		return result;
 	}
 

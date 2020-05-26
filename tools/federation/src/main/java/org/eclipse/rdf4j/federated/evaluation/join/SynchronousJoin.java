@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Execute the nested loop join in a synchronous fashion, i.e. one binding after the other
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SynchronousJoin extends JoinExecutorBase<BindingSet> {

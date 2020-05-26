@@ -29,14 +29,14 @@ import org.eclipse.rdf4j.sail.solr.SolrIndex;
 
 /**
  * Example code showing how to use the LuceneSail
- * 
+ *
  * @author sauermann
  */
 public class SolrSailExample {
 
 	/**
 	 * Create a lucene sail and use it
-	 * 
+	 *
 	 * @param args
 	 */
 	public static void main(String[] args) throws Exception {

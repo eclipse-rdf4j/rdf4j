@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 /**
  * An iteration extension that keeps a reference to the AbstractSailConnection from which it originates and signals when
  * it is closed.
- * 
+ *
  * @author Jeen Broekstra
  */
 class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
@@ -22,7 +22,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 
 	/**
 	 * Creates a new memory-store specific iteration object.
-	 * 
+	 *
 	 * @param lock       a query lock
 	 * @param iter       the wrapped iteration over sail objects.
 	 * @param connection the connection from which this iteration originates.

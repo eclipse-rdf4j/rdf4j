@@ -90,7 +90,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional
  * functionality, as documented in the <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>.
- * 
+ *
  * @author Andreas Schwarte
  * @author Jeen Broekstra
  * @see <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>
@@ -298,7 +298,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	/**
 	 * Create a new repository.
-	 * 
+	 *
 	 * @param config the repository configuration
 	 * @throws IOException
 	 * @throws RepositoryException
@@ -332,7 +332,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	/**
 	 * Update the config of an existing repository.
-	 * 
+	 *
 	 * @param config the repository configuration
 	 * @throws IOException
 	 * @throws RepositoryException
@@ -389,7 +389,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * @throws RDFHandlerException
 	 * @throws QueryInterruptedException
 	 * @throws UnauthorizedException
-	 * 
+	 *
 	 * @since 3.1.0
 	 */
 	public void getRepositoryConfig(StatementCollector statementCollector) throws UnauthorizedException,
@@ -758,7 +758,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	/**
 	 * Appends the action as a parameter to the supplied url
-	 * 
+	 *
 	 * @param url    a url on which to append the parameter. it is assumed the url has no parameters.
 	 * @param action the action to add as a parameter
 	 * @return the url parametrized with the supplied action
@@ -769,7 +769,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	/**
 	 * Sends a transaction list as serialized XML to the server.
-	 * 
+	 *
 	 * @deprecated since 2.8.0
 	 * @param txn
 	 * @throws IOException

@@ -38,10 +38,12 @@ public class SPARQLRepositoryPerformance {
 			System.out.println("Done.");
 			;
 		} finally {
-			if (qRes != null)
+			if (qRes != null) {
 				qRes.close();
-			if (conn != null)
+			}
+			if (conn != null) {
 				conn.close();
+			}
 		}
 		repo.shutDown();
 

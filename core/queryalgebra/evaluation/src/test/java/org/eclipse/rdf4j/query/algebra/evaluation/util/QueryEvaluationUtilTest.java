@@ -17,7 +17,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
@@ -81,23 +81,23 @@ public class QueryEvaluationUtilTest {
 		arg1cy = f.createLiteral("abc", "cy");
 		arg2cy = f.createLiteral("b", "cy");
 
-		arg1string = f.createLiteral("abc", XMLSchema.STRING);
-		arg2string = f.createLiteral("b", XMLSchema.STRING);
+		arg1string = f.createLiteral("abc", XSD.STRING);
+		arg2string = f.createLiteral("b", XSD.STRING);
 
-		arg1year = f.createLiteral("2007", XMLSchema.GYEAR);
-		arg2year = f.createLiteral("2009", XMLSchema.GYEAR);
+		arg1year = f.createLiteral("2007", XSD.GYEAR);
+		arg2year = f.createLiteral("2009", XSD.GYEAR);
 
-		arg1dateTime = f.createLiteral("2009-01-01T20:20:20Z", XMLSchema.DATETIME);
-		arg2dateTime = f.createLiteral("2007-01-01T20:20:20+02:00", XMLSchema.DATETIME);
+		arg1dateTime = f.createLiteral("2009-01-01T20:20:20Z", XSD.DATETIME);
+		arg2dateTime = f.createLiteral("2007-01-01T20:20:20+02:00", XSD.DATETIME);
 
 		arg1int = f.createLiteral(10);
 		arg2int = f.createLiteral(1);
 
-		arg1duration = f.createLiteral("P1Y30DT1H1M1S", XMLSchema.DURATION);
-		arg2duration = f.createLiteral("P1Y31DT1H1M1S", XMLSchema.DURATION);
+		arg1duration = f.createLiteral("P1Y30DT1H1M1S", XSD.DURATION);
+		arg2duration = f.createLiteral("P1Y31DT1H1M1S", XSD.DURATION);
 
-		arg1yearMonthDuration = f.createLiteral("P1M", XMLSchema.YEARMONTHDURATION);
-		arg2yearMonthDuration = f.createLiteral("P1Y1M", XMLSchema.YEARMONTHDURATION);
+		arg1yearMonthDuration = f.createLiteral("P1M", XSD.YEARMONTHDURATION);
+		arg2yearMonthDuration = f.createLiteral("P1Y1M", XSD.YEARMONTHDURATION);
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
@@ -401,7 +401,7 @@ public class QueryEvaluationUtilTest {
 
 	/**
 	 * Assert that there is an exception as a result of comparing the two literals with the given operator.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
@@ -423,7 +423,7 @@ public class QueryEvaluationUtilTest {
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns false.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
@@ -440,7 +440,7 @@ public class QueryEvaluationUtilTest {
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns true.
-	 * 
+	 *
 	 * @param lit1   The left literal
 	 * @param lit2   The right literal
 	 * @param op     The operator for the comparison

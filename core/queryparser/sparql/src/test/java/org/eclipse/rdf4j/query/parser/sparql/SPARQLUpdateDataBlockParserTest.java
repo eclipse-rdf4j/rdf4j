@@ -5,11 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.repository.sail.helpers;
+package org.eclipse.rdf4j.query.parser.sparql;
 
 import java.io.IOException;
 import java.io.StringReader;
 
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.junit.Test;
@@ -17,7 +18,7 @@ import org.junit.Test;
 /**
  * @author Damyan Ognyanov
  */
-public class TestSPARQLUpdateDataBlockParser {
+public class SPARQLUpdateDataBlockParserTest {
 
 	/**
 	 * A case reproducing SES-2258 using two cases with optional 'dot'. If not handled properly by

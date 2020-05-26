@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.console.setting;
 
 /**
  * Console value setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class ConsoleWidth extends ConsoleSetting<Integer> {
@@ -22,7 +22,7 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * Default width is 80.
 	 */
 	public ConsoleWidth() {
@@ -31,7 +31,7 @@ public class ConsoleWidth extends ConsoleSetting<Integer> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public ConsoleWidth(Integer initValue) {

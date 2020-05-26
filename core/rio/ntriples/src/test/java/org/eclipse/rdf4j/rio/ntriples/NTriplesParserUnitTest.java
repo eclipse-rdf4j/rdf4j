@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
  * JUnit test for the N-Triples parser.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NTriplesParserUnitTest extends AbstractNTriplesParserUnitTest {

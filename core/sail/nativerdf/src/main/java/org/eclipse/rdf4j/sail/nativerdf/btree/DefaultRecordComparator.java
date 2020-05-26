@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf.btree;
 
 /**
  * A RecordComparator that compares values with eachother by comparing all of their bytes.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DefaultRecordComparator implements RecordComparator {

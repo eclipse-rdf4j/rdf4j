@@ -9,7 +9,7 @@ package org.eclipse.rdf4j;
 
 /**
  * Exception indicating a configuration problem in an RDF4J component.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class RDF4JConfigException extends RDF4JException {

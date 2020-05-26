@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The LOCAL NAME function, which selects the local name of URIs.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class LocalName extends UnaryValueOperator {

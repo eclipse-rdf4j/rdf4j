@@ -14,21 +14,21 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * <p>
  * Interface for RDF4J-based query renderers
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 public interface QueryRenderer {
 
 	/**
 	 * Return the language this QueryRenderer will render queries in.
-	 * 
+	 *
 	 * @return the query language
 	 */
 	public QueryLanguage getLanguage();
 
 	/**
 	 * Render the query object to a string in the language supported by this renderer
-	 * 
+	 *
 	 * @param theQuery the query to render
 	 * @return the rendered query
 	 * @throws Exception if there is an error while rendering

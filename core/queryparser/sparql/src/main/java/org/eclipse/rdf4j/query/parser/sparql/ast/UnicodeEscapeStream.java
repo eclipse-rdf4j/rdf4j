@@ -22,16 +22,18 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 		if (inBuf > 0) {
 			--inBuf;
 
-			if (++bufpos == bufsize)
+			if (++bufpos == bufsize) {
 				bufpos = 0;
+			}
 
 			return buffer[bufpos];
 		}
 
 		char c;
 
-		if (++bufpos == available)
+		if (++bufpos == available) {
 			AdjustBuffSize();
+		}
 
 		if ((buffer[bufpos] = c = ReadByte()) == '\\') {
 			UpdateLineColumn(c);
@@ -40,16 +42,18 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 
 			for (;;) // Read all the backslashes
 			{
-				if (++bufpos == available)
+				if (++bufpos == available) {
 					AdjustBuffSize();
+				}
 
 				try {
 					if ((buffer[bufpos] = c = ReadByte()) != '\\') {
 						UpdateLineColumn(c);
 						// found a non-backslash char.
 						if ((c == 'u' || c == 'U') && ((backSlashCnt & 1) == 1)) {
-							if (--bufpos < 0)
+							if (--bufpos < 0) {
 								bufpos = bufsize - 1;
+							}
 
 							break;
 						}
@@ -59,8 +63,9 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 					}
 				} catch (java.io.IOException e) {
 					// We are returning one backslash so we should only backup (count-1)
-					if (backSlashCnt > 1)
+					if (backSlashCnt > 1) {
 						backup(backSlashCnt - 1);
+					}
 
 					return '\\';
 				}
@@ -82,8 +87,9 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 					char[] chrs = Character.toChars(cp); // length of 1 or 2
 					buffer[bufpos] = c = chrs[0];
 					if (chrs.length > 1) {
-						if (++bufpos == available)
+						if (++bufpos == available) {
 							AdjustBuffSize();
+						}
 						buffer[bufpos] = chrs[1];
 						UpdateLineColumn(c);
 						backup(1);
@@ -94,9 +100,9 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 				throw new Error("Invalid escape character at line " + line + " column " + column + ".", e);
 			}
 
-			if (backSlashCnt == 1)
+			if (backSlashCnt == 1) {
 				return c;
-			else {
+			} else {
 				backup(backSlashCnt - 1);
 				return '\\';
 			}

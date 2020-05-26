@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 
 /**
  * A {@link RepositoryFactory} that creates {@link DatasetRepository}s based on RDF configuration data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DatasetRepositoryFactory implements RepositoryFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see RepositoryFactory#getRepositoryType()
 	 */
 	public static final String REPOSITORY_TYPE = "openrdf:DatasetRepository";

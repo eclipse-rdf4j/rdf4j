@@ -30,15 +30,15 @@ import org.slf4j.LoggerFactory;
 /**
  * Execute the nested loop join in an asynchronous fashion, using grouped requests, i.e. group bindings into one SPARQL
  * request using the UNION operator.
- * 
+ *
  * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which works according to the
  * FIFO principle and uses worker threads.
- * 
+ *
  * This join cursor blocks until all scheduled tasks are finished, however the result iteration can be accessed from
  * different threads to allow for pipelining.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  */
 public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 
@@ -95,18 +95,19 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 
 			/*
 			 * XXX idea:
-			 * 
+			 *
 			 * make nBindings dependent on the number of intermediate results of the left argument.
-			 * 
+			 *
 			 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
 			 * requests.
-			 * 
+			 *
 			 */
 
-			if (totalBindings > 10)
+			if (totalBindings > 10) {
 				nBindings = nBindingsCfg;
-			else
+			} else {
 				nBindings = 3;
+			}
 
 			bindings = new ArrayList<>(nBindings);
 
@@ -134,16 +135,17 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	/**
 	 * Returns true if the vectored evaluation can be applied for the join argument, i.e. there is no fallback to
 	 * {@link ControlledWorkerJoin#handleBindings()}. This is
-	 * 
+	 *
 	 * a) if the expr is a {@link BoundJoinTupleExpr} (Mind the special handling for {@link FedXService} as defined in
 	 * b) b) if the expr is a {@link FedXService} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
-	 * 
+	 *
 	 * @return
 	 */
 	private boolean canApplyVectoredEvaluation(TupleExpr expr) {
 		if (expr instanceof BoundJoinTupleExpr) {
-			if (expr instanceof FedXService)
+			if (expr instanceof FedXService) {
 				return this.queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();
+			}
 			return true;
 		}
 		return false;

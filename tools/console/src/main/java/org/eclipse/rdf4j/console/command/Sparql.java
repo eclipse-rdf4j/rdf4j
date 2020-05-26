@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
 
 /**
  * SPARQL query command
- * 
+ *
  * @author Bart Hanssens
  */
 public class Sparql extends QueryEvaluator {
@@ -46,7 +46,7 @@ public class Sparql extends QueryEvaluator {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param evaluator
 	 */
 	public Sparql(TupleAndGraphQueryEvaluator evaluator) {

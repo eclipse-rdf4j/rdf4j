@@ -21,7 +21,7 @@ public interface NativeValue extends Value {
 
 	/**
 	 * Gets the ID that is used in the native store for this Value.
-	 * 
+	 *
 	 * @return The value's ID, or {@link #UNKNOWN_ID} if not yet set.
 	 */
 	public int getInternalID();

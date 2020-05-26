@@ -10,14 +10,14 @@ package org.eclipse.rdf4j.common.lang;
 
 /**
  * Generic utility methods related to objects.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ObjectUtil {
 
 	/**
 	 * Compares two objects or null references.
-	 * 
+	 *
 	 * @param o1 The first object.
 	 * @param o2 The second object
 	 * @return <tt>true</tt> if both objects are <tt>null</tt>, if the object references are identical, or if the
@@ -30,7 +30,7 @@ public class ObjectUtil {
 
 	/**
 	 * Returns the hash code of the supplied object, or <tt>0</tt> if a null reference is supplied.
-	 * 
+	 *
 	 * @param o An object or null reference.
 	 * @return The object's hash code, or <tt>0</tt> if the parameter is <tt>null</tt>.
 	 */

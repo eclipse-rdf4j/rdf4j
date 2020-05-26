@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.http.server;
 
 /**
  * HTTP-related exception that includes the relevant HTTP status code.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class HTTPException extends Exception {

@@ -68,6 +68,7 @@ public class QueryBenchmark {
 	private static final String query3_2;
 	private static final String query4_1;
 	private static final String query4_2;
+
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);

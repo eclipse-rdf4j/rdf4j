@@ -17,11 +17,11 @@ import org.slf4j.LoggerFactory;
 /**
  * A {@link RepositoryFactory} to use FedX in settings with a repository manager, e.g. in the RDF4J workbench.
  * </p>
- * 
+ *
  * <p>
  * See {@link FedXRepositoryConfig} for the configuration.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see FedXRepositoryConfig
  *

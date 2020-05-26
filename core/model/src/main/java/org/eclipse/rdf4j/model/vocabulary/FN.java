@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Defines constants for the standard <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>
  * @author Jeen Broekstra
  */

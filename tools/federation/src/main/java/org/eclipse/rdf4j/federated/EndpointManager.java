@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 /**
  * EndpointManager is the singleton instance that manages available {@link Endpoint}s. Particular endpoints can be
  * looked up by their id and connection and all relevant information can be used.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -36,7 +36,7 @@ public class EndpointManager {
 
 	/**
 	 * Initialize the singleton endpoint manager with the provided endpoints
-	 * 
+	 *
 	 * @param endpoints
 	 */
 	public static synchronized EndpointManager initialize(List<Endpoint> endpoints) {
@@ -58,7 +58,7 @@ public class EndpointManager {
 
 	/**
 	 * Construct an EndpointManager with the provided endpoints
-	 * 
+	 *
 	 * @param endpoints
 	 */
 	private EndpointManager(List<Endpoint> endpoints) {
@@ -67,18 +67,20 @@ public class EndpointManager {
 
 	/**
 	 * Initialize the endpoint mapping with the provided endpoints
-	 * 
+	 *
 	 * @param _endpoints a list of (initialized) endpoints or null
 	 */
 	private void init(List<Endpoint> _endpoints) {
-		if (_endpoints != null)
-			for (Endpoint e : _endpoints)
+		if (_endpoints != null) {
+			for (Endpoint e : _endpoints) {
 				addEndpoint(e);
+			}
+		}
 	}
 
 	/**
 	 * Add the (initialized) endpoint to this endpoint manager to be used by the {@link FederationManager}.
-	 * 
+	 *
 	 * @param e the endpoint
 	 */
 	public void addEndpoint(Endpoint e) {
@@ -88,14 +90,15 @@ public class EndpointManager {
 	/**
 	 * Remove the provided endpoint from this endpoint manager to be used by the {@link FederationManager}. In addition,
 	 * this method unregisters the {@link FederatedService} from Sesame
-	 * 
+	 *
 	 * @param e the endpoint
-	 * 
+	 *
 	 * @throws NoSuchElementException if there is no mapping for some endpoint id
 	 */
 	protected void removeEndpoint(Endpoint e) throws NoSuchElementException {
-		if (!endpoints.containsKey(e.getId()))
+		if (!endpoints.containsKey(e.getId())) {
 			throw new NoSuchElementException("No endpoint avalaible for id " + e.getId());
+		}
 		endpoints.remove(e.getId());
 	}
 
@@ -116,22 +119,24 @@ public class EndpointManager {
 
 	/**
 	 * Return the Endpoint for the provided endpoint url, if it exists. Otherwise return null.
-	 * 
+	 *
 	 * @param endpointUrl
 	 * @return the endpoint by its URL
 	 */
 	public Endpoint getEndpointByUrl(String endpointUrl) {
 		for (Endpoint e : endpoints.values()) {
-			if (e.getEndpoint().equals(endpointUrl))
+			if (e.getEndpoint().equals(endpointUrl)) {
 				return e;
+			}
 		}
 		return null;
 	}
 
 	public Endpoint getEndpointByName(String endpointName) {
 		for (Endpoint e : endpoints.values()) {
-			if (e.getName().equals(endpointName))
+			if (e.getName().equals(endpointName)) {
 				return e;
+			}
 		}
 		return null;
 	}
@@ -139,15 +144,16 @@ public class EndpointManager {
 	/**
 	 * @param endpointIDs
 	 * @return a list of endpoints corresponding to the provided ids
-	 * 
+	 *
 	 * @throws NoSuchElementException if there is no mapping for some endpoint id
 	 */
 	public List<Endpoint> getEndpoints(Set<String> endpointIDs) throws NoSuchElementException {
 		List<Endpoint> res = new ArrayList<>();
 		for (String endpointID : endpointIDs) {
 			Endpoint e = endpoints.get(endpointID);
-			if (e == null)
+			if (e == null) {
 				throw new NoSuchElementException("No endpoint found for " + endpointID + ".");
+			}
 			res.add(e);
 		}
 		return res;

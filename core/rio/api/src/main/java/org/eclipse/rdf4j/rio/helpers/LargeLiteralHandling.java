@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.rio.helpers;
 /**
  * An enumeration used to define constants used with the {@link BasicParserSettings#LARGE_LITERALS_HANDLING} parser
  * setting.
- * 
+ *
  * @author Peter Ansell
  */
 public enum LargeLiteralHandling {

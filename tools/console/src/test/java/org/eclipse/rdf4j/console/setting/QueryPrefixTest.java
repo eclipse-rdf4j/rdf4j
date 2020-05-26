@@ -15,7 +15,7 @@ import org.junit.Test;
 
 /**
  * Test query prefix setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class QueryPrefixTest extends AbstractSettingTest {

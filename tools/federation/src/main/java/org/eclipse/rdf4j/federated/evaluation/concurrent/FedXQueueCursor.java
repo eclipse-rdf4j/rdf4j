@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Specialized variants of {@link QueueCursor} which avoids converting any exception if it is already of
  * type{@link QueryEvaluationException}.
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  * @param <T>

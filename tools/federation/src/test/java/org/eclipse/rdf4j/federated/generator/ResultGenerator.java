@@ -56,11 +56,11 @@ public class ResultGenerator {
 
 	/**
 	 * Create the result files for queryFile (without extensions)
-	 * 
+	 *
 	 * Resources are located on classpath.
-	 * 
+	 *
 	 * e.g. createResult("/tests/medium/", "query01");
-	 * 
+	 *
 	 * @param queryFile
 	 */
 	protected void createResult(String baseDir, String queryFile) throws Exception {
@@ -107,7 +107,7 @@ public class ResultGenerator {
 
 	/**
 	 * Read the query string from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException

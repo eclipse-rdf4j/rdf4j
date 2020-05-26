@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
 /**
  * Algebra construct representing an empty join.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

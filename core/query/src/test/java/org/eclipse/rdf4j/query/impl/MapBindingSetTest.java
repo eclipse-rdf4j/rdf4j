@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.BindingSetTest;
 
 /**
  * Unit tests for {@link MapBindingSet}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MapBindingSetTest extends BindingSetTest<MapBindingSet> {

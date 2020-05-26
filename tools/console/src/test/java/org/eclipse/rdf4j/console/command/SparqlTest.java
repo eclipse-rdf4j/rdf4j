@@ -28,7 +28,7 @@ import org.junit.Test;
 
 /**
  * Test SPARQL command
- * 
+ *
  * @author Bart Hanssens
  */
 public class SparqlTest extends AbstractCommandTest {

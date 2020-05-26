@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -66,7 +66,7 @@ import org.slf4j.LoggerFactory;
  * A set of compliance tests on SPARQL query functionality which can not be easily executed using the
  * {@link SPARQL11ManifestTest} format. This includes tests on queries with non-deterministic output (e.g.
  * GROUP_CONCAT).
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class ComplexSPARQLQueryTest {
@@ -944,7 +944,7 @@ public abstract class ComplexSPARQLQueryTest {
 			Value y = bs.getValue("y");
 			assertNotNull(y);
 			assertTrue(y instanceof Literal);
-			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+			assertEquals(f.createLiteral("1", XSD.INTEGER), y);
 		}
 	}
 
@@ -980,7 +980,7 @@ public abstract class ComplexSPARQLQueryTest {
 			Value y = bs.getValue("y");
 			assertNotNull(y);
 			assertTrue(y instanceof Literal);
-			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+			assertEquals(f.createLiteral("1", XSD.INTEGER), y);
 		}
 	}
 
@@ -2505,7 +2505,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	/**
 	 * Get a set of useful namespace prefix declarations.
-	 * 
+	 *
 	 * @return namespace prefix declarations for dc, foaf and ex.
 	 */
 	protected String getNamespaceDeclarations() {

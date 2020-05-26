@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
  * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
  * @author Jeen Broekstra
  */
@@ -160,7 +160,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 		boolean quoted = false;
 
 		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)
-				|| XMLSchema.DOUBLE.equals(datatype)) {
+				|| XSD.DOUBLE.equals(datatype)) {
 			try {
 				String normalized = XMLDatatypeUtil.normalize(label, datatype);
 				writer.write(normalized);

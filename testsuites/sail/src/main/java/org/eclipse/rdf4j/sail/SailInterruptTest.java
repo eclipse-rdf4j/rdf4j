@@ -21,7 +21,7 @@ import org.junit.Test;
 
 /**
  * Tests thread interrupts on a Sail implementation.
- * 
+ *
  * @author Arjohn Kampman
  */
 public abstract class SailInterruptTest {

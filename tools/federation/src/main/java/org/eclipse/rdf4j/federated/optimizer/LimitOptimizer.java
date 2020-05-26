@@ -17,10 +17,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * An optimizer that attempts to push upper limits into BGPs of the query.
- * 
+ *
  * Currently upper limits are only pushed for simple queries consisting of a single BGP.
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */

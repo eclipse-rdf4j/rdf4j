@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * If the primary cursor is empty, use the alternative cursor.
- * 
+ *
  * @author James Leigh
  */
 public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationException> {

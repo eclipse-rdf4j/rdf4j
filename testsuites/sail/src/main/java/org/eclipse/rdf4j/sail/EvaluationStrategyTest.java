@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
@@ -39,7 +39,7 @@ import org.junit.rules.TemporaryFolder;
 /**
  * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
  * implementations.
- * 
+ *
  * @author Jeen Broekstra
  */
 public abstract class EvaluationStrategyTest {
@@ -88,8 +88,8 @@ public abstract class EvaluationStrategyTest {
 		ValueFactory vf = strictRepo.getValueFactory();
 
 		try (RepositoryConnection conn = strictRepo.getConnection()) {
-			Literal l1 = vf.createLiteral("2009", XMLSchema.GYEAR);
-			Literal l2 = vf.createLiteral("2009-01", XMLSchema.GYEARMONTH);
+			Literal l1 = vf.createLiteral("2009", XSD.GYEAR);
+			Literal l2 = vf.createLiteral("2009-01", XSD.GYEARMONTH);
 			IRI s1 = vf.createIRI("urn:s1");
 			IRI s2 = vf.createIRI("urn:s2");
 			conn.add(s1, RDFS.LABEL, l1);
@@ -107,8 +107,8 @@ public abstract class EvaluationStrategyTest {
 		ValueFactory vf = extendedRepo.getValueFactory();
 
 		try (RepositoryConnection conn = extendedRepo.getConnection()) {
-			Literal l1 = vf.createLiteral("2009", XMLSchema.GYEAR);
-			Literal l2 = vf.createLiteral("2009-01", XMLSchema.GYEARMONTH);
+			Literal l1 = vf.createLiteral("2009", XSD.GYEAR);
+			Literal l2 = vf.createLiteral("2009-01", XSD.GYEARMONTH);
 			IRI s1 = vf.createIRI("urn:s1");
 			IRI s2 = vf.createIRI("urn:s2");
 			conn.add(s1, RDFS.LABEL, l1);
@@ -123,7 +123,7 @@ public abstract class EvaluationStrategyTest {
 
 	/**
 	 * Gets a configuration object for the base Sail that should be tested.
-	 * 
+	 *
 	 * @return a {@link BaseSailConfig}.
 	 */
 	protected abstract BaseSailConfig getBaseSailConfig();

@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * A context operation with (optional) subject, predicate, object.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */

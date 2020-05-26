@@ -12,7 +12,7 @@ import java.io.StringReader;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
@@ -83,12 +83,14 @@ public class SyntaxTreeBuilder
 			if (!previousTokenDtSep && !tok.image.equals("^^") && !tok.image.startsWith("@")) {
 				sb.append(" ");
 			}
-			if (tok.kind == LBRACE)
+			if (tok.kind == LBRACE) {
 				nesting++;
+			}
 			if (tok.kind == RBRACE) {
 				nesting--;
-				if (nesting == 0)
+				if (nesting == 0) {
 					break;
+				}
 			}
 			sb.append(tok.image);
 			previousTokenDtSep = tok.image.equals("^^");
@@ -98,7 +100,7 @@ public class SyntaxTreeBuilder
 		return sb.toString();
 	}
 
-//
+	//
 // grammar
 //
 	final public ASTUpdateSequence UpdateSequence() throws ParseException {
@@ -121,8 +123,9 @@ public class SyntaxTreeBuilder
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
 			{
-				if (true)
+				if (true) {
 					return jjtn000;
+				}
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -133,19 +136,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -182,8 +188,9 @@ public class SyntaxTreeBuilder
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
 			{
-				if (true)
+				if (true) {
 					return jjtn000;
+				}
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -194,19 +201,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -228,8 +238,9 @@ public class SyntaxTreeBuilder
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
 			{
-				if (true)
+				if (true) {
 					return jjtn000;
+				}
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -240,19 +251,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -333,19 +347,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -413,19 +430,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -461,19 +481,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -549,19 +572,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -602,19 +628,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -661,19 +690,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -703,19 +735,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -808,19 +843,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -895,19 +933,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -954,19 +995,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1015,19 +1059,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1060,19 +1107,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1135,19 +1185,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1173,19 +1226,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1305,19 +1361,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1384,19 +1443,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1458,19 +1520,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1601,19 +1666,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1710,19 +1778,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1830,19 +1901,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -1868,19 +1942,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2000,19 +2077,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2110,8 +2190,9 @@ public class SyntaxTreeBuilder
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
 			{
-				if (true)
+				if (true) {
 					return endOfPatternToken;
+				}
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -2122,19 +2203,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2362,19 +2446,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2493,19 +2580,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2532,19 +2622,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2572,19 +2665,22 @@ public class SyntaxTreeBuilder
 				}
 				if (jjte001 instanceof RuntimeException) {
 					{
-						if (true)
+						if (true) {
 							throw (RuntimeException) jjte001;
+						}
 					}
 				}
 				if (jjte001 instanceof ParseException) {
 					{
-						if (true)
+						if (true) {
 							throw (ParseException) jjte001;
+						}
 					}
 				}
 				{
-					if (true)
+					if (true) {
 						throw (Error) jjte001;
+					}
 				}
 			} finally {
 				if (jjtc001) {
@@ -2615,19 +2711,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2670,19 +2769,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2780,19 +2882,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2818,19 +2923,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2933,19 +3041,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -2992,19 +3103,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3041,19 +3155,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3130,19 +3247,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3210,19 +3330,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3259,19 +3382,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3316,19 +3442,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3365,19 +3494,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3421,19 +3553,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3595,19 +3730,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3749,19 +3887,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3788,19 +3929,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3862,19 +4006,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -3936,19 +4083,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -4277,19 +4427,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -4365,19 +4518,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -4503,19 +4659,22 @@ public class SyntaxTreeBuilder
 				}
 				if (jjte001 instanceof RuntimeException) {
 					{
-						if (true)
+						if (true) {
 							throw (RuntimeException) jjte001;
+						}
 					}
 				}
 				if (jjte001 instanceof ParseException) {
 					{
-						if (true)
+						if (true) {
 							throw (ParseException) jjte001;
+						}
 					}
 				}
 				{
-					if (true)
+					if (true) {
 						throw (Error) jjte001;
+					}
 				}
 			} finally {
 				if (jjtc001) {
@@ -4548,19 +4707,22 @@ public class SyntaxTreeBuilder
 				}
 				if (jjte001 instanceof RuntimeException) {
 					{
-						if (true)
+						if (true) {
 							throw (RuntimeException) jjte001;
+						}
 					}
 				}
 				if (jjte001 instanceof ParseException) {
 					{
-						if (true)
+						if (true) {
 							throw (ParseException) jjte001;
+						}
 					}
 				}
 				{
-					if (true)
+					if (true) {
 						throw (Error) jjte001;
+					}
 				}
 			} finally {
 				if (jjtc001) {
@@ -4701,19 +4863,22 @@ public class SyntaxTreeBuilder
 					}
 					if (jjte007 instanceof RuntimeException) {
 						{
-							if (true)
+							if (true) {
 								throw (RuntimeException) jjte007;
+							}
 						}
 					}
 					if (jjte007 instanceof ParseException) {
 						{
-							if (true)
+							if (true) {
 								throw (ParseException) jjte007;
+							}
 						}
 					}
 					{
-						if (true)
+						if (true) {
 							throw (Error) jjte007;
+						}
 					}
 				} finally {
 					if (jjtc007) {
@@ -4736,19 +4901,22 @@ public class SyntaxTreeBuilder
 					}
 					if (jjte008 instanceof RuntimeException) {
 						{
-							if (true)
+							if (true) {
 								throw (RuntimeException) jjte008;
+							}
 						}
 					}
 					if (jjte008 instanceof ParseException) {
 						{
-							if (true)
+							if (true) {
 								throw (ParseException) jjte008;
+							}
 						}
 					}
 					{
-						if (true)
+						if (true) {
 							throw (Error) jjte008;
+						}
 					}
 				} finally {
 					if (jjtc008) {
@@ -4936,19 +5104,22 @@ public class SyntaxTreeBuilder
 				}
 				if (jjte001 instanceof RuntimeException) {
 					{
-						if (true)
+						if (true) {
 							throw (RuntimeException) jjte001;
+						}
 					}
 				}
 				if (jjte001 instanceof ParseException) {
 					{
-						if (true)
+						if (true) {
 							throw (ParseException) jjte001;
+						}
 					}
 				}
 				{
-					if (true)
+					if (true) {
 						throw (Error) jjte001;
+					}
 				}
 			} finally {
 				if (jjtc001) {
@@ -5081,7 +5252,7 @@ public class SyntaxTreeBuilder
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
 			jjtn000.setValue("-1");
-			jjtn000.setDatatype(XMLSchema.INTEGER);
+			jjtn000.setDatatype(XSD.INTEGER);
 		} finally {
 			if (jjtc000) {
 				jjtree.closeNodeScope(jjtn000, true);
@@ -5357,19 +5528,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5406,19 +5580,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5455,19 +5632,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5504,19 +5684,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5553,19 +5736,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5602,19 +5788,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5662,19 +5851,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -5978,19 +6170,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6018,19 +6213,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6058,19 +6256,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6098,19 +6299,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6138,19 +6342,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6178,19 +6385,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6233,19 +6443,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6273,19 +6486,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6313,19 +6529,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6353,19 +6572,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6393,19 +6615,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6433,19 +6658,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6473,19 +6701,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6513,19 +6744,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6568,19 +6802,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6608,19 +6845,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6648,19 +6888,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6688,19 +6931,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6739,19 +6985,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6779,19 +7028,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6819,19 +7071,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6859,19 +7114,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6901,19 +7159,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6943,19 +7204,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -6985,19 +7249,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7027,19 +7294,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7080,19 +7350,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7118,19 +7391,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7160,19 +7436,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7200,19 +7479,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7244,19 +7526,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7282,19 +7567,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7320,19 +7608,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7372,19 +7663,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7412,19 +7706,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7452,19 +7749,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7494,19 +7794,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7534,19 +7837,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7574,19 +7880,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7616,19 +7925,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7656,19 +7968,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7696,19 +8011,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7736,19 +8054,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7776,19 +8097,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7827,19 +8151,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7867,19 +8194,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7909,19 +8239,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -7951,19 +8284,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8023,19 +8359,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8074,19 +8413,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8112,19 +8454,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8150,19 +8495,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8210,19 +8558,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8266,15 +8617,15 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case INTEGER:
 				t = jj_consume_token(INTEGER);
-				datatype = XMLSchema.INTEGER;
+				datatype = XSD.INTEGER;
 				break;
 			case DECIMAL:
 				t = jj_consume_token(DECIMAL);
-				datatype = XMLSchema.DECIMAL;
+				datatype = XSD.DECIMAL;
 				break;
 			case DOUBLE:
 				t = jj_consume_token(DOUBLE);
-				datatype = XMLSchema.DOUBLE;
+				datatype = XSD.DOUBLE;
 				break;
 			default:
 				jj_la1[148] = jj_gen;
@@ -8303,15 +8654,15 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case INTEGER_POSITIVE:
 				t = jj_consume_token(INTEGER_POSITIVE);
-				datatype = XMLSchema.INTEGER;
+				datatype = XSD.INTEGER;
 				break;
 			case DECIMAL_POSITIVE:
 				t = jj_consume_token(DECIMAL_POSITIVE);
-				datatype = XMLSchema.DECIMAL;
+				datatype = XSD.DECIMAL;
 				break;
 			case DOUBLE_POSITIVE:
 				t = jj_consume_token(DOUBLE_POSITIVE);
-				datatype = XMLSchema.DOUBLE;
+				datatype = XSD.DOUBLE;
 				break;
 			default:
 				jj_la1[149] = jj_gen;
@@ -8340,15 +8691,15 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case INTEGER_NEGATIVE:
 				t = jj_consume_token(INTEGER_NEGATIVE);
-				datatype = XMLSchema.INTEGER;
+				datatype = XSD.INTEGER;
 				break;
 			case DECIMAL_NEGATIVE:
 				t = jj_consume_token(DECIMAL_NEGATIVE);
-				datatype = XMLSchema.DECIMAL;
+				datatype = XSD.DECIMAL;
 				break;
 			case DOUBLE_NEGATIVE:
 				t = jj_consume_token(DOUBLE_NEGATIVE);
-				datatype = XMLSchema.DOUBLE;
+				datatype = XSD.DOUBLE;
 				break;
 			default:
 				jj_la1[150] = jj_gen;
@@ -8547,7 +8898,7 @@ public class SyntaxTreeBuilder
 		}
 	}
 
-/// SPARQL 1.1 Update productions
+	/// SPARQL 1.1 Update productions
 	final public void GraphRefAll() throws ParseException {
 		/* @bgen(jjtree) GraphRefAll */
 		ASTGraphRefAll jjtn000 = new ASTGraphRefAll(JJTGRAPHREFALL);
@@ -8587,19 +8938,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8646,19 +9000,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8834,19 +9191,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8937,19 +9297,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -8984,19 +9347,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9031,19 +9397,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9080,19 +9449,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9129,19 +9501,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9178,19 +9553,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9225,19 +9603,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9264,19 +9645,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9303,19 +9687,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9342,19 +9729,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9380,19 +9770,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9418,19 +9811,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9465,19 +9861,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9503,19 +9902,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9544,19 +9946,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9620,19 +10025,22 @@ public class SyntaxTreeBuilder
 			}
 			if (jjte000 instanceof RuntimeException) {
 				{
-					if (true)
+					if (true) {
 						throw (RuntimeException) jjte000;
+					}
 				}
 			}
 			if (jjte000 instanceof ParseException) {
 				{
-					if (true)
+					if (true) {
 						throw (ParseException) jjte000;
+					}
 				}
 			}
 			{
-				if (true)
+				if (true) {
 					throw (Error) jjte000;
+				}
 			}
 		} finally {
 			if (jjtc000) {
@@ -9726,8 +10134,9 @@ public class SyntaxTreeBuilder
 	}
 
 	private boolean jj_3R_85() {
-		if (jj_scan_token(FALSE))
+		if (jj_scan_token(FALSE)) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9736,33 +10145,38 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_84()) {
 			jj_scanpos = xsp;
-			if (jj_3R_85())
+			if (jj_3R_85()) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_84() {
-		if (jj_scan_token(TRUE))
+		if (jj_scan_token(TRUE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_57() {
-		if (jj_3R_65())
+		if (jj_3R_65()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_100() {
-		if (jj_scan_token(DOUBLE_NEGATIVE))
+		if (jj_scan_token(DOUBLE_NEGATIVE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_56() {
-		if (jj_3R_64())
+		if (jj_3R_64()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9771,33 +10185,38 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_56()) {
 			jj_scanpos = xsp;
-			if (jj_3R_57())
+			if (jj_3R_57()) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_99() {
-		if (jj_scan_token(DECIMAL_NEGATIVE))
+		if (jj_scan_token(DECIMAL_NEGATIVE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_98() {
-		if (jj_scan_token(INTEGER_NEGATIVE))
+		if (jj_scan_token(INTEGER_NEGATIVE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_59() {
-		if (jj_3R_67())
+		if (jj_3R_67()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_58() {
-		if (jj_3R_66())
+		if (jj_3R_66()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9806,8 +10225,9 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_58()) {
 			jj_scanpos = xsp;
-			if (jj_3R_59())
+			if (jj_3R_59()) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -9819,28 +10239,32 @@ public class SyntaxTreeBuilder
 			jj_scanpos = xsp;
 			if (jj_3R_99()) {
 				jj_scanpos = xsp;
-				if (jj_3R_100())
+				if (jj_3R_100()) {
 					return true;
+				}
 			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_97() {
-		if (jj_scan_token(DOUBLE_POSITIVE))
+		if (jj_scan_token(DOUBLE_POSITIVE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_96() {
-		if (jj_scan_token(DECIMAL_POSITIVE))
+		if (jj_scan_token(DECIMAL_POSITIVE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_95() {
-		if (jj_scan_token(INTEGER_POSITIVE))
+		if (jj_scan_token(INTEGER_POSITIVE)) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9851,80 +10275,96 @@ public class SyntaxTreeBuilder
 			jj_scanpos = xsp;
 			if (jj_3R_96()) {
 				jj_scanpos = xsp;
-				if (jj_3R_97())
+				if (jj_3R_97()) {
 					return true;
+				}
 			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_39() {
-		if (jj_scan_token(DELETE))
+		if (jj_scan_token(DELETE)) {
 			return true;
-		if (jj_scan_token(WHERE))
+		}
+		if (jj_scan_token(WHERE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_3() {
-		if (jj_scan_token(DOT))
+		if (jj_scan_token(DOT)) {
 			return true;
-		if (jj_3R_35())
+		}
+		if (jj_3R_35()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_94() {
-		if (jj_scan_token(DOUBLE))
+		if (jj_scan_token(DOUBLE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_2() {
-		if (jj_scan_token(DOT))
+		if (jj_scan_token(DOT)) {
 			return true;
-		if (jj_3R_34())
+		}
+		if (jj_3R_34()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_93() {
-		if (jj_scan_token(DECIMAL))
+		if (jj_scan_token(DECIMAL)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_92() {
-		if (jj_scan_token(INTEGER))
+		if (jj_scan_token(INTEGER)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_38() {
-		if (jj_scan_token(DELETE))
+		if (jj_scan_token(DELETE)) {
 			return true;
-		if (jj_scan_token(DATA))
+		}
+		if (jj_scan_token(DATA)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_37() {
-		if (jj_scan_token(INSERT))
+		if (jj_scan_token(INSERT)) {
 			return true;
-		if (jj_scan_token(DATA))
+		}
+		if (jj_scan_token(DATA)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_83() {
-		if (jj_3R_91())
+		if (jj_3R_91()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_82() {
-		if (jj_3R_90())
+		if (jj_3R_90()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9935,16 +10375,18 @@ public class SyntaxTreeBuilder
 			jj_scanpos = xsp;
 			if (jj_3R_93()) {
 				jj_scanpos = xsp;
-				if (jj_3R_94())
+				if (jj_3R_94()) {
 					return true;
+				}
 			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_81() {
-		if (jj_3R_89())
+		if (jj_3R_89()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -9955,106 +10397,124 @@ public class SyntaxTreeBuilder
 			jj_scanpos = xsp;
 			if (jj_3R_82()) {
 				jj_scanpos = xsp;
-				if (jj_3R_83())
+				if (jj_3R_83()) {
 					return true;
+				}
 			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_47() {
-		if (jj_3R_34())
+		if (jj_3R_34()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_75() {
-		if (jj_3R_80())
+		if (jj_3R_80()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_40() {
-		if (jj_3R_47())
+		if (jj_3R_47()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_1() {
-		if (jj_3R_33())
+		if (jj_3R_33()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_7() {
-		if (jj_3R_39())
+		if (jj_3R_39()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_33() {
-		if (jj_scan_token(LBRACE))
+		if (jj_scan_token(LBRACE)) {
 			return true;
+		}
 		Token xsp;
 		xsp = jj_scanpos;
-		if (jj_3R_40())
+		if (jj_3R_40()) {
 			jj_scanpos = xsp;
-		if (jj_scan_token(RBRACE))
+		}
+		if (jj_scan_token(RBRACE)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_6() {
-		if (jj_3R_38())
+		if (jj_3R_38()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3_5() {
-		if (jj_3R_37())
+		if (jj_3R_37()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_79() {
-		if (jj_scan_token(TRIPLE_OPEN))
+		if (jj_scan_token(TRIPLE_OPEN)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_74() {
-		if (jj_3R_79())
+		if (jj_3R_79()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_73() {
-		if (jj_scan_token(NIL))
+		if (jj_scan_token(NIL)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_72() {
-		if (jj_3R_78())
+		if (jj_3R_78()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_71() {
-		if (jj_3R_77())
+		if (jj_3R_77()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_70() {
-		if (jj_3R_76())
+		if (jj_3R_76()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_69() {
-		if (jj_3R_75())
+		if (jj_3R_75()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10073,8 +10533,9 @@ public class SyntaxTreeBuilder
 							jj_scanpos = xsp;
 							if (jj_3R_73()) {
 								jj_scanpos = xsp;
-								if (jj_3R_74())
+								if (jj_3R_74()) {
 									return true;
+								}
 							}
 						}
 					}
@@ -10085,8 +10546,9 @@ public class SyntaxTreeBuilder
 	}
 
 	private boolean jj_3R_68() {
-		if (jj_3R_45())
+		if (jj_3R_45()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10095,15 +10557,17 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_scan_token(149)) {
 			jj_scanpos = xsp;
-			if (jj_scan_token(150))
+			if (jj_scan_token(150)) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_42() {
-		if (jj_3R_49())
+		if (jj_3R_49()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10112,27 +10576,31 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_41()) {
 			jj_scanpos = xsp;
-			if (jj_3R_42())
+			if (jj_3R_42()) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_41() {
-		if (jj_3R_48())
+		if (jj_3R_48()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_55() {
-		if (jj_3R_63())
+		if (jj_3R_63()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_54() {
-		if (jj_3R_62())
+		if (jj_3R_62()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10141,27 +10609,31 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_54()) {
 			jj_scanpos = xsp;
-			if (jj_3R_55())
+			if (jj_3R_55()) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_60() {
-		if (jj_scan_token(Q_IRI_REF))
+		if (jj_scan_token(Q_IRI_REF)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_44() {
-		if (jj_3R_50())
+		if (jj_3R_50()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_43() {
-		if (jj_3R_48())
+		if (jj_3R_48()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10170,8 +10642,9 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_43()) {
 			jj_scanpos = xsp;
-			if (jj_3R_44())
+			if (jj_3R_44()) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -10181,21 +10654,24 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_86()) {
 			jj_scanpos = xsp;
-			if (jj_scan_token(31))
+			if (jj_scan_token(31)) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_86() {
-		if (jj_scan_token(BLANK_NODE_LABEL))
+		if (jj_scan_token(BLANK_NODE_LABEL)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_53() {
-		if (jj_scan_token(LPAREN))
+		if (jj_scan_token(LPAREN)) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10204,8 +10680,9 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_scan_token(30)) {
 			jj_scanpos = xsp;
-			if (jj_3R_53())
+			if (jj_3R_53()) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -10215,35 +10692,41 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_scan_token(147)) {
 			jj_scanpos = xsp;
-			if (jj_scan_token(146))
+			if (jj_scan_token(146)) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_64() {
-		if (jj_scan_token(LPAREN))
+		if (jj_scan_token(LPAREN)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_36() {
-		if (jj_3R_45())
+		if (jj_3R_45()) {
 			return true;
-		if (jj_3R_46())
+		}
+		if (jj_3R_46()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_52() {
-		if (jj_3R_61())
+		if (jj_3R_61()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_51() {
-		if (jj_3R_60())
+		if (jj_3R_60()) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10252,21 +10735,24 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_51()) {
 			jj_scanpos = xsp;
-			if (jj_3R_52())
+			if (jj_3R_52()) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3R_66() {
-		if (jj_scan_token(LPAREN))
+		if (jj_scan_token(LPAREN)) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_65() {
-		if (jj_scan_token(LBRACK))
+		if (jj_scan_token(LBRACK)) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10275,8 +10761,9 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_scan_token(167)) {
 			jj_scanpos = xsp;
-			if (jj_scan_token(168))
+			if (jj_scan_token(168)) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -10286,8 +10773,9 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_3R_87()) {
 			jj_scanpos = xsp;
-			if (jj_3R_88())
+			if (jj_3R_88()) {
 				return true;
+			}
 		}
 		return false;
 	}
@@ -10297,21 +10785,24 @@ public class SyntaxTreeBuilder
 		xsp = jj_scanpos;
 		if (jj_scan_token(165)) {
 			jj_scanpos = xsp;
-			if (jj_scan_token(166))
+			if (jj_scan_token(166)) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	private boolean jj_3_4() {
-		if (jj_3R_36())
+		if (jj_3R_36()) {
 			return true;
+		}
 		return false;
 	}
 
 	private boolean jj_3R_67() {
-		if (jj_scan_token(LBRACK))
+		if (jj_scan_token(LBRACK)) {
 			return true;
+		}
 		return false;
 	}
 
@@ -10332,6 +10823,7 @@ public class SyntaxTreeBuilder
 	static private int[] jj_la1_3;
 	static private int[] jj_la1_4;
 	static private int[] jj_la1_5;
+
 	static {
 		jj_la1_init_0();
 		jj_la1_init_1();
@@ -10442,10 +10934,12 @@ public class SyntaxTreeBuilder
 		token = new Token();
 		jj_ntk = -1;
 		jj_gen = 0;
-		for (int i = 0; i < 181; i++)
+		for (int i = 0; i < 181; i++) {
 			jj_la1[i] = -1;
-		for (int i = 0; i < jj_2_rtns.length; i++)
+		}
+		for (int i = 0; i < jj_2_rtns.length; i++) {
 			jj_2_rtns[i] = new JJCalls();
+		}
 	}
 
 	/** Reinitialise. */
@@ -10455,10 +10949,12 @@ public class SyntaxTreeBuilder
 		jj_ntk = -1;
 		jjtree.reset();
 		jj_gen = 0;
-		for (int i = 0; i < 181; i++)
+		for (int i = 0; i < 181; i++) {
 			jj_la1[i] = -1;
-		for (int i = 0; i < jj_2_rtns.length; i++)
+		}
+		for (int i = 0; i < jj_2_rtns.length; i++) {
 			jj_2_rtns[i] = new JJCalls();
+		}
 	}
 
 	/** Constructor with generated Token Manager. */
@@ -10467,10 +10963,12 @@ public class SyntaxTreeBuilder
 		token = new Token();
 		jj_ntk = -1;
 		jj_gen = 0;
-		for (int i = 0; i < 181; i++)
+		for (int i = 0; i < 181; i++) {
 			jj_la1[i] = -1;
-		for (int i = 0; i < jj_2_rtns.length; i++)
+		}
+		for (int i = 0; i < jj_2_rtns.length; i++) {
 			jj_2_rtns[i] = new JJCalls();
+		}
 	}
 
 	/** Reinitialise. */
@@ -10480,18 +10978,21 @@ public class SyntaxTreeBuilder
 		jj_ntk = -1;
 		jjtree.reset();
 		jj_gen = 0;
-		for (int i = 0; i < 181; i++)
+		for (int i = 0; i < 181; i++) {
 			jj_la1[i] = -1;
-		for (int i = 0; i < jj_2_rtns.length; i++)
+		}
+		for (int i = 0; i < jj_2_rtns.length; i++) {
 			jj_2_rtns[i] = new JJCalls();
+		}
 	}
 
 	private Token jj_consume_token(int kind) throws ParseException {
 		Token oldToken;
-		if ((oldToken = token).next != null)
+		if ((oldToken = token).next != null) {
 			token = token.next;
-		else
+		} else {
 			token = token.next = token_source.getNextToken();
+		}
 		jj_ntk = -1;
 		if (token.kind == kind) {
 			jj_gen++;
@@ -10500,8 +11001,9 @@ public class SyntaxTreeBuilder
 				for (int i = 0; i < jj_2_rtns.length; i++) {
 					JJCalls c = jj_2_rtns[i];
 					while (c != null) {
-						if (c.gen < jj_gen)
+						if (c.gen < jj_gen) {
 							c.first = null;
+						}
 						c = c.next;
 					}
 				}
@@ -10536,22 +11038,26 @@ public class SyntaxTreeBuilder
 				i++;
 				tok = tok.next;
 			}
-			if (tok != null)
+			if (tok != null) {
 				jj_add_error_token(kind, i);
+			}
 		}
-		if (jj_scanpos.kind != kind)
+		if (jj_scanpos.kind != kind) {
 			return true;
-		if (jj_la == 0 && jj_scanpos == jj_lastpos)
+		}
+		if (jj_la == 0 && jj_scanpos == jj_lastpos) {
 			throw jj_ls;
+		}
 		return false;
 	}
 
 	/** Get the next Token. */
 	final public Token getNextToken() {
-		if (token.next != null)
+		if (token.next != null) {
 			token = token.next;
-		else
+		} else {
 			token = token.next = token_source.getNextToken();
+		}
 		jj_ntk = -1;
 		jj_gen++;
 		return token;
@@ -10561,19 +11067,21 @@ public class SyntaxTreeBuilder
 	final public Token getToken(int index) {
 		Token t = token;
 		for (int i = 0; i < index; i++) {
-			if (t.next != null)
+			if (t.next != null) {
 				t = t.next;
-			else
+			} else {
 				t = t.next = token_source.getNextToken();
+			}
 		}
 		return t;
 	}
 
 	private int jj_ntk() {
-		if ((jj_nt = token.next) == null)
+		if ((jj_nt = token.next) == null) {
 			return (jj_ntk = (token.next = token_source.getNextToken()).kind);
-		else
+		} else {
 			return (jj_ntk = jj_nt.kind);
+		}
 	}
 
 	private java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
@@ -10583,8 +11091,9 @@ public class SyntaxTreeBuilder
 	private int jj_endpos;
 
 	private void jj_add_error_token(int kind, int pos) {
-		if (pos >= 100)
+		if (pos >= 100) {
 			return;
+		}
 		if (pos == jj_endpos + 1) {
 			jj_lasttokens[jj_endpos++] = kind;
 		} else if (jj_endpos != 0) {
@@ -10604,8 +11113,9 @@ public class SyntaxTreeBuilder
 					break jj_entries_loop;
 				}
 			}
-			if (pos != 0)
+			if (pos != 0) {
 				jj_lasttokens[(jj_endpos = pos) - 1] = kind;
+			}
 		}
 	}
 

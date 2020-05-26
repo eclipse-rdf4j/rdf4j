@@ -211,7 +211,7 @@ public class LuceneIndexTest {
 
 	/**
 	 * NB: this is a convenient but very slow way of getting termDocs. It is sufficient for testing purposes.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private static PostingsEnum termDocs(IndexReader reader, Term term) throws IOException {
@@ -404,15 +404,17 @@ public class LuceneIndexTest {
 
 	private void assertStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			fail("Missing document " + statement.getSubject());
+		}
 		assertStatement(statement, document);
 	}
 
 	private void assertNoStatement(Statement statement) throws Exception {
 		Document document = index.getDocument(statement.getSubject(), statement.getContext());
-		if (document == null)
+		if (document == null) {
 			return;
+		}
 		assertNoStatement(statement, document);
 	}
 
@@ -424,8 +426,9 @@ public class LuceneIndexTest {
 		IndexableField[] fields = document.getFields(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (IndexableField f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue()))
+			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue())) {
 				return;
+			}
 		}
 		fail("Statement not found in document " + statement);
 	}
@@ -436,11 +439,13 @@ public class LuceneIndexTest {
 	 */
 	private void assertNoStatement(Statement statement, Document document) {
 		IndexableField[] fields = document.getFields(SearchFields.getPropertyField(statement.getPredicate()));
-		if (fields == null)
+		if (fields == null) {
 			return;
+		}
 		for (IndexableField f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue()))
+			if (((Literal) statement.getObject()).getLabel().equals(f.stringValue())) {
 				fail("Statement should not be found in document " + statement);
+			}
 		}
 
 	}

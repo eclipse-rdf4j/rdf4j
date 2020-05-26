@@ -25,7 +25,7 @@ import org.junit.Test;
 
 /**
  * Unit tests for {@link AbstractSail}.
- * 
+ *
  * @author Jeen Broekstra
  *
  */
@@ -117,7 +117,7 @@ public class AbstractSailTest {
 
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see java.lang.Runnable#run()
 		 */
 		@Override

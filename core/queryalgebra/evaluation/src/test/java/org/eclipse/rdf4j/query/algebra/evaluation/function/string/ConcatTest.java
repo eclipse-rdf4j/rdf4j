@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
 import org.junit.Test;
@@ -46,7 +46,7 @@ public class ConcatTest {
 		Literal result = concatFunc.evaluate(vf, foo, bar);
 
 		assertThat(result.stringValue()).isEqualTo("foobar");
-		assertThat(result.getDatatype()).isEqualTo(XMLSchema.STRING);
+		assertThat(result.getDatatype()).isEqualTo(XSD.STRING);
 		assertThat(result.getLanguage().isPresent()).isFalse();
 	}
 
@@ -65,7 +65,7 @@ public class ConcatTest {
 		Literal result = concatFunc.evaluate(vf, foo_nl, bar_en);
 
 		assertThat(result.stringValue()).isEqualTo("foobar");
-		assertThat(result.getDatatype()).isEqualTo(XMLSchema.STRING);
+		assertThat(result.getDatatype()).isEqualTo(XSD.STRING);
 		assertThat(result.getLanguage().isPresent()).isFalse();
 	}
 
@@ -74,7 +74,7 @@ public class ConcatTest {
 		Literal result = concatFunc.evaluate(vf, foo, bar_en);
 
 		assertThat(result.stringValue()).isEqualTo("foobar");
-		assertThat(result.getDatatype()).isEqualTo(XMLSchema.STRING);
+		assertThat(result.getDatatype()).isEqualTo(XSD.STRING);
 		assertThat(result.getLanguage().isPresent()).isFalse();
 	}
 

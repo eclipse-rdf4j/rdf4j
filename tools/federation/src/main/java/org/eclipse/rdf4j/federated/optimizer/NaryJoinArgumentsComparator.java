@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Comparator:
- * 
+ *
  * partial order: OwnedStatementSourcePatternGroup -> OwnedStatementSourcePattern -> StatementSourcePattern
- * 
+ *
  * @author Andreas
  *
  */
@@ -27,24 +27,20 @@ public class NaryJoinArgumentsComparator implements Comparator<TupleExpr> {
 	public int compare(TupleExpr a, TupleExpr b) {
 
 		if (a instanceof ExclusiveGroup) {
-			if (b instanceof ExclusiveGroup)
+			if (b instanceof ExclusiveGroup) {
 				return 0;
-			else
+			} else {
 				return -1;
-		}
-
-		else if (b instanceof ExclusiveGroup) {
+			}
+		} else if (b instanceof ExclusiveGroup) {
 			return 1;
-		}
-
-		else if (a instanceof ExclusiveStatement) {
-			if (b instanceof ExclusiveStatement)
+		} else if (a instanceof ExclusiveStatement) {
+			if (b instanceof ExclusiveStatement) {
 				return 0; // 0
-			else
+			} else {
 				return -1; // -1
-		}
-
-		else if (b instanceof ExclusiveStatement) {
+			}
+		} else if (b instanceof ExclusiveStatement) {
 			return 1; // 1
 		}
 

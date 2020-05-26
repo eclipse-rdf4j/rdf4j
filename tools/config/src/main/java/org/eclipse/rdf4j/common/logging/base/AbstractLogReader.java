@@ -115,7 +115,7 @@ public abstract class AbstractLogReader implements LogReader {
 
 	/**
 	 * Get the limit.
-	 * 
+	 *
 	 * @return limit
 	 */
 	@Override
@@ -125,7 +125,7 @@ public abstract class AbstractLogReader implements LogReader {
 
 	/**
 	 * Set the limit
-	 * 
+	 *
 	 * @param limit The limit to set.
 	 */
 	@Override
@@ -135,7 +135,7 @@ public abstract class AbstractLogReader implements LogReader {
 
 	/**
 	 * Get the offset
-	 * 
+	 *
 	 * @return offset.
 	 */
 	@Override
@@ -145,7 +145,7 @@ public abstract class AbstractLogReader implements LogReader {
 
 	/**
 	 * Set the offset
-	 * 
+	 *
 	 * @param offset The offset to set.
 	 */
 	@Override

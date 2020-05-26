@@ -17,7 +17,7 @@ import org.apache.lucene.store.Directory;
 /**
  * ReaderMonitor holds IndexReader and IndexSearcher. When ReaderMonitor is closed it do not close IndexReader and
  * IndexSearcher as long as someone reads from them. Variable readingCount remember how many times it was read.
- * 
+ *
  * @author Tomasz Trela, DFKI Gmbh
  */
 public class ReaderMonitor extends AbstractReaderMonitor {
@@ -31,7 +31,7 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 
 	/**
 	 * If exception occur when create indexReader it will be thrown on getIndexReader or get IndexSearcher
-	 * 
+	 *
 	 * @param index
 	 * @param directory Initializes IndexReader
 	 */
@@ -62,8 +62,9 @@ public class ReaderMonitor extends AbstractReaderMonitor {
 	// //////////////////////////////Methods for controlled index access
 
 	protected IndexSearcher getIndexSearcher() throws IOException {
-		if (indexSearcherCreateException != null)
+		if (indexSearcherCreateException != null) {
 			throw indexSearcherCreateException;
+		}
 		return indexSearcher;
 	}
 

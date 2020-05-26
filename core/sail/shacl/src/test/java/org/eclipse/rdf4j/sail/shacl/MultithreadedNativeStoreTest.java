@@ -11,8 +11,6 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 

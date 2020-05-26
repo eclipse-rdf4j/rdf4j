@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
@@ -357,9 +357,9 @@ public class SolrIndexTest {
 	@Test
 	public void testRejectedDatatypes() {
 		Literal literal1 = fac.createLiteral("hi there");
-		Literal literal2 = fac.createLiteral("hi there, too", XMLSchema.STRING);
+		Literal literal2 = fac.createLiteral("hi there, too", XSD.STRING);
 		Literal literal3 = fac.createLiteral("1.0");
-		Literal literal4 = fac.createLiteral("1.0", XMLSchema.FLOAT);
+		Literal literal4 = fac.createLiteral("1.0", XSD.FLOAT);
 
 		assertEquals("Is the first literal accepted?", true, index.accept(literal1));
 		assertEquals("Is the second literal accepted?", true, index.accept(literal2));
@@ -391,8 +391,9 @@ public class SolrIndexTest {
 		List<String> fields = document.getProperty(SearchFields.getPropertyField(statement.getPredicate()));
 		assertNotNull("field " + statement.getPredicate() + " not found in document " + document, fields);
 		for (String f : fields) {
-			if (((Literal) statement.getObject()).getLabel().equals(f))
+			if (((Literal) statement.getObject()).getLabel().equals(f)) {
 				return;
+			}
 		}
 		fail("Statement not found in document " + statement);
 	}

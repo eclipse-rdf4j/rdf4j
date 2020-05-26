@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 /**
  * FIXME: do not extend NotifyingRepositoryWrapper, because SystemRepository shouldn't expose RepositoryWrapper
  * behaviour, just implement NotifyingRepository.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */

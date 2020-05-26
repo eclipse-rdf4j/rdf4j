@@ -35,7 +35,7 @@ import com.google.common.collect.Sets;
  * A special {@link SailRepositoryConnection} which adds the original query string as binding to the returned query. The
  * binding name is defined by {@link #BINDING_ORIGINAL_QUERY} and is added to all query instances returned by the
  * available prepare methods.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -52,7 +52,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	/**
 	 * The number of bindings in the external binding set that are added by FedX.
-	 * 
+	 *
 	 * @see #BINDING_ORIGINAL_QUERY
 	 * @see #BINDING_ORIGINAL_QUERY_TYPE
 	 * @see #BINDING_ORIGINAL_MAX_EXECUTION_TIME

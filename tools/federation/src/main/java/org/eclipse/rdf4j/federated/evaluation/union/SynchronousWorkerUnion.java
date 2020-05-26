@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 /**
  * Synchronous execution of union tasks, i.e. one after the other. The union result is contained in this iteration. Note
  * that the union operation is to be executed with the {@link #run()} method
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SynchronousWorkerUnion<T> extends WorkerUnionBase<T> {
@@ -25,7 +25,8 @@ public class SynchronousWorkerUnion<T> extends WorkerUnionBase<T> {
 
 	@Override
 	protected void union() throws Exception {
-		for (ParallelTask<T> task : tasks)
+		for (ParallelTask<T> task : tasks) {
 			addResult(task.performTask());
+		}
 	}
 }

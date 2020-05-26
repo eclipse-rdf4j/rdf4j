@@ -77,9 +77,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A test suite that runs the W3C Approved SPARQL 1.1 query tests.
- * 
+ *
  * @author Jeen Broekstra
- * 
+ *
  * @see https://www.w3.org/2009/sparql/docs/tests/
  */
 @RunWith(Parameterized.class)
@@ -620,7 +620,7 @@ public abstract class SPARQL11QueryComplianceTest {
 
 	/**
 	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
-	 * 
+	 *
 	 * @param subManifestFile the url of a sub-manifest
 	 * @param excludedSubdirs an array of directory names. May be null.
 	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match for the

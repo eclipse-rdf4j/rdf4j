@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 /**
  * The SPARQL built-in {@link Function} ROUND, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-round">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Round implements Function {

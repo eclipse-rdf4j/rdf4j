@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 /**
  * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
  * {@link ServiceJoinIterator} and {@link SPARQLFederatedService}.
- * 
+ *
  * @author Andreas Schwarte
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration}
  */

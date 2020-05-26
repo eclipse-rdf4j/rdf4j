@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.console.Setting;
 
 /**
  * Abstract setting
- * 
+ *
  * @author Bart Hanssens
  * @param <T>
  */
@@ -23,7 +23,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue initial value
 	 */
 	public ConsoleSetting(T initValue) {
@@ -61,7 +61,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 
 	/**
 	 * Get the value for this setting as a string
-	 * 
+	 *
 	 * @return string value
 	 */
 	public String getAsString() {
@@ -75,7 +75,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 
 	/**
 	 * Get short description, small enough to fit on one console row
-	 * 
+	 *
 	 * @return help string
 	 */
 	@Override
@@ -85,7 +85,7 @@ public abstract class ConsoleSetting<T> implements Setting<T>, Help {
 
 	/**
 	 * Get long description
-	 * 
+	 *
 	 * @return string, can be multiple lines
 	 */
 	@Override

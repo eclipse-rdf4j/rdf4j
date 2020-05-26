@@ -9,13 +9,12 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.federated.QueryManager;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
  * Various tests for the junit framework
- * 
+ *
  * @author as
  *
  */

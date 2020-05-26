@@ -9,7 +9,7 @@ package org.eclipse.rdf4j;
 
 /**
  * General superclass of all unchecked exceptions that parts of RDF4J can throw.
- * 
+ *
  * @author Jeen Broekstra
  */
 @SuppressWarnings("deprecation")

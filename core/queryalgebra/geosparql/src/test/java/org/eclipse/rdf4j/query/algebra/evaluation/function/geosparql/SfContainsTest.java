@@ -27,7 +27,7 @@ public class SfContainsTest extends GeometricRelationFunctionTest {
 
 	/**
 	 * Test sfContains.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test

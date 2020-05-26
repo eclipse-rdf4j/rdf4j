@@ -13,14 +13,14 @@ import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
 
 /**
  * The interface of objects that writer query results in a specific query result format.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface BooleanQueryResultWriter extends QueryResultWriter, BooleanQueryResultHandler {
 
 	/**
 	 * Writes the specified boolean value.
-	 * 
+	 *
 	 * @deprecated Use {@link #handleBoolean(boolean)} instead.
 	 */
 	void write(boolean value) throws IOException;

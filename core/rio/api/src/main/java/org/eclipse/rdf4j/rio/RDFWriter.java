@@ -29,7 +29,7 @@ public interface RDFWriter extends RDFHandler {
 
 	/**
 	 * Gets the {@link OutputStream} this writer writes to, if it uses one.
-	 * 
+	 *
 	 * @return an optional OutputStream
 	 * @implNote This temporary default method is only supplied for backward compatibility. Concrete implementations are
 	 *           expected to override.
@@ -45,7 +45,7 @@ public interface RDFWriter extends RDFHandler {
 
 	/**
 	 * Sets all supplied writer configuration options.
-	 * 
+	 *
 	 * @param config a writer configuration object.
 	 * @return Either a copy of this writer, if it is immutable, or this object, to allow chaining of method calls.
 	 */
@@ -53,7 +53,7 @@ public interface RDFWriter extends RDFHandler {
 
 	/**
 	 * Retrieves the current writer configuration as a single object.
-	 * 
+	 *
 	 * @return a writer configuration object representing the current configuration of the writer.
 	 */
 	public WriterConfig getWriterConfig();
@@ -65,7 +65,7 @@ public interface RDFWriter extends RDFHandler {
 
 	/**
 	 * Set a setting on the writer, and return this writer object to allow chaining.
-	 * 
+	 *
 	 * @param setting The setting to change.
 	 * @param value   The value to change.
 	 * @return Either a copy of this writer, if it is immutable, or this object, to allow chaining of method calls.

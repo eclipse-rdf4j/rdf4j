@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
- * 
+ *
  * @author James Leigh
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
@@ -205,7 +205,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	/**
 	 * No-op
-	 * 
+	 *
 	 * @deprecated Create a new instance instead of trying to reactivate an old instance.
 	 */
 	@Deprecated

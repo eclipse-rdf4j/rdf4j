@@ -14,14 +14,14 @@ import java.io.OutputStream;
 /**
  * A wrapper for an output stream to avoid allowing libraries to close output streams unexpectedly using the
  * {@link #close()} method. Instead, they must be closed by the creator using {@link #doClose()}.
- * 
+ *
  * @author Bart Hanssens
  */
 public class UncloseableOutputStream extends FilterOutputStream {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param parent output stream
 	 */
 	public UncloseableOutputStream(OutputStream parent) {
@@ -35,7 +35,7 @@ public class UncloseableOutputStream extends FilterOutputStream {
 
 	/**
 	 * Invoke close on FilterOutputStream parent class.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void doClose() throws IOException {

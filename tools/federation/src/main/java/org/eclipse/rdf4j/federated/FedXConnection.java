@@ -239,7 +239,7 @@ public class FedXConnection extends AbstractSailConnection {
 		// execute the union in a separate thread
 		federationContext.getManager().getExecutor().execute(union);
 
-		return new DistinctIteration<Resource, SailException>(
+		return new DistinctIteration<>(
 				new ExceptionConvertingIteration<Resource, SailException>(union) {
 					@Override
 					protected SailException convert(Exception e) {

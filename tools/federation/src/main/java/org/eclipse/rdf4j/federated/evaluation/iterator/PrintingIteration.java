@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 /**
  * Print the bindings of the inner iteration to stdout, however maintain a copy, which is accessible through this
  * iteration.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

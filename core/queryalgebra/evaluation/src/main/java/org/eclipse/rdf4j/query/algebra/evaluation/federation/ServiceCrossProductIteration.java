@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration
  * inner iteration. See {@link SPARQLFederatedService}. Example: <source> inputBindings := {b1, b2, ...} resultIteration
  * := {r1, r2, ...} getNextElement() returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross
  * product per result binding </source>
- * 
+ *
  * @author Andreas Schwarte
  */
 @Deprecated

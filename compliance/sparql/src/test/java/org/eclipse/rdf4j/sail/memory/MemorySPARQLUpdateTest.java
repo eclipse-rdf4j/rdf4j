@@ -10,11 +10,10 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
  * Test SPARQL 1.1 Update functionality on an in-memory store.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MemorySPARQLUpdateTest extends SPARQLUpdateTest {

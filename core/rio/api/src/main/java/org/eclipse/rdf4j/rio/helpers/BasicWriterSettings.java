@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating the basic writer settings that most writers may support.
- * 
+ *
  * @author Peter Ansell
  */
 public class BasicWriterSettings {

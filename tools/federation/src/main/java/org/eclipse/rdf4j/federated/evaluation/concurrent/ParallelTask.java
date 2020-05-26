@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Interface for any parallel task that can be performed in Scheduler implementations.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -24,13 +24,13 @@ public interface ParallelTask<T> {
 	/**
 	 * return the controlling instance, e.g. in most cases the instance of a thread. Shared variables are used to inform
 	 * the thread about new events.
-	 * 
+	 *
 	 * @return the control executor
 	 */
 	public ParallelExecutor<T> getControl();
 
 	/**
-	 * 
+	 *
 	 * @return the {@link QueryInfo}
 	 */
 	public default QueryInfo getQueryInfo() {

@@ -12,7 +12,7 @@ import java.io.InputStream;
 
 /**
  * HDT Array factory.
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTArrayFactory {
