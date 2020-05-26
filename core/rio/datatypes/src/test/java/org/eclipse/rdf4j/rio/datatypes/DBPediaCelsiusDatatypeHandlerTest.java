@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -77,7 +77,7 @@ public class DBPediaCelsiusDatatypeHandlerTest extends AbstractDatatypeHandlerTe
 
 	@Override
 	protected IRI getUnrecognisedDatatypeUri() {
-		return XMLSchema.DOUBLE;
+		return XSD.DOUBLE;
 	}
 
 	@Override

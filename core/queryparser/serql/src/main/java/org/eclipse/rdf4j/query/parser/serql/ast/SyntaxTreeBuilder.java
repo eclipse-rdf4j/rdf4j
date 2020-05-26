@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 
 public class SyntaxTreeBuilder
@@ -3502,7 +3502,7 @@ public class SyntaxTreeBuilder
 			jjtc000 = false;
 			jjtn000.setLabel(t.image);
 
-			ASTURI uriNode = new ASTURI(JJTURI, XMLSchema.INTEGER.toString());
+			ASTURI uriNode = new ASTURI(JJTURI, XSD.INTEGER.toString());
 			jjtn000.jjtAddChild(uriNode, 0);
 			uriNode.jjtSetParent(jjtn000);
 		} finally {
@@ -3524,7 +3524,7 @@ public class SyntaxTreeBuilder
 			jjtc000 = false;
 			jjtn000.setLabel(t.image);
 
-			ASTURI uriNode = new ASTURI(JJTURI, XMLSchema.DECIMAL.toString());
+			ASTURI uriNode = new ASTURI(JJTURI, XSD.DECIMAL.toString());
 			jjtn000.jjtAddChild(uriNode, 0);
 			uriNode.jjtSetParent(jjtn000);
 		} finally {

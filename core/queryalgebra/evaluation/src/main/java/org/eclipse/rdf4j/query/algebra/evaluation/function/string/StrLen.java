@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -46,7 +46,7 @@ public class StrLen implements Function {
 				// literal. Shouldn't createLiteral(int) return an xsd:integer
 				// rather than an xsd:int?
 				Integer length = literal.getLabel().length();
-				return valueFactory.createLiteral(length.toString(), XMLSchema.INTEGER);
+				return valueFactory.createLiteral(length.toString(), XSD.INTEGER);
 			} else {
 				throw new ValueExprEvaluationException("unexpected input value for strlen function: " + argValue);
 			}

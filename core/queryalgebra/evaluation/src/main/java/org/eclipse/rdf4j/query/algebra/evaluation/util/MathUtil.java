@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -66,19 +66,19 @@ public class MathUtil {
 		// per the SPARQL/XPATH spec
 		IRI commonDatatype;
 
-		if (leftDatatype.equals(XMLSchema.DOUBLE) || rightDatatype.equals(XMLSchema.DOUBLE)) {
-			commonDatatype = XMLSchema.DOUBLE;
-		} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
-			commonDatatype = XMLSchema.FLOAT;
-		} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
-			commonDatatype = XMLSchema.DECIMAL;
+		if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
+			commonDatatype = XSD.DOUBLE;
+		} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
+			commonDatatype = XSD.FLOAT;
+		} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {
+			commonDatatype = XSD.DECIMAL;
 		} else if (op == MathOp.DIVIDE) {
 			// Result of integer divide is decimal and requires the arguments to
 			// be handled as such, see for details:
 			// http://www.w3.org/TR/xpath-functions/#func-numeric-divide
-			commonDatatype = XMLSchema.DECIMAL;
+			commonDatatype = XSD.DECIMAL;
 		} else {
-			commonDatatype = XMLSchema.INTEGER;
+			commonDatatype = XSD.INTEGER;
 		}
 
 		// Note: Java already handles cases like divide-by-zero appropriately
@@ -87,7 +87,7 @@ public class MathUtil {
 		// Chapter02/floatingPt2.html
 
 		try {
-			if (commonDatatype.equals(XMLSchema.DOUBLE)) {
+			if (commonDatatype.equals(XSD.DOUBLE)) {
 				double left = leftLit.doubleValue();
 				double right = rightLit.doubleValue();
 
@@ -103,7 +103,7 @@ public class MathUtil {
 				default:
 					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
-			} else if (commonDatatype.equals(XMLSchema.FLOAT)) {
+			} else if (commonDatatype.equals(XSD.FLOAT)) {
 				float left = leftLit.floatValue();
 				float right = rightLit.floatValue();
 
@@ -119,7 +119,7 @@ public class MathUtil {
 				default:
 					throw new IllegalArgumentException("Unknown operator: " + op);
 				}
-			} else if (commonDatatype.equals(XMLSchema.DECIMAL)) {
+			} else if (commonDatatype.equals(XSD.DECIMAL)) {
 				BigDecimal left = leftLit.decimalValue();
 				BigDecimal right = rightLit.decimalValue();
 

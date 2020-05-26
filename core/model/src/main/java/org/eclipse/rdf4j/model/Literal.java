@@ -14,7 +14,7 @@ import java.util.Optional;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
@@ -41,7 +41,7 @@ public interface Literal extends Value {
 	/**
 	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
 	 * {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this method must return
-	 * {@link XMLSchema#STRING}.
+	 * {@link XSD#STRING}.
 	 *
 	 * @return The datatype for this literal.
 	 */

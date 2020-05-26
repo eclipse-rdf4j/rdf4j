@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores an integer value to avoid parsing.
@@ -33,7 +33,7 @@ public class IntegerMemLiteral extends MemLiteral {
 	 *--------------*/
 
 	public IntegerMemLiteral(Object creator, BigInteger value) {
-		this(creator, value, XMLSchema.INTEGER);
+		this(creator, value, XSD.INTEGER);
 	}
 
 	public IntegerMemLiteral(Object creator, BigInteger value, IRI datatype) {

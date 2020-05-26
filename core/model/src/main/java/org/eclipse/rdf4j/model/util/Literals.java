@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Various utility methods related to {@link Literal}.
@@ -350,9 +350,9 @@ public class Literals {
 	/**
 	 * Creates a typed {@link Literal} out of the supplied object, mapping the runtime type of the object to the
 	 * appropriate XML Schema type. If no mapping is available, the method returns a literal with the string
-	 * representation of the supplied object as the value, and {@link XMLSchema#STRING} as the datatype. Recognized
-	 * types are {@link Boolean}, {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long},
-	 * {@link Short}, {@link XMLGregorianCalendar } , and {@link Date}.
+	 * representation of the supplied object as the value, and {@link XSD#STRING} as the datatype. Recognized types are
+	 * {@link Boolean}, {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short},
+	 * {@link XMLGregorianCalendar } , and {@link Date}.
 	 *
 	 * @param valueFactory
 	 * @param object       an object to be converted to a typed literal.
@@ -388,7 +388,7 @@ public class Literals {
 	 * Creates a typed {@link Literal} out of the supplied object, mapping the runtime type of the object to the
 	 * appropriate XML Schema type. If no mapping is available, the method throws an exception if the boolean parameter
 	 * is true, or if it is false it returns a literal with the string representation of the supplied object as the
-	 * value, and {@link XMLSchema#STRING} as the datatype. Recognized types are {@link Boolean}, {@link Byte},
+	 * value, and {@link XSD#STRING} as the datatype. Recognized types are {@link Boolean}, {@link Byte},
 	 * {@link Double}, {@link Float}, {@link Integer}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar } , and
 	 * {@link Date}.
 	 *
@@ -425,12 +425,12 @@ public class Literals {
 		} else if (object instanceof Date) {
 			return valueFactory.createLiteral((Date) object);
 		} else if (object instanceof String) {
-			return valueFactory.createLiteral(object.toString(), XMLSchema.STRING);
+			return valueFactory.createLiteral(object.toString(), XSD.STRING);
 		} else {
 			if (throwExceptionOnFailure) {
 				throw new LiteralUtilException("Did not recognise object when creating literal");
 			}
-			return valueFactory.createLiteral(object.toString(), XMLSchema.STRING);
+			return valueFactory.createLiteral(object.toString(), XSD.STRING);
 		}
 	}
 

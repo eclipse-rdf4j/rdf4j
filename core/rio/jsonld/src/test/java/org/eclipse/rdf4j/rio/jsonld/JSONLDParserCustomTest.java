@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
@@ -118,9 +118,9 @@ public class JSONLDParserCustomTest {
 	private final IRI testPredicate = F.createIRI("http://example.com/prop1");
 	private final IRI testObjectIRI = F.createIRI("http://example.com/Obj1");
 
-	private final Literal testObjectLiteralNotANumber = F.createLiteral("NaN", XMLSchema.DOUBLE);
-	private final Literal testObjectLiteralNumber = F.createLiteral("42", XMLSchema.INTEGER);
-	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XMLSchema.STRING);
+	private final Literal testObjectLiteralNotANumber = F.createLiteral("NaN", XSD.DOUBLE);
+	private final Literal testObjectLiteralNumber = F.createLiteral("42", XSD.INTEGER);
+	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
 	public void setUp() throws Exception {

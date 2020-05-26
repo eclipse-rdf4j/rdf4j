@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An interface defining methods related to verification and normalization of typed literals and datatype URIs.
@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 public interface DatatypeHandler {
 
 	/**
-	 * Identifier for datatypes defined in the {@link XMLSchema} vocabulary.
+	 * Identifier for datatypes defined in the {@link XSD} vocabulary.
 	 */
 	public static final String XMLSCHEMA = "org.eclipse.rdf4j.rio.datatypes.xmlschema";
 

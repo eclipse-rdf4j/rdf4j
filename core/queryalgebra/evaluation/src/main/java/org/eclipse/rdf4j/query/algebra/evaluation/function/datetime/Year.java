@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -50,7 +50,7 @@ public class Year implements Function {
 					XMLGregorianCalendar calValue = literal.calendarValue();
 					int year = calValue.getYear();
 					if (DatatypeConstants.FIELD_UNDEFINED != year) {
-						return valueFactory.createLiteral(String.valueOf(year), XMLSchema.INTEGER);
+						return valueFactory.createLiteral(String.valueOf(year), XSD.INTEGER);
 					} else {
 						throw new ValueExprEvaluationException("can not determine year from value: " + argValue);
 					}

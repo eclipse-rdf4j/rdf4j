@@ -19,7 +19,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -56,7 +56,7 @@ public class LiteralComparatorTest {
 
 	private Literal simple2 = vf.createLiteral("http://script.example/Кириллица");
 
-	private Literal typed1 = vf.createLiteral("http://script.example/Latin", XMLSchema.STRING);
+	private Literal typed1 = vf.createLiteral("http://script.example/Latin", XSD.STRING);
 
 	private ValueComparator cmp = new ValueComparator();
 
