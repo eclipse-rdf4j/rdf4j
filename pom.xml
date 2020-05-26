@@ -272,6 +272,18 @@
 							</execution>
 						</executions>
 					</plugin>
+					<plugin>
+						<groupId>au.com.acegi</groupId>
+						<artifactId>xml-format-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<phase>process-resources</phase>
+								<goals>
+									<goal>xml-format</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
 				</plugins>
 			</build>
 		</profile>
@@ -647,6 +659,7 @@
 					<version>3.1.2</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
+						<excludes>**/target/**</excludes>
 					</configuration>
 				</plugin>
 				<plugin>
