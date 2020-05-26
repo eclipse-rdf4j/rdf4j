@@ -1,10 +1,11 @@
-/**
- * Copyright (c) 2020 Eclipse RDF4J contributors, and others.
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- */
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -26,7 +27,11 @@ public class DASH {
 
 	static private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	public static final IRI AllObjectsTarget = vf.createIRI(NAMESPACE, "AllObjectsTarget");
-	public static final IRI AllSubjectsTarget = vf.createIRI(NAMESPACE, "AllSubjectsTarget");
+	public static final IRI AllObjectsTarget = createIRI("AllObjectsTarget");
+	public static final IRI AllSubjectsTarget = createIRI("AllSubjectsTarget");
+
+	private static IRI createIRI(String allObjectsTarget) {
+		return vf.createIRI(NAMESPACE, allObjectsTarget);
+	}
 
 }
