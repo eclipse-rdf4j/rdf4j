@@ -13,9 +13,11 @@ import static org.junit.Assert.assertTrue;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -101,5 +103,21 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 		// test.
 		System.err.println(
 				"temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
+	}
+
+	@Ignore
+	@Test(expected = MalformedQueryException.class)
+	@Override
+	public void testInvalidInsertUpdate() {
+		// disabling test
+		System.err.println("temporarily disabled testInvalidInsertUpdate for HTTPRepository. See Issue #420");
+	}
+
+	@Ignore
+	@Test(expected = MalformedQueryException.class)
+	@Override
+	public void testInvalidDeleteUpdate() {
+		// disabling test
+		System.err.println("temporarily disabled testInvalidDeleteUpdate for HTTPRepository. See Issue #420");
 	}
 }

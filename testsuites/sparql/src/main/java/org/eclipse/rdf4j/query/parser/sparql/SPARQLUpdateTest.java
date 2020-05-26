@@ -1750,6 +1750,18 @@ public abstract class SPARQLUpdateTest {
 		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral("alice@example.org"), true, graph2));
 	}
 
+	@Test(expected = MalformedQueryException.class)
+	public void testInvalidInsertUpdate() {
+		RepositoryConnection connection = rep.getConnection();
+		Update update = connection.prepareUpdate(QueryLanguage.SPARQL, "insert data { ?s ?p ?o }");
+	}
+
+	@Test(expected = MalformedQueryException.class)
+	public void testInvalidDeleteUpdate() {
+		RepositoryConnection connection = rep.getConnection();
+		Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, "delete data { ?s ?p ?o }");
+	}
+
 	/*
 	 * @Test public void testLoad() throws Exception { String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml>"; String ns =
