@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
  * Export triples to file
- * 
+ *
  * @author Bart Hanssens
  */
 public class Export extends ConsoleCommand {
@@ -57,7 +57,7 @@ public class Export extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param settings
@@ -93,7 +93,7 @@ public class Export extends ConsoleCommand {
 
 	/**
 	 * Get working dir setting.
-	 * 
+	 *
 	 * @return path of working dir
 	 */
 	private Path getWorkDir() {
@@ -102,7 +102,7 @@ public class Export extends ConsoleCommand {
 
 	/**
 	 * Export to a file
-	 * 
+	 *
 	 * @param repository repository to export
 	 * @param fileName   file name
 	 * @param context    context(s) (if any)

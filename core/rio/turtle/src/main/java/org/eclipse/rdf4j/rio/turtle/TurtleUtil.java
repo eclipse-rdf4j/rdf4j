@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Utility methods for Turtle encoding/decoding.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/turtle/">Turtle: Terse RDF Triple Language</a>
  */
 public class TurtleUtil {
@@ -34,7 +34,7 @@ public class TurtleUtil {
 	/**
 	 * Tries to find an index where the supplied URI can be split into a namespace and a local name that comply with the
 	 * serialization constraints of the Turtle format.
-	 * 
+	 *
 	 * @param uri The URI to split.
 	 * @return The index where the supplied URI can be split, or <tt>-1</tt> if the URI cannot be split.
 	 */
@@ -77,7 +77,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a whitespace character
-	 * 
+	 *
 	 * @param codePoint a Unicode code point
 	 * @return <code>true</code> if the supplied code point represents a whitespace character, <code>false</code>
 	 *         otherwise.
@@ -137,7 +137,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid prefixed name start character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid prefixed name start char, false
 	 *         otherwise.
@@ -148,7 +148,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid start character for a blank node label.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid blank node label start char,
 	 *         <code>false</code> otherwise.
@@ -159,7 +159,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid blank node label character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid blank node label char, <code>false</code>
 	 *         otherwise.
@@ -170,7 +170,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid blank node label end character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid blank node label end char,
 	 *         <code>false</code> otherwise.
@@ -181,7 +181,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid name start character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid name start char, <code>false</code>
 	 *         otherwise.
@@ -193,7 +193,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid name character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid name char, <code>false</code> otherwise.
 	 */
@@ -203,7 +203,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid name end character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid name end char, <code>false</code>
 	 *         otherwise.
@@ -214,7 +214,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid local escaped character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid local escaped char, <code>false</code>
 	 *         otherwise.
@@ -225,7 +225,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid prefix character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid prefix char, <code>false</code>
 	 *         otherwise.
@@ -236,7 +236,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid language tag start character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid language tag start char,
 	 *         <code>false</code> otherwise.
@@ -247,7 +247,7 @@ public class TurtleUtil {
 
 	/**
 	 * Check if the supplied code point represents a valid language tag character.
-	 * 
+	 *
 	 * @param codePoint a Unicode code point.
 	 * @return <code>true</code> if the supplied code point represents a valid language tag char, <code>false</code>
 	 *         otherwise.
@@ -262,7 +262,7 @@ public class TurtleUtil {
 	 * http://www.w3.org/TR/turtle/#grammar-production-PN_PREFIX
 	 * <p>
 	 * [167s] PN_PREFIX ::= PN_CHARS_BASE ((PN_CHARS | '.')* PN_CHARS)?
-	 * 
+	 *
 	 * @param prefix a prefix string.
 	 * @return true if the supplied prefix conforms to Turtle grammar rules
 	 */
@@ -407,7 +407,7 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a 'normal' string in a Turtle document.
-	 * 
+	 *
 	 * @param s
 	 * @return encoded string
 	 */
@@ -422,7 +422,7 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a long string in a Turtle document.
-	 * 
+	 *
 	 * @param s
 	 * @return encoded long string
 	 */
@@ -437,7 +437,7 @@ public class TurtleUtil {
 
 	/**
 	 * Encodes the supplied string for inclusion as a (relative) URI in a Turtle document.
-	 * 
+	 *
 	 * @param s
 	 */
 	@Deprecated
@@ -458,7 +458,7 @@ public class TurtleUtil {
 
 	/**
 	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
-	 * 
+	 *
 	 * @param s An encoded Turtle string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded Turtle string.

@@ -22,7 +22,7 @@ import java.nio.channels.WritableByteChannel;
  * interrupts}. In case the file channel that is used by this class is closed due to such an event, it will try to
  * reopen the channel. The thread that causes the {@link ClosedByInterruptException} is not protected, assuming the
  * interrupt is intended to end the thread's operation.
- * 
+ *
  * @author Arjohn Kampman
  */
 public final class NioFile implements Closeable {
@@ -39,7 +39,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Constructor Opens a file in read/write mode, creating a new one if the file doesn't exist.
-	 * 
+	 *
 	 * @param file
 	 * @throws IOException
 	 */
@@ -49,7 +49,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Constructor Opens a file in a specific mode, creating a new one if the file doesn't exist.
-	 * 
+	 *
 	 * @param file file
 	 * @param mode file mode
 	 * @throws IOException
@@ -71,7 +71,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Open a file channel for random access.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private void open() throws IOException {
@@ -81,7 +81,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Reopen a channel closed by an exception, unless it was closed explicitly.
-	 * 
+	 *
 	 * @param e exception that closed the channel
 	 * @throws IOException
 	 */
@@ -104,7 +104,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Check if a file was closed explicitly.
-	 * 
+	 *
 	 * @return true if it was closed explicitly
 	 */
 	public boolean isClosed() {
@@ -117,7 +117,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Close any open channels and then deletes the file.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the file has been deleted successfully, <tt>false</tt> otherwise.
 	 * @throws IOException If there was a problem closing the open file channel.
 	 */
@@ -129,7 +129,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#force(boolean)} call.
-	 * 
+	 *
 	 * @param metaData
 	 * @throws IOException
 	 */
@@ -148,7 +148,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#truncate(long)} call.
-	 * 
+	 *
 	 * @param size
 	 * @throws IOException
 	 */
@@ -167,7 +167,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#size()} call.
-	 * 
+	 *
 	 * @return size of the file
 	 * @throws IOException
 	 */
@@ -185,7 +185,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#transferTo(long, long, WritableByteChannel)} call.
-	 * 
+	 *
 	 * @param position position within the file
 	 * @param count    number of bytes to transfer
 	 * @param target   target channel
@@ -206,7 +206,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#write(ByteBuffer, long)} call.
-	 * 
+	 *
 	 * @param buf    buffer
 	 * @param offset non-negative offset
 	 * @return number of bytes written
@@ -226,7 +226,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Performs a protected {@link FileChannel#read(ByteBuffer, long)} call.
-	 * 
+	 *
 	 * @param buf    buffer to read
 	 * @param offset non-negative offset
 	 * @return number of bytes read
@@ -246,7 +246,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Write byte array to channel starting at offset.
-	 * 
+	 *
 	 * @param value  byte array to write
 	 * @param offset non-negative offset
 	 * @throws IOException
@@ -257,7 +257,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Read a byte array of a specific length from channel starting at offset.
-	 * 
+	 *
 	 * @param offset
 	 * @param length
 	 * @return byte array
@@ -271,7 +271,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Write single byte to channel starting at offset.
-	 * 
+	 *
 	 * @param value  value to write
 	 * @param offset non-negative offset
 	 * @throws IOException
@@ -282,7 +282,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Read single byte from channel starting at offset.
-	 * 
+	 *
 	 * @param offset non-negative offset
 	 * @return byte
 	 * @throws IOException
@@ -293,7 +293,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Write long value to channel starting at offset.
-	 * 
+	 *
 	 * @param value  value to write
 	 * @param offset non-negative offset
 	 * @throws IOException
@@ -306,7 +306,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Read long value from channel starting at offset.
-	 * 
+	 *
 	 * @param offset non-negative offset
 	 * @return long
 	 * @throws IOException
@@ -319,7 +319,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Write integer value to channel starting at offset.
-	 * 
+	 *
 	 * @param value  value to write
 	 * @param offset non-negative offset
 	 * @throws IOException
@@ -332,7 +332,7 @@ public final class NioFile implements Closeable {
 
 	/**
 	 * Read integer value from channel starting at offset.
-	 * 
+	 *
 	 * @param offset non-negative offset
 	 * @return integer
 	 * @throws IOException

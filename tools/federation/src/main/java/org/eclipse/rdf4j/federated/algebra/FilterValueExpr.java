@@ -12,9 +12,9 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 /**
  * Interface to indicate filter expressions. Does not provide methods since implementing classes have different
  * purposes, this interface is just a marker.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see FilterExpr
  * @see ConjunctiveFilterExpr
  */

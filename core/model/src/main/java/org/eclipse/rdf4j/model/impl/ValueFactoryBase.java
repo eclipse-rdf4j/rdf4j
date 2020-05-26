@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.model.impl;
 
 /**
  * Provided for backward compatility purposes only
- * 
+ *
  * @deprecated since 2.0. Use {@link AbstractValueFactory} instead.
  * @author Jeen Broekstra
  */

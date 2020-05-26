@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Retrieves the original bindings for the particular result
- * 
+ *
  * @author Andreas Schwarte
  */
 public class GroupedCheckConversionIteration

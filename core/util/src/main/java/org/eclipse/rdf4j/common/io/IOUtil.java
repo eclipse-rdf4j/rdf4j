@@ -33,7 +33,7 @@ public class IOUtil {
 
 	/**
 	 * Read the contents as a string from the given (unbuffered) file.
-	 * 
+	 *
 	 * @param file file to read
 	 * @return content as one single string
 	 * @throws IOException
@@ -46,7 +46,7 @@ public class IOUtil {
 
 	/**
 	 * Read the contents of a (unbuffered) resource into one single string.
-	 * 
+	 *
 	 * @param url url to get the data from
 	 * @return string
 	 * @throws IOException
@@ -59,7 +59,7 @@ public class IOUtil {
 
 	/**
 	 * Read the contents of an (unbuffered) input stream into a single string.
-	 * 
+	 *
 	 * @param in input stream
 	 * @return string
 	 * @throws IOException
@@ -70,7 +70,7 @@ public class IOUtil {
 
 	/**
 	 * Reads all characters from the supplied reader and returns them as a string.
-	 * 
+	 *
 	 * @param r The Reader supplying the characters
 	 * @return A String containing all characters from the supplied reader.
 	 * @throws IOException
@@ -81,7 +81,7 @@ public class IOUtil {
 
 	/**
 	 * Reads a string of at most length <tt>maxChars</tt> from the supplied Reader.
-	 * 
+	 *
 	 * @param r        The Reader to read the string from.
 	 * @param maxChars The maximum number of characters to read.
 	 * @return A String of length <tt>maxChars</tt>, or less if the supplied Reader did not contain that much
@@ -96,7 +96,7 @@ public class IOUtil {
 
 	/**
 	 * Read the contents of a (unbuffered) resource into a character array.
-	 * 
+	 *
 	 * @param url url to get the data from
 	 * @return character array
 	 * @throws IOException
@@ -109,7 +109,7 @@ public class IOUtil {
 
 	/**
 	 * Reads all characters from the supplied reader and returns them.
-	 * 
+	 *
 	 * @param r The Reader supplying the characters
 	 * @return A character array containing all characters from the supplied reader.
 	 * @throws IOException
@@ -121,7 +121,7 @@ public class IOUtil {
 	/**
 	 * Fills the supplied character array with characters read from the specified Reader. This method will only stop
 	 * reading when the character array has been filled completely, or the end of the stream has been reached.
-	 * 
+	 *
 	 * @param r         The Reader to read the characters from.
 	 * @param charArray The character array to fill with characters.
 	 * @return The number of characters written to the character array.
@@ -147,7 +147,7 @@ public class IOUtil {
 
 	/**
 	 * Reads all bytes from the specified file and returns them as a byte array.
-	 * 
+	 *
 	 * @param file The file to read.
 	 * @return A byte array containing all bytes from the specified file.
 	 * @throws IOException              If an I/O error occurred while reading from the file.
@@ -168,7 +168,7 @@ public class IOUtil {
 
 	/**
 	 * Reads all bytes from the supplied input stream and returns them as a byte array.
-	 * 
+	 *
 	 * @param in The InputStream supplying the bytes.
 	 * @return A byte array containing all bytes from the supplied input stream.
 	 * @throws IOException
@@ -181,7 +181,7 @@ public class IOUtil {
 
 	/**
 	 * Reads at most <tt>maxBytes</tt> bytes from the supplied input stream and returns them as a byte array.
-	 * 
+	 *
 	 * @param in       The InputStream supplying the bytes.
 	 * @param maxBytes The maximum number of bytes to read from the input stream.
 	 * @return A byte array of size <tt>maxBytes</tt> if the input stream can produce that amount of bytes, or a smaller
@@ -206,7 +206,7 @@ public class IOUtil {
 	/**
 	 * Fills the supplied byte array with bytes read from the specified InputStream. This method will only stop reading
 	 * when the byte array has been filled completely, or the end of the stream has been reached.
-	 * 
+	 *
 	 * @param in        The InputStream to read the bytes from.
 	 * @param byteArray The byte array to fill with bytes.
 	 * @return The number of bytes written to the byte array.
@@ -232,7 +232,7 @@ public class IOUtil {
 
 	/**
 	 * Read properties from the specified file.
-	 * 
+	 *
 	 * @param propsFile the file to read from
 	 * @return Properties loaded from the specified file
 	 * @throws IOException when the file could not be read properly
@@ -243,7 +243,7 @@ public class IOUtil {
 
 	/**
 	 * Read properties from the specified file.
-	 * 
+	 *
 	 * @param propsFile the file to read from
 	 * @param defaults  the default properties to use
 	 * @return Properties loaded from the specified file
@@ -255,7 +255,7 @@ public class IOUtil {
 
 	/**
 	 * Read properties from the specified InputStream.
-	 * 
+	 *
 	 * @param in the stream to read from. The stream will be closed by this method.
 	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
 	 * @throws IOException when the stream could not be read properly
@@ -266,7 +266,7 @@ public class IOUtil {
 
 	/**
 	 * Read properties from the specified InputStream.
-	 * 
+	 *
 	 * @param in       the stream to read from. The stream will be closed by this method.
 	 * @param defaults the default properties
 	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
@@ -284,7 +284,7 @@ public class IOUtil {
 
 	/**
 	 * Write the specified properties to the specified file.
-	 * 
+	 *
 	 * @param props           the properties to write
 	 * @param file            the file to write to
 	 * @param includeDefaults true when default values need to be included
@@ -296,7 +296,7 @@ public class IOUtil {
 
 	/**
 	 * Write the specified properties to the specified output stream.
-	 * 
+	 *
 	 * @param props           the properties to write
 	 * @param out             the output stream to write to
 	 * @param includeDefaults true if default values need to be included
@@ -323,7 +323,7 @@ public class IOUtil {
 
 	/**
 	 * Writes all data that can be read from the supplied InputStream to the specified file.
-	 * 
+	 *
 	 * @param in   An InputStream.
 	 * @param file The file to write the data to.
 	 * @throws IOException If an I/O error occurred.
@@ -344,7 +344,7 @@ public class IOUtil {
 
 	/**
 	 * Write the contents of a string (unbuffered) to a file
-	 * 
+	 *
 	 * @param contents string contents to write
 	 * @param file     file to write to
 	 * @throws IOException
@@ -357,7 +357,7 @@ public class IOUtil {
 
 	/**
 	 * Write the contents of a byte array (unbuffered) to a file.
-	 * 
+	 *
 	 * @param data data to write
 	 * @param file file
 	 * @throws IOException
@@ -370,7 +370,7 @@ public class IOUtil {
 
 	/**
 	 * Write he contents of a byte array (unbuffered) to an output stream.
-	 * 
+	 *
 	 * @param data data to write
 	 * @param out  file
 	 * @throws IOException
@@ -381,7 +381,7 @@ public class IOUtil {
 
 	/**
 	 * Read the contents of a resource into a reader. Currently ignores HTTP Content-Encoding response header.
-	 * 
+	 *
 	 * @param url url
 	 * @return reader
 	 * @throws IOException
@@ -395,7 +395,7 @@ public class IOUtil {
 
 	/**
 	 * Read into a character array writer.
-	 * 
+	 *
 	 * @param r input reader
 	 * @return character array writer
 	 * @throws IOException
@@ -414,7 +414,7 @@ public class IOUtil {
 
 	/**
 	 * Transfers all bytes that can be read from <tt>in</tt> to <tt>out</tt>.
-	 * 
+	 *
 	 * @param in  The InputStream to read data from.
 	 * @param out The OutputStream to write data to.
 	 * @return The total number of bytes transfered.
@@ -435,7 +435,7 @@ public class IOUtil {
 
 	/**
 	 * Writes all bytes from an <tt>InputStream</tt> to a file.
-	 * 
+	 *
 	 * @param in   The <tt>InputStream</tt> containing the data to write to the file.
 	 * @param file The file to write the data to.
 	 * @return The total number of bytes written.
@@ -449,7 +449,7 @@ public class IOUtil {
 
 	/**
 	 * Transfers all characters that can be read from <tt>in</tt> to <tt>out</tt> .
-	 * 
+	 *
 	 * @param in  The Reader to read characters from.
 	 * @param out The Writer to write characters to.
 	 * @return The total number of characters transfered.
@@ -470,7 +470,7 @@ public class IOUtil {
 
 	/**
 	 * Writes all characters from a <tt>Reader</tt> to a file using the default character encoding.
-	 * 
+	 *
 	 * @param reader The <tt>Reader</tt> containing the data to write to the file.
 	 * @param file   The file to write the data to.
 	 * @return The total number of characters written.

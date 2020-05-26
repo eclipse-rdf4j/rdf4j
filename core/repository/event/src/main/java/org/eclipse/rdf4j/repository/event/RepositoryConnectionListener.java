@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 /**
  * Listener interface for connection modification.
- * 
+ *
  * @author James Leigh
  */
 public interface RepositoryConnectionListener {

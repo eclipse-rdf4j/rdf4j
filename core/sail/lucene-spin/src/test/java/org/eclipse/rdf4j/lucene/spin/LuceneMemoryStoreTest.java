@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Run unit test from {@link AbstractLuceneSailSpinTest} using {@link MemoryStore}.
- * 
+ *
  * @author Jacek Grzebyta
  * @author Mark Hale
  */

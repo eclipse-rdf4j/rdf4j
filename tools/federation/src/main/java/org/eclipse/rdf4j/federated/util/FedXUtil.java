@@ -32,7 +32,7 @@ import com.google.common.collect.Sets;
 
 /**
  * General utility functions
- * 
+ *
  * @author Andreas Schwarte
  * @since 5.0
  */
@@ -51,7 +51,7 @@ public class FedXUtil {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param literal
 	 * @return the string literal
 	 */
@@ -60,7 +60,7 @@ public class FedXUtil {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return a {@link SimpleValueFactory} instance
 	 */
 	public static ValueFactory valueFactory() {
@@ -70,7 +70,7 @@ public class FedXUtil {
 	/**
 	 * Apply query bindings to transfer information from the query into the evaluation routine, e.g. the query execution
 	 * time.
-	 * 
+	 *
 	 * @param query
 	 */
 	public static void applyQueryBindings(SailQuery query) {
@@ -80,7 +80,7 @@ public class FedXUtil {
 
 	/**
 	 * Hexadecimal representation of an incremental integer.
-	 * 
+	 *
 	 * @return an incremental hex UUID
 	 */
 	public static String getIncrementalUUID() {
@@ -90,10 +90,10 @@ public class FedXUtil {
 
 	/**
 	 * Set a maximum execution time corresponding to {@link FedXConfig#getEnforceMaxQueryTime()} to this operation.
-	 * 
+	 *
 	 * Note that this is an upper bound only as FedX applies other means for evaluation the maximum query execution
 	 * time.
-	 * 
+	 *
 	 * @param operation         the {@link Operation}
 	 * @param federationContext the {@link FederationContext}
 	 */
@@ -107,7 +107,7 @@ public class FedXUtil {
 
 	/**
 	 * Convert the given contexts to a {@link Dataset} representation.
-	 * 
+	 *
 	 * @param contexts
 	 * @return
 	 */
@@ -125,7 +125,7 @@ public class FedXUtil {
 
 	/**
 	 * Convert the given {@link Dataset} to an array of contexts
-	 * 
+	 *
 	 * @param ds
 	 * @return
 	 */
@@ -138,7 +138,7 @@ public class FedXUtil {
 
 	/**
 	 * Retrieve the contexts from the {@link StatementPattern} and {@link Dataset}.
-	 * 
+	 *
 	 * @param stmt
 	 * @param dataset
 	 * @return
@@ -169,12 +169,12 @@ public class FedXUtil {
 	 * If the {@link StatementPattern} does not have a context value, the {@link Dataset} is returned as-is, which may
 	 * also be <code>null</code>.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * Otherwise the newly constructed {@link Dataset} contains all information from the original one plus the context
 	 * from the statement.
 	 * </p>
-	 * 
+	 *
 	 * @param stmt
 	 * @param dataset
 	 * @return

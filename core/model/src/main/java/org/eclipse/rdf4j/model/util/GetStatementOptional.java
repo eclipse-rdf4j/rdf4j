@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * Either supplies a statement matching the given pattern, or {@link Optional#empty()} otherwise.
- * 
+ *
  * @author Peter Ansell
  */
 @FunctionalInterface
@@ -24,7 +24,7 @@ public interface GetStatementOptional {
 
 	/**
 	 * Either supplies a statement matching the given pattern, or {@link Optional#empty()} otherwise.
-	 * 
+	 *
 	 * @param subject   A {@link Resource} to be used to match to statements.
 	 * @param predicate An {@link IRI} to be used to match to statements.
 	 * @param object    A {@link Value} to be used to match to statements.

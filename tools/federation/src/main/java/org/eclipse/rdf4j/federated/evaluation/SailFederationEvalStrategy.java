@@ -37,9 +37,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * Implementation of a federation evaluation strategy which provides some special optimizations for Native (local)
  * Sesame repositories. The most important optimization is to use prepared Queries that are already created in the
  * internal representation used by Sesame. This is necessary to avoid String parsing overhead.
- * 
+ *
  * Joins are executed using {@link ControlledWorkerJoin}
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -55,12 +55,14 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 			throws QueryEvaluationException {
 
 		// we can omit the bound join handling
-		if (bindings.size() == 1)
+		if (bindings.size() == 1) {
 			return evaluate(stmt, bindings.get(0));
+		}
 
 		FilterValueExpr filterExpr = null;
-		if (stmt instanceof FilterTuple)
+		if (stmt instanceof FilterTuple) {
 			filterExpr = ((FilterTuple) stmt).getFilterExpr();
+		}
 
 		Boolean isEvaluated = false;
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryBoundUnion((StatementPattern) stmt, bindings, filterExpr,
@@ -73,8 +75,9 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		if (filterExpr != null && !isEvaluated) {
 			result = new BoundJoinConversionIteration(result, bindings); // apply conversion
 			result = new FilteringIteration(filterExpr, result, this); // apply filter
-			if (!result.hasNext())
+			if (!result.hasNext()) {
 				return new EmptyIteration<>();
+			}
 		} else {
 			result = new BoundJoinConversionIteration(result, bindings);
 		}
@@ -87,8 +90,9 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 			CheckStatementPattern stmt, List<BindingSet> bindings)
 			throws QueryEvaluationException {
 
-		if (bindings.size() == 1)
+		if (bindings.size() == 1) {
 			return stmt.evaluate(bindings.get(0));
+		}
 
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
 

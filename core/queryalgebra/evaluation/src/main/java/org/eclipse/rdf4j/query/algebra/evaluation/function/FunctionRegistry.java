@@ -24,7 +24,7 @@ public class FunctionRegistry extends ServiceRegistry<String, Function> {
 
 	/**
 	 * Gets the default FunctionRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static FunctionRegistry getInstance() {

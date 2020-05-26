@@ -50,7 +50,7 @@ public class RDFRemover extends AbstractRDFHandler {
 
 	/**
 	 * Creates a new RDFRemover object that removes the data from the default context.
-	 * 
+	 *
 	 * @param con The connection to use for the removal operations.
 	 */
 	public RDFRemover(RepositoryConnection con) {
@@ -64,7 +64,7 @@ public class RDFRemover extends AbstractRDFHandler {
 
 	/**
 	 * Enforces the supplied context upon all statements that are reported to this RDFRemover.
-	 * 
+	 *
 	 * @param context A Resource identifying the context, or <tt>null</tt> for the null context.
 	 */
 	public void enforceContext(Resource context) {
@@ -74,7 +74,7 @@ public class RDFRemover extends AbstractRDFHandler {
 
 	/**
 	 * Checks whether this RDFRemover enforces its context upon all statements that are reported to it.
-	 * 
+	 *
 	 * @return <tt>true</tt> if it enforces its context, <tt>false</tt> otherwise.
 	 */
 	public boolean enforcesContext() {
@@ -84,7 +84,7 @@ public class RDFRemover extends AbstractRDFHandler {
 	/**
 	 * Gets the context identifier that this RDFRemover enforces upon all statements that are reported to it (in case
 	 * <tt>enforcesContext()</tt> returns <tt>true</tt>).
-	 * 
+	 *
 	 * @return A Resource identifying the context, or <tt>null</tt> if the null context is enforced.
 	 */
 	public Resource getContext() {

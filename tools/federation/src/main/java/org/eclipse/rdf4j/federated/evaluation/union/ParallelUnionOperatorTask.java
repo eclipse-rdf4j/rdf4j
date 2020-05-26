@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A task implementation representing a UNION operator expression to be evaluated.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelUnionOperatorTask extends ParallelTaskBase<BindingSet> {

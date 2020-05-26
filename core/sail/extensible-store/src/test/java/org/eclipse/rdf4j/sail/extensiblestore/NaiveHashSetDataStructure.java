@@ -16,8 +16,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
-import org.eclipse.rdf4j.sail.extensiblestore.FilteringIteration;
 import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {

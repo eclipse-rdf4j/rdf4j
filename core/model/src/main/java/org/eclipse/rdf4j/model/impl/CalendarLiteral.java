@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a calendar value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */

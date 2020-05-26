@@ -7,7 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.InputStream;
 
@@ -16,7 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
@@ -150,12 +155,12 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 				Literal name = (Literal) b.getValue("name");
 				assertEquals("Alice", name.stringValue());
 				assertFalse(name.getLanguage().isPresent());
-				assertEquals(XMLSchema.STRING, name.getDatatype());
+				assertEquals(XSD.STRING, name.getDatatype());
 
 				Literal mbox = (Literal) b.getValue("mbox");
 				assertEquals("", mbox.stringValue());
 				assertFalse(mbox.getLanguage().isPresent());
-				assertEquals(XMLSchema.STRING, mbox.getDatatype());
+				assertEquals(XSD.STRING, mbox.getDatatype());
 
 				Literal blurb = (Literal) b.getValue("blurb");
 				assertEquals("<p xmlns=\"http://www.w3.org/1999/xhtml\">My name is <b>alice</b></p>",

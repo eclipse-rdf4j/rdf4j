@@ -57,7 +57,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	/**
-	 * 
+	 *
 	 * @deprecated This class is protected for historic reasons only, and will be made private in a future major
 	 *             release.
 	 */

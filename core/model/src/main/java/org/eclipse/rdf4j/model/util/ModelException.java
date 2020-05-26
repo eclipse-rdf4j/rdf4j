@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * An exception thrown by {@link org.eclipse.rdf4j.model.Model Model} and {@link org.eclipse.rdf4j.model.util.Models
  * Models} when specific conditions are not met.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ModelException extends RDF4JException {

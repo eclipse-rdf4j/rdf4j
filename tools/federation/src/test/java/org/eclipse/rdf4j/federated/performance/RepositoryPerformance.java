@@ -81,8 +81,9 @@ public class RepositoryPerformance {
 				start = System.currentTimeMillis();
 				int count = 0;
 				for (final IRI instance : instances) {
-					if (++count > N_QUERIES)
+					if (++count > N_QUERIES) {
 						break;
+					}
 
 					// a) synchronously
 //					runQuery(conn, instance);
@@ -107,8 +108,9 @@ public class RepositoryPerformance {
 				System.out.println("Done evaluating queries. Duration " + (System.currentTimeMillis() - start) + "ms");
 
 			} finally {
-				if (conn != null)
+				if (conn != null) {
 					conn.close();
+				}
 				shutdown();
 				executor.shutdown();
 			}
@@ -128,8 +130,9 @@ public class RepositoryPerformance {
 				}
 			} finally {
 				try {
-					if (qres != null)
+					if (qres != null) {
 						qres.close();
+					}
 				} catch (Exception ignore) {
 				}
 			}
@@ -154,8 +157,9 @@ public class RepositoryPerformance {
 						+ (System.currentTimeMillis() - start) + "ms");
 				return count;
 			} finally {
-				if (res != null)
+				if (res != null) {
 					res.close();
+				}
 			}
 		}
 

@@ -19,35 +19,35 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT DictionarySection Plain Front Coding.
- * 
+ *
  * This part starts with a byte indicating the type of the dictionary section, followed by the VByte-encoded number of
  * strings, the VByte-encoded buffer size and the VByte-encoded buffer length.
  *
  * Then the 8-bit CRC.
- * 
+ *
  * Followed by an array and one or more buffers, and the 32-bit CRC calculated over the index and the buffers.
- * 
+ *
  * Structure:
- * 
+ *
  * <pre>
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 | 
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * </pre>
- * 
+ *
  * Each buffer starts with a full string, followed by a maximum of <code>stringsBlock</code> - 1 pair of a VByte-encoded
  * number of characters this string has in common with the _previous_ string, and the (different) suffix.
- * 
+ *
  * E.g. <code>abcdef 2 gh 3 ij</code> will result in <code>abcde, abgh, abgij</code>.
- * 
+ *
  * Buffer structure:
- * 
+ *
  * <pre>
  * +--------+--------+--------+...+--------+--------+
  * | string | common | suffix |...| common | suffix |
  * +--------+--------+--------+...+--------+--------+
  * </pre>
- * 
+ *
  * @author Bart Hanssens
  */
 class HDTDictionarySectionPFC extends HDTDictionarySection {
@@ -68,7 +68,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param name
 	 * @param pos
 	 */
@@ -147,7 +147,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 	/**
 	 * Parse a single block
-	 * 
+	 *
 	 * @param block block number
 	 * @param start starting position
 	 * @return list of decoded byte strings

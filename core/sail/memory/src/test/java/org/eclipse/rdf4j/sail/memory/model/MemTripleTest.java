@@ -18,7 +18,7 @@ import org.junit.Test;
 
 /**
  * Unit tests for the memory-specific implementation of the {@link Triple} interface.
- * 
+ *
  * @author Jeen Broekstra
  *
  */

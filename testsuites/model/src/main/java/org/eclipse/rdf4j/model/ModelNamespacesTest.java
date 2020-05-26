@@ -14,8 +14,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -28,7 +26,7 @@ import org.junit.Test;
 
 /**
  * An abstract test class to test the handling of namespaces by {@link Model} implementations.
- * 
+ *
  * @author Peter Ansell p_ansell@yahoo.com
  */
 public abstract class ModelNamespacesTest {
@@ -37,7 +35,7 @@ public abstract class ModelNamespacesTest {
 
 	/**
 	 * Implementing tests must return a new, empty, Model for each call to this method.
-	 * 
+	 *
 	 * @return A new empty implementation of {@link Model} that implements the namespace related methods,
 	 *         {@link Model#getNamespace(String)}, {@link Model#getNamespaces()}, {@link Model#setNamespace(Namespace)},
 	 *         {@link Model#setNamespace(String, String)}, and {@link Model#removeNamespace(String)}.

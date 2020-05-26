@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Interface used by {@link EvaluationStrategy}s to optimize the {@link TupleExpr} prior to evaluating the query.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  * @see QueryOptimizerPipeline

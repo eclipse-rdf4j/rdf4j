@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 
 /**
  * A {@link TupleQueryResultParserFactory} for parsers of SPARQL-1.1 JSON Boolean Query Results.
- * 
+ *
  * @author Peter Ansell
  */
 public class SPARQLBooleanJSONParserFactory implements BooleanQueryResultParserFactory {

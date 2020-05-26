@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 
 /**
  * A lock manager for exclusive locks.
- * 
+ *
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -35,7 +35,7 @@ public class ExclusiveLockManager {
 
 	/**
 	 * Creates an ExclusiveLockManager.
-	 * 
+	 *
 	 * @param trackLocks If create stack traces should be logged
 	 */
 	public ExclusiveLockManager(boolean trackLocks) {

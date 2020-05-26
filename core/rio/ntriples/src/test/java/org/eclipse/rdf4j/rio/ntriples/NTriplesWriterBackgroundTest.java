@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterTest;
 
 /**
  * JUnit test for the N-Triples parser/writer combination.
- * 
+ *
  * @author Peter Ansell
  */
 public class NTriplesWriterBackgroundTest extends RDFWriterTest {

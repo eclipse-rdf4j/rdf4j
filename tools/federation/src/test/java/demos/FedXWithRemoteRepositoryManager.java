@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 /**
  * Demo which shows an example of a local federation which uses repositories from a remote RDF4J instance as federation
  * members.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

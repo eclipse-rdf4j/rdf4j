@@ -34,7 +34,7 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 
 	/**
 	 * Creates a new UnionIterator that returns the bag union of the results of a number of Iterators.
-	 * 
+	 *
 	 * @param args The Iterators containing the elements to iterate over.
 	 */
 	public UnionIterator(Iterable<? extends E>... args) {

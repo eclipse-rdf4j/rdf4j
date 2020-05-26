@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Adds more bindings to each of the results.
- * 
+ *
  * @author James Leigh
  */
 public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEvaluationException> {

@@ -104,7 +104,7 @@ public class ProxySettings implements Configuration {
 
 	/**
 	 * Get HTTP proxy port as string
-	 * 
+	 *
 	 * @return proxy port
 	 */
 	public String getHttpProxyPort() {
@@ -113,7 +113,7 @@ public class ProxySettings implements Configuration {
 
 	/**
 	 * Set HTTP proxy port
-	 * 
+	 *
 	 * @param httpProxyPort proxy port
 	 */
 	public void setHttpProxyPort(String httpProxyPort) {
@@ -123,7 +123,7 @@ public class ProxySettings implements Configuration {
 
 	/**
 	 * Get HTTPS proxy host
-	 * 
+	 *
 	 * @return proxy host as string
 	 */
 	public String getHttpsProxyHost() {
@@ -132,7 +132,7 @@ public class ProxySettings implements Configuration {
 
 	/**
 	 * Get HTTPS proxy host
-	 * 
+	 *
 	 * @param httpsProxyHost
 	 */
 	public void setHttpsProxyHost(String httpsProxyHost) {

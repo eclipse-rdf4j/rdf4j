@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Test for error handling by Binary Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class BinaryHandlingTest extends AbstractParserHandlingTest {

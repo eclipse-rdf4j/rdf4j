@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
  * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
  * support all levels, consult the documentatation for the specific SAIL implementation you are using to find out which
  * levels are supported.
- * 
+ *
  * @author Jeen Broekstra
  * @author James Leigh
  */
@@ -78,7 +78,7 @@ public enum IsolationLevels implements IsolationLevel {
 	/**
 	 * Determines the first compatible isolation level in the list of supported levels, for the given level. Returns the
 	 * level itself if it is in the list of supported levels. Returns null if no compatible level can be found.
-	 * 
+	 *
 	 * @param level           the {@link IsolationLevel} for which to determine a compatible level.
 	 * @param supportedLevels a list of supported isolation levels from which to select the closest compatible level.
 	 * @return the given level if it occurs in the list of supported levels. Otherwise, the first compatible level in

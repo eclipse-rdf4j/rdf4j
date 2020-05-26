@@ -39,7 +39,7 @@ public class Drop extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param close
@@ -77,7 +77,7 @@ public class Drop extends ConsoleCommand {
 
 	/**
 	 * Try to drop a repository after confirmation from user
-	 * 
+	 *
 	 * @param repoID repository ID
 	 * @throws IOException
 	 * @throws RepositoryException

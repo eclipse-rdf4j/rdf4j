@@ -51,7 +51,7 @@ class ServerValidator {
 
 	/**
 	 * Returns whether the given server can be connected to.
-	 * 
+	 *
 	 * @param server   the server path
 	 * @param password the optional password
 	 * @param user     the optional username
@@ -72,7 +72,7 @@ class ServerValidator {
 	/**
 	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated
 	 * configuration parameter value for 'accepted-server-prefixes'.
-	 * 
+	 *
 	 * @param server the server for which to check the prefix
 	 * @return whether the server prefix is in the list of acceptable prefixes
 	 */

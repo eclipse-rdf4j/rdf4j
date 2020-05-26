@@ -16,14 +16,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
  * The SPARQL built-in {@link Function} HOURS, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-hours">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Hours implements Function {
@@ -51,7 +51,7 @@ public class Hours implements Function {
 
 					int hours = calValue.getHour();
 					if (DatatypeConstants.FIELD_UNDEFINED != hours) {
-						return valueFactory.createLiteral(String.valueOf(hours), XMLSchema.INTEGER);
+						return valueFactory.createLiteral(String.valueOf(hours), XSD.INTEGER);
 					} else {
 						throw new ValueExprEvaluationException("can not determine hours from value: " + argValue);
 					}

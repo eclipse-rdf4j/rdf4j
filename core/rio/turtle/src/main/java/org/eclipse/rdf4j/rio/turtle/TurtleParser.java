@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
  * allow comments to be used inside triple constructs that extend over multiple lines, but the author's own parser
  * deviates from this too.</li>
  * </ul>
- * 
+ *
  * @author Arjohn Kampman
  * @author Peter Ansell
  */
@@ -670,7 +670,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a quoted string, which is either a "normal string" or a """long string""".
-	 * 
+	 *
 	 * @return string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -710,7 +710,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a "normal string". This method requires that the opening character has already been parsed.
-	 * 
+	 *
 	 * @return parsed string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -787,7 +787,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	protected Literal parseNumber() throws IOException, RDFParseException {
 		StringBuilder value = getBuilder();
-		IRI datatype = XMLSchema.INTEGER;
+		IRI datatype = XSD.INTEGER;
 
 		int c = readCodePoint();
 
@@ -827,7 +827,7 @@ public class TurtleParser extends AbstractRDFParser {
 					}
 
 					// We're parsing a decimal or a double
-					datatype = XMLSchema.DECIMAL;
+					datatype = XSD.DECIMAL;
 				}
 			} else {
 				if (value.length() == 0) {
@@ -838,7 +838,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 			// read optional exponent
 			if (c == 'e' || c == 'E') {
-				datatype = XMLSchema.DOUBLE;
+				datatype = XSD.DOUBLE;
 				appendCodepoint(value, c);
 
 				c = readCodePoint();
@@ -991,10 +991,10 @@ public class TurtleParser extends AbstractRDFParser {
 
 				if (value.equals("true")) {
 					unread(c);
-					return createLiteral("true", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("true", null, XSD.BOOLEAN, getLineNumber(), -1);
 				} else if (value.equals("false")) {
 					unread(c);
-					return createLiteral("false", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("false", null, XSD.BOOLEAN, getLineNumber(), -1);
 				}
 			}
 
@@ -1329,7 +1329,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but prevents
 	 * the additional char array garbage for BMP codepoints.
-	 * 
+	 *
 	 * @param dst       the destination in which to append the characters
 	 * @param codePoint the codepoint to be appended
 	 */

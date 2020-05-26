@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  * A {@link ValueStore ValueStore} revision for {@link NativeValue NativeValue} objects. For a cached value ID of a
  * NativeValue to be valid, the revision object needs to be equal to the concerning ValueStore's revision object. The
  * ValueStore's revision object is changed whenever values are removed from it or IDs are changed.
- * 
+ *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */

@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -44,6 +44,6 @@ public class SRID implements Function {
 			srid = GEO.DEFAULT_SRID;
 		}
 
-		return valueFactory.createLiteral(srid, XMLSchema.ANYURI);
+		return valueFactory.createLiteral(srid, XSD.ANYURI);
 	}
 }

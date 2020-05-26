@@ -16,7 +16,7 @@ public class UnsupportedQueryResultFormatException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public UnsupportedQueryResultFormatException(String msg) {
@@ -25,7 +25,7 @@ public class UnsupportedQueryResultFormatException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException.
-	 * 
+	 *
 	 * @param cause The cause of the exception.
 	 */
 	public UnsupportedQueryResultFormatException(Throwable cause) {
@@ -34,7 +34,7 @@ public class UnsupportedQueryResultFormatException extends RuntimeException {
 
 	/**
 	 * Creates a new UnsupportedRDFormatException wrapping another exception.
-	 * 
+	 *
 	 * @param msg   An error message.
 	 * @param cause The cause of the exception.
 	 */

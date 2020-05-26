@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * Statements are only written to a single member. Statements that have a {@link IllegalStatementException} throw when
  * added to a member are tried against all other members until it is accepted. If no members accept a statement the
  * original exception is re-thrown.
- * 
+ *
  * @author James Leigh
  */
 class WritableConnection extends AbstractEchoWriteConnection {

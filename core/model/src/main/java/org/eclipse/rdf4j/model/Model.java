@@ -292,6 +292,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	public default Set<Resource> contexts() {
 		Set<Resource> subjects = stream().map(st -> st.getContext()).collect(Collectors.toSet());
 		return subjects;
-	};
+	}
+
+	;
 
 }

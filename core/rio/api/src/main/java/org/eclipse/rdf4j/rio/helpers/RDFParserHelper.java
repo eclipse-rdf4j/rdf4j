@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * <p>
  * This class contains reference implementations of the workflows for {@link ParseErrorListener},
  * {@link RDFParseException}, {@link ParserConfig}, {@link DatatypeHandler} and {@link LanguageHandler} related methods
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFParserHelper {
@@ -36,7 +36,7 @@ public class RDFParserHelper {
 	/**
 	 * Create a literal using the given parameters, including iterative verification and normalization by any
 	 * {@link DatatypeHandler} or {@link LanguageHandler} implementations that are found in the {@link ParserConfig}.
-	 * 
+	 *
 	 * @param label        The value for {@link Literal#getLabel()}, which may be iteratively normalized.
 	 * @param lang         If this is not null, and the datatype is either not null, or is equal to
 	 *                     {@link RDF#LANGSTRING}, then a language literal will be created.
@@ -62,7 +62,7 @@ public class RDFParserHelper {
 	/**
 	 * Create a literal using the given parameters, including iterative verification and normalization by any
 	 * {@link DatatypeHandler} or {@link LanguageHandler} implementations that are found in the {@link ParserConfig}.
-	 * 
+	 *
 	 * @param label        The value for {@link Literal#getLabel()}, which may be iteratively normalized.
 	 * @param lang         If this is not null, and the datatype is either not null, or is equal to
 	 *                     {@link RDF#LANGSTRING}, then a language literal will be created.
@@ -200,7 +200,7 @@ public class RDFParserHelper {
 				else if (workingDatatype != null) {
 					result = valueFactory.createLiteral(workingLabel, workingDatatype);
 				} else {
-					result = valueFactory.createLiteral(workingLabel, XMLSchema.STRING);
+					result = valueFactory.createLiteral(workingLabel, XSD.STRING);
 				}
 			} catch (Exception e) {
 				reportFatalError(e, lineNo, columnNo, errListener);
@@ -216,7 +216,7 @@ public class RDFParserHelper {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
 	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
@@ -241,7 +241,7 @@ public class RDFParserHelper {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
 	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
@@ -280,7 +280,7 @@ public class RDFParserHelper {
 	 * <p>
 	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
 	 * is not a nonFatalError.
-	 * 
+	 *
 	 * @param e               The exception whose message to use for
 	 *                        {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.

@@ -11,7 +11,7 @@ import java.io.IOException;
 
 /**
  * HDT DictionarySection part. Various encodings exist.
- * 
+ *
  * @author Bart Hanssens
  */
 abstract class HDTDictionarySection extends HDTPart {
@@ -35,14 +35,14 @@ abstract class HDTDictionarySection extends HDTPart {
 
 	/**
 	 * Get the size
-	 * 
+	 *
 	 * @return
 	 */
 	protected abstract int size();
 
 	/**
 	 * Get the entry
-	 * 
+	 *
 	 * @param i zero-based index
 	 * @return
 	 */
@@ -50,7 +50,7 @@ abstract class HDTDictionarySection extends HDTPart {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param pos  position
 	 * @param name name
 	 */

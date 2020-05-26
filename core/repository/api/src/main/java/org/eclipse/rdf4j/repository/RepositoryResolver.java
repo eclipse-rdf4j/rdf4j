@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 
 /**
  * Gets local repositories using a simple identifier string.
- * 
+ *
  * @author Dale Visser
  * @since 2.3
  */

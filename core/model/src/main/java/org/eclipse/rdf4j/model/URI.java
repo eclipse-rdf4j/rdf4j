@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.model;
 
 /**
  * A Uniform Resource Identifier (URI).
- * 
+ *
  * @deprecated since 2.0. Use {@link IRI} instead.
  * @author Jeen Broekstra
  * @author Arjohn Kampman
@@ -20,7 +20,7 @@ public interface URI extends Resource {
 
 	/**
 	 * Returns the String-representation of this URI.
-	 * 
+	 *
 	 * @return The String-representation of this URI.
 	 */
 	@Override
@@ -29,7 +29,7 @@ public interface URI extends Resource {
 	/**
 	 * Gets the namespace part of this URI. The namespace is defined as per the algorithm described in the class
 	 * documentation.
-	 * 
+	 *
 	 * @return The URI's namespace.
 	 */
 	public String getNamespace();
@@ -37,14 +37,14 @@ public interface URI extends Resource {
 	/**
 	 * Gets the local name part of this URI. The local name is defined as per the algorithm described in the class
 	 * documentation.
-	 * 
+	 *
 	 * @return The URI's local name.
 	 */
 	public String getLocalName();
 
 	/**
 	 * Compares a URI object to another object.
-	 * 
+	 *
 	 * @param o The object to compare this URI to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link URI} and their String-representations are
 	 *         equal, <tt>false</tt> otherwise.
@@ -54,7 +54,7 @@ public interface URI extends Resource {
 
 	/**
 	 * The hash code of an URI is defined as the hash code of its String-representation: <tt>toString().hashCode</tt>.
-	 * 
+	 *
 	 * @return A hash code for the URI.
 	 */
 	@Override

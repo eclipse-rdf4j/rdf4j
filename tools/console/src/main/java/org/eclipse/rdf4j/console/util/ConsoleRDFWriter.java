@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 
 /**
  * Write query results to console
- * 
+ *
  * @author Bart Hanssens
  */
 public class ConsoleRDFWriter extends AbstractRDFWriter {
@@ -36,7 +36,7 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param consoleWidth console width
 	 */

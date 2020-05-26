@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -52,7 +52,7 @@ public class TestStringCast {
 		try {
 			Literal result = stringCast.evaluate(f, plainLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
@@ -75,7 +75,7 @@ public class TestStringCast {
 		try {
 			Literal result = stringCast.evaluate(f, intLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals("10", result.getLabel());
 		} catch (ValueExprEvaluationException e) {
@@ -90,7 +90,7 @@ public class TestStringCast {
 		try {
 			Literal result = stringCast.evaluate(f, dtLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
 		} catch (ValueExprEvaluationException e) {
@@ -105,7 +105,7 @@ public class TestStringCast {
 		try {
 			Literal result = stringCast.evaluate(f, dtLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.STRING, result.getDatatype());
+			assertEquals(XSD.STRING, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
 		} catch (ValueExprEvaluationException e) {

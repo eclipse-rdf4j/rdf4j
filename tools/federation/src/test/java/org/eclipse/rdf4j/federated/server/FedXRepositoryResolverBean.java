@@ -11,11 +11,11 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
 
 /**
  * A resolver bean that provides static access to a {@link RepositoryResolver}.
- * 
+ *
  * <p>
  * For use in the RDF4J workbench the following Spring bean can be registered:
  * </p>
- * 
+ *
  * <pre>
  * &lt;!-- Inject the local repository manager as RepositoryResolver into FedX --&gt;
  * &lt;bean id="fedxRepositoryResolver"
@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
  *  	&lt;property name="repositoryResolver" ref="rdf4jRepositoryManager" /&gt;
  * &lt;/bean&gt;
  * </pre>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

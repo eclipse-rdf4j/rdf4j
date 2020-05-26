@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RDFWriterTest;
 
 /**
  * JUnit test for the RDF/JSON parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class NTriplesWriterTest extends RDFWriterTest {

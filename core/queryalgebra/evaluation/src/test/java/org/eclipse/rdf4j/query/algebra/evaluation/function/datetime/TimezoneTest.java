@@ -14,7 +14,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -48,10 +48,10 @@ public class TimezoneTest {
 	public void testEvaluate1() {
 		try {
 
-			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XMLSchema.DATETIME));
+			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815-05:00", XSD.DATETIME));
 
 			assertNotNull(result);
-			assertEquals(XMLSchema.DAYTIMEDURATION, result.getDatatype());
+			assertEquals(XSD.DAYTIMEDURATION, result.getDatatype());
 
 			assertEquals("-PT5H", result.getLabel());
 
@@ -65,10 +65,10 @@ public class TimezoneTest {
 	public void testEvaluate2() {
 		try {
 
-			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815Z", XMLSchema.DATETIME));
+			Literal result = timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815Z", XSD.DATETIME));
 
 			assertNotNull(result);
-			assertEquals(XMLSchema.DAYTIMEDURATION, result.getDatatype());
+			assertEquals(XSD.DAYTIMEDURATION, result.getDatatype());
 
 			assertEquals("PT0S", result.getLabel());
 
@@ -82,7 +82,7 @@ public class TimezoneTest {
 	public void testEvaluate3() {
 		try {
 
-			timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815", XMLSchema.DATETIME));
+			timezone.evaluate(f, f.createLiteral("2011-01-10T14:45:13.815", XSD.DATETIME));
 
 			fail("should have resulted in a type error");
 

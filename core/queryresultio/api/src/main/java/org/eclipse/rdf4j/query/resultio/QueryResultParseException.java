@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.RDF4JException;
 /**
  * A parse exception that can be thrown by a query result parser when it encounters an error from which it cannot or
  * doesn't want to recover.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryResultParseException extends RDF4JException {
@@ -37,7 +37,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultParseException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public QueryResultParseException(String msg) {
@@ -46,7 +46,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception.
-	 * 
+	 *
 	 * @param msg An error message.
 	 * @param t   The source exception.
 	 */
@@ -56,7 +56,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultParseException.
-	 * 
+	 *
 	 * @param msg      An error message.
 	 * @param lineNo   A line number associated with the message.
 	 * @param columnNo A column number associated with the message.
@@ -70,7 +70,7 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will inherit
 	 * its message from the supplied source exception.
-	 * 
+	 *
 	 * @param t The source exception.
 	 */
 	public QueryResultParseException(Throwable t) {
@@ -80,7 +80,7 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception. The QueryResultParseException will inherit
 	 * its message from the supplied source exception.
-	 * 
+	 *
 	 * @param t        The source exception.
 	 * @param lineNo   A line number associated with the message.
 	 * @param columnNo A column number associated with the message.
@@ -93,7 +93,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Creates a new QueryResultParseException wrapping another exception.
-	 * 
+	 *
 	 * @param msg      An error message.
 	 * @param t        The source exception.
 	 * @param lineNo   A line number associated with the message.
@@ -111,7 +111,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Gets the line number associated with this parse exception.
-	 * 
+	 *
 	 * @return A line number, or <tt>-1</tt> if no line number is available or applicable.
 	 */
 	public long getLineNumber() {
@@ -120,7 +120,7 @@ public class QueryResultParseException extends RDF4JException {
 
 	/**
 	 * Gets the column number associated with this parse exception.
-	 * 
+	 *
 	 * @return A column number, or <tt>-1</tt> if no column number is available or applicable.
 	 */
 	public long getColumnNumber() {

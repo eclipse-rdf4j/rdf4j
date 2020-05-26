@@ -14,18 +14,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedShort</tt> .
- * 
+ *
  * @author Jeen Broekstra
  */
 public class UnsignedShortCast extends IntegerCastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.UNSIGNED_SHORT;
+		return XSD.UNSIGNED_SHORT;
 	}
 
 	@Override

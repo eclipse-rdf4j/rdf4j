@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 /**
  * Marker interface indicating that instances are applicable for bound join processing (see
  * {@link ControlledWorkerBoundJoin}
- * 
+ *
  * @author Andreas Schwarte
  * @see ControlledWorkerBoundJoin
  */

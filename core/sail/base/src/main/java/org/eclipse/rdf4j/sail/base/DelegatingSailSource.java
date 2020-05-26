@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * A wrapper around an {@link SailSource} that can suppress the call to {@link #close()}. This is useful when the a
  * shared branch is sometimes to be used and other times a dedicated branch is to be used.
- * 
+ *
  * @author James Leigh
  */
 class DelegatingSailSource implements SailSource {
@@ -25,7 +25,7 @@ class DelegatingSailSource implements SailSource {
 	/**
 	 * Wraps this {@link SailSource}, delegating all calls to it unless <code>closing</code> is false, in which case
 	 * {@link #close()} will not be delegated.
-	 * 
+	 *
 	 * @param delegate
 	 * @param closing  if {@link #close()} should be delegated
 	 */

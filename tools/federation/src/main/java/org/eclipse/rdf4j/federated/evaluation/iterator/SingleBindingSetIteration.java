@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Represents an iteration that contains only a single binding set.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

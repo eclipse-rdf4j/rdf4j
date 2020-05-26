@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 /**
  * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex parts with
  * simpler parts.
- * 
+ *
  * @author Arjohn Kampman
  * @deprecated Replaced by {@link QueryModelNormalizer}.
  */
@@ -39,7 +39,7 @@ public class QueryModelPruner implements QueryOptimizer {
 
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 * 
+	 *
 	 * @param tupleExpr
 	 */
 	@Override

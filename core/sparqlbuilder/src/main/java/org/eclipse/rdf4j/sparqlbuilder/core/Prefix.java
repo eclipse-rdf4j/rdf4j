@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
  * A SPARQL Prefix declaration
- * 
+ *
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#prefNames"> SPARQL Prefix</a>
  */
 public class Prefix implements QueryElement {
@@ -27,7 +27,7 @@ public class Prefix implements QueryElement {
 
 	/**
 	 * Create a prefixed IRI reference from this prefix
-	 * 
+	 *
 	 * @param localName the local part of the prefixed IRI
 	 * @return a prefixed IRI reference, with this prefix's label as the base, and the given string for the local part
 	 */

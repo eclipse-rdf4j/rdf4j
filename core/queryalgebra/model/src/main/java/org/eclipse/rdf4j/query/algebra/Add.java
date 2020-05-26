@@ -95,7 +95,7 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 
 	/**
 	 * The named graph from which to add. If null, the default graph should be used.
-	 * 
+	 *
 	 * @return Returns the graph.
 	 */
 	public ValueConstant getSourceGraph() {
@@ -126,7 +126,7 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 
 	/**
 	 * The named graph to which to add. If null, the default graph should be used.
-	 * 
+	 *
 	 * @return Returns the destinationGraph.
 	 */
 	public ValueConstant getDestinationGraph() {

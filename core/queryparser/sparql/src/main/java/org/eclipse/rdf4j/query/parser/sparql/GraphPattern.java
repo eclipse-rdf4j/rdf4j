@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * A graph pattern consisting of (required and optional) tuple expressions, binding assignments and boolean constraints.
- * 
+ *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -107,7 +107,7 @@ public class GraphPattern {
 
 	/**
 	 * add the supplied tuple expression as an optional expression, with a list of constraints that hold as conditions.
-	 * 
+	 *
 	 * @param te          a tuple expression
 	 * @param constraints a list of constraints that form a condition for the LeftJoin to be formed from the optional
 	 *                    TE.
@@ -121,7 +121,7 @@ public class GraphPattern {
 	/**
 	 * Retrieves the optional tuple expressions as a list of tuples with the tuple expression as the key and the list of
 	 * value expressions as the value.
-	 * 
+	 *
 	 * @return a list of Map entries.
 	 */
 	public List<Map.Entry<TupleExpr, List<ValueExpr>>> getOptionalTEs() {
@@ -157,7 +157,7 @@ public class GraphPattern {
 
 	/**
 	 * Builds a combined tuple expression from the tuple expressions and constraints in this graph pattern.
-	 * 
+	 *
 	 * @return A tuple expression for this graph pattern.
 	 */
 	public TupleExpr buildTupleExpr() {

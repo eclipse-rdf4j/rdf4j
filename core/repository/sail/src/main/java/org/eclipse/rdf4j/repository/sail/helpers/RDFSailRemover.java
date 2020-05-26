@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 /**
  * An Sail-specific RDFHandler that removes RDF data from a repository. To be used in combination with SPARQL DELETE
  * DATA only.
- * 
+ *
  * @author jeen
  */
 class RDFSailRemover extends AbstractRDFHandler {
@@ -54,7 +54,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 
 	/**
 	 * Creates a new RDFSailRemover object.
-	 * 
+	 *
 	 * @param con The connection to use for the remove operations.
 	 */
 	public RDFSailRemover(SailConnection con, ValueFactory vf, UpdateContext uc) {
@@ -70,7 +70,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 
 	/**
 	 * Enforces the supplied contexts upon all statements that are reported to this RDFSailRemover.
-	 * 
+	 *
 	 * @param contexts the contexts to use. Use an empty array (not null!) to indicate no context(s) should be enforced.
 	 */
 	public void enforceContext(Resource... contexts) {
@@ -80,7 +80,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 
 	/**
 	 * Checks whether this RDFRemover enforces its contexts upon all statements that are reported to it.
-	 * 
+	 *
 	 * @return <tt>true</tt> if it enforces its contexts, <tt>false</tt> otherwise.
 	 */
 	public boolean enforcesContext() {
@@ -90,7 +90,7 @@ class RDFSailRemover extends AbstractRDFHandler {
 	/**
 	 * Gets the contexts that this RDFRemover enforces upon all statements that are reported to it (in case
 	 * <tt>enforcesContext()</tt> returns <tt>true</tt>).
-	 * 
+	 *
 	 * @return A Resource[] identifying the contexts, or <tt>null</tt> if no contexts is enforced.
 	 */
 	public Resource[] getContexts() {
@@ -111,7 +111,8 @@ class RDFSailRemover extends AbstractRDFHandler {
 				if (ctxt == null) {
 					final Set<IRI> removeGraphs = uc.getDataset().getDefaultRemoveGraphs();
 					if (!removeGraphs.isEmpty()) {
-						con.removeStatement(uc, subj, pred, obj, new IRI[removeGraphs.size()]);
+						IRI[] ctxts = removeGraphs.toArray(new IRI[removeGraphs.size()]);
+						con.removeStatement(uc, subj, pred, obj, ctxts);
 					} else {
 						con.removeStatement(uc, subj, pred, obj);
 					}

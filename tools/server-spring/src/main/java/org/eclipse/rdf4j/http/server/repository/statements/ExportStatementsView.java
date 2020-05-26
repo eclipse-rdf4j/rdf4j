@@ -32,7 +32,7 @@ import org.springframework.web.servlet.View;
 /**
  * View used to export statements. Renders the statements as RDF using a serialization specified using a parameter or
  * Accept header.
- * 
+ *
  * @author Herko ter Horst
  */
 public class ExportStatementsView implements View {

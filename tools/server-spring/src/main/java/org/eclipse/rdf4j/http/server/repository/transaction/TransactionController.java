@@ -393,7 +393,7 @@ public class TransactionController extends AbstractController {
 		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);
 		model.put(QueryResultView.FACTORY_KEY, factory);
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
-														// requests.
+		// requests.
 		return new ModelAndView(view, model);
 	}
 

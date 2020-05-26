@@ -15,6 +15,8 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 /**
  * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
  *
@@ -26,6 +28,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
+
+	private final String UUID = "UUID_" + java.util.UUID.randomUUID().toString().replace("-", "");
+	private final static String newLine = System.getProperty("line.separator");
 
 	// The name of the node, eg. "Join" or "Join (HashJoinIteration)".
 	private String type;
@@ -238,8 +243,6 @@ public class GenericPlanNode {
 	private String getHumanReadable(int prettyBoxDrawingType) {
 		StringBuilder sb = new StringBuilder();
 
-		String newLine = System.getProperty("line.separator");
-
 		if (timedOut != null && timedOut) {
 			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
 			sb.append("You can change the timeout by setting .setMaxExecutionTime(...) on your query.")
@@ -397,4 +400,113 @@ public class GenericPlanNode {
 		}
 	}
 
+	public String toDot() {
+
+		return toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
+
+	}
+
+	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {
+		return Math.max(genericPlanNode.getTotalTimeActual() != null ? genericPlanNode.getTotalTimeActual() : 0,
+				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxTotalTime).max().orElse(0));
+	}
+
+	private static double getMaxSelfTime(GenericPlanNode genericPlanNode) {
+		return Math.max(genericPlanNode.getSelfTimeActual() != null ? genericPlanNode.getSelfTimeActual() : 0,
+				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxSelfTime).max().orElse(0));
+	}
+
+	private static double getMaxResultSizeActual(GenericPlanNode genericPlanNode) {
+		return Math.max(genericPlanNode.getResultSizeActual() != null ? genericPlanNode.getResultSizeActual() : 0,
+				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxResultSizeActual).max().orElse(0));
+	}
+
+	private String toDotInternal(double maxResultSizeActual, double maxTotalTime, double maxSelfTime) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("   ");
+
+		if (newScope != null && newScope) {
+			sb.append("subgraph cluster_")
+					.append(getUUID())
+					.append(" {")
+					.append(newLine)
+					.append("   color=grey")
+					.append(newLine);
+		}
+
+		String resultSizeActualColor = getProportionalRedColor(maxResultSizeActual, getResultSizeActual());
+		String totalTimeColor = getProportionalRedColor(maxTotalTime, getTotalTimeActual());
+		String selfTimeColor = getProportionalRedColor(maxSelfTime, getSelfTimeActual());
+
+		sb
+				.append(getUUID())
+				.append(" [label=")
+				.append("<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" >");
+
+		sb.append(Stream.of(
+				"<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>" + type + "</U></td></tr>",
+				"<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>",
+				"<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
+						+ "</td></tr>",
+				"<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>",
+				"<tr><td>Result size estimate</td><td>" + toHumanReadableNumber(getResultSizeEstimate()) + "</td></tr>",
+				"<tr><td >Result size actual</td><td>" + toHumanReadableNumber(getResultSizeActual()) + "</td></tr>",
+//			"<tr><td >Result size actual</td><td BGCOLOR=\"" + resultSizeActualColor + "\">" + toHumanReadableNumber(getResultSizeActual()) + "</td></tr>",
+				"<tr><td >Total time actual</td><td BGCOLOR=\"" + totalTimeColor + "\">"
+						+ toHumanReadableTime(getTotalTimeActual()) + "</td></tr>",
+				"<tr><td >Self time actual</td><td BGCOLOR=\"" + selfTimeColor + "\">"
+						+ toHumanReadableTime(getSelfTimeActual()) + "</td></tr>")
+				.filter(s -> !s.contains(UNKNOWN)) // simple but hacky way of removing essentially null values
+				.reduce((a, b) -> a + " " + b)
+				.orElse(""));
+
+		sb.append("</table>>").append(" shape=plaintext];").append(newLine);
+		for (int i = 0; i < plans.size(); i++) {
+			GenericPlanNode p = plans.get(i);
+			String linkLabel = "index " + i;
+
+			if (plans.size() == 2) {
+				linkLabel = i == 0 ? "left" : "right";
+			} else if (plans.size() == 1) {
+				linkLabel = "";
+			}
+			sb.append("   ")
+					.append(getUUID())
+					.append(" -> ")
+					.append(p.getUUID())
+					.append(" [label=\"" + linkLabel + "\"]")
+					.append(" ;")
+					.append(newLine);
+		}
+
+		plans.forEach(p -> sb.append(p.toDotInternal(maxResultSizeActual, maxTotalTime, maxSelfTime)));
+
+		if (newScope != null && newScope) {
+			sb.append(newLine).append("}").append(newLine);
+		}
+		return sb.toString();
+	}
+
+	private String getProportionalRedColor(Double max, Double value) {
+		String mainColor = "#FFFFFF";
+		if (value != null) {
+			double colorInt = Math.abs(256 / max * value - 256);
+			String hexColor = String.format("%02X", (0xFFFFFF & ((int) Math.floor(colorInt))));
+
+			mainColor = "#FF" + hexColor + hexColor;
+		}
+		return mainColor;
+	}
+
+	private String getProportionalRedColor(Double max, Long value) {
+		if (value != null) {
+			return getProportionalRedColor(max, value + 0.0);
+		}
+		return "#FFFFFF";
+	}
+
+	@JsonIgnore
+	public String getUUID() {
+		return UUID;
+	}
 }

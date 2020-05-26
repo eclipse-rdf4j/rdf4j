@@ -215,18 +215,18 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * prefix t: <urn:test.org/onto#>
 	 * prefix kw: <urn:test.org/key-words/>
 	 *
-	 * select ?term_string ?sub ?score where { 
-	 * (?term_string search:allMaches search:score) search:search (?sub ?score) . 
-	 * ?sub a t:Data . 
-	 *   { select ?term_string where 
-	 *       { 
-	 *       ?pred_map rdfs:label "keyWord" ; 
-	 *       t:column ?pred . 
-	 *       [] ?pred ?term . 
-	 *       bind(str(?term) as ?term_string) . 
-	 *       } 
+	 * select ?term_string ?sub ?score where {
+	 * (?term_string search:allMaches search:score) search:search (?sub ?score) .
+	 * ?sub a t:Data .
+	 *   { select ?term_string where
+	 *       {
+	 *       ?pred_map rdfs:label "keyWord" ;
+	 *       t:column ?pred .
+	 *       [] ?pred ?term .
+	 *       bind(str(?term) as ?term_string) .
+	 *       }
 	 *   }
-	 * } 
+	 * }
 	 * </code>
 	 *
 	 * @throws Exception

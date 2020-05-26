@@ -34,14 +34,14 @@ import org.slf4j.LoggerFactory;
  * Processes {@link ASTNull} nodes in query models. Null's that appear in projections are simply removed as that doesn't
  * change the semantics. Null's that appear in value comparisons are either replaced with {@link ASTBound} nodes or
  * constants.
- * 
+ *
  * @author Arjohn Kampman
  */
 class NullProcessor {
 
 	/**
 	 * Processes escape sequences in ASTString objects.
-	 * 
+	 *
 	 * @param qc The query that needs to be processed.
 	 * @throws MalformedQueryException If an invalid escape sequence was found.
 	 */

@@ -48,7 +48,7 @@ public class FileLogReader extends AbstractLogReader {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param logFile
 	 */
 	public FileLogReader(File logFile) {
@@ -86,7 +86,7 @@ public class FileLogReader extends AbstractLogReader {
 
 	/**
 	 * Skip for a specific offset
-	 * 
+	 *
 	 * @param offset offset
 	 */
 	private void doSkip(int offset) {

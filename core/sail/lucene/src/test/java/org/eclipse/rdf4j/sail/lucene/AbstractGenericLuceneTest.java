@@ -613,7 +613,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	/**
 	 * Tests adding data to two contexts (graphs).
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -724,7 +724,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	/**
 	 * Checks if reindexing does not corrupt the new index and if complex query still is evaluated properly.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

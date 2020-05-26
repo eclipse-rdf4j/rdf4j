@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Interceptor for repository requests. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */
@@ -126,7 +126,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	/**
 	 * Obtain a new {@link RepositoryConnection} with suitable parser/writer configuration for handling the incoming
 	 * HTTP request. The caller of this method is responsible for closing the connection.
-	 * 
+	 *
 	 * @param request the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
 	 * @return a configured {@link RepositoryConnection}
 	 */

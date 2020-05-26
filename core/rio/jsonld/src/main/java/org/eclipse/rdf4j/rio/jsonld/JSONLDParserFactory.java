@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 
 /**
  * An {@link RDFParserFactory} that creates instances of {@link JSONLDParser}.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDParserFactory implements RDFParserFactory {

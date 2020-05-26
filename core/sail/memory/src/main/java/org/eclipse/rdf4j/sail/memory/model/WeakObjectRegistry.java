@@ -44,7 +44,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	/**
 	 * Constructs a new WeakObjectRegistry containing the elements in the specified collection.
-	 * 
+	 *
 	 * @param c The collection whose elements are to be placed into this object registry.
 	 * @throws NullPointerException If the specified collection is null.
 	 */
@@ -59,7 +59,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	/**
 	 * Retrieves the stored object that is equal to the supplied <tt>key</tt> object.
-	 * 
+	 *
 	 * @param key The object that should be used as the search key for the operation.
 	 * @return A stored object that is equal to the supplied key, or <tt>null</tt> if no such object was found.
 	 */

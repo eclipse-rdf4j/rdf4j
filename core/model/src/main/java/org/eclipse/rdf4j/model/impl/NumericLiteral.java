@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a numeric value to avoid parsing.
- * 
+ *
  * @author David Huynh
  */
 public class NumericLiteral extends SimpleLiteral {
@@ -34,42 +34,42 @@ public class NumericLiteral extends SimpleLiteral {
 	 * Creates an xsd:byte typed litral with the specified value.
 	 */
 	protected NumericLiteral(byte number) {
-		this(number, XMLSchema.BYTE);
+		this(number, XSD.BYTE);
 	}
 
 	/**
 	 * Creates an xsd:short typed litral with the specified value.
 	 */
 	protected NumericLiteral(short number) {
-		this(number, XMLSchema.SHORT);
+		this(number, XSD.SHORT);
 	}
 
 	/**
 	 * Creates an xsd:int typed litral with the specified value.
 	 */
 	protected NumericLiteral(int number) {
-		this(number, XMLSchema.INT);
+		this(number, XSD.INT);
 	}
 
 	/**
 	 * Creates an xsd:long typed litral with the specified value.
 	 */
 	protected NumericLiteral(long n) {
-		this(n, XMLSchema.LONG);
+		this(n, XSD.LONG);
 	}
 
 	/**
 	 * Creates an xsd:float typed litral with the specified value.
 	 */
 	protected NumericLiteral(float n) {
-		this(n, XMLSchema.FLOAT);
+		this(n, XSD.FLOAT);
 	}
 
 	/**
 	 * Creates an xsd:double typed litral with the specified value.
 	 */
 	protected NumericLiteral(double n) {
-		this(n, XMLSchema.DOUBLE);
+		this(n, XSD.DOUBLE);
 	}
 
 	@Override

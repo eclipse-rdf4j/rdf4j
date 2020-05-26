@@ -23,13 +23,13 @@ import javax.xml.datatype.Duration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.Ignore;
 import org.junit.Test;
 
 /**
  * Tests for {@link Literals}.
- * 
+ *
  * @author Peter Ansell
  */
 public class LiteralsTest {
@@ -299,7 +299,7 @@ public class LiteralsTest {
 		Object obj = Boolean.TRUE;
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.BOOLEAN);
+		assertEquals(l.getDatatype(), XSD.BOOLEAN);
 		assertTrue(l.booleanValue());
 
 	}
@@ -315,7 +315,7 @@ public class LiteralsTest {
 		Object obj = new Integer(42).byteValue();
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.BYTE);
+		assertEquals(l.getDatatype(), XSD.BYTE);
 		assertEquals(l.getLabel(), "42");
 
 	}
@@ -331,7 +331,7 @@ public class LiteralsTest {
 		Object obj = new Double(42);
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.DOUBLE);
+		assertEquals(l.getDatatype(), XSD.DOUBLE);
 		assertEquals(l.getLabel(), "42.0");
 
 	}
@@ -347,7 +347,7 @@ public class LiteralsTest {
 		Object obj = new Float(42);
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.FLOAT);
+		assertEquals(l.getDatatype(), XSD.FLOAT);
 		assertEquals(l.getLabel(), "42.0");
 
 	}
@@ -363,7 +363,7 @@ public class LiteralsTest {
 		Object obj = new Integer(4);
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.INT);
+		assertEquals(l.getDatatype(), XSD.INT);
 		assertEquals(l.getLabel(), "4");
 
 	}
@@ -379,7 +379,7 @@ public class LiteralsTest {
 		Object obj = new Long(42);
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.LONG);
+		assertEquals(l.getDatatype(), XSD.LONG);
 		assertEquals(l.getLabel(), "42");
 
 	}
@@ -395,7 +395,7 @@ public class LiteralsTest {
 		Object obj = Short.parseShort("42");
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.SHORT);
+		assertEquals(l.getDatatype(), XSD.SHORT);
 		assertEquals("42", l.getLabel());
 
 	}
@@ -414,7 +414,7 @@ public class LiteralsTest {
 			Object obj = DatatypeFactory.newInstance().newXMLGregorianCalendar(c);
 			Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 			assertNotNull(l);
-			assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+			assertEquals(l.getDatatype(), XSD.DATETIME);
 			// TODO check lexical value?
 		} catch (DatatypeConfigurationException e) {
 			e.printStackTrace();
@@ -434,7 +434,7 @@ public class LiteralsTest {
 		Object obj = new Date();
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+		assertEquals(l.getDatatype(), XSD.DATETIME);
 
 	}
 
@@ -449,7 +449,7 @@ public class LiteralsTest {
 		Object obj = "random unique string";
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.STRING);
+		assertEquals(l.getDatatype(), XSD.STRING);
 		assertEquals(l.getLabel(), "random unique string");
 
 	}
@@ -465,7 +465,7 @@ public class LiteralsTest {
 		Object obj = new Object();
 		Literal l = Literals.createLiteral(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.STRING);
+		assertEquals(l.getDatatype(), XSD.STRING);
 
 	}
 
@@ -497,7 +497,7 @@ public class LiteralsTest {
 		Object obj = Boolean.TRUE;
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.BOOLEAN);
+		assertEquals(l.getDatatype(), XSD.BOOLEAN);
 		assertTrue(l.booleanValue());
 
 	}
@@ -513,7 +513,7 @@ public class LiteralsTest {
 		Object obj = new Integer(42).byteValue();
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.BYTE);
+		assertEquals(l.getDatatype(), XSD.BYTE);
 		assertEquals(l.getLabel(), "42");
 
 	}
@@ -529,7 +529,7 @@ public class LiteralsTest {
 		Object obj = new Double(42);
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.DOUBLE);
+		assertEquals(l.getDatatype(), XSD.DOUBLE);
 		assertEquals(l.getLabel(), "42.0");
 
 	}
@@ -545,7 +545,7 @@ public class LiteralsTest {
 		Object obj = new Float(42);
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.FLOAT);
+		assertEquals(l.getDatatype(), XSD.FLOAT);
 		assertEquals(l.getLabel(), "42.0");
 
 	}
@@ -561,7 +561,7 @@ public class LiteralsTest {
 		Object obj = new Integer(4);
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.INT);
+		assertEquals(l.getDatatype(), XSD.INT);
 		assertEquals(l.getLabel(), "4");
 
 	}
@@ -577,7 +577,7 @@ public class LiteralsTest {
 		Object obj = new Long(42);
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.LONG);
+		assertEquals(l.getDatatype(), XSD.LONG);
 		assertEquals(l.getLabel(), "42");
 
 	}
@@ -593,7 +593,7 @@ public class LiteralsTest {
 		Object obj = Short.parseShort("42");
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.SHORT);
+		assertEquals(l.getDatatype(), XSD.SHORT);
 		assertEquals("42", l.getLabel());
 
 	}
@@ -612,7 +612,7 @@ public class LiteralsTest {
 			Object obj = DatatypeFactory.newInstance().newXMLGregorianCalendar(c);
 			Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 			assertNotNull(l);
-			assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+			assertEquals(l.getDatatype(), XSD.DATETIME);
 			// TODO check lexical value?
 		} catch (DatatypeConfigurationException e) {
 			e.printStackTrace();
@@ -632,7 +632,7 @@ public class LiteralsTest {
 		Object obj = new Date();
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+		assertEquals(l.getDatatype(), XSD.DATETIME);
 
 	}
 
@@ -647,7 +647,7 @@ public class LiteralsTest {
 		Object obj = "random unique string";
 		Literal l = Literals.createLiteralOrFail(SimpleValueFactory.getInstance(), obj);
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.STRING);
+		assertEquals(l.getDatatype(), XSD.STRING);
 		assertEquals(l.getLabel(), "random unique string");
 
 	}

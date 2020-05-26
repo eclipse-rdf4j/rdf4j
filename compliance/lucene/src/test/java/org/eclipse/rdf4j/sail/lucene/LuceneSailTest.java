@@ -17,7 +17,7 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailTest#configure(org.eclipse.rdf4j.sail.lucene.LuceneSail)
 	 */
 	@Override

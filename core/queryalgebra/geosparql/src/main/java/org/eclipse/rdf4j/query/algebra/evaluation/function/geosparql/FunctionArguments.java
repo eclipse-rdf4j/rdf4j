@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.locationtech.spatial4j.context.SpatialContext;
@@ -35,7 +35,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the double value
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return double
@@ -56,20 +56,20 @@ class FunctionArguments {
 
 	/**
 	 * Get the string value
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return string
 	 * @throws ValueExprEvaluationException
 	 */
 	public static String getString(Function func, Value v) throws ValueExprEvaluationException {
-		Literal l = getLiteral(func, v, XMLSchema.STRING);
+		Literal l = getLiteral(func, v, XSD.STRING);
 		return l.stringValue();
 	}
 
 	/**
 	 * Get the geo shape
-	 * 
+	 *
 	 * @param func    function
 	 * @param v       value
 	 * @param context
@@ -88,7 +88,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the geo point
-	 * 
+	 *
 	 * @param func       function
 	 * @param v          value
 	 * @param geoContext
@@ -106,7 +106,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the literal of a specific data type
-	 * 
+	 *
 	 * @param func             function
 	 * @param v                value
 	 * @param expectedDatatype
@@ -127,7 +127,7 @@ class FunctionArguments {
 
 	/**
 	 * Get the UoM IRI of the unit
-	 * 
+	 *
 	 * @param func function
 	 * @param v    value
 	 * @return UoM IRI
@@ -146,7 +146,7 @@ class FunctionArguments {
 
 	/**
 	 * Convert degrees to another unit
-	 * 
+	 *
 	 * @param degs  degrees
 	 * @param units UoM IRI of the unit to convert to
 	 * @return converted value as a double
@@ -171,7 +171,7 @@ class FunctionArguments {
 
 	/**
 	 * Convert a value to degrees
-	 * 
+	 *
 	 * @param v     value
 	 * @param units UoM IRI of the unit
 	 * @return degrees as a double

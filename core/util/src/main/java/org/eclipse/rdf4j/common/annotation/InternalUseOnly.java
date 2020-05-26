@@ -16,7 +16,7 @@ import java.lang.annotation.Target;
 /**
  * This feature is intended for internal use only and is not considered part of the public API: its existence, signature
  * or behavior may change without warning from one release to the next.
- * 
+ *
  * @author Jeen Broekstra
  */
 @Documented

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
  * Boolean or Tuple results simultaneously.
  * <p>
  * The {@link List}s that are returned by this interface are immutable.
- * 
+ *
  * @author Peter Ansell
  */
 public class QueryResultCollector implements QueryResultHandler, TupleQueryResultHandler, BooleanQueryResultHandler {
@@ -78,7 +78,7 @@ public class QueryResultCollector implements QueryResultHandler, TupleQueryResul
 
 	/**
 	 * Determines whether {@link #handleBoolean(boolean)} was called for this collector.
-	 * 
+	 *
 	 * @return True if there was a boolean handled by this collector.
 	 */
 	public boolean getHandledBoolean() {
@@ -91,7 +91,7 @@ public class QueryResultCollector implements QueryResultHandler, TupleQueryResul
 	 * <p>
 	 * If {@link #getHandledBoolean()} returns false this method throws a {@link QueryResultHandlerException} indicating
 	 * that a response could not be provided.
-	 * 
+	 *
 	 * @return The boolean value that was collected.
 	 * @throws QueryResultHandlerException If there was no boolean value collected.
 	 */
@@ -106,7 +106,7 @@ public class QueryResultCollector implements QueryResultHandler, TupleQueryResul
 	/**
 	 * Determines whether {@link #endQueryResult()} was called after the last calls to {@link #startQueryResult(List)}
 	 * and optionally calls to {@link #handleSolution(BindingSet)}.
-	 * 
+	 *
 	 * @return True if there was a call to {@link #endQueryResult()} after the last calls to
 	 *         {@link #startQueryResult(List)} and {@link #handleSolution(BindingSet)}.
 	 */
@@ -116,7 +116,7 @@ public class QueryResultCollector implements QueryResultHandler, TupleQueryResul
 
 	/**
 	 * Returns a collection of binding names collected.
-	 * 
+	 *
 	 * @return An immutable list of {@link String}s that were collected as the binding names.
 	 * @throws QueryResultHandlerException If the tuple results set was not successfully collected, as signalled by a
 	 *                                     call to {@link #endQueryResult()}.

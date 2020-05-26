@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Combines multiple {@link SailDataset} into a single view.
- * 
+ *
  * @author James Leigh
  */
 class UnionSailDataset implements SailDataset {
@@ -33,7 +33,7 @@ class UnionSailDataset implements SailDataset {
 
 	/**
 	 * Creates a new {@link SailDataset} that includes all the given {@link SailDataset}s.
-	 * 
+	 *
 	 * @param datasets
 	 */
 	public UnionSailDataset(SailDataset... datasets) {

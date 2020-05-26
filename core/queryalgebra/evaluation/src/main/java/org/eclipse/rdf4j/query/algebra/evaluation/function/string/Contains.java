@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * The SPARQL built-in {@link Function} CONTAINS, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-contains">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Contains implements Function {

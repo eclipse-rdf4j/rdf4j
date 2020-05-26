@@ -77,7 +77,7 @@ public class Models {
 	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
 	 * @apiNote replaced in 3.2.0 with the more generic {@link #object(Iterable)}. This method signature kept for binary
 	 *          compatibility.
-	 * 
+	 *
 	 */
 	public static Optional<Value> object(Model m) {
 		return object((Iterable<Statement>) m);
@@ -138,7 +138,7 @@ public class Models {
 	 *         such value exists.
 	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectLiterals(Iterable)}. This method signature kept
 	 *          for binary compatibility.
-	 * 
+	 *
 	 * @see Model#objects()
 	 */
 	public static Set<Literal> objectLiterals(Model m) {

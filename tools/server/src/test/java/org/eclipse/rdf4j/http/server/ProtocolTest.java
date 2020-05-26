@@ -368,7 +368,7 @@ public class ProtocolTest {
 
 	/**
 	 * Test for SES-1861
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -399,7 +399,7 @@ public class ProtocolTest {
 
 	/**
 	 * Test for GitHub issue #262
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -423,7 +423,7 @@ public class ProtocolTest {
 
 	/**
 	 * Test for SES-1861
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

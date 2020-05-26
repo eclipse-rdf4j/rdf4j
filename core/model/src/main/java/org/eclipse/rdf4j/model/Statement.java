@@ -18,35 +18,35 @@ public interface Statement extends Serializable {
 
 	/**
 	 * Gets the subject of this statement.
-	 * 
+	 *
 	 * @return The statement's subject.
 	 */
 	public Resource getSubject();
 
 	/**
 	 * Gets the predicate of this statement.
-	 * 
+	 *
 	 * @return The statement's predicate.
 	 */
 	public IRI getPredicate();
 
 	/**
 	 * Gets the object of this statement.
-	 * 
+	 *
 	 * @return The statement's object.
 	 */
 	public Value getObject();
 
 	/**
 	 * Gets the context of this statement.
-	 * 
+	 *
 	 * @return The statement's context, or <tt>null</tt> in case of the null context or if not applicable.
 	 */
 	public Resource getContext();
 
 	/**
 	 * Compares a statement object to another object.
-	 * 
+	 *
 	 * @param other The object to compare this statement to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link Statement} and if their subjects, predicates,
 	 *         objects and contexts are equal.
@@ -56,7 +56,7 @@ public interface Statement extends Serializable {
 
 	/**
 	 * The hash code of a statement.
-	 * 
+	 *
 	 * @return A hash code for the statement.
 	 */
 	@Override

@@ -112,7 +112,7 @@ public class ConfigTemplate {
 
 	/**
 	 * Escape Turtle multiline literal quote characters in the given value.
-	 * 
+	 *
 	 * @param quoteVariant either ''' or """
 	 * @param value        the value to escape properly
 	 * @return the value with any needed multiline quote sequences escaped

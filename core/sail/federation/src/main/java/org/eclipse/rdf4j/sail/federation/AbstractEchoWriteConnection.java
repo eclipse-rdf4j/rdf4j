@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Echos all write operations to all members.
- * 
+ *
  * @author James Leigh
  */
 abstract class AbstractEchoWriteConnection extends AbstractFederationConnection {

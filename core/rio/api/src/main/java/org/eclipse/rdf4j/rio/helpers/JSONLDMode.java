@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.rio.helpers;
 
 /**
  * Specifies constants to identify various modes that are relevant to JSONLD documents.
- * 
+ *
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
  */

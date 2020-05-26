@@ -11,7 +11,7 @@ import java.util.Collection;
 
 /**
  * An iteration to access a materialized {@link Collection} of BindingSets.
- * 
+ *
  * @author Andreas Schwarte
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration}
  */

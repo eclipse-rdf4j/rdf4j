@@ -27,7 +27,7 @@ import org.junit.Test;
 
 /**
  * Test isolation behavior on removal operations
- * 
+ *
  * @author jeen
  *
  */

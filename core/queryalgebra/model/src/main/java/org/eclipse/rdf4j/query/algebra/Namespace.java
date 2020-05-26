@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The NAMESPACE function, which selects the namespace of URIs.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Namespace extends UnaryValueOperator {

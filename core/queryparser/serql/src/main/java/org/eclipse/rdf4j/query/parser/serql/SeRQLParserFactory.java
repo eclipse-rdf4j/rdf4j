@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 
 /**
  * A {@link QueryParserFactory} for SeRQL parsers
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SeRQLParserFactory implements QueryParserFactory {

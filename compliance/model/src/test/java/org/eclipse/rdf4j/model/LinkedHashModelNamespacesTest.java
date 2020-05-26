@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 /**
  * Tests for {@link Namespace} support in {@link LinkedHashModel} using the abstract tests defined in
  * {@link ModelNamespacesTest}.
- * 
+ *
  * @author Peter Ansell p_ansell@yahoo.com
  */
 public class LinkedHashModelNamespacesTest extends ModelNamespacesTest {

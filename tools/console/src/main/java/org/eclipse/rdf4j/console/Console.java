@@ -85,7 +85,7 @@ public class Console {
 
 	/**
 	 * Get console state
-	 * 
+	 *
 	 * @return basic console state
 	 */
 	public ConsoleState getState() {
@@ -94,7 +94,7 @@ public class Console {
 
 	/**
 	 * Get console IO
-	 * 
+	 *
 	 * @return console
 	 */
 	public ConsoleIO getConsoleIO() {
@@ -103,7 +103,7 @@ public class Console {
 
 	/**
 	 * Set exit on error mode
-	 * 
+	 *
 	 * @param mode true when error should exit
 	 */
 	protected void setExitOnError(boolean mode) {
@@ -112,7 +112,7 @@ public class Console {
 
 	/**
 	 * Main
-	 * 
+	 *
 	 * @param args command line arguments
 	 * @throws IOException
 	 */
@@ -144,7 +144,7 @@ public class Console {
 
 	/**
 	 * Connect to (and open) a repository, exit when connection fails
-	 * 
+	 *
 	 * @param console
 	 * @param selectedLocation s for server, d for local directory
 	 * @param location
@@ -169,7 +169,7 @@ public class Console {
 
 	/**
 	 * Add command to register of known commands
-	 * 
+	 *
 	 * @param cmd command to be added
 	 */
 	public final void register(ConsoleCommand cmd) {
@@ -178,7 +178,7 @@ public class Console {
 
 	/**
 	 * Add setting to register of known settings
-	 * 
+	 *
 	 * @param setting setting to be added
 	 */
 	public final void register(ConsoleSetting setting) {
@@ -187,7 +187,7 @@ public class Console {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public Console() throws IOException {
@@ -312,7 +312,7 @@ public class Console {
 
 	/**
 	 * Start the interactive console, return error code on exit
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	public void start() throws IOException {
@@ -356,7 +356,7 @@ public class Console {
 
 	/**
 	 * Execute a command
-	 * 
+	 *
 	 * @param command
 	 * @return true when exit/quit command is entered
 	 * @throws IOException
@@ -384,7 +384,7 @@ public class Console {
 
 	/**
 	 * Split a command into an array of tokens
-	 * 
+	 *
 	 * @param command command to parse
 	 * @return array of strings
 	 */

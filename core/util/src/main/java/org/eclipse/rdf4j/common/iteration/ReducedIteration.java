@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 /**
  * Removes consecutive duplicates from the object stream.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class ReducedIteration<E, X extends Exception> extends FilterIteration<E, X> {

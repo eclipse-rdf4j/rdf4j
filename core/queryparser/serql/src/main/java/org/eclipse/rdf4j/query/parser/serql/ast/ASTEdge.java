@@ -24,7 +24,7 @@ public class ASTEdge extends SimpleNode {
 
 	/**
 	 * Gets the value expression for this edge.
-	 * 
+	 *
 	 * @return An {@link ASTVar}, {@link ASTURI} or {@link ASTQName} object.
 	 */
 	public ASTValueExpr getValueExpr() {

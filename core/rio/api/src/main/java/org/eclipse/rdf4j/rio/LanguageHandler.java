@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.util.LiteralUtilException;
  * The language handler may optionally provide normalization and verification services for string literals based on the
  * language tags, including translation, grammar and spelling checks. However, this behavior is entirely driven by the
  * user.
- * 
+ *
  * @author Peter Ansell
  */
 public interface LanguageHandler {
@@ -41,7 +41,7 @@ public interface LanguageHandler {
 	/**
 	 * Checks if the given language tag is recognized by this language handler, including cases where the language tag
 	 * is recognized, but is not yet normalized.
-	 * 
+	 *
 	 * @param languageTag The language tag to check.
 	 * @return True if the language tag is syntactically valid and could be used with
 	 *         {@link #verifyLanguage(String, String)} and {@link #normalizeLanguage(String, String, ValueFactory)}.
@@ -53,7 +53,7 @@ public interface LanguageHandler {
 	 * <p>
 	 * This method must only be called after verifying that {@link #isRecognizedLanguage(String)} returns true for the
 	 * given language tag.
-	 * 
+	 *
 	 * @param literalValue Literal value matching the given language tag.
 	 * @param languageTag  A language tag that matched with {@link #isRecognizedLanguage(String)}.
 	 * @return True if the language tag is recognized by this language handler, and it is verified to be syntactically
@@ -69,7 +69,7 @@ public interface LanguageHandler {
 	 * This method must only be called after verifying that {@link #isRecognizedLanguage(String)} returns true for the
 	 * given language tag, and {@link #verifyLanguage(String, String)} also returns true for the given language and
 	 * literal value.
-	 * 
+	 *
 	 * @param literalValue Required literal value to use in the normalization process and to provide the value for the
 	 *                     resulting literal.
 	 * @param languageTag  The language tag which is to be normalized. This tag is available in normalized form from the
@@ -84,7 +84,7 @@ public interface LanguageHandler {
 
 	/**
 	 * A unique key for this language handler to identify it in the LanguageHandlerRegistry.
-	 * 
+	 *
 	 * @return A unique string key.
 	 */
 	public String getKey();

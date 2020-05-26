@@ -88,8 +88,9 @@ public class LuceneDocument implements SearchDocument {
 		Set<String> names = new HashSet<>();
 		for (IndexableField field : fields) {
 			String name = field.name();
-			if (SearchFields.isPropertyField(name))
+			if (SearchFields.isPropertyField(name)) {
 				names.add(name);
+			}
 		}
 		return names;
 	}
@@ -104,7 +105,7 @@ public class LuceneDocument implements SearchDocument {
 	 * TEXT field and Lucene will take care of this. Additional advantage: Lucene may be able to handle the invididual
 	 * strings in a way that may affect e.g. phrase and proximity searches (concatenation basically means loss of
 	 * information). NOTE: The TEXT_FIELD_NAME has to be stored, see in LuceneSail
-	 * 
+	 *
 	 * @see LuceneSail
 	 */
 	@Override

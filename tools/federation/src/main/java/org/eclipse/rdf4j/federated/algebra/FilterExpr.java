@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
 /**
  * FilterExpr maintains information for a particular FILTER expression.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

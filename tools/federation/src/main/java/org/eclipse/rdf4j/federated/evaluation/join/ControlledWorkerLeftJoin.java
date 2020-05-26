@@ -22,13 +22,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Execute the nested loop join in an asynchronous fashion, i.e. one binding after the other (but concurrently)
- * 
+ *
  * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which works according to the
  * FIFO principle.
- * 
+ *
  * This join cursor blocks until all scheduled tasks are finished, however the result iteration can be accessed from
  * different threads to allow for pipelining.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ControlledWorkerLeftJoin extends JoinExecutorBase<BindingSet> {

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * Blocks access to the statements of the model, allowing only changes to the model's namespaces.
- * 
+ *
  * @author James Leigh
  */
 public class EmptyModel extends AbstractModel {

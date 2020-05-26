@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JException;
 
 /**
  * An exception thrown by {@link Literals} when specific conditions are not met.
- * 
+ *
  * @author Peter Ansell
  */
 public class LiteralUtilException extends RDF4JException {

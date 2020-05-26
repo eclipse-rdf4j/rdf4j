@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 /**
  * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
  * statements).
- * 
+ *
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */

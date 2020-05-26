@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 /**
  * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation does not
  * yet cover all query node types.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {

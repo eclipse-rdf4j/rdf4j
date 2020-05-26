@@ -30,9 +30,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Represents statements that can produce results at a some particular endpoints, the statement sources.
- * 
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see StatementSource
  */
 public class StatementSourcePattern extends FedXStatementPattern {
@@ -128,8 +128,9 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					.getEndpointManager()
 					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset()))
+			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {
 				return new SingleBindingSetIteration(bindings);
+			}
 		}
 
 		return new EmptyIteration<>();

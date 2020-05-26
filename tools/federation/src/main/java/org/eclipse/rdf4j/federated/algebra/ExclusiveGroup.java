@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Represents a group of {@link ExclusiveTupleExpr} that can only produce results at a single endpoint, the
  * {@link StatementSource}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -144,9 +144,11 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public boolean hasFreeVarsFor(BindingSet bindings) {
-		for (String var : freeVars)
-			if (!bindings.hasBinding(var))
+		for (String var : freeVars) {
+			if (!bindings.hasBinding(var)) {
 				return true;
+			}
+		}
 		return false;
 	}
 
@@ -166,9 +168,9 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	@Override
 	public void addFilterExpr(FilterExpr expr) {
 
-		if (filterExpr == null)
+		if (filterExpr == null) {
 			filterExpr = expr;
-		else if (filterExpr instanceof ConjunctiveFilterExpr) {
+		} else if (filterExpr instanceof ConjunctiveFilterExpr) {
 			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);
 		} else if (filterExpr instanceof FilterExpr) {
 			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);

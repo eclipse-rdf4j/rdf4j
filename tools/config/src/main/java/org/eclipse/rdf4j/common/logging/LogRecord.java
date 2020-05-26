@@ -20,35 +20,35 @@ public interface LogRecord {
 
 	/**
 	 * Get log level
-	 * 
+	 *
 	 * @return log level enumeration
 	 */
 	public LogLevel getLevel();
 
 	/**
 	 * Get date time
-	 * 
+	 *
 	 * @return date
 	 */
 	public Date getTime();
 
 	/**
 	 * Get thread name
-	 * 
+	 *
 	 * @return thread name
 	 */
 	public String getThreadName();
 
 	/**
 	 * Get message
-	 * 
+	 *
 	 * @return text
 	 */
 	public String getMessage();
 
 	/**
 	 * Get stack trace as list of strings
-	 * 
+	 *
 	 * @return list of strings
 	 */
 	public List<String> getStackTrace();

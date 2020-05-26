@@ -38,9 +38,9 @@ import org.eclipse.rdf4j.sail.SailException;
  * Model implementation for a {@link org.eclipse.rdf4j.sail.SailConnection}. All
  * {@link org.eclipse.rdf4j.sail.SailException}s are wrapped in a {@link org.eclipse.rdf4j.model.util.ModelException}.
  * Not thread-safe.
- * 
+ *
  * @author Mark
- * 
+ *
  * @deprecated this feature is for internal use only: its existence, signature or behavior may change without warning
  *             from one release to the next.
  */
@@ -129,8 +129,9 @@ public class SailModel extends AbstractModel {
 
 	@Override
 	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		if (subj == null || pred == null || obj == null)
+		if (subj == null || pred == null || obj == null) {
 			throw new UnsupportedOperationException("Incomplete statement");
+		}
 		boolean exists = contains(subj, pred, obj, contexts);
 		if (!exists) {
 			try {
@@ -208,7 +209,7 @@ public class SailModel extends AbstractModel {
 	private Iterator<Statement> iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
 			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			return new CloseableIterationIterator<Statement>(
+			return new CloseableIterationIterator<>(
 					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
 
 						private Statement last;

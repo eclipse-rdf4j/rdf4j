@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 
 /**
  * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is contained.
- * 
+ *
  * @author Simon Schenk
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -35,7 +35,7 @@ public class DatasetDeclProcessor {
 
 	/**
 	 * Extracts a SPARQL {@link Dataset} from an ASTQueryContainer, if one is contained. Returns null otherwise.
-	 * 
+	 *
 	 * @param qc The query model to resolve relative URIs in.
 	 * @throws MalformedQueryException If DatasetClause does not contain a valid URI.
 	 */

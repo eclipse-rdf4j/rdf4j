@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 /**
  * Function that return "true"^^xsd:boolean if its argument is RDF* Triple otherwise return "false"^^xsd:boolean the
  * function's IRI uses RDF namespace to match the other functions in the package
- * 
+ *
  * @author damyan.ognyanov
  *
  */

@@ -33,7 +33,7 @@ import org.xml.sax.XMLReader;
 
 /**
  * Abstract base class for SPARQL Results XML Parsers.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser implements ErrorHandler {
@@ -41,14 +41,14 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	private SimpleSAXParser internalSAXParser;
 
 	/**
-	 * 
+	 *
 	 */
 	protected AbstractSPARQLXMLParser() {
 		super();
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	protected AbstractSPARQLXMLParser(ValueFactory valueFactory) {
 		super(valueFactory);
@@ -229,7 +229,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 * {@link XMLReader#setProperty(String, Object)}
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
-	 * 
+	 *
 	 * @return A collection of {@link RioSetting}s that indicate which properties will always be setup using
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
@@ -242,7 +242,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 * {@link XMLReader#setFeature(String, boolean)}.
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
-	 * 
+	 *
 	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup using
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
@@ -260,7 +260,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 * properties using {@link XMLReader#setProperty(String, Object)}
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
-	 * 
+	 *
 	 * @return A collection of {@link RioSetting}s that indicate which properties can be setup using
 	 *         {@link XMLReader#setProperty(String, Object)}.
 	 */
@@ -273,7 +273,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	 * using {@link XMLReader#setFeature(String, boolean)}.
 	 * <p>
 	 * Subclasses can override this to specify more supported settings.
-	 * 
+	 *
 	 * @return A collection of {@link RioSetting}s that indicate which boolean settings can be setup using
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
