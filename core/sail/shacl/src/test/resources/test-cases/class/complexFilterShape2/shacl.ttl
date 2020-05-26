@@ -14,12 +14,18 @@ ex:PersonShape
         		a sh:Shape ;
         		sh:and (
 
-        		        [sh:path rdf:type; sh:hasValue ex:Person]
-        		        [sh:or (
-        		                [sh:path rdfs:label; sh:hasValue "Peter"]
-        		                [sh:path rdfs:label; sh:hasValue "Jennifer"]
-        		                [sh:path rdfs:label; sh:hasValue "Sue"]
-        		        )]
+        		        [
+        		                sh:path rdf:type;
+        		                sh:hasValue ex:Person
+        		        ]
+        		        [
+        		                sh:path rdfs:label;
+        		                sh:or (
+        		                        [ sh:hasValue "Peter" ]
+        		                        [ sh:hasValue "Jennifer" ]
+        		                        [ sh:hasValue "Sue" ]
+        		                )
+        		        ]
         		);
         	] ;
 

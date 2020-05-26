@@ -194,8 +194,12 @@ public class AllSubjectsTarget extends NodeShape {
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return filterShape.buildSparqlValidNodes(subjectVariable);
-
+		if (filterShape != null) {
+			return filterShape.buildSparqlValidNodes(subjectVariable);
+		} else {
+			return subjectVariable + " ?allSubjectsTarget" + UUID.randomUUID().toString().replace("-", "") + " "
+					+ objectVariable + " .";
+		}
 	}
 
 	@Override
