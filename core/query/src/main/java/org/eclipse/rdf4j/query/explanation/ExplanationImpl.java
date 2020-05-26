@@ -58,4 +58,8 @@ public class ExplanationImpl implements Explanation {
 		return toGenericPlanNode().toString();
 	}
 
+	@Override
+	public String toDot() {
+		return "digraph Explanation {\n" + genericPlanNode.toDot() + "\n}\n";
+	}
 }

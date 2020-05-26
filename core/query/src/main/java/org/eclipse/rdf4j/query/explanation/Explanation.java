@@ -39,4 +39,6 @@ public interface Explanation {
 
 	String toJson();
 
+	String toDot();
+
 }
