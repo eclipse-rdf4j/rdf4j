@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -96,8 +97,9 @@ public class SparqlTarget extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection baseConnection, PlanNode parent) {
-		return new SparqlFilter(baseConnection, parent, sparqlQuery).getTrueNode(UnBufferedPlanNode.class);
+	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
+		assertConnectionIsShaclSailConnection(shaclSailConnection);
+		return new SparqlFilter(shaclSailConnection, parent, sparqlQuery).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 }

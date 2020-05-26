@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -195,5 +197,20 @@ public class AndPropertyShape extends PathPropertyShape {
 				.reduce((a, b) -> new UnionNode(a, b));
 
 		return new Unique(reduce.get());
+	}
+
+	@Override
+	public String buildSparqlValidNodes(String targetVar) {
+		return and.stream()
+				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns() {
+		return and.stream().flatMap(Collection::stream).flatMap(PropertyShape::getStatementPatterns);
 	}
 }

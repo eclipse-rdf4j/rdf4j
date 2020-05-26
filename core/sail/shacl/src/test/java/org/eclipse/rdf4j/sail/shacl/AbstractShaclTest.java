@@ -158,7 +158,10 @@ abstract public class AbstractShaclTest {
 //		"test-cases/uniqueLang/not",
 //		"test-cases/uniqueLang/simple",
 //		"test-cases/class/allSubjects",
-		"test-cases/class/allObjects"
+//		"test-cases/class/allObjects",
+//		"test-cases/class/simpleFilterShape",
+//		"test-cases/class/complexFilterShape",
+		"test-cases/class/complexFilterShape2"
 //		"test-cases/datatype/allObjects"
 
 	)

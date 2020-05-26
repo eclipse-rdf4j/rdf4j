@@ -60,7 +60,8 @@ public class TargetBenchmarkInitialData {
 	@Param({ "1", "1000", "100000" })
 	public int existingTargets = 10;
 
-	@Param({ "shaclDatatypePredicateObjectTarget.ttl", "shaclDatatypeSparqlTarget.ttl" })
+	@Param({ "shaclDatatypePredicateObjectTarget.ttl", "shaclDatatypeSparqlTarget.ttl",
+			"shaclDatatypeTargetFilter.ttl" })
 	public String shape;
 
 	public int NUMBER_OF_TRANSACTIONS = 10;

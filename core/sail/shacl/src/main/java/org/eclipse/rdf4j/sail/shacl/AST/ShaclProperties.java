@@ -31,6 +31,7 @@ public class ShaclProperties {
 
 	Resource datatype;
 	Resource in;
+	Value hasValue;
 
 	Long minLength;
 	Long maxLength;
@@ -55,6 +56,7 @@ public class ShaclProperties {
 
 	List<Resource> compoundTarget = new ArrayList<>();
 	List<Resource> target = new ArrayList<>();
+	Resource filterShape;
 
 	boolean deactivated = false;
 
@@ -191,6 +193,18 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#target":
 					target.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#hasValue":
+					if (hasValue != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					hasValue = object;
+					break;
+				case "http://www.w3.org/ns/shacl#filterShape":
+					if (filterShape != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					filterShape = (Resource) object;
 					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {

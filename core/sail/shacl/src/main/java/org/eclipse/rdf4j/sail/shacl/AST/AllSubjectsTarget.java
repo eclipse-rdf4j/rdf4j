@@ -8,21 +8,34 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterIsObject;
+import org.eclipse.rdf4j.sail.shacl.VerySimpleRdfsBackwardsChainingConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterIsSubject;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
@@ -33,8 +46,14 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
  */
 public class AllSubjectsTarget extends NodeShape {
 
-	AllSubjectsTarget(Resource id, SailRepositoryConnection connection, boolean deactivated) {
+	NodeShape filterShape;
+
+	AllSubjectsTarget(Resource id, SailRepositoryConnection connection, boolean deactivated, Resource filterShape) {
 		super(id, connection, deactivated);
+		if (filterShape != null) {
+			this.filterShape = new NodeShape(filterShape, connection, false);
+		}
+
 	}
 
 	@Override
@@ -43,56 +62,124 @@ public class AllSubjectsTarget extends NodeShape {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
-		PlanNode select = new Unique(
-				new Sort(
-						new TrimTuple(
-								new UnorderedSelect(
-										connectionsGroup.getBaseConnection(),
-										null,
-										null,
-										null,
-										UnorderedSelect.OutputPattern.SubjectPredicateObject),
-								0,
-								1)));
+		if (filterShape != null) {
 
-		return connectionsGroup.getCachedNodeFor(select);
+			PlanNode select = new Select(connectionsGroup.getBaseConnection(), getQuery("?a", null, null), "?a");
+
+			return connectionsGroup.getCachedNodeFor(select);
+		} else {
+			PlanNode select = new Unique(
+					new Sort(
+							new TrimTuple(
+									new UnorderedSelect(
+											connectionsGroup.getBaseConnection(),
+											null,
+											null,
+											null,
+											UnorderedSelect.OutputPattern.SubjectPredicateObject),
+									0,
+									1)));
+
+			return connectionsGroup.getCachedNodeFor(select);
+		}
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 
-		PlanNode select = new Unique(
-				new Sort(
-						new TrimTuple(
-								new UnorderedSelect(
-										connectionsGroup.getAddedStatements(),
-										null,
-										null,
-										null,
-										UnorderedSelect.OutputPattern.SubjectPredicateObject),
-								0,
-								1)));
+		if (filterShape != null) {
 
-		return connectionsGroup.getCachedNodeFor(select);
+			List<StatementPattern> statementPatternList = filterShape.getStatementPatterns()
+					.collect(Collectors.toList());
+
+			String query = filterShape.buildSparqlValidNodes("?a");
+
+			PlanNode planNode = new EmptyNode();
+			for (StatementPattern statementPattern : statementPatternList) {
+				planNode = new UnionNode(planNode, new Sort(new TrimTuple(new UnorderedSelect(
+						connectionsGroup.getAddedStatements(),
+						null,
+						((IRI) statementPattern.getPredicateVar().getValue()),
+						(statementPattern.getObjectVar().getValue()),
+						UnorderedSelect.OutputPattern.SubjectPredicateObject
+
+				), 0, 1)));
+			}
+
+			planNode = new Unique(new Sort(planNode));
+
+			planNode = new BulkedExternalInnerJoin(planNode, connectionsGroup.getBaseConnection(), query, false, null,
+					"?a");
+
+			planNode = new Unique(new TrimTuple(planNode, 0, 1));
+
+			return planNode;
+
+		} else {
+			PlanNode select = new Unique(
+					new Sort(
+							new TrimTuple(
+									new UnorderedSelect(
+											connectionsGroup.getAddedStatements(),
+											null,
+											null,
+											null,
+											UnorderedSelect.OutputPattern.SubjectPredicateObject),
+									0,
+									1)));
+
+			return connectionsGroup.getCachedNodeFor(select);
+		}
+
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode select = new Unique(
-				new Sort(
-						new TrimTuple(
-								new UnorderedSelect(
-										connectionsGroup.getRemovedStatements(),
-										null,
-										null,
-										null,
-										UnorderedSelect.OutputPattern.SubjectPredicateObject),
-								0,
-								1)));
+		if (filterShape != null) {
 
-		return connectionsGroup.getCachedNodeFor(select);
+			List<StatementPattern> statementPatternList = filterShape.getStatementPatterns()
+					.collect(Collectors.toList());
+
+			String query = filterShape.buildSparqlValidNodes("?a");
+
+			PlanNode planNode = new EmptyNode();
+			for (StatementPattern statementPattern : statementPatternList) {
+				planNode = new UnionNode(planNode, new Sort(new TrimTuple(new UnorderedSelect(
+						connectionsGroup.getRemovedStatements(),
+						null,
+						((IRI) statementPattern.getPredicateVar().getValue()),
+						(statementPattern.getObjectVar().getValue()),
+						UnorderedSelect.OutputPattern.SubjectPredicateObject
+
+				), 0, 1)));
+			}
+
+			planNode = new Unique(new Sort(planNode));
+
+			planNode = new BulkedExternalInnerJoin(planNode, connectionsGroup.getBaseConnection(), query, false, null,
+					"?a");
+
+			planNode = new Unique(new TrimTuple(planNode, 0, 1));
+
+			return planNode;
+
+		} else {
+			PlanNode select = new Unique(
+					new Sort(
+							new TrimTuple(
+									new UnorderedSelect(
+											connectionsGroup.getRemovedStatements(),
+											null,
+											null,
+											null,
+											UnorderedSelect.OutputPattern.SubjectPredicateObject),
+									0,
+									1)));
+
+			return connectionsGroup.getCachedNodeFor(select);
+		}
 	}
 
 	@Override
@@ -107,13 +194,20 @@ public class AllSubjectsTarget extends NodeShape {
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return subjectVariable + " ?allSubjectsTarget" + UUID.randomUUID().toString().replace("-", "") + " "
-				+ objectVariable + " .";
+		return filterShape.buildSparqlValidNodes(subjectVariable);
+
 	}
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalFilterIsSubject(shaclSailConnection, parent, 0).getTrueNode(UnBufferedPlanNode.class);
+		assertConnectionIsShaclSailConnection(shaclSailConnection);
+		if (filterShape != null) {
+			return new ExternalFilterByQuery(shaclSailConnection, parent, 0, getQuery("?a", null, null), "?A")
+					.getTrueNode(UnBufferedPlanNode.class);
+		} else {
+			return new ExternalFilterIsSubject(shaclSailConnection, parent, 0).getTrueNode(UnBufferedPlanNode.class);
+		}
+
 	}
 
 	@Override

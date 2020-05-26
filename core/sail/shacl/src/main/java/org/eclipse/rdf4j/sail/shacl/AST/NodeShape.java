@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -20,12 +21,15 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.VerySimpleRdfsBackwardsChainingConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -155,6 +159,39 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id;
 	}
 
+	protected String buildSparqlValidNodes(String targetVar) {
+
+		if (!propertyShapes.isEmpty() && !nodeShapes.isEmpty()) {
+			throw new UnsupportedOperationException("FilterShapes don't support both nodeshapes and property shapes!");
+		}
+
+		if (!propertyShapes.isEmpty()) {
+			return propertyShapes
+					.stream()
+					.map(propertyShapes -> propertyShapes.buildSparqlValidNodes(targetVar))
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+		}
+
+		if (!nodeShapes.isEmpty()) {
+			return nodeShapes
+					.stream()
+					.map(propertyShapes -> propertyShapes.buildSparqlValidNodes(targetVar))
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+		}
+
+		return "";
+
+	}
+
+	protected Stream<StatementPattern> getStatementPatterns() {
+
+		return Stream.concat(
+				propertyShapes.stream().flatMap(PropertyShape::getStatementPatterns),
+				nodeShapes.stream().flatMap(PropertyShape::getStatementPatterns));
+	}
+
 	public static class Factory {
 
 		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
@@ -201,7 +238,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 									}
 									if (connection.hasStatement(sparqlTarget, RDF.TYPE, DASH.AllSubjectsTarget, true)) {
 										propertyShapes.add(new AllSubjectsTarget(shapeId, connection,
-												shaclProperties.deactivated));
+												shaclProperties.deactivated, shaclProperties.filterShape));
 									}
 
 								});
@@ -254,4 +291,18 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return Objects.hash(id, propertyShapes, nodeShapes);
 	}
 
+	public List<PathPropertyShape> getPropertyShapes() {
+		return propertyShapes;
+	}
+
+	public List<PathPropertyShape> getNodeShapes() {
+		return nodeShapes;
+	}
+
+	void assertConnectionIsShaclSailConnection(SailConnection shaclSailConnection) {
+		assert shaclSailConnection instanceof ShaclSailConnection ||
+				(shaclSailConnection instanceof VerySimpleRdfsBackwardsChainingConnection
+						&& ((VerySimpleRdfsBackwardsChainingConnection) shaclSailConnection)
+								.getWrappedConnection() instanceof ShaclSailConnection);
+	}
 }

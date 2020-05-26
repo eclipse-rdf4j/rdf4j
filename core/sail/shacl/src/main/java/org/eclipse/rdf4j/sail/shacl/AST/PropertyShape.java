@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -155,6 +157,14 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		throw new IllegalStateException("Missing implementetion in extending class!");
 	}
 
+	public String buildSparqlValidNodes(String targetVar) {
+		return "";
+	}
+
+	public Stream<StatementPattern> getStatementPatterns() {
+		return Stream.empty();
+	}
+
 	static class Factory {
 
 		static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
@@ -258,6 +268,10 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 			if (shaclProperties.uniqueLang) {
 				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.uniqueLang));
+			}
+			if (shaclProperties.hasValue != null) {
+				propertyShapes.add(new HasValuePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.hasValue));
 			}
 
 			return propertyShapes;

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -126,6 +127,7 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
+		assertConnectionIsShaclSailConnection(shaclSailConnection);
 		return new ExternalTypeFilterNode(shaclSailConnection, RDF.TYPE, targetClass, parent, 0, true);
 	}
 

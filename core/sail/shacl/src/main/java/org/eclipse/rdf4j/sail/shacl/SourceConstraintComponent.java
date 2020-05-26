@@ -27,6 +27,7 @@ public enum SourceConstraintComponent {
 	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT),
 	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT),
 	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT),
+	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT),
 	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT),
 	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT),
 	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT);

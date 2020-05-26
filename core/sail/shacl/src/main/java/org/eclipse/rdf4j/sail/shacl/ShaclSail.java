@@ -462,7 +462,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return null;
 	}
 
-	Lock acquireReadlock() {
+	Lock acquireReadLock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
 					"Deadlock detected when a single thread uses multiple connections " +
@@ -477,7 +477,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	Lock releaseReadlock(Lock lock) {
+	Lock releaseReadLock(Lock lock) {
 		assert lock != null;
 
 		lock.release();
@@ -499,7 +499,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 //			}
 //		}
 //
-//		System.out.println("convertToReadLock");
 //		return readLock;
 //
 //
