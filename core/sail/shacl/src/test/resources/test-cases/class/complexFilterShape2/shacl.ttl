@@ -13,11 +13,11 @@ ex:PersonShape
 	sh:filterShape [
         		a sh:Shape ;
         		sh:and (
-
         		        [
         		                sh:path rdf:type;
         		                sh:hasValue ex:Person
         		        ]
+
         		        [
         		                sh:path rdfs:label;
         		                sh:or (
