@@ -8,9 +8,8 @@
 
 package org.eclipse.rdf4j.sail.memory;
 
-import static org.hamcrest.CoreMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -30,7 +29,6 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.hamcrest.CoreMatchers;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -189,8 +187,8 @@ public class QueryPlanRetrievalTest {
 			assertTrue(filterNode.getSelfTimeActual() > leftJoin.getSelfTimeActual());
 			assertTrue(filterNode.getSelfTimeActual() < leftJoin.getTotalTimeActual());
 
-			assertThat(genericPlanNode.toString(), containsString("selfTimeActual"));
-			assertThat(genericPlanNode.toString(), containsString("totalTimeActual"));
+			assertThat(genericPlanNode.toString()).contains("selfTimeActual");
+			assertThat(genericPlanNode.toString()).contains("totalTimeActual");
 
 		}
 		sailRepository.shutDown();
@@ -682,7 +680,7 @@ public class QueryPlanRetrievalTest {
 			query.setMaxExecutionTime(1);
 
 			String actual = query.explain(Explanation.Level.Timed).toString();
-			Assert.assertThat(actual, containsString("Timed out"));
+			assertThat(actual).contains("Timed out");
 
 		}
 		sailRepository.shutDown();
@@ -809,15 +807,15 @@ public class QueryPlanRetrievalTest {
 			String actual = explain.toDot();
 			actual = actual.replaceAll("UUID_\\w+", "UUID");
 
-			assertThat(actual, startsWith("digraph Explanation {"));
-			assertThat(actual, containsString(
-					"[label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\""));
-			assertThat(actual, containsString("Total time actual</td><td BGCOLOR="));
-			assertThat(actual, containsString("Self time actual</td><td BGCOLOR=\""));
-			assertThat(actual, containsString("ms</td>"));
-			assertThat(actual, containsString("<U>Projection</U>"));
-			assertThat(actual, containsString("<U>ProjectionElemList</U>"));
-			assertThat(actual, containsString("<U>Join</U>"));
+			assertThat(actual).startsWith("digraph Explanation {");
+			assertThat(actual).contains(
+					"[label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"");
+			assertThat(actual).contains("Total time actual</td><td BGCOLOR=");
+			assertThat(actual).contains("Self time actual</td><td BGCOLOR=\"");
+			assertThat(actual).contains("ms</td>");
+			assertThat(actual).contains("<U>Projection</U>");
+			assertThat(actual).contains("<U>ProjectionElemList</U>");
+			assertThat(actual).contains("<U>Join</U>");
 
 		}
 		sailRepository.shutDown();
