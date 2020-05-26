@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
@@ -25,7 +28,10 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.query.algebra.DeleteData;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -34,6 +40,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
@@ -262,7 +269,6 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException {
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
-
 		return new SailUpdate(parsedUpdate, this);
 	}
 
