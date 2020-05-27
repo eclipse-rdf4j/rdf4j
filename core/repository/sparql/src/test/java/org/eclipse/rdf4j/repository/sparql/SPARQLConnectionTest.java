@@ -11,13 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -32,13 +30,14 @@ public class SPARQLConnectionTest {
 
 	private SPARQLConnection subject;
 	private SPARQLProtocolSession client;
-
+	private SPARQLRepository repository;
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setUp() throws Exception {
 		client = mock(SPARQLProtocolSession.class);
-		subject = new SPARQLConnection(null, client);
+		repository = mock(SPARQLRepository.class);
+		subject = new SPARQLConnection(repository, client);
 	}
 
 	@Test
@@ -149,5 +148,21 @@ public class SPARQLConnectionTest {
 				.contains(expectedAddedTriple3)
 				.contains(expectedRemovedTriple1);
 
+	}
+
+	@Test
+	public void testSilentModeSparqlConnection() throws Exception {
+		subject.enableSilentMode(true);
+		assertThat(subject.isSilentMode() == true);
+
+		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
+		subject.begin();
+		subject.clear();
+		subject.commit();
+
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+
+		String sparqlUpdate = sparqlUpdateCaptor.getValue();
+		assertThat(sparqlUpdate).containsOnlyOnce("CLEAR SILENT");
 	}
 }

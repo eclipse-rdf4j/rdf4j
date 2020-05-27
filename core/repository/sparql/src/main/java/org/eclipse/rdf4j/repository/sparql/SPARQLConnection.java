@@ -121,6 +121,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return client.getQueryURL();
 	}
 
+	public void enableSilentMode(boolean flag) {
+		this.silentMode = flag;
+	}
+
 	@Override
 	public void setParserConfig(ParserConfig parserConfig) {
 		client.setParserConfig(parserConfig);
