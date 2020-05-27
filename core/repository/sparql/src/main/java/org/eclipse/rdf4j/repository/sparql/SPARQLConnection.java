@@ -612,15 +612,15 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		}
 
 		if (contexts.length == 0) {
-			sparqlTransaction.append( clearMode + " ALL ");
+			sparqlTransaction.append(clearMode + " ALL ");
 			sparqlTransaction.append("; ");
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					sparqlTransaction.append( clearMode + " DEFAULT ");
+					sparqlTransaction.append(clearMode + " DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append( clearMode + " GRAPH <" + context.stringValue() + "> ");
+					sparqlTransaction.append(clearMode + " GRAPH <" + context.stringValue() + "> ");
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
