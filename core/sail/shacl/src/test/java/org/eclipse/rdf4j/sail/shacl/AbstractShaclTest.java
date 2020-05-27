@@ -107,6 +107,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxCount/not2",
 		"test-cases/maxCount/notNot",
 		"test-cases/maxCount/simple",
+		"test-cases/maxCount/simpleInversePath",
 		"test-cases/maxCount/targetNode",
 		"test-cases/maxExclusive/simple",
 		"test-cases/maxExclusiveMinLength/not",
@@ -122,9 +123,11 @@ abstract public class AbstractShaclTest {
 		"test-cases/minLength/simple",
 		"test-cases/nodeKind/not",
 		"test-cases/nodeKind/simple",
+		"test-cases/nodeKind/simpleInversePath",
 		"test-cases/nodeKind/validateTarget",
 		"test-cases/or/class",
 		"test-cases/or/class2",
+		"test-cases/or/class2InversePath",
 		"test-cases/or/classValidateTarget",
 		"test-cases/or/datatype",
 		"test-cases/or/datatype2",
@@ -147,7 +150,10 @@ abstract public class AbstractShaclTest {
 		"test-cases/pattern/simple",
 		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
-		"test-cases/uniqueLang/simple"
+		"test-cases/uniqueLang/simple",
+		"test-cases/functionalProperty/singleFunctional",
+		"test-cases/functionalProperty/multipleFunctional",
+		"test-cases/functionalProperty/multipleFunctionalOr"
 	)
 		.distinct()
 		.sorted()
@@ -303,7 +309,7 @@ abstract public class AbstractShaclTest {
 				printCurrentState(shaclRepository);
 
 				ran = true;
-				printFile(queryFile.getName());
+				printFile(dataPath + queryFile.getName());
 
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);

@@ -80,9 +80,9 @@ public class UnknownShapesTest {
 				.collect(Collectors.toSet());
 
 		Set<String> expected = new HashSet<>(Arrays.asList(
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#PersonPropertyShape> sh:path [       sh:inversePath <http://example.com/ns#inverseThis>     ] .",
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape2> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#path> sh:inversePath <http://example.com/ns#inverseThis> .  <http://example.com/ns#PersonPropertyShape2> sh:path <http://example.com/ns#path> .",
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape3> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathList> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first>     \"one\";   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .  <http://example.com/ns#PersonPropertyShape3> sh:path <http://example.com/ns#pathList> ."));
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#alternativePath> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#alternativePath> sh:path [       sh:alternativePath <http://example.com/ns#father>     ] .",
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#pathSequence> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathSequence> sh:path (<http://example.com/ns#parent> <http://example.com/ns#firstName>) .",
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#inverseOfWithComplex> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#inverseOfWithComplex> sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ] ."));
 
 		assertEquals(expected, relevantLog);
 	}
