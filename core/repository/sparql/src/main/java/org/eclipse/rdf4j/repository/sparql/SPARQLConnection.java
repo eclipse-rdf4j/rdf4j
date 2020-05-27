@@ -103,17 +103,17 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
-	private final boolean silentMode;
+	private boolean silentMode;
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
-		this(repository, client, false, false); // in triple mode by default
+		this(repository, client, false); // in triple mode by default
 	}
 
-	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client, boolean quadMode, boolean silentMode) {
+	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client, boolean quadMode) {
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
-		this.silentMode = silentMode;
+		this.silentMode = false;
 	}
 
 	@Override
@@ -607,7 +607,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		boolean localTransaction = startLocalTransaction();
 
 		String clearMode = "CLEAR";
-		if( this.isSilentMode() ){
+		if (this.isSilentMode()) {
 			clearMode = "CLEAR SILENT";
 		}
 
@@ -996,6 +996,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	protected boolean isSilentMode() {
 		return silentMode;
 	}
+
 	/**
 	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by using the
 	 * respective values from the {@link BindingSet} or (if provided) the ones from the arguments.

@@ -151,7 +151,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 		if (!isInitialized()) {
 			init();
 		}
-		return new SPARQLConnection(this, createHTTPClient(), quadMode, silentMode);
+		return new SPARQLConnection(this, createHTTPClient(), quadMode);
 	}
 
 	@Override
@@ -247,6 +247,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	public void enableQuadMode(boolean flag) {
 		this.quadMode = flag;
 	}
+
 	public void enableSilentMode(boolean flag) {
 		this.silentMode = flag;
 	}
