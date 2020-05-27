@@ -9,10 +9,7 @@ package org.eclipse.rdf4j.model.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.Date;
-import java.util.IllformedLocaleException;
-import java.util.Locale;
-import java.util.Objects;
+import java.util.*;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -49,6 +46,11 @@ public class Literals {
 	 */
 	public static String getLabel(Value v, String fallback) {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
+	}
+
+	public static String getLabel(Optional v, String fallback) {
+
+		return v instanceof Optional ? getLabel((Value) v.orElseGet(null), fallback) : fallback;
 	}
 
 	/**

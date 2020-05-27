@@ -15,13 +15,15 @@ import static org.junit.Assert.fail;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Optional;
 
+import javax.swing.text.html.Option;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.Duration;
 
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Ignore;
@@ -818,5 +820,25 @@ public class LiteralsTest {
 		assertEquals("fr-FR", Literals.normalizeLanguageTag("fr-fr"));
 		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-FR"));
 		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-fr"));
+	}
+
+	/**
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
+	 */
+	@Test
+	public void testGetLabelForOptinal() throws Exception {
+		ValueFactory VF = SimpleValueFactory.getInstance();
+		Model model = new LinkedHashModel();
+
+		IRI foo = VF.createIRI("http://example.org/foo");
+		IRI bar = VF.createIRI("http://example.org/bar");
+
+		Literal lit = VF.createLiteral(1.0);
+		model.add(foo, bar, lit);
+
+		Optional result = Models.object(model);
+		String label = Literals.getLabel(result, null);
+		assertNotNull(label);
+		assertTrue(label.equals("1.0"));
 	}
 }
