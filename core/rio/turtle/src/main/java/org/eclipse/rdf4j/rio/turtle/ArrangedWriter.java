@@ -242,6 +242,8 @@ public class ArrangedWriter extends AbstractRDFWriter {
 							+ BasicWriterSettings.INLINE_BLANK_NODES.getKey());
 				}
 			} else {
+				// this function call ensures that statements are displayed for an inline blank node which is repeated.
+				queueBlankStatements(bkey);
 				stack.addLast(bkey);
 			}
 		}
