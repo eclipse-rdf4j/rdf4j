@@ -16,17 +16,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -108,9 +105,8 @@ public class CompoundTarget extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		assertConnectionIsShaclSailConnection(shaclSailConnection);
-		return new ExternalTypeFilterNode(shaclSailConnection, targetPredicate,
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(), targetPredicate,
 				new HashSet<>(Arrays.asList(targetObject)), parent, 0, true);
 	}
 

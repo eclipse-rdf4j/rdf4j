@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -268,7 +267,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id.toString();
 	}
 
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		return parent;
 	}
 
@@ -299,10 +298,4 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return nodeShapes;
 	}
 
-	void assertConnectionIsShaclSailConnection(SailConnection shaclSailConnection) {
-		assert shaclSailConnection instanceof ShaclSailConnection ||
-				(shaclSailConnection instanceof VerySimpleRdfsBackwardsChainingConnection
-						&& ((VerySimpleRdfsBackwardsChainingConnection) shaclSailConnection)
-								.getWrappedConnection() instanceof ShaclSailConnection);
-	}
 }

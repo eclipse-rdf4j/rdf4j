@@ -15,9 +15,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterIsObject;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -113,9 +111,9 @@ public class AllObjectsTarget extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		assertConnectionIsShaclSailConnection(shaclSailConnection);
-		return new ExternalFilterIsObject(shaclSailConnection, parent, 0).getTrueNode(UnBufferedPlanNode.class);
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalFilterIsObject(connectionsGroup.getBaseConnection(), parent, 0)
+				.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override

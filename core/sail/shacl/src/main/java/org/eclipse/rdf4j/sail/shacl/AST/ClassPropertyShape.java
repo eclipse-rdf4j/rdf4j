@@ -184,7 +184,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		PlanNode innerJoin = innerJoinHolder.getJoined(BufferedPlanNode.class);
 		PlanNode discardedRight = innerJoinHolder.getDiscardedRight(BufferedPlanNode.class);
 
-		PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), discardedRight);
+		PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup, discardedRight);
 
 		innerJoin = new Unique(new UnionNode(innerJoin, typeFilterPlan));
 
@@ -305,7 +305,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode innerJoin = innerJoinHolder.getJoined(BufferedPlanNode.class);
 			PlanNode discardedRight = innerJoinHolder.getDiscardedRight(BufferedPlanNode.class);
 
-			PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), discardedRight);
+			PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup, discardedRight);
 
 			innerJoin = new Unique(new UnionNode(innerJoin, typeFilterPlan));
 
@@ -487,6 +487,6 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

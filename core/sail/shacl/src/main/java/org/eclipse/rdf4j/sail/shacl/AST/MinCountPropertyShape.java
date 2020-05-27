@@ -108,7 +108,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode planRemovedStatements = new Unique(
 					new TrimTuple(getPlanRemovedStatements(connectionsGroup, null), 0, 1));
 
-			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(),
+			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(connectionsGroup,
 					planRemovedStatements);
 
 			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
@@ -119,7 +119,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements1 = getPlanAddedStatements(connectionsGroup, null);
 
-			planAddedStatements1 = (nodeShape).getTargetFilter(connectionsGroup.getBaseConnection(),
+			planAddedStatements1 = (nodeShape).getTargetFilter(connectionsGroup,
 					planAddedStatements1);
 
 			topNode = new UnionNode(unique, planAddedStatements1);
@@ -137,7 +137,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode addedByPath = getPlanAddedStatements(connectionsGroup, null);
 
-			addedByPath = (nodeShape).getTargetFilter(connectionsGroup.getBaseConnection(), addedByPath);
+			addedByPath = (nodeShape).getTargetFilter(connectionsGroup, addedByPath);
 
 			topNode = new UnionNode(planAddedForShape, addedByPath);
 
@@ -216,6 +216,6 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

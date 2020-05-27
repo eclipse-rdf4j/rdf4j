@@ -107,7 +107,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode planAddedStatements1 = super.getPlanAddedStatements(connectionsGroup, null);
 
-		planAddedStatements1 = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), planAddedStatements1);
+		planAddedStatements1 = nodeShape.getTargetFilter(connectionsGroup, planAddedStatements1);
 
 		PlanNode mergeNode = new UnionNode(planAddedStatements, planAddedStatements1);
 
@@ -198,6 +198,6 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

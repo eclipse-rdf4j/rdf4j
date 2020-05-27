@@ -8,23 +8,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-import org.eclipse.rdf4j.sail.shacl.VerySimpleRdfsBackwardsChainingConnection;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
@@ -203,13 +198,14 @@ public class AllSubjectsTarget extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		assertConnectionIsShaclSailConnection(shaclSailConnection);
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		if (filterShape != null) {
-			return new ExternalFilterByQuery(shaclSailConnection, parent, 0, getQuery("?a", null, null), "?A")
-					.getTrueNode(UnBufferedPlanNode.class);
+			return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, 0,
+					getQuery("?a", null, null), "?A")
+							.getTrueNode(UnBufferedPlanNode.class);
 		} else {
-			return new ExternalFilterIsSubject(shaclSailConnection, parent, 0).getTrueNode(UnBufferedPlanNode.class);
+			return new ExternalFilterIsSubject(connectionsGroup.getBaseConnection(), parent, 0)
+					.getTrueNode(UnBufferedPlanNode.class);
 		}
 
 	}

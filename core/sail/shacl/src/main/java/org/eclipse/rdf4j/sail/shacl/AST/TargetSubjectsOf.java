@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -115,10 +114,8 @@ public class TargetSubjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		assertConnectionIsShaclSailConnection(shaclSailConnection);
-
-		return new ExternalFilterByPredicate(shaclSailConnection, targetSubjectsOf, parent, 0,
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalFilterByPredicate(connectionsGroup.getBaseConnection(), targetSubjectsOf, parent, 0,
 				ExternalFilterByPredicate.On.Subject);
 	}
 
