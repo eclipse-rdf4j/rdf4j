@@ -11,7 +11,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,14 +33,12 @@ public class SPARQLConnectionTest {
 
 	private SPARQLConnection subject;
 	private SPARQLProtocolSession client;
-	private SPARQLRepository repository;
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setUp() throws Exception {
 		client = mock(SPARQLProtocolSession.class);
-		repository = mock(SPARQLRepository.class);
-		subject = new SPARQLConnection(repository, client);
+		subject = new SPARQLConnection(null, client);
 	}
 
 	@Test
