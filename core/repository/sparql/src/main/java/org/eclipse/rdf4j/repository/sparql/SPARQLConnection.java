@@ -103,15 +103,17 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
+	private final boolean silentMode;
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
-		this(repository, client, false); // in triple mode by default
+		this(repository, client, false, false); // in triple mode by default
 	}
 
-	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client, boolean quadMode) {
+	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client, boolean quadMode, boolean silentMode) {
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
+		this.silentMode = silentMode;
 	}
 
 	@Override
@@ -604,16 +606,21 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		boolean localTransaction = startLocalTransaction();
 
+		String clearMode = "CLEAR";
+		if( this.isSilentMode() ){
+			clearMode = "CLEAR SILENT";
+		}
+
 		if (contexts.length == 0) {
-			sparqlTransaction.append("CLEAR ALL ");
+			sparqlTransaction.append( clearMode + " ALL ");
 			sparqlTransaction.append("; ");
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					sparqlTransaction.append("CLEAR DEFAULT ");
+					sparqlTransaction.append( clearMode + " DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append("CLEAR GRAPH <" + context.stringValue() + "> ");
+					sparqlTransaction.append( clearMode + " GRAPH <" + context.stringValue() + "> ");
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
@@ -986,6 +993,9 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return quadMode;
 	}
 
+	protected boolean isSilentMode() {
+		return silentMode;
+	}
 	/**
 	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by using the
 	 * respective values from the {@link BindingSet} or (if provided) the ones from the arguments.
