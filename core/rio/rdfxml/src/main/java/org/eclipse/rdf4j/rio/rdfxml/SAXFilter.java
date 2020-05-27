@@ -553,14 +553,11 @@ class SAXFilter implements ContentHandler {
 			// Create a String with all needed context prefixes
 			StringBuilder contextPrefixes = new StringBuilder(1024);
 			ElementInfo topElement = peekStack();
-			System.out.println(topElement.localName);
 
 			for (int i = 0; i < unknownPrefixesCount; i++) {
 				String prefix = unknownPrefixesInXMLLiteral.get(i);
 				String namespace = topElement.getNamespace(prefix);
 				if (namespace != null) {
-					System.out.println(prefix);
-					System.out.println(namespace);
 					appendNamespaceDecl(contextPrefixes, prefix, namespace);
 				}
 			}
