@@ -17,12 +17,14 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Optional;
 
-import javax.swing.text.html.Option;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.Duration;
 
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -37,6 +39,9 @@ import org.junit.Test;
 public class LiteralsTest {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final Model model = new LinkedHashModel();
+	private static final IRI foo = vf.createIRI("http://example.org/foo");
+	private static final IRI bar = vf.createIRI("http://example.org/bar");
 
 	/**
 	 * Test method for
@@ -826,19 +831,29 @@ public class LiteralsTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
 	 */
 	@Test
-	public void testGetLabelForOptinal() throws Exception {
-		ValueFactory VF = SimpleValueFactory.getInstance();
-		Model model = new LinkedHashModel();
+	public void testGetLabelForOptional() throws Exception {
 
-		IRI foo = VF.createIRI("http://example.org/foo");
-		IRI bar = VF.createIRI("http://example.org/bar");
-
-		Literal lit = VF.createLiteral(1.0);
+		Literal lit = vf.createLiteral(1.0);
 		model.add(foo, bar, lit);
 
 		Optional result = Models.object(model);
-		String label = Literals.getLabel(result, null);
+		String label = Literals.getLabel(result, "fallback");
 		assertNotNull(label);
 		assertTrue(label.equals("1.0"));
+	}
+
+	/**
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
+	 */
+	@Test
+	public void testGetLabelForOptionalInFallback() throws Exception {
+
+		Literal lit = vf.createLiteral(1.0);
+		model.add(foo, bar, lit);
+
+		Optional result = Models.object(model);
+		String label = Literals.getLabel((Optional) null, "fallback");
+		assertNotNull(label);
+		assertTrue(label.equals("fallback"));
 	}
 }
