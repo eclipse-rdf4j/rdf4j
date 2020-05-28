@@ -564,26 +564,20 @@ class SAXFilter implements ContentHandler {
 				}
 			}
 
-			// Insert this String before the first '>' character
-			//int endOfFirstStartTag = charBuf.indexOf(">");
-
-			System.out.println("Charbuf before insert: ");
-			System.out.println(charBuf.toString());
-
-			//charBuf.insert(endOfFirstStartTag, contextPrefixes.toString());
 			int i = 0;
-			while(i<charBuf.length()){
+			int opentag = 0;
+			while (i < charBuf.length()) {
 				char ch = charBuf.charAt(i);
-				//System.out.println(i);
-				if(ch == '<'){
-					if((i+1) < charBuf.length()){
-						char nextChar = charBuf.charAt(i+1);
-						if(nextChar != '/'){
-							//System.out.println(nextChar);
-							//System.out.println(charBuf.substring(i));
+				if (ch == '<') {
+					if ((i + 1) < charBuf.length()) {
+						char nextChar = charBuf.charAt(i + 1);
+						if (nextChar != '/' && opentag == 0) {
+							opentag++;
 							int endOfFirstStartTag = charBuf.substring(i).indexOf(">");
-							//System.out.println(endOfFirstStartTag);
+							// System.out.println(endOfFirstStartTag);
 							charBuf.insert(endOfFirstStartTag + i, contextPrefixes.toString());
+						} else {
+							opentag--;
 						}
 					}
 				}
@@ -592,7 +586,6 @@ class SAXFilter implements ContentHandler {
 
 			System.out.println("Charbuf after insert: ");
 			System.out.println(charBuf);
-
 
 		}
 
