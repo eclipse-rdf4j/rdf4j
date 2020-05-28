@@ -44,12 +44,15 @@ public class ArrangedWriterTest {
 
 	private RDFWriterFactory writerFactory;
 
-	private BNode bnode;
+	private BNode bnode1;
+
+	private BNode bnode2;
 
 	public ArrangedWriterTest() {
 		vf = SimpleValueFactory.getInstance();
 
-		bnode = vf.createBNode("bnode");
+		bnode1 = vf.createBNode("bnode1");
+		bnode2 = vf.createBNode("bnode2");
 
 		exNs = "http://example.org/";
 
@@ -84,10 +87,13 @@ public class ArrangedWriterTest {
 	@Test
 	public void testWriteRepeatedInlineBlankNode() {
 		Model model = new ModelBuilder().subject(exNs + "subject")
-				.add(vf.createIRI(exNs, "rel1"), bnode)
-				.add(vf.createIRI(exNs, "rel2"), bnode)
-				.subject(bnode)
-				.add(RDFS.LABEL, "the bnode")
+				.add(vf.createIRI(exNs, "rel1"), bnode1)
+				.add(vf.createIRI(exNs, "rel2"), bnode1)
+				.add(vf.createIRI(exNs, "rel3"), bnode2)
+				.subject(bnode1)
+				.add(RDFS.LABEL, "the bnode1")
+				.subject(bnode2)
+				.add(RDFS.LABEL, "the bnode2")
 				.build();
 
 		model.setNamespace(RDFS.NS);
@@ -103,11 +109,11 @@ public class ArrangedWriterTest {
 		String expectedResult = "@prefix ex: <http://example.org/> ." + sep +
 				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> ." + sep +
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> ." + sep + sep +
-				"ex:subject ex:rel1 [" + sep +
-				"      rdfs:label \"the bnode\"" + sep +
-				"    ];" + sep +
-				"  ex:rel2 [" + sep +
-				"      rdfs:label \"the bnode\"" + sep +
+				"ex:subject ex:rel1 _:bnode1 ." + sep + sep +
+				"_:bnode1 rdfs:label \"the bnode1\" ." + sep + sep +
+				"ex:subject ex:rel2 _:bnode1;" + sep +
+				"  ex:rel3 [" + sep +
+				"      rdfs:label \"the bnode2\"" + sep +
 				"    ] ." + sep;
 
 		assertEquals(expectedResult, stringWriter.toString());
