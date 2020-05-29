@@ -359,6 +359,12 @@ public class SHACL {
 	public static final IRI XONE_CONSTRAINT_COMPONENT_XONE;
 
 	// Properties
+	/** sh:actual */
+	public static final IRI ACTUAL;
+
+	/** sh:actualformat */
+	public static final IRI ACTUALFORMAT;
+
 	/** sh:alternativePath */
 	public static final IRI ALTERNATIVE_PATH;
 
@@ -415,6 +421,9 @@ public class SHACL {
 
 	/** sh:equals */
 	public static final IRI EQUALS;
+
+	/** sh:expected */
+	public static final IRI EXPECTED;
 
 	/** sh:flags */
 	public static final IRI FLAGS;
@@ -744,6 +753,8 @@ public class SHACL {
 		XONE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "XoneConstraintComponent");
 		XONE_CONSTRAINT_COMPONENT_XONE = factory.createIRI(NAMESPACE, "XoneConstraintComponent-xone");
 
+		ACTUAL = factory.createIRI(NAMESPACE, "actual");
+		ACTUALFORMAT = factory.createIRI(NAMESPACE, "actualformat");
 		ALTERNATIVE_PATH = factory.createIRI(NAMESPACE, "alternativePath");
 		AND = factory.createIRI(NAMESPACE, "and");
 		ANNOTATION_PROPERTY = factory.createIRI(NAMESPACE, "annotationProperty");
@@ -762,6 +773,7 @@ public class SHACL {
 		DESCRIPTION = factory.createIRI(NAMESPACE, "description");
 		DETAIL = factory.createIRI(NAMESPACE, "detail");
 		DISJOINT = factory.createIRI(NAMESPACE, "disjoint");
+		EXPECTED = factory.createIRI(NAMESPACE, "expected");
 		EQUALS = factory.createIRI(NAMESPACE, "equals");
 		FLAGS = factory.createIRI(NAMESPACE, "flags");
 		FOCUS_NODE = factory.createIRI(NAMESPACE, "focusNode");
