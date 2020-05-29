@@ -380,8 +380,24 @@ public class SPARQLParserTest {
 
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 
-		System.out.println(tupleExpr.toString());
-
+		String expectedResult = "Projection\n" +
+				"   ProjectionElemList\n" +
+				"      ProjectionElem \"d\"\n" +
+				"      ProjectionElem \"r\"\n" +
+				"   Extension\n" +
+				"      ExtensionElem (r)\n" +
+				"         Var (name=r)\n" +
+				"      Extension\n" +
+				"         ExtensionElem (r)\n" +
+				"            FunctionCall (http://www.w3.org/2005/xpath-functions#replace)\n" +
+				"               Var (name=d)\n" +
+				"               ValueConstant (value=\"\\.\")\n" +
+				"               ValueConstant (value=\"FOO\")\n" +
+				"         StatementPattern\n" +
+				"            Var (name=s)\n" +
+				"            Var (name=_const_62d811c4_uri, value=http://example.org/prop, anonymous)\n" +
+				"            Var (name=d)\n";
+		assertEquals(tupleExpr.toString(), expectedResult);
 	}
 
 	@Test
@@ -396,8 +412,24 @@ public class SPARQLParserTest {
 
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 
-		System.out.println(tupleExpr.toString());
-
+		String expectedResult = "Projection\n" +
+				"   ProjectionElemList\n" +
+				"      ProjectionElem \"d\"\n" +
+				"      ProjectionElem \"r\"\n" +
+				"   Extension\n" +
+				"      ExtensionElem (r)\n" +
+				"         Var (name=r)\n" +
+				"      Extension\n" +
+				"         ExtensionElem (r)\n" +
+				"            FunctionCall (http://www.w3.org/2005/xpath-functions#replace)\n" +
+				"               Var (name=d)\n" +
+				"               ValueConstant (value=\"\\.\")\n" +
+				"               ValueConstant (value=\"FOO\")\n" +
+				"         StatementPattern\n" +
+				"            Var (name=s)\n" +
+				"            Var (name=_const_62d811c4_uri, value=http://example.org/prop, anonymous)\n" +
+				"            Var (name=d)\n";
+		assertEquals(tupleExpr.toString(), expectedResult);
 	}
 
 	@Test
@@ -412,7 +444,24 @@ public class SPARQLParserTest {
 
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 
-		System.out.println(tupleExpr.toString());
+		String expectedResult = "Projection\n" +
+				"   ProjectionElemList\n" +
+				"      ProjectionElem \"d\"\n" +
+				"      ProjectionElem \"r\"\n" +
+				"   Extension\n" +
+				"      ExtensionElem (r)\n" +
+				"         Var (name=r)\n" +
+				"      Extension\n" +
+				"         ExtensionElem (r)\n" +
+				"            FunctionCall (http://www.w3.org/2005/xpath-functions#replace)\n" +
+				"               Var (name=d)\n" +
+				"               ValueConstant (value=\"\\*\")\n" +
+				"               ValueConstant (value=\"FOO\")\n" +
+				"         StatementPattern\n" +
+				"            Var (name=s)\n" +
+				"            Var (name=_const_62d811c4_uri, value=http://example.org/prop, anonymous)\n" +
+				"            Var (name=d)\n";
+		assertEquals(tupleExpr.toString(), expectedResult);
 
 	}
 }

@@ -553,7 +553,6 @@ class SAXFilter implements ContentHandler {
 			// Create a String with all needed context prefixes
 			StringBuilder contextPrefixes = new StringBuilder(1024);
 			ElementInfo topElement = peekStack();
-			System.out.println(topElement.localName);
 
 			for (int i = 0; i < unknownPrefixesCount; i++) {
 				String prefix = unknownPrefixesInXMLLiteral.get(i);
@@ -562,9 +561,6 @@ class SAXFilter implements ContentHandler {
 					appendNamespaceDecl(contextPrefixes, prefix, namespace);
 				}
 			}
-
-			System.out.println(contextPrefixes);
-			System.out.println(charBuf);
 
 			// Insert this String before the first '>' character
 			int endOfFirstStartTag = charBuf.indexOf(">");
