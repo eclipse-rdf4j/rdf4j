@@ -16,7 +16,6 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -60,6 +59,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		this.deactivated = deactivated;
 		this.parent = parent;
 	}
+
 	public Value getEXP() {
 		return this.Expected;
 	}

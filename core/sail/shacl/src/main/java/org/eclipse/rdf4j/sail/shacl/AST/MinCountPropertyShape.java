@@ -72,7 +72,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode groupBy = new GroupByCount(allStatements);
 
 			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
-			
+
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements, connectionsGroup);
 				logger.info(planAsGraphvizDot);

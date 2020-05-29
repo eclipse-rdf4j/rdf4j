@@ -37,7 +37,7 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 
 		this.pattern = pattern;
 		this.flags = flags;
-		this.Expected = SimpleValueFactory.getInstance().createLiteral("Flags: "+flags+" : Pattern: "+pattern);
+		this.Expected = SimpleValueFactory.getInstance().createLiteral("Flags: " + flags + " : Pattern: " + pattern);
 
 	}
 
