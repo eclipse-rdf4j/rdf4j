@@ -481,11 +481,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			if (strategy instanceof StrictEvaluationStrategy) {
 				strict = true;
 			}
-			boolean compareResult = QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, strict);
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
-				} else if (compareResult) {
+				} else if (QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, strict)) {
 					min = v;
 				}
 			}
@@ -517,11 +516,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				strict = true;
 			}
 			Value v = evaluate(s);
-			boolean compareResult = QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, strict);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
 					max = v;
-				} else if (compareResult) {
+				} else if (QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, strict)) {
 					max = v;
 				}
 			}
