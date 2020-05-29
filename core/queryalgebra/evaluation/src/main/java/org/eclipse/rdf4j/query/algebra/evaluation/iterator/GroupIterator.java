@@ -7,6 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Random;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
@@ -34,24 +46,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Random;
-import java.util.Set;
 
 /**
  * @author David Huynh
@@ -476,10 +477,15 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
+			boolean strict = false;
+			if (strategy instanceof StrictEvaluationStrategy) {
+				strict = true;
+			}
+			boolean compareResult = QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, strict);
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
-				} else if (QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, false)) {
+				} else if (compareResult) {
 					min = v;
 				}
 			}
@@ -506,11 +512,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
+			boolean strict = false;
+			if (strategy instanceof StrictEvaluationStrategy) {
+				strict = true;
+			}
 			Value v = evaluate(s);
+			boolean compareResult = QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, strict);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
 					max = v;
-				} else if (QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, false)) {
+				} else if (compareResult) {
 					max = v;
 				}
 			}
