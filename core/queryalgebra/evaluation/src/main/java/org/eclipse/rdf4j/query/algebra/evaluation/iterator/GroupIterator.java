@@ -7,18 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Random;
-import java.util.Set;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
@@ -32,6 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
@@ -46,10 +35,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Random;
+import java.util.Set;
 
 /**
  * @author David Huynh
@@ -477,7 +479,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
-				} else if (comparator.compare(v, min) < 0) {
+				} else if (QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, false)) {
 					min = v;
 				}
 			}
@@ -508,7 +510,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
 					max = v;
-				} else if (comparator.compare(v, max) > 0) {
+				} else if (QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, false)) {
 					max = v;
 				}
 			}
