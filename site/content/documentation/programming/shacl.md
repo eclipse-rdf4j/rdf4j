@@ -92,6 +92,7 @@ As of writing this documentation the following features are supported.
 - `sh:targetSubjectsOf`
 - `sh:targetObjectsOf`
 - `sh:path`
+- `sh:inversePath`
 - `sh:property`
 - `sh:or`
 - `sh:and`
@@ -113,9 +114,12 @@ As of writing this documentation the following features are supported.
 - `sh:in`
 - `sh:deactivated`
 
-Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes, equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
+Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes, 
+equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
 
-`sh:path` is limited to single predicate paths, eg. `ex:age`. Sequence paths, alternative paths, inverse paths and the like are not supported.
+`sh:path` is limited to single predicate paths, eg. `ex:age` or a single inverse path. Sequence paths, alternative paths and the like are not supported.
+
+Nested `sh:property` is not supported. 
 
 # Validation results
 
