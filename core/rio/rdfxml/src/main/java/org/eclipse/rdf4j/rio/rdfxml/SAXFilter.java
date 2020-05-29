@@ -558,8 +558,6 @@ class SAXFilter implements ContentHandler {
 				String prefix = unknownPrefixesInXMLLiteral.get(i);
 				String namespace = topElement.getNamespace(prefix);
 				if (namespace != null) {
-					System.out.println(prefix);
-					System.out.println(namespace);
 					appendNamespaceDecl(contextPrefixes, prefix, namespace);
 				}
 			}
@@ -574,7 +572,6 @@ class SAXFilter implements ContentHandler {
 						if (nextChar != '/' && opentag == 0) {
 							opentag++;
 							int endOfFirstStartTag = charBuf.substring(i).indexOf(">");
-							// System.out.println(endOfFirstStartTag);
 							charBuf.insert(endOfFirstStartTag + i, contextPrefixes.toString());
 						} else {
 							opentag--;
@@ -583,9 +580,6 @@ class SAXFilter implements ContentHandler {
 				}
 				i += 1;
 			}
-
-			System.out.println("Charbuf after insert: ");
-			System.out.println(charBuf);
 
 		}
 
