@@ -16,10 +16,12 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -50,12 +52,16 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 	NodeShape nodeShape;
 	PathPropertyShape parent;
+	Value Expected = SimpleValueFactory.getInstance().createLiteral("null");
 
 	PropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent) {
 		this.id = id;
 		this.nodeShape = nodeShape;
 		this.deactivated = deactivated;
 		this.parent = parent;
+	}
+	public Value getEXP() {
+		return this.Expected;
 	}
 
 	@Override

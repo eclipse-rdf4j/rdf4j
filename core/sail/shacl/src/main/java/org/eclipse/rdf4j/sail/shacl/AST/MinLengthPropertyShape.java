@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -34,6 +35,7 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minLength = minLength;
+		this.Expected = SimpleValueFactory.getInstance().createLiteral(minLength);
 
 	}
 

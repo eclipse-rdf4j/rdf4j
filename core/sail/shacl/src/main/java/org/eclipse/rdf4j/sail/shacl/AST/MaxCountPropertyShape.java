@@ -48,6 +48,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxCount = maxCount;
+		this.Expected = SimpleValueFactory.getInstance().createLiteral(maxCount);
 
 	}
 
