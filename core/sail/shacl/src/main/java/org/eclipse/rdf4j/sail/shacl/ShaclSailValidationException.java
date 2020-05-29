@@ -61,7 +61,9 @@ public class ShaclSailValidationException extends SailException implements Valid
 			while (!propertyShapes.isEmpty()) {
 				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
 						invalidTuple.line.get(0));
-				validationResult.SetAct(invalidTuple.line.get(1));
+				if (invalidTuple.line.size() > 1) {
+					validationResult.SetAct(invalidTuple.line.get(1));
+				}
 				if (parent == null) {
 					validationReport.addValidationResult(validationResult);
 				} else {
