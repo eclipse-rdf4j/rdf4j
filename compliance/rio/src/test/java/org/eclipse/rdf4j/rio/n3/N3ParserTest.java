@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.rio.n3;
 
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
+import org.eclipse.rdf4j.rio.n3.N3Parser;
 import org.junit.Ignore;
 
 import junit.framework.Test;
@@ -26,6 +26,6 @@ public class N3ParserTest extends N3ParserTestCase {
 
 	@Override
 	protected RDFParser createRDFParser() {
-		return new TurtleParser();
+		return new N3Parser();
 	}
 }
