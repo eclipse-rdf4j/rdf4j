@@ -56,24 +56,40 @@ public class ValidationReportTest {
 			actual.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
+			System.out.println("HIa\n" + actual.toString());
 
 			Rio.write(actual, System.out, RDFFormat.TURTLE);
 
-			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n"
-					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
-					+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
-					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
-					+ "_:node1d1gi0h02x12 a sh:ValidationReport;\n" + "  sh:conforms false;\n"
-					+ "  sh:result _:node1d1gi0h02x13 .\n" + "\n" + "_:node1d1gi0h02x13 a sh:ValidationResult;\n"
-					+ "  sh:focusNode rdf:subject;\n" + "  sh:resultPath rdfs:label;\n"
-					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
-					+ "  sh:sourceShape ex:PersonShapeProperty .\n" + "\n"
-					+ "_:node1d1gi0h02x12 sh:result _:node1d1gi0h02x14 .\n" + "\n"
-					+ "_:node1d1gi0h02x14 a sh:ValidationResult;\n" + "  sh:focusNode rdfs:Class;\n"
-					+ "  sh:resultPath rdfs:label;\n"
-					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
-					+ "  sh:sourceShape ex:PersonShapeProperty ." + ""), "", RDFFormat.TURTLE);
+			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n" +
+					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"_:node1e9grukegx18 a sh:ValidationReport;\n" +
+					"  sh:conforms false;\n" +
+					"  sh:result _:node1e9grukegx19 .\n" +
+					"\n" +
+					"_:node1e9grukegx19 a sh:ValidationResult;\n" +
+					"  sh:actual \"0\"^^<http://www.w3.org/2001/XMLSchema#int>;\n" +
+					"  sh:actualformat \"0\"^^<http://www.w3.org/2001/XMLSchema#int>;\n" +
+					"  sh:expected \"1\"^^<http://www.w3.org/2001/XMLSchema#long>;\n" +
+					"  sh:focusNode rdf:subject;\n" +
+					"  sh:resultPath rdfs:label;\n" +
+					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"  sh:sourceShape ex:PersonShapeProperty .\n" +
+					"\n" +
+					"_:node1e9grukegx18 sh:result _:node1e9grukegx20 .\n" +
+					"\n" +
+					"_:node1e9grukegx20 a sh:ValidationResult;\n" +
+					"  sh:actual \"0\"^^<http://www.w3.org/2001/XMLSchema#int>;\n" +
+					"  sh:actualformat \"0\"^^<http://www.w3.org/2001/XMLSchema#int>;\n" +
+					"  sh:expected \"1\"^^<http://www.w3.org/2001/XMLSchema#long>;\n" +
+					"  sh:focusNode rdfs:Class;\n" +
+					"  sh:resultPath rdfs:label;\n" +
+					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"  sh:sourceShape ex:PersonShapeProperty ." + ""), "", RDFFormat.TURTLE);
 
+			System.out.println("HI\n" + expected.toString());
 			assertTrue(Models.isomorphic(expected, actual));
 
 		}
@@ -150,20 +166,27 @@ public class ValidationReportTest {
 
 			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
 
-			Model expected = Rio.parse(new StringReader(""
-					+ "@prefix ex: <http://example.com/ns#> .\n"
-					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
-					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
-					+ "[] a sh:ValidationReport;\n" +
+			Model expected = Rio.parse(new StringReader("" +
+					"@prefix ex: <http://example.com/ns#> .\n" +
+					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
 					"  sh:result [ a sh:ValidationResult;\n" +
 					"      sh:detail [ a sh:ValidationResult;\n" +
+					"          sh:actual \"abc\";\n" +
+					"          sh:actualformat <http://www.w3.org/2001/XMLSchema#string>;\n" +
 					"          sh:detail [ a sh:ValidationResult;\n" +
+					"              sh:actual \"abc\";\n" +
+					"              sh:actualformat <http://www.w3.org/2001/XMLSchema#string>;\n" +
+					"              sh:expected <http://www.w3.org/2001/XMLSchema#long>;\n" +
 					"              sh:focusNode ex:validPerson1;\n" +
 					"              sh:resultPath ex:age;\n" +
 					"              sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
 					"              sh:sourceShape ex:personShapeAgeLong\n" +
 					"            ];\n" +
+					"          sh:expected <http://www.w3.org/2001/XMLSchema#integer>;\n" +
 					"          sh:focusNode ex:validPerson1;\n" +
 					"          sh:resultPath ex:age;\n" +
 					"          sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
