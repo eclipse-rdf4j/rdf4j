@@ -36,7 +36,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.nodeKind = NodeKind.from(nodeKind);
-
+		this.Expected = nodeKind;
 	}
 
 	public enum NodeKind {

@@ -34,6 +34,7 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.datatype = datatype;
+		this.Expected = datatype;
 
 	}
 

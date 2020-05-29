@@ -34,6 +34,7 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minExclusive = minExclusive;
+		this.Expected = minExclusive;
 
 	}
 

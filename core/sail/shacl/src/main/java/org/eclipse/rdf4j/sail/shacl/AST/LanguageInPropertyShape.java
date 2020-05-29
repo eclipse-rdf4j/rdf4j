@@ -8,12 +8,14 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -38,6 +40,13 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
+		Iterator value = this.languageIn.iterator();
+		String x = "( ";
+		while (value.hasNext()) {
+			x += "'" + value.next() + "' ";
+		}
+		x += ")";
+		this.Expected = SimpleValueFactory.getInstance().createLiteral(x);
 	}
 
 	@Override

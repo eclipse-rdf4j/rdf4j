@@ -50,6 +50,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minCount = minCount;
+		this.Expected = SimpleValueFactory.getInstance().createLiteral(minCount);
 
 	}
 
@@ -71,7 +72,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode groupBy = new GroupByCount(allStatements);
 
 			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
-
+			
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(filteredStatements, connectionsGroup);
 				logger.info(planAsGraphvizDot);
