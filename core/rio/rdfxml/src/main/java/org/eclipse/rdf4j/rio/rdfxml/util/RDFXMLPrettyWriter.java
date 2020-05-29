@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
 
 /**
@@ -372,6 +374,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 * Used both in writeStartSubject and writeEmptySubject.
 	 */
 	private void writeNodeStartOfStartTag(Node node) throws IOException, RDFHandlerException {
+		Boolean compactXML = getWriterConfig().get(XMLWriterSettings.COMPACT_XML);
 		Value value = node.getValue();
 
 		if (node.hasType()) {
@@ -387,7 +390,8 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
 		} else {
 			BNode bNode = (BNode) value;
-			writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+			if (!compactXML)
+				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
 		}
 	}
 

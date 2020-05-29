@@ -8,25 +8,30 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
-import java.io.StringReader;
-import java.io.StringWriter;
+import java.io.*;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
-import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.rio.*;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
+import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriter;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
 import org.junit.Test;
 
@@ -105,6 +110,58 @@ public class RDFXMLPrettyWriterTest extends RDFWriterTest {
 	}
 
 	@Test
+	public void compactXMLPrintTest() throws RDFHandlerException, IOException, ClassNotFoundException,
+			NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+		OutputStream outputStream = new ByteArrayOutputStream();
+		PrintStream printStream = new PrintStream(outputStream);
+		System.setOut(printStream);
+
+		RDFWriter rdfXmlWriter = new RDFXMLPrettyWriter(System.out);
+
+		Class<?> arrangedWriterCls = Class.forName("org.eclipse.rdf4j.rio.turtle.ArrangedWriter");
+		Constructor<?> constructor = arrangedWriterCls.getConstructor(RDFWriter.class);
+		constructor.setAccessible(true);
+		RDFWriter arrangedXmlWriter = (RDFWriter) constructor.newInstance(rdfXmlWriter);
+
+		arrangedXmlWriter.set(BasicWriterSettings.PRETTY_PRINT, false);
+		arrangedXmlWriter.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		arrangedXmlWriter.set(XMLWriterSettings.COMPACT_XML, true);
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+
+		IRI subject = vf.createIRI("http://example.org/subject");
+		IRI relation = vf.createIRI("http://example.org/relation");
+
+		LinkedHashModel model = new LinkedHashModel();
+		BNode bnode = vf.createBNode("bnode");
+
+		model.add(subject, relation, bnode);
+		model.add(bnode, RDFS.LABEL, vf.createLiteral("the bnode"));
+		model.setNamespace(RDFS.NS);
+		model.setNamespace("ex", "http://example.org/");
+
+		List<Statement> shuffledStatements = new ArrayList<>(model);
+		Collections.shuffle(shuffledStatements);
+		Rio.write(shuffledStatements, arrangedXmlWriter);
+
+		String expectedOutput = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+				"<rdf:RDF\n" +
+				"\txmlns:rdfs=\"http://www.w3.org/2000/01/rdf-schema#\"\n" +
+				"\txmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n" +
+				"<rdf:Description rdf:about=\"http://example.org/subject\">\n" +
+				"\t<relation xmlns=\"http://example.org/\">\n" +
+				"\t\t<rdf:Description>\n" +
+				"\t\t\t<rdfs:label rdf:datatype=\"http://www.w3.org/2001/XMLSchema#string\">the bnode</rdfs:label>\n" +
+				"\t\t</rdf:Description>\n" +
+				"\t</relation>\n" +
+				"</rdf:Description>\n" +
+				"\n" +
+				"</rdf:RDF>";
+
+		assertEquals(expectedOutput, outputStream.toString());
+	}
+
+	@Test
 	public void inSequenceItemsMixedWithOtherElementsAreAbbreviated() throws RDFHandlerException, IOException {
 		StringWriter writer = new StringWriter();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(writer);
@@ -126,7 +183,6 @@ public class RDFXMLPrettyWriterTest extends RDFWriterTest {
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
-
 		assertEquals(Arrays.asList("<rdf:RDF", "<rdf:Bag", "<rdf:_2", "<rdf:li", "<rdf:_3", "<rdf:li"), rdfLines);
 	}
 }
