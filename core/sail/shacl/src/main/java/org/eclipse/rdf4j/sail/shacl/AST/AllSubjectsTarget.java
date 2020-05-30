@@ -43,12 +43,17 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 public class AllSubjectsTarget extends NodeShape {
 
 	NodeShape filterShape;
+	List<StatementPattern> statementPatternList;
+	String query;
 
 	AllSubjectsTarget(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
 			Resource filterShape) {
 		super(id, shaclSail, connection, deactivated);
 		if (shaclSail.isExperimentalFilterShapeSupport() && filterShape != null) {
 			this.filterShape = new NodeShape(filterShape, shaclSail, connection, false);
+			statementPatternList = this.filterShape.getStatementPatterns().collect(Collectors.toList());
+			query = this.filterShape.buildSparqlValidNodes("?a");
+
 		}
 
 	}
@@ -87,10 +92,10 @@ public class AllSubjectsTarget extends NodeShape {
 
 		if (filterShape != null) {
 
-			List<StatementPattern> statementPatternList = filterShape.getStatementPatterns()
-					.collect(Collectors.toList());
-
-			String query = filterShape.buildSparqlValidNodes("?a");
+			/*
+			 * General approach here is to: 2. Get all subjects that match any of the statements patterns of the filter
+			 * shape 3. Feed this in as a bind into the SPARQL query generated from the filter shape
+			 */
 
 			PlanNode planNode = new EmptyNode();
 			for (StatementPattern statementPattern : statementPatternList) {
@@ -135,11 +140,6 @@ public class AllSubjectsTarget extends NodeShape {
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		if (filterShape != null) {
-
-			List<StatementPattern> statementPatternList = filterShape.getStatementPatterns()
-					.collect(Collectors.toList());
-
-			String query = filterShape.buildSparqlValidNodes("?a");
 
 			PlanNode planNode = new EmptyNode();
 			for (StatementPattern statementPattern : statementPatternList) {
