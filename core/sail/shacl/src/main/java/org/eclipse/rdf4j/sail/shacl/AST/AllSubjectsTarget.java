@@ -203,7 +203,7 @@ public class AllSubjectsTarget extends NodeShape {
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		if (filterShape != null) {
 			return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, 0,
-					getQuery("?a", null, null), "?A")
+					getQuery("?a", null, null), "?a")
 							.getTrueNode(UnBufferedPlanNode.class);
 		} else {
 			return new ExternalFilterIsSubject(connectionsGroup.getBaseConnection(), parent, 0)

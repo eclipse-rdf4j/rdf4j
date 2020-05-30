@@ -45,7 +45,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		queryFragment = "SELECT " + queryVariable + " {\n" + queryFragment + "\n}";
+		queryFragment = "SELECT " + queryVariable + " WHERE {\n" + queryFragment + "\n}";
 		try {
 			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null);
 		} catch (MalformedQueryException e) {
@@ -61,7 +61,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		Value value = t.getLine().get(index);
 
 		MapBindingSet bindings = new MapBindingSet();
-		bindings.addBinding(queryVariable, value);
+
+		bindings.addBinding(queryVariable.substring(1), value);
 
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(
 				query.getTupleExpr(), query.getDataset(),

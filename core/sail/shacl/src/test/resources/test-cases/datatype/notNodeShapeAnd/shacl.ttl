@@ -10,21 +10,15 @@ ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
 	sh:not [
-	        sh:and (
-	                [
-
-		                        sh:path ex:knows ;
-		                        sh:hasValue ex:peter ;
-
-	                ]
-
-	                [
-
-		                        sh:path ex:knows ;
-		                        sh:hasValue ex:steve ;
-
-	                ]
-
-	         )
-	].
+		sh:and (
+		[
+		        sh:path ex:age ;
+                        sh:datatype xsd:boolean
+                ]
+		[
+		        sh:path ex:age ;
+		        sh:datatype xsd:string
+		]
+		);
+	] .
 

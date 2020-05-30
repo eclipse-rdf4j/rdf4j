@@ -1,3 +1,4 @@
+
 PREFIX ex: <http://example.com/ns#>
 PREFIX owl: <http://www.w3.org/2002/07/owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -6,8 +7,8 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-ex:validPerson1 a ex:Person .
 
-
+ex:validPerson1 a ex:Person ;
+	ex:knows ex:steve, ex:peter.
 
 }

@@ -456,7 +456,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		}
 
 		if (negated && connectionsGroup.getStats().hasAdded() && getPath() != null) {
-			// Handle when a type statement has been removed, first get all removed type statements that match the
+			// Handle when a type statement has been removed, first get all added type statements that match the
 			// classResource for this shape
 			PlanNode removedTypeStatements = new Select(connectionsGroup.getAddedStatements(),
 					"?a a <" + classResource + ">", "?a");

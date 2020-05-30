@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -64,16 +65,19 @@ public class NotPropertyShape extends PathPropertyShape {
 		}
 
 		if (this.getPath() != null) {
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					overrideTargetNode, false, !negateThisPlan);
 
 			PlanNode parent = plan.getParent();
-
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(parent, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(parent, this);
 
 		} else {
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					() -> getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan), false, false);
 
 			// parents are the targets that are checked
@@ -90,7 +94,10 @@ public class NotPropertyShape extends PathPropertyShape {
 
 			// here we get all targets from targetsPlan that are not in parent
 			parent = new InnerJoin(targetsPlan, parent).getDiscardedLeft(BufferedPlanNode.class);
-
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(parent, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(parent, this);
 		}
 

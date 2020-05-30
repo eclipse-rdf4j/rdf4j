@@ -14,5 +14,4 @@ ex:validPerson1 a ex:Person ;
 ex:validPerson2 a ex:Person ;
 	ex:knows [], ex:peter.
 
-
 }
