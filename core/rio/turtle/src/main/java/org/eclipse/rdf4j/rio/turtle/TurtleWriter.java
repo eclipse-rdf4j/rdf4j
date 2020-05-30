@@ -225,6 +225,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();
+			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
 			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
 				handleList(st);
 			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
@@ -255,7 +256,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
-
 		try {
 			if (subj.equals(lastWrittenSubject)) {
 				if (pred.equals(lastWrittenPredicate)) {

@@ -7,9 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -307,9 +309,62 @@ public class ArrangedWriter extends AbstractRDFWriter {
 		if (!stmtBySubject.isEmpty() || !blanks.isEmpty()) {
 			flushNamespaces();
 			Statement st;
+
+			// used to store all the statements
+			ArrayList<Statement> statements = new ArrayList<Statement>();
+
+			// used to store blank nodes along with the number of times they are used as an object in a statement.
+			Map<BNode, Integer> bNodeOccurence = new HashMap<BNode, Integer>();
+
 			while ((st = nextStatement()) != null) {
-				delegate.handleStatement(st);
+				statements.add(st);
+				Value obj = st.getObject();
+
+				// if the object in the statement is a blank node, we will update its number of occurence
+				if (obj instanceof BNode) {
+					BNode bNode = (BNode) obj;
+					if (!bNodeOccurence.containsKey(bNode)) {
+						bNodeOccurence.put(bNode, 0);
+					}
+					bNodeOccurence.put(bNode, bNodeOccurence.get(bNode) + 1);
+				}
 			}
+
+			boolean INLINE_BLANK_NODES = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
+
+			for (int i = 0; i < statements.size(); i++) {
+				st = statements.get(i);
+
+				if (INLINE_BLANK_NODES) {
+					Value obj = st.getObject();
+					Resource subj = st.getSubject();
+					if (obj instanceof BNode) {
+						BNode bNode = (BNode) obj;
+						if (bNodeOccurence.get(bNode) > 1) {
+							/*
+							 * if INLINE_BLANK_NODES is true and the blank node is repeated, we will set
+							 * INLINE_BLANK_NODES as false so as to make sure that the blank node object is not inlined.
+							 */
+							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+						}
+
+					} else if (subj instanceof BNode) {
+						/*
+						 * if the subject of a statement is a blank node that has been repeated, it should not be
+						 * inlined.
+						 */
+						BNode bNode = (BNode) subj;
+						if (bNodeOccurence.containsKey(bNode) && bNodeOccurence.get(bNode) > 1) {
+							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+						}
+					}
+				}
+				delegate.handleStatement(st);
+
+				// resetting the value of INLINE_BLANK_NODES
+				getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, INLINE_BLANK_NODES);
+			}
+
 			assert queueSize == 0;
 		}
 	}
