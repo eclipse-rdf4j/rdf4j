@@ -22,45 +22,45 @@ public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
-	List<Resource> clazz = new ArrayList<>(0);
-	List<Resource> or = new ArrayList<>(0);
-	List<Resource> and = new ArrayList<>(0);
-	List<Resource> not = new ArrayList<>(0);
-	Long minCount;
-	Long maxCount;
+	private final List<Resource> clazz = new ArrayList<>(0);
+	private List<Resource> or = new ArrayList<>(0);
+	private List<Resource> and = new ArrayList<>(0);
+	private List<Resource> not = new ArrayList<>(0);
+	private Long minCount;
+	private Long maxCount;
 
-	Resource datatype;
-	Resource in;
-	Value hasValue;
+	private Resource datatype;
+	private Resource in;
+	private Value hasValue;
 
-	Long minLength;
-	Long maxLength;
+	private Long minLength;
+	private Long maxLength;
 
-	Resource languageIn;
-	Resource nodeKind;
+	private Resource languageIn;
+	private Resource nodeKind;
 
-	Resource path;
+	private Resource path;
 
-	Literal minExclusive;
-	Literal maxExclusive;
-	Literal minInclusive;
-	Literal maxInclusive;
+	private Literal minExclusive;
+	private Literal maxExclusive;
+	private Literal minInclusive;
+	private Literal maxInclusive;
 
-	List<String> pattern = new ArrayList<>();
-	String flags = "";
+	private List<String> pattern = new ArrayList<>();
+	private String flags = "";
 
-	Set<Resource> targetClass = new HashSet<>();
-	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
-	Set<IRI> targetSubjectsOf = new HashSet<>();
-	Set<IRI> targetObjectsOf = new HashSet<>();
+	private Set<Resource> targetClass = new HashSet<>();
+	private TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
+	private Set<IRI> targetSubjectsOf = new HashSet<>();
+	private Set<IRI> targetObjectsOf = new HashSet<>();
 
-	List<Resource> compoundTarget = new ArrayList<>();
-	List<Resource> target = new ArrayList<>();
-	Resource filterShape;
+	private List<Resource> compoundTarget = new ArrayList<>();
+	private List<Resource> target = new ArrayList<>();
+	private Resource filterShape;
 
-	boolean deactivated = false;
+	private boolean deactivated = false;
 
-	boolean uniqueLang = false;
+	private boolean uniqueLang = false;
 
 	public ShaclProperties() {
 	}
@@ -317,5 +317,21 @@ public class ShaclProperties {
 
 	public boolean isUniqueLang() {
 		return uniqueLang;
+	}
+
+	public Value getHasValue() {
+		return hasValue;
+	}
+
+	public List<Resource> getCompoundTarget() {
+		return compoundTarget;
+	}
+
+	public List<Resource> getTarget() {
+		return target;
+	}
+
+	public Resource getFilterShape() {
+		return filterShape;
 	}
 }

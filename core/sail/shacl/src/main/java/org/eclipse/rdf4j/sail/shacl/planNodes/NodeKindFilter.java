@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.shacl.AST.NodeKindPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.AST.properties.NodeKindPropertyShape;
 
 /**
  * @author Håvard Ottestad

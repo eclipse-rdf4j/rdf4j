@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.AST.properties.PropertyShape;
 
 /**
  * @author Heshan Jayasinghe

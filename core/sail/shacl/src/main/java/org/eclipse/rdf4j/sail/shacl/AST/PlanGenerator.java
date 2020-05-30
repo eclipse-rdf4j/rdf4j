@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.shacl.AST.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;

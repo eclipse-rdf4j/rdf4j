@@ -55,6 +55,9 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
+	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
+	public final static IRI EXPERIMENTAL_FILTER_SHAPE = create("experimentalFilterShape");
+
 	private static IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
 	}

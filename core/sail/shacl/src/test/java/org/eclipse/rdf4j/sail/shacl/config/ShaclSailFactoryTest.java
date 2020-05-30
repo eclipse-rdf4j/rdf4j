@@ -20,15 +20,9 @@ import org.junit.Test;
  */
 public class ShaclSailFactoryTest {
 
-	private ShaclSailFactory subject;
-
-	@Before
-	public void setUp() throws Exception {
-		subject = new ShaclSailFactory();
-	}
-
 	@Test
 	public void getSailTypeReturnsCorrectValue() {
+		ShaclSailFactory subject = new ShaclSailFactory();
 		assertThat(subject.getSailType()).isEqualTo(ShaclSailFactory.SAIL_TYPE);
 	}
 
@@ -37,6 +31,8 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithDefaultConfigSetsConfigurationCorrectly() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
 		ShaclSailConfig config = new ShaclSailConfig();
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -47,6 +43,8 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithCustomConfigSetsConfigurationCorrectly() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
 		ShaclSailConfig config = new ShaclSailConfig();
 
 		// set everything to the opposite of its default
@@ -61,6 +59,7 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
+		config.setExperimentalFilterShape(!config.isExperimentalFilterShape());
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -79,6 +78,7 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
+		assertThat(sail.isExperimentalFilterShape()).isEqualTo(config.isExperimentalFilterShape());
 	}
 
 }

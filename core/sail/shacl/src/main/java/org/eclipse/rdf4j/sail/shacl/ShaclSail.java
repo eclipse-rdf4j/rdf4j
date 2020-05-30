@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
+import org.eclipse.rdf4j.sail.shacl.AST.targets.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,6 +186,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
+	private boolean experimentalFilterShape = ShaclSailConfig.EXPERIMENTAL_FILTER_SHAPE_DEFAULT;
 
 	static {
 		try {
@@ -663,7 +664,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Deprecated since 3.3.0 and planned removed!
-	 * 
+	 *
 	 * @return
 	 */
 	@Deprecated
@@ -784,5 +785,33 @@ public class ShaclSail extends NotifyingSailWrapper {
 		});
 		// this is a soft operation, the thread pool will actually wait until the task above has completed
 		ex.shutdown();
+	}
+
+	/**
+	 * Enable (or disable) support for sh:filterShape. Filter shapes were part of an early SHACL Public Draft.
+	 *
+	 * Examples here https://www.w3.org/TR/2015/WD-shacl-20151008/#filterShape
+	 *
+	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
+	 * sh:path.
+	 *
+	 * @param experimentalFilterShape true to enable (default: false)
+	 */
+	public void setExperimentalFilterShape(boolean experimentalFilterShape) {
+		this.experimentalFilterShape = experimentalFilterShape;
+	}
+
+	/**
+	 * Support for sh:filterShape. Filter shapes were part of an early SHACL Public Draft.
+	 *
+	 * Examples here https://www.w3.org/TR/2015/WD-shacl-20151008/#filterShape
+	 *
+	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
+	 * sh:path.
+	 *
+	 * @return true if enabled
+	 */
+	public boolean isExperimentalFilterShape() {
+		return experimentalFilterShape;
 	}
 }

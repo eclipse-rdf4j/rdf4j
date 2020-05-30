@@ -17,11 +17,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.AST.InversePath;
-import org.eclipse.rdf4j.sail.shacl.AST.Path;
-import org.eclipse.rdf4j.sail.shacl.AST.PathPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.AST.SimplePath;
+import org.eclipse.rdf4j.sail.shacl.AST.paths.InversePath;
+import org.eclipse.rdf4j.sail.shacl.AST.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.AST.paths.SimplePath;
+import org.eclipse.rdf4j.sail.shacl.AST.properties.PathPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.AST.properties.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 /**
