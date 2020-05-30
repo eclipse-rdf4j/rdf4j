@@ -53,7 +53,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
  */
 public abstract class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
-	final boolean deactivated;
+	boolean deactivated;
 	final Resource id;
 
 	NodeShape nodeShape;

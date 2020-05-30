@@ -167,7 +167,9 @@ abstract public class AbstractShaclTest {
 //		"test-cases/propertyShapeWithTarget/simple",
 //		"test-cases/uniqueLang/not",
 //		"test-cases/uniqueLang/simple"
-		"test-cases/hasValue/simple"
+		"test-cases/hasValue/simple",
+		"test-cases/hasValue/not",
+		"test-cases/hasValue/not2"
 	)
 		.distinct()
 		.sorted()

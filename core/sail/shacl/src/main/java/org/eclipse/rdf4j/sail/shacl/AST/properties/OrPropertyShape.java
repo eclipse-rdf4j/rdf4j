@@ -51,9 +51,16 @@ public class OrPropertyShape extends PathPropertyShape {
 			PathPropertyShape parent, Resource path, Resource or) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
+				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this)
+						.stream()
+						.filter(s -> !s.deactivated)
+						.collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
@@ -62,12 +69,22 @@ public class OrPropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = or;
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
+
 	}
 
 	public OrPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
 			List<List<PathPropertyShape>> or) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.or = or;
+
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	@Override

@@ -46,16 +46,34 @@ public class AndPropertyShape extends PathPropertyShape {
 	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path, Resource and) {
 		super(id, connection, nodeShape, deactivated, parent, path);
-		this.and = toList(connection, and).stream()
-				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
-				.collect(Collectors.toList());
+		this.and = getPropertyShapes(connection, nodeShape, and);
 
+		if (!this.and.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:and contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
+
+	}
+
+	private List<List<PathPropertyShape>> getPropertyShapes(SailRepositoryConnection connection, NodeShape nodeShape,
+			Resource and) {
+		return toList(connection, and).stream()
+				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this)
+						.stream()
+						.filter(s -> !s.deactivated)
+						.collect(Collectors.toList()))
+				.collect(Collectors.toList());
 	}
 
 	public AndPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
 			List<List<PathPropertyShape>> and) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.and = and;
+
+		if (!this.and.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:and contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	@Override

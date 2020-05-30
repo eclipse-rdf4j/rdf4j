@@ -45,10 +45,14 @@ public class NotPropertyShape extends PathPropertyShape {
 
 		List<List<PathPropertyShape>> collect = Factory.getPropertyShapesInner(connection, nodeShape, not, this)
 				.stream()
+				.filter(s -> !s.deactivated)
 				.map(Collections::singletonList)
 				.collect(Collectors.toList());
 
 		orPropertyShape = new OrPropertyShape(id, connection, nodeShape, deactivated, this, null, collect);
+		if (orPropertyShape.deactivated) {
+			this.deactivated = true;
+		}
 
 	}
 
