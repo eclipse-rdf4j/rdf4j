@@ -219,28 +219,21 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 								new TargetObjectsOf(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
 										shaclProperties.getTargetObjectsOf()));
 					}
-					if (!shaclProperties.getCompoundTarget().isEmpty()) {
-						shaclProperties.getCompoundTarget()
-								.forEach(compoundTarget -> propertyShapes
-										.add(new CompoundTarget(shapeId, shaclSail, connection,
-												shaclProperties.isDeactivated(),
-												compoundTarget)));
-
-					}
-
 					if (!shaclProperties.getTarget().isEmpty()) {
 						shaclProperties.getTarget()
 								.forEach(sparqlTarget -> {
-									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
-										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
-												shaclProperties.isDeactivated(), sparqlTarget));
-									}
-									if (connection.hasStatement(sparqlTarget, RDF.TYPE, DASH.AllObjectsTarget, true)) {
+//									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
+//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
+//												shaclProperties.isDeactivated(), sparqlTarget));
+//									}
+									if (shaclSail.isExperimentalDashSupport() && connection.hasStatement(sparqlTarget,
+											RDF.TYPE, DASH.AllObjectsTarget, true)) {
 										propertyShapes.add(
 												new AllObjectsTarget(shapeId, shaclSail, connection,
 														shaclProperties.isDeactivated()));
 									}
-									if (connection.hasStatement(sparqlTarget, RDF.TYPE, DASH.AllSubjectsTarget, true)) {
+									if (shaclSail.isExperimentalDashSupport() && connection.hasStatement(sparqlTarget,
+											RDF.TYPE, DASH.AllSubjectsTarget, true)) {
 										propertyShapes.add(new AllSubjectsTarget(shapeId, shaclSail, connection,
 												shaclProperties.isDeactivated(), shaclProperties.getFilterShape()));
 									}
@@ -251,14 +244,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					if (shaclSail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
 						propertyShapes
-								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated())); // target
-						// class
-						// nodeShapes
-						// are
-						// the
-						// only
-						// supported
-						// nodeShapes
+								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated()));
+						// target class nodeShapes are the only supported nodeShapes
 					}
 
 					return propertyShapes.stream();

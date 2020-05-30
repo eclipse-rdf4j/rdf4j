@@ -47,7 +47,7 @@ public class AllSubjectsTarget extends NodeShape {
 	AllSubjectsTarget(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
 			Resource filterShape) {
 		super(id, shaclSail, connection, deactivated);
-		if (shaclSail.isExperimentalFilterShape() && filterShape != null) {
+		if (shaclSail.isExperimentalFilterShapeSupport() && filterShape != null) {
 			this.filterShape = new NodeShape(filterShape, shaclSail, connection, false);
 		}
 

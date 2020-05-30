@@ -186,7 +186,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
-	private boolean experimentalFilterShape = ShaclSailConfig.EXPERIMENTAL_FILTER_SHAPE_DEFAULT;
+	private boolean experimentalFilterShapeSupport = ShaclSailConfig.EXPERIMENTAL_FILTER_SHAPE_SUPPORT_DEFAULT;
+	private boolean experimentalDashSupport = ShaclSailConfig.EXPERIMENTAL_DASH_SUPPORT_DEFAULT;
 
 	static {
 		try {
@@ -238,7 +239,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
-	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths are supported.
+	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
+	 * paths are supported. sh:filterShape requires that experimental support is enabled for that feature.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -270,9 +272,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.UNIQUE_LANG,
 				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF,
-				SHACL.SELECT,
+				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
-				SHACL.INVERSE_PATH);
+				SHACL.INVERSE_PATH,
+				SHACL.FILTER_SHAPE);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -795,10 +798,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
 	 * sh:path.
 	 *
-	 * @param experimentalFilterShape true to enable (default: false)
+	 * @param experimentalFilterShapeSupport true to enable (default: false)
 	 */
-	public void setExperimentalFilterShape(boolean experimentalFilterShape) {
-		this.experimentalFilterShape = experimentalFilterShape;
+	public void setExperimentalFilterShapeSupport(boolean experimentalFilterShapeSupport) {
+		this.experimentalFilterShapeSupport = experimentalFilterShapeSupport;
 	}
 
 	/**
@@ -811,7 +814,15 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @return true if enabled
 	 */
-	public boolean isExperimentalFilterShape() {
-		return experimentalFilterShape;
+	public boolean isExperimentalFilterShapeSupport() {
+		return experimentalFilterShapeSupport;
+	}
+
+	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
+		this.experimentalDashSupport = experimentalDashSupport;
+	}
+
+	public boolean isExperimentalDashSupport() {
+		return experimentalDashSupport;
 	}
 }

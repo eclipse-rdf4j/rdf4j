@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -59,7 +58,7 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
-		config.setExperimentalFilterShape(!config.isExperimentalFilterShape());
+		config.setExperimentalFilterShapeSupport(!config.isExperimentalFilterShapeSupport());
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -78,7 +77,7 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
-		assertThat(sail.isExperimentalFilterShape()).isEqualTo(config.isExperimentalFilterShape());
+		assertThat(sail.isExperimentalFilterShapeSupport()).isEqualTo(config.isExperimentalFilterShapeSupport());
 	}
 
 }

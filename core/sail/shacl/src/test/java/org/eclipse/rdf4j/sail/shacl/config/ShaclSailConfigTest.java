@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_FILTER_SHAPE;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_FILTER_SHAPE_SUPPORT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-import org.junit.Before;
 import org.junit.Test;
 
 public class ShaclSailConfigTest {
@@ -48,7 +47,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isTrue();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isFalse();
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
-		assertThat(shaclSailConfig.isExperimentalFilterShape()).isFalse();
+		assertThat(shaclSailConfig.isExperimentalFilterShapeSupport()).isFalse();
 
 	}
 
@@ -70,7 +69,7 @@ public class ShaclSailConfigTest {
 				.add(GLOBAL_LOG_VALIDATION_EXECUTION, true)
 				.add(RDFS_SUB_CLASS_REASONING, false)
 				.add(PERFORMANCE_LOGGING, true)
-				.add(EXPERIMENTAL_FILTER_SHAPE, true)
+				.add(EXPERIMENTAL_FILTER_SHAPE_SUPPORT, true)
 				.add(SERIALIZABLE_VALIDATION, false);
 
 		shaclSailConfig.parse(mb.build(), implNode);
@@ -86,7 +85,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isFalse();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isTrue();
 		assertThat(shaclSailConfig.isSerializableValidation()).isFalse();
-		assertThat(shaclSailConfig.isExperimentalFilterShape()).isTrue();
+		assertThat(shaclSailConfig.isExperimentalFilterShapeSupport()).isTrue();
 
 	}
 
@@ -133,7 +132,7 @@ public class ShaclSailConfigTest {
 		assertTrue(m.contains(node, RDFS_SUB_CLASS_REASONING, null));
 		assertTrue(m.contains(node, PERFORMANCE_LOGGING, null));
 		assertTrue(m.contains(node, SERIALIZABLE_VALIDATION, null));
-		assertTrue(m.contains(node, EXPERIMENTAL_FILTER_SHAPE, null));
+		assertTrue(m.contains(node, EXPERIMENTAL_FILTER_SHAPE_SUPPORT, null));
 
 	}
 

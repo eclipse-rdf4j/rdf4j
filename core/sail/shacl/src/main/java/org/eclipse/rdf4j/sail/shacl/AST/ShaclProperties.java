@@ -54,7 +54,6 @@ public class ShaclProperties {
 	private Set<IRI> targetSubjectsOf = new HashSet<>();
 	private Set<IRI> targetObjectsOf = new HashSet<>();
 
-	private List<Resource> compoundTarget = new ArrayList<>();
 	private List<Resource> target = new ArrayList<>();
 	private Resource filterShape;
 
@@ -188,9 +187,6 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#property":
 					break;
-				case "http://rdf4j.org/schema/rdf4j-shacl#compoundTarget":
-					compoundTarget.add((Resource) object);
-					break;
 				case "http://www.w3.org/ns/shacl#target":
 					target.add((Resource) object);
 					break;
@@ -321,10 +317,6 @@ public class ShaclProperties {
 
 	public Value getHasValue() {
 		return hasValue;
-	}
-
-	public List<Resource> getCompoundTarget() {
-		return compoundTarget;
 	}
 
 	public List<Resource> getTarget() {

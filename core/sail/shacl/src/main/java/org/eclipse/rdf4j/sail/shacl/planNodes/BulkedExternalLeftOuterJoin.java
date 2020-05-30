@@ -40,24 +40,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
-		// HACKY PREFIX SUPPORT!!!!
-		String prefixes = "";
-		if (query.toLowerCase().contains("prefix")) {
-			String tempQuery = "";
-			String[] split = query.split("\n");
-			for (String s : split) {
-				if (s.toLowerCase().trim().startsWith("prefix")) {
-					prefixes += s.trim() + "\n";
-				} else {
-					tempQuery += s + "\n";
-				}
-			}
-
-			query = tempQuery;
-		}
-
 		parsedQuery = queryParserFactory.getParser()
-				.parseQuery(prefixes + "select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;

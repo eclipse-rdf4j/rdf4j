@@ -44,23 +44,7 @@ public class Select implements PlanNode {
 		assert variables.length > 0;
 		this.connection = connection;
 
-		// HACKY PREFIX SUPPORT!!!!
-		String prefixes = "";
-		if (query.toLowerCase().contains("prefix")) {
-			String tempQuery = "";
-			String[] split = query.split("\n");
-			for (String s : split) {
-				if (s.toLowerCase().trim().startsWith("prefix")) {
-					prefixes += s.trim() + "\n";
-				} else {
-					tempQuery += s + "\n";
-				}
-			}
-
-			query = tempQuery;
-		}
-
-		this.query = prefixes + "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
+		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
 		this.variables = variables;
 	}
 

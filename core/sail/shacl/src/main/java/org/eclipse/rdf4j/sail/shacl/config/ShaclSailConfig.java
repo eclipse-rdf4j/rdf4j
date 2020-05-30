@@ -8,7 +8,8 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_FILTER_SHAPE;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_DASH_SUPPORT;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_FILTER_SHAPE_SUPPORT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
@@ -48,7 +49,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
 	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
-	public static final boolean EXPERIMENTAL_FILTER_SHAPE_DEFAULT = false;
+	public static final boolean EXPERIMENTAL_FILTER_SHAPE_SUPPORT_DEFAULT = false;
+	public static final boolean EXPERIMENTAL_DASH_SUPPORT_DEFAULT = false;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -61,7 +63,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;
 	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;
-	private boolean experimentalFilterShape = EXPERIMENTAL_FILTER_SHAPE_DEFAULT;
+	private boolean experimentalFilterShapeSupport = EXPERIMENTAL_FILTER_SHAPE_SUPPORT_DEFAULT;
+	private boolean experimentalDashSupport = EXPERIMENTAL_DASH_SUPPORT_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -163,12 +166,20 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.serializableValidation = serializableValidation;
 	}
 
-	public boolean isExperimentalFilterShape() {
-		return experimentalFilterShape;
+	public boolean isExperimentalFilterShapeSupport() {
+		return experimentalFilterShapeSupport;
 	}
 
-	public void setExperimentalFilterShape(boolean experimentalFilterShape) {
-		this.experimentalFilterShape = experimentalFilterShape;
+	public void setExperimentalFilterShapeSupport(boolean experimentalFilterShapeSupport) {
+		this.experimentalFilterShapeSupport = experimentalFilterShapeSupport;
+	}
+
+	public boolean isExperimentalDashSupport() {
+		return experimentalDashSupport;
+	}
+
+	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
+		this.experimentalDashSupport = experimentalDashSupport;
 	}
 
 	@Override
@@ -188,7 +199,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
 		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
 		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
-		m.add(implNode, EXPERIMENTAL_FILTER_SHAPE, BooleanLiteral.valueOf(isExperimentalFilterShape()));
+		m.add(implNode, EXPERIMENTAL_FILTER_SHAPE_SUPPORT, BooleanLiteral.valueOf(isExperimentalFilterShapeSupport()));
+		m.add(implNode, EXPERIMENTAL_DASH_SUPPORT, BooleanLiteral.valueOf(isExperimentalDashSupport()));
 		return implNode;
 	}
 
@@ -230,8 +242,11 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
 
-			Models.objectLiteral(m.getStatements(implNode, EXPERIMENTAL_FILTER_SHAPE, null))
-					.ifPresent(l -> setExperimentalFilterShape(l.booleanValue()));
+			Models.objectLiteral(m.getStatements(implNode, EXPERIMENTAL_FILTER_SHAPE_SUPPORT, null))
+					.ifPresent(l -> setExperimentalFilterShapeSupport(l.booleanValue()));
+
+			Models.objectLiteral(m.getStatements(implNode, EXPERIMENTAL_DASH_SUPPORT, null))
+					.ifPresent(l -> setExperimentalDashSupport(l.booleanValue()));
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

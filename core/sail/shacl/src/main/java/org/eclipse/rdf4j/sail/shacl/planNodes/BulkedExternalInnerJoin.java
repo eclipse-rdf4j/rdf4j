@@ -43,23 +43,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 
-		// HACKY PREFIX SUPPORT!!!!
-		String prefixes = "";
-		if (query.toLowerCase().contains("prefix")) {
-			String tempQuery = "";
-			String[] split = query.split("\n");
-			for (String s : split) {
-				if (s.toLowerCase().trim().startsWith("prefix")) {
-					prefixes += s.trim() + "\n";
-				} else {
-					tempQuery += s + "\n";
-				}
-			}
-
-			query = tempQuery;
-		}
-
-		String completeQuery = prefixes + "select * where { VALUES (?a) {}" + query + "} order by ?a";
+		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
 		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
 
 		this.connection = connection;
