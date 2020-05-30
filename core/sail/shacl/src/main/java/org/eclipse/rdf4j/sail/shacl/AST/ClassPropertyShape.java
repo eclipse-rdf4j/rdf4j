@@ -83,7 +83,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			if (getPath() == null) {
 				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
-					t.line.add(t.line.get(0));
+					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
 
@@ -130,7 +130,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode targets = new ModifyTuple(
 					nodeShape.getPlanAddedStatements(connectionsGroup, null),
 					t -> {
-						t.line.add(t.line.get(0));
+						t.getLine().add(t.getLine().get(0));
 						return t;
 					});
 
@@ -232,10 +232,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 							false,
 							null, "?a", "?c"),
 					t -> {
-						List<Value> line = t.line;
-						t.line = new ArrayList<>(2);
-						t.line.add(line.get(1));
-						t.line.add(line.get(0));
+						List<Value> line = t.getLine();
+						t.setLine(new ArrayList<>(2));
+						t.getLine().add(line.get(1));
+						t.getLine().add(line.get(0));
 
 						return t;
 					}));
@@ -261,7 +261,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			if (getPath() == null) {
 				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
-					t.line.add(t.line.get(0));
+					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
 
@@ -342,10 +342,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 								false, null, "?a",
 								"?c"),
 						t -> {
-							List<Value> line = t.line;
-							t.line = new ArrayList<>(2);
-							t.line.add(line.get(1));
-							t.line.add(line.get(0));
+							List<Value> line = t.getLine();
+							t.setLine(new ArrayList<>(2));
+							t.getLine().add(line.get(1));
+							t.getLine().add(line.get(0));
 
 							return t;
 						}));
@@ -443,10 +443,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 							false,
 							null, "?a", "?c"),
 					t -> {
-						List<Value> line = t.line;
-						t.line = new ArrayList<>(2);
-						t.line.add(line.get(1));
-						t.line.add(line.get(0));
+						List<Value> line = t.getLine();
+						t.setLine(new ArrayList<>(2));
+						t.getLine().add(line.get(1));
+						t.getLine().add(line.get(0));
 
 						return t;
 					}));
@@ -473,10 +473,10 @@ public class ClassPropertyShape extends PathPropertyShape {
 							false,
 							null, "?a", "?c"),
 					t -> {
-						List<Value> line = t.line;
-						t.line = new ArrayList<>(2);
-						t.line.add(line.get(1));
-						t.line.add(line.get(0));
+						List<Value> line = t.getLine();
+						t.setLine(new ArrayList<>(2));
+						t.getLine().add(line.get(1));
+						t.getLine().add(line.get(0));
 
 						return t;
 					}));

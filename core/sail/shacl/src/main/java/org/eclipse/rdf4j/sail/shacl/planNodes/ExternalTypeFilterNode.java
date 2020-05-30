@@ -61,7 +61,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Value subject = temp.line.get(index);
+					Value subject = temp.getLine().get(index);
 
 					Resource matchedType = isType(subject);
 

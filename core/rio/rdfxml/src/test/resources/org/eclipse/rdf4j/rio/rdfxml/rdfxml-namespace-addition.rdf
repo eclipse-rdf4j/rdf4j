@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         >
+
+<rdf:Description
+  xmlns:dc="http://purl.org/metadata/dublin_core#"
+  xmlns:test="http://test.org/testing/"
+  rdf:about="http://mycorp.example.com/papers/NobelPaper1">
+
+  <test:somedata rdf:parseType="Literal"><test:datapart>Literal</test:datapart>
+  <test:datapart>0</test:datapart>
+  <test:datapart>0</test:datapart>
+  </test:somedata>
+  <dc:Creator>David Hume</dc:Creator>
+</rdf:Description>
+
+
+</rdf:RDF>

@@ -13,6 +13,7 @@ import java.util.ArrayDeque;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
  */
 public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
+	private static final ValueComparator VALUE_COMPARATOR = new ValueComparator();
 	private final SailConnection connection;
 	private final PlanNode leftNode;
 	private final ParsedQuery parsedQuery;
@@ -100,23 +102,22 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 						Tuple rightPeek = right.peekLast();
 
-						if (rightPeek.line.get(0) == leftPeek.line.get(0)
-								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
+								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 							// we have a join !
 							joined.addLast(TupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();
 
 							Tuple rightPeek2 = right.peekLast();
 
-							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
+							if (rightPeek2 == null || !rightPeek2.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 								// no more to join from right, pop left so we don't print it again.
 
 								left.removeLast();
 							}
 						} else {
-							int compare = rightPeek.line.get(0)
-									.stringValue()
-									.compareTo(leftPeek.line.get(0).stringValue());
+							int compare = VALUE_COMPARATOR.compare(rightPeek.getLine().get(0),
+									leftPeek.getLine().get(0));
 
 							if (compare < 0) {
 								if (right.isEmpty()) {

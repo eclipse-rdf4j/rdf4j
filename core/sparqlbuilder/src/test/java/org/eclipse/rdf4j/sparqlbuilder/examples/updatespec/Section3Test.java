@@ -342,4 +342,5 @@ public class Section3Test extends BaseExamples {
 	public void example_15() {
 		p(Queries.ADD().fromDefault().to(iri("http://example.org/named")));
 	}
+
 }

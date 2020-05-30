@@ -164,7 +164,8 @@ public class OrderingTest {
 				.collect(Collectors.toList());
 
 		actual = actual.stream()
-				.map(tuple -> tuple.line.stream()
+				.map(tuple -> tuple.getLine()
+						.stream()
 						.map(Value::stringValue)
 						.map(SimpleValueFactory.getInstance()::createLiteral)
 						.map(l -> (Value) l)

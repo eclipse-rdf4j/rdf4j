@@ -88,7 +88,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
 			select = new ModifyTuple(select, (a) -> {
-				a.line.add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
+				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
 
 				return a;
 			});

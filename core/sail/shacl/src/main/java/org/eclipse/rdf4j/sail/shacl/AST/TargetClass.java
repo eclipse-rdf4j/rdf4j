@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
  * sh:targetClass
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class TargetClass extends NodeShape {
 

@@ -43,7 +43,7 @@ public class MockInputPlanNode implements PlanNode {
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
 				.map(Tuple::new)
-				.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
+				.sorted((a, b) -> new ValueComparator().compare(a.getLine().get(0), b.getLine().get(0)))
 				.collect(Collectors.toList());
 
 	}

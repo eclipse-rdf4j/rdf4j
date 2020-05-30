@@ -55,7 +55,7 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					if (temp.line.size() > 1) {
+					if (temp.getLine().size() > 1) {
 						useMultiCardinalityDedupeSet = true;
 					}
 
@@ -63,9 +63,10 @@ public class Unique implements PlanNode {
 						next = temp;
 					} else {
 						if (useMultiCardinalityDedupeSet) {
-							if (multiCardinalityDedupeSet == null || !previous.line.get(0).equals(temp.line.get(0))) {
+							if (multiCardinalityDedupeSet == null
+									|| !previous.getLine().get(0).equals(temp.getLine().get(0))) {
 								multiCardinalityDedupeSet = new HashSet<>();
-								if (previous.line.get(0).equals(temp.line.get(0))) {
+								if (previous.getLine().get(0).equals(temp.getLine().get(0))) {
 									multiCardinalityDedupeSet.add(previous);
 								}
 							}

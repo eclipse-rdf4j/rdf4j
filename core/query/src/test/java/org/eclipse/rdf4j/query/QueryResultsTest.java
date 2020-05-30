@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -351,5 +352,38 @@ public class QueryResultsTest {
 		tqr1.append(new ListBindingSet(twoBindingNames, foo, bnode2));
 
 		assertFalse(QueryResults.equals(tqr1, tqr3));
+	}
+
+	@Test
+	public void testStreamTupleAllValuesOfResult1() {
+		BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
+		BindingSet b = new ListBindingSet(twoBindingNames, bar, lit2);
+		tqr1.append(a);
+		tqr1.append(b);
+		tqr1.append(a);
+		tqr1.append(b);
+		tqr1.append(b);
+
+		List<Value> list = QueryResults.getAllValues(tqr1, "a");
+
+		assertNotNull(list);
+		assertFalse(list.isEmpty());
+		assertTrue(list.equals(Arrays.asList(foo, bar, foo, bar, bar)));
+	}
+
+	@Test
+	public void testStreamTupleAllValuesOfResult2() {
+		BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
+		BindingSet b = new ListBindingSet(twoBindingNames, bar, lit2);
+		tqr1.append(a);
+		tqr1.append(b);
+		tqr1.append(a);
+		tqr1.append(b);
+		tqr1.append(b);
+
+		List<Value> list = QueryResults.getAllValues(tqr1, "c");
+
+		assertNotNull(list);
+		assertTrue(list.isEmpty());
 	}
 }

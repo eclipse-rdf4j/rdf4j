@@ -267,7 +267,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF,
 				SHACL.SELECT,
-				SHACL.TARGET_PROP);
+				SHACL.TARGET_PROP,
+				SHACL.INVERSE_PATH);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);

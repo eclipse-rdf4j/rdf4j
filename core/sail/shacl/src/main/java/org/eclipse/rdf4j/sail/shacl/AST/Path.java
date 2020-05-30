@@ -15,8 +15,9 @@ import org.eclipse.rdf4j.model.Resource;
  * support for complex paths.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
-abstract public class Path implements RequiresEvalutation, QueryGenerator {
+abstract public class Path implements RequiresEvalutation, QueryGenerator, PlanGenerator {
 
 	private Resource id;
 

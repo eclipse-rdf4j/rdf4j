@@ -45,7 +45,7 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 			if (pathPropertyShape.getPath() == null) {
 				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
-					t.line.add(t.line.get(0));
+					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
 			} else {
@@ -66,7 +66,7 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 			PlanNode targets = new ModifyTuple(
 					nodeShape.getPlanAddedStatements(connectionsGroup, null), t -> {
-						t.line.add(t.line.get(0));
+						t.getLine().add(t.getLine().get(0));
 						return t;
 					});
 
