@@ -44,7 +44,7 @@ public class SparqlFilter extends FilterPlanNode {
 			ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 
 			MapBindingSet bindings = new MapBindingSet();
-			bindings.addBinding("this", t.line.get(0));
+			bindings.addBinding("this", t.getLine().get(0));
 
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
 					.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), bindings, true)) {

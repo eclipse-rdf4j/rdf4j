@@ -67,20 +67,24 @@ abstract public class AbstractShaclTest {
 
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
-
 	private static final List<String> testCasePaths = Stream.of(
 		"test-cases/and-or/datatypeNodeShape",
+		"test-cases/class/allObjects",
+		"test-cases/class/allSubjects",
 		"test-cases/class/and",
 		"test-cases/class/and2",
+		"test-cases/class/complexFilterShape",
+		"test-cases/class/complexFilterShape2",
 		"test-cases/class/multipleClass",
 		"test-cases/class/not",
 		"test-cases/class/not2",
 		"test-cases/class/notAnd",
 		"test-cases/class/notNotSimple",
 		"test-cases/class/predicateObjectTarget",
+		"test-cases/class/simple",
+		"test-cases/class/simpleFilterShape",
 		"test-cases/class/sparqlTarget",
 		"test-cases/class/sparqlTargetNot",
-		"test-cases/class/simple",
 		"test-cases/class/subclass",
 		"test-cases/class/targetNode",
 		"test-cases/class/validateTarget",
@@ -88,22 +92,26 @@ abstract public class AbstractShaclTest {
 		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
 		"test-cases/complex/sparqlTarget",
+		"test-cases/datatype/allObjects",
 		"test-cases/datatype/not",
 		"test-cases/datatype/notNodeShape",
 		"test-cases/datatype/notNot",
 		"test-cases/datatype/notTargetNode",
+		"test-cases/datatype/predicateObjectTarget",
 		"test-cases/datatype/simple",
+		"test-cases/datatype/sparqlTarget",
 		"test-cases/datatype/targetNode",
 		"test-cases/datatype/targetNode2",
 		"test-cases/datatype/targetNodeLang",
 		"test-cases/datatype/targetObjectsOf",
 		"test-cases/datatype/targetSubjectsOf",
 		"test-cases/datatype/targetSubjectsOfSingle",
-		"test-cases/datatype/predicateObjectTarget",
-		"test-cases/datatype/sparqlTarget",
 		"test-cases/deactivated/nodeshape",
 		"test-cases/deactivated/or",
 		"test-cases/deactivated/propertyshape",
+		"test-cases/functionalProperty/multipleFunctional",
+		"test-cases/functionalProperty/multipleFunctionalOr",
+		"test-cases/functionalProperty/singleFunctional",
 		"test-cases/implicitTargetClass/simple",
 		"test-cases/in/notAnd",
 		"test-cases/in/notOr",
@@ -113,8 +121,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxCount/not2",
 		"test-cases/maxCount/notNot",
 		"test-cases/maxCount/simple",
-		"test-cases/maxCount/sparqlTarget",
 		"test-cases/maxCount/simpleInversePath",
+		"test-cases/maxCount/sparqlTarget",
 		"test-cases/maxCount/targetNode",
 		"test-cases/maxExclusive/simple",
 		"test-cases/maxExclusiveMinLength/not",
@@ -122,8 +130,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/maxInclusive/simple",
 		"test-cases/maxLength/simple",
 		"test-cases/minCount/not",
-		"test-cases/minCount/simple",
 		"test-cases/minCount/predicateObjectTarget",
+		"test-cases/minCount/simple",
 		"test-cases/minCount/targetNode",
 		"test-cases/minExclusive/dateVsTime",
 		"test-cases/minExclusive/simple",
@@ -138,7 +146,6 @@ abstract public class AbstractShaclTest {
 		"test-cases/or/class2InversePath",
 		"test-cases/or/classValidateTarget",
 		"test-cases/or/datatype",
-		"test-cases/or/datatype2",
 		"test-cases/or/datatype2",
 		"test-cases/or/datatypeDifferentPaths",
 		"test-cases/or/datatypeNodeShape",
@@ -159,16 +166,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/pattern/simple",
 		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
-		"test-cases/uniqueLang/simple",
-		"test-cases/class/allSubjects",
-		"test-cases/class/allObjects",
-		"test-cases/class/simpleFilterShape",
-		"test-cases/class/complexFilterShape",
-		"test-cases/class/complexFilterShape2",
-		"test-cases/datatype/allObjects",
-		"test-cases/functionalProperty/singleFunctional",
-		"test-cases/functionalProperty/multipleFunctional",
-		"test-cases/functionalProperty/multipleFunctionalOr"
+		"test-cases/uniqueLang/simple"
 	)
 		.distinct()
 		.sorted()
@@ -625,6 +623,27 @@ abstract public class AbstractShaclTest {
 		repository.init();
 
 		return repository;
+	}
+
+	/**
+	 * Sort and output testCasePaths
+	 * 
+	 * @param args
+	 */
+	public static void main(String[] args) {
+
+		System.out.println("\n\tprivate static final List<String> testCasePaths = Stream.of(");
+		String testCasesString = testCasePaths
+				.stream()
+				.map(a -> "\t\t\"" + a + "\"")
+				.reduce((a, b) -> a + ",\n" + b)
+				.orElse("");
+
+		System.out.println(testCasesString);
+		System.out.println("\t)\n" +
+				"\t\t.distinct()\n" +
+				"\t\t.sorted()\n" +
+				"\t\t.collect(Collectors.toList());");
 	}
 
 }

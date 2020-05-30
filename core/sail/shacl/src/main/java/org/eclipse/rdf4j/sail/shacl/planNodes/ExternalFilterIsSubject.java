@@ -37,7 +37,7 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 	@Override
 	boolean checkTuple(Tuple t) {
 
-		Value value = t.line.get(index);
+		Value value = t.getLine().get(index);
 
 		if (value instanceof Resource) {
 			return connection.hasStatement((Resource) value, null, null, true);
