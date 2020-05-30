@@ -38,15 +38,28 @@ td,th {
 div.doc-section {
   float: left;
   width: 400px;
-  margin: 10px;
+  margin-left: 10px;
+}
+
+@media screen and (max-width: 600px) {
+  div.doc-section {
+    float: none;
+    width: 100%;
+    margin-left: 0px;
+  }
+}
+
+h4.doc-section-header {
+  margin-top: 20px;
+  margin-bottom: 0px;
 }
 
 .doc-section-header a:link, .doc-section-header a:visited {
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   font-weight: medium;
-  font-size: larger;
   background: #DA5800;
+  padding-top: 2px;
   padding-left: 20px;
   padding-right: 20px;
   color: black;
@@ -55,5 +68,5 @@ div.doc-section {
 .doc-section-content {
   background: white;
   padding: 6px;
-  box-shadow: 5px 5px 4px #888888;
+  box-shadow: 3px 3px 2px #888888;
 }
