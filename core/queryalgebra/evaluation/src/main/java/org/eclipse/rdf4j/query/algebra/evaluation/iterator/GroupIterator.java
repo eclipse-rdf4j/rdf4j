@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -477,9 +478,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
-			boolean strict = false;
-			if (strategy instanceof StrictEvaluationStrategy) {
-				strict = true;
+			boolean strict = true;
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				strict = false;
 			}
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
@@ -511,9 +512,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
-			boolean strict = false;
-			if (strategy instanceof StrictEvaluationStrategy) {
-				strict = true;
+			boolean strict = true;
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				strict = false;
 			}
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
