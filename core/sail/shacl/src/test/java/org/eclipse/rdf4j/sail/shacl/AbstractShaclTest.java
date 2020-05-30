@@ -619,6 +619,7 @@ abstract public class AbstractShaclTest {
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
+		shaclSail.setExperimentalFilterShape(true);
 
 		repository.init();
 
@@ -627,7 +628,7 @@ abstract public class AbstractShaclTest {
 
 	/**
 	 * Sort and output testCasePaths
-	 * 
+	 *
 	 * @param args
 	 */
 	public static void main(String[] args) {
