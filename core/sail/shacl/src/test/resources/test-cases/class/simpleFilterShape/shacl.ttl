@@ -9,7 +9,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:target [a dash:AllSubjectsTarget] ;
+	sh:target dash:AllSubjects ;
 	sh:filterShape [
         		a sh:Shape ;
         		sh:property [

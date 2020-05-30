@@ -162,6 +162,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
 	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
 	private static String PROPERTY_SHAPE_WITH_TARGET;
+	private static String DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -194,6 +195,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
 					"shacl-sparql-inference/propertyShapeWithTarget.rq");
+			DASH_CONSTANTS = resourceAsString(
+					"shacl-sparql-inference/dashConstants.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -325,7 +328,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				shapesRepoCacheConnection.add(statements);
 			}
 
-			runInferencingSparqlQueries(shapesRepoCacheConnection);
+			runInferencingSparqlQueriesToFixPoint(shapesRepoCacheConnection);
 			shapesRepoCacheConnection.commit();
 
 			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
@@ -402,7 +405,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return nodeShapes;
 	}
 
-	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+	private void runInferencingSparqlQueriesToFixPoint(SailRepositoryConnection shaclSailConnection) {
 
 		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
 		if (shaclSailConnection.isEmpty()) {
@@ -416,6 +419,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
+			shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 
@@ -554,8 +558,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
 	 * or rdfs:Resource in an environment with a reasoner.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
+	@Deprecated
 	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
 		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
 	}
@@ -563,9 +570,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
 	 */
+	@Deprecated
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return this.undefinedTargetValidatesAllSubjects;
 	}
@@ -651,15 +661,25 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return this.logValidationPlans;
 	}
 
+	/**
+	 * Deprecated since 3.3.0 and planned removed!
+	 * 
+	 * @return
+	 */
+	@Deprecated
 	public boolean isIgnoreNoShapesLoadedException() {
 		return this.ignoreNoShapesLoadedException;
 	}
 
 	/**
+	 *
+	 * Deprecated since 3.3.0 and planned removed!
+	 *
 	 * Check if shapes have been loaded into the shapes graph before other data is added
 	 *
 	 * @param ignoreNoShapesLoadedException
 	 */
+	@Deprecated
 	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
 		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
 	}
