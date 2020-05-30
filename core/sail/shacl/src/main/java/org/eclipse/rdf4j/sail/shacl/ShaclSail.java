@@ -818,10 +818,22 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return experimentalFilterShapeSupport;
 	}
 
+	/**
+	 * Enable support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget
+	 * and dash:AllSubjectsTarget.
+	 * 
+	 * @param experimentalDashSupport true to enable (default: false)
+	 */
 	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
 		this.experimentalDashSupport = experimentalDashSupport;
 	}
 
+	/**
+	 * Support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget and
+	 * dash:AllSubjectsTarget.
+	 * 
+	 * @return true if enabled
+	 */
 	public boolean isExperimentalDashSupport() {
 		return experimentalDashSupport;
 	}
