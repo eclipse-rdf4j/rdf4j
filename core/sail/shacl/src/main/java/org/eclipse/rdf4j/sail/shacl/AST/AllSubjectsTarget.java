@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -88,6 +89,7 @@ public class AllSubjectsTarget extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		if (filterShape != null) {
 
@@ -138,6 +140,7 @@ public class AllSubjectsTarget extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		if (filterShape != null) {
 
 			PlanNode planNode = new EmptyNode();
@@ -214,7 +217,28 @@ public class AllSubjectsTarget extends NodeShape {
 	@Override
 	public String toString() {
 		return "AllSubjectsTarget{" +
-				"id=" + id +
+				"filterShape=" + filterShape +
+				", id=" + id +
 				'}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		AllSubjectsTarget that = (AllSubjectsTarget) o;
+		return Objects.equals(filterShape, that.filterShape);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), filterShape);
 	}
 }

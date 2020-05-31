@@ -60,6 +60,7 @@ public class TargetSubjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connection,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {
@@ -78,6 +79,7 @@ public class TargetSubjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connection,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {

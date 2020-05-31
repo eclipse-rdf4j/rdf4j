@@ -62,6 +62,7 @@ public class AllObjectsTarget extends NodeShape {
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 
+		assert planeNodeWrapper == null;
 		PlanNode select = new Unique(
 				new Sort(
 						new TrimTuple(
@@ -80,6 +81,7 @@ public class AllObjectsTarget extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		PlanNode select = new Unique(
 				new Sort(
 						new TrimTuple(
@@ -123,4 +125,5 @@ public class AllObjectsTarget extends NodeShape {
 				"id=" + id +
 				'}';
 	}
+
 }

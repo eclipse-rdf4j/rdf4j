@@ -60,6 +60,7 @@ public class TargetNode extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		return new ValuesBackedNode(targetNodeSet);
 
@@ -68,6 +69,7 @@ public class TargetNode extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		PlanNode parent = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));

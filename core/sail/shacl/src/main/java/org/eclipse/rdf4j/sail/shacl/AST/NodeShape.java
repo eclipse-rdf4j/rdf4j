@@ -68,6 +68,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
@@ -78,6 +79,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));

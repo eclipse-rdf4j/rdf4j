@@ -834,10 +834,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 		Lock writeLock = null;
 		try {
 			writeLock = acquireExclusiveWriteLock(null);
-			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-				shapesRepoConnection.begin(IsolationLevels.NONE);
-				nodeShapes = refreshShapes(shapesRepoConnection);
-				shapesRepoConnection.commit();
+			if (shapesRepo != null) {
+				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+					shapesRepoConnection.begin(IsolationLevels.NONE);
+					nodeShapes = refreshShapes(shapesRepoConnection);
+					shapesRepoConnection.commit();
+				}
 			}
 		} finally {
 			if (writeLock != null) {

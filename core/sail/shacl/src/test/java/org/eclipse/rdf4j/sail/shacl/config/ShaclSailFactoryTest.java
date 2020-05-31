@@ -59,6 +59,7 @@ public class ShaclSailFactoryTest {
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
 		config.setExperimentalFilterShapeSupport(!config.isExperimentalFilterShapeSupport());
+		config.setExperimentalDashSupport(!config.isExperimentalDashSupport());
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -78,6 +79,7 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
 		assertThat(sail.isExperimentalFilterShapeSupport()).isEqualTo(config.isExperimentalFilterShapeSupport());
+		assertThat(sail.isExperimentalDashSupport()).isEqualTo(config.isExperimentalDashSupport());
 	}
 
 }

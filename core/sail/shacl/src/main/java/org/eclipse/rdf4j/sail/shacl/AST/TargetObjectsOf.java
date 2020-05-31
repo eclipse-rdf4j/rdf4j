@@ -62,6 +62,7 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
@@ -82,6 +83,7 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
 			IRI iri = targetObjectsOf.stream().findAny().get();

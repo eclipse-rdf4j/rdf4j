@@ -78,7 +78,8 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
-			PlanNode aThis = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), planAddedStatements, 0,
+			PlanNode invalidValues = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
+					planAddedStatements, 0,
 					buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
 
 			if (connectionsGroup.getStats().hasAdded()) {
@@ -89,10 +90,9 @@ public class HasValuePropertyShape extends PathPropertyShape {
 							buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
 				};
 
-				aThis = new UnionNode(aThis, getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
+				invalidValues = new UnionNode(invalidValues,
+						getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
 			}
-
-			PlanNode invalidValues = aThis;
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -118,7 +118,8 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
-			PlanNode aThis = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), planAddedStatements, 0,
+			PlanNode invalidValues = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
+					planAddedStatements, 0,
 					buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
 
 			if (connectionsGroup.getStats().hasRemoved()) {
@@ -129,10 +130,9 @@ public class HasValuePropertyShape extends PathPropertyShape {
 							buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
 				};
 
-				aThis = new UnionNode(aThis, getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
+				invalidValues = new UnionNode(invalidValues,
+						getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
 			}
-
-			PlanNode invalidValues = aThis;
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
