@@ -802,6 +802,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public void setExperimentalFilterShapeSupport(boolean experimentalFilterShapeSupport) {
 		this.experimentalFilterShapeSupport = experimentalFilterShapeSupport;
+		forceRefreshShapes();
 	}
 
 	/**
@@ -821,17 +822,34 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Enable support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget
 	 * and dash:AllSubjectsTarget.
-	 * 
+	 *
 	 * @param experimentalDashSupport true to enable (default: false)
 	 */
 	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
 		this.experimentalDashSupport = experimentalDashSupport;
+		forceRefreshShapes();
+	}
+
+	private void forceRefreshShapes() {
+		Lock writeLock = null;
+		try {
+			writeLock = acquireExclusiveWriteLock(null);
+			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+				shapesRepoConnection.begin(IsolationLevels.NONE);
+				nodeShapes = refreshShapes(shapesRepoConnection);
+				shapesRepoConnection.commit();
+			}
+		} finally {
+			if (writeLock != null) {
+				releaseExclusiveWriteLock(writeLock);
+			}
+		}
 	}
 
 	/**
 	 * Support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget and
 	 * dash:AllSubjectsTarget.
-	 * 
+	 *
 	 * @return true if enabled
 	 */
 	public boolean isExperimentalDashSupport() {
