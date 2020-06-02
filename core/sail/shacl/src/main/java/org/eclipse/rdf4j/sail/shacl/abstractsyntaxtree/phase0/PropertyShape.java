@@ -46,13 +46,10 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			Cache cache) {
 		super.populate(parent, properties, connection, cache);
 
-		if (properties.getPath() instanceof IRI) {
-			this.path = new SimplePath((IRI) properties.getPath());
-		} else if (properties.getPath() == null) {
+		this.path = Path.buildPath(connection, properties.getPath());
+
+		if (this.path == null) {
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
-		} else {
-			throw new UnsupportedOperationException(
-					"Path is not supported for " + properties.getPath() + " in " + properties.getId());
 		}
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);

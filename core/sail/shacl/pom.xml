@@ -70,18 +70,18 @@
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
-        <dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
-            <artifactId>rdf4j-sail-inferencer</artifactId>
+			<artifactId>rdf4j-sail-inferencer</artifactId>
 			<version>${project.version}</version>
-        </dependency>
+		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-rio-jsonld</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
-        </dependency>
-    </dependencies>
+		</dependency>
+	</dependencies>
 	<build>
 		<plugins>
 			<plugin>

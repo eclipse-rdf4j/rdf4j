@@ -7,27 +7,23 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-public class SimplePath extends Path {
+public class InversePath extends Path {
 
-	IRI predicate;
+	private final IRI inversePath;
 
-	public SimplePath(IRI predicate) {
-		super(predicate);
-		this.predicate = predicate;
-	}
-
-	@Override
-	public Resource getId() {
-		return predicate;
+	public InversePath(Resource id, IRI inversePath) {
+		super(id);
+		this.inversePath = inversePath;
 	}
 
 	@Override
 	public String toString() {
-		return "SimplePath{ <" + predicate + "> }";
+		return "InversePath{ <" + inversePath + "> }";
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.PATH, predicate);
+		model.add(subject, SHACL.PATH, id);
+		model.add(id, SHACL.INVERSE_PATH, inversePath);
 	}
 }
