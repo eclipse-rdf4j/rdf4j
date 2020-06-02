@@ -11,6 +11,9 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+/**
+ * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
+ */
 public class DebugPlanNode implements PlanNode {
 
 	private final String message;
@@ -26,8 +29,6 @@ public class DebugPlanNode implements PlanNode {
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
 
-		DebugPlanNode that = this;
-
 		return new CloseableIteration<Tuple, SailException>() {
 
 			final CloseableIteration<Tuple, SailException> iterator = parent.iterator();
@@ -40,7 +41,7 @@ public class DebugPlanNode implements PlanNode {
 			@Override
 			public Tuple next() throws SailException {
 				Tuple next = iterator.next();
-				validationExecutionLogger.log(depth(), message, next, that, getId());
+				validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
 				return next;
 			}
 

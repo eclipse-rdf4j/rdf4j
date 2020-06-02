@@ -204,12 +204,18 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	public boolean childrenHasOwnPath() {
-		return and.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
+		return and
+				.stream()
+				.flatMap(a -> a
+						.stream()
+						.map(PathPropertyShape::hasOwnPath))
+				.anyMatch(a -> a);
 	}
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		Optional<PlanNode> reduce = and.stream()
+		Optional<PlanNode> reduce = and
+				.stream()
 				.flatMap(Collection::stream)
 				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
 				.reduce((a, b) -> new UnionNode(a, b));
@@ -220,7 +226,10 @@ public class AndPropertyShape extends PathPropertyShape {
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
 		return and.stream()
-				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+				.map(propertyShapes -> propertyShapes
+						.stream()
+						.map(propertyShape -> propertyShape.buildSparqlValidNodes(targetVar))
+						.reduce((a, b) -> a + "\n" + b))
 				.filter(Optional::isPresent)
 				.map(Optional::get)
 				.reduce((a, b) -> a + "\n" + b)
@@ -229,6 +238,9 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		return and.stream().flatMap(Collection::stream).flatMap(PropertyShape::getStatementPatterns);
+		return and
+				.stream()
+				.flatMap(Collection::stream)
+				.flatMap(PropertyShape::getStatementPatterns);
 	}
 }

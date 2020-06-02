@@ -33,6 +33,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final int index;
 	private final ParsedQuery query;
 	private final String queryVariable;
+	private final String bindingVariable;
 
 	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, int index, String queryFragment,
 			String queryVariable) {
@@ -40,6 +41,10 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		this.connection = connection;
 		this.index = index;
 		this.queryVariable = queryVariable;
+		this.bindingVariable = queryVariable.substring(1);
+
+		assert queryVariable.startsWith("?");
+		assert !bindingVariable.startsWith("?");
 
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
@@ -62,11 +67,11 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		MapBindingSet bindings = new MapBindingSet();
 
-		bindings.addBinding(queryVariable.substring(1), value);
+		bindings.addBinding(bindingVariable, value);
 
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(
 				query.getTupleExpr(), query.getDataset(),
-				bindings, true)) {
+				bindings, false)) {
 			return bindingSet.hasNext();
 		}
 
@@ -74,8 +79,10 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterIsSubject{" +
+		return "ExternalFilterByQuery{" +
 				"index=" + index +
+				", query=" + query +
+				", queryVariable='" + queryVariable + '\'' +
 				'}';
 	}
 }

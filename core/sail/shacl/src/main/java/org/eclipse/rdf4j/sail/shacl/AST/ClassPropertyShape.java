@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -95,11 +95,11 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			// filter by type against addedStatements, this is an optimization for when you add the type statement in
 			// the same transaction
-			PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(addedStatements,
+			PlanNode addedStatementsTypeFilter = new ExternalPredicateObjectFilter(addedStatements,
 					RDF.TYPE, Collections.singleton(classResource), planNode, 1, false);
 
 			// filter by type against the base sail
-			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalTypeFilterNode(
+			PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalPredicateObjectFilter(
 					connectionsGroup.getBaseConnection(), RDF.TYPE, Collections.singleton(classResource),
 					addedStatementsTypeFilter, 1, false);
 			if (printPlans) {
@@ -137,19 +137,18 @@ public class ClassPropertyShape extends PathPropertyShape {
 			// filter by type against addedStatements, this is an optimization for when you add the type statement
 			// in
 			// the same transaction
-			PlanNode filteredAgainstAdded = new ExternalTypeFilterNode(addedStatements,
+			PlanNode filteredAgainstAdded = new ExternalPredicateObjectFilter(addedStatements,
 					RDF.TYPE, Collections.singleton(classResource), targets, 1,
 					false);
 
 			// filter by type against the base sail
-			PlanNode filteredAgainsteBaseSail = new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
+			PlanNode filteredAgainsteBaseSail = new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(),
 					RDF.TYPE, Collections.singleton(classResource),
 					filteredAgainstAdded, 1, false);
 
 			if (connectionsGroup.getStats().hasRemoved()) {
 
-				// Handle when a type statement has been removed, first get all removed type statements that match
-				// the
+				// Handle when a type statement has been removed, first get all removed type statements that match the
 				// classResource for this shape
 				PlanNode removedTypeStatements = new Select(connectionsGroup.getRemovedStatements(),
 						"?a a <" + classResource + ">", "?a");
@@ -203,11 +202,11 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 		// filter by type against addedStatements, this is an optimization for when you add the type statement in
 		// the same transaction
-		PlanNode addedStatementsTypeFilter = new ExternalTypeFilterNode(addedStatements,
+		PlanNode addedStatementsTypeFilter = new ExternalPredicateObjectFilter(addedStatements,
 				RDF.TYPE, Collections.singleton(classResource), joined, 1, false);
 
 		// filter by type against the base sail
-		PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalTypeFilterNode(
+		PlanNode invalidTuplesDueToDataAddedThatMatchesTargetOrPath = new ExternalPredicateObjectFilter(
 				connectionsGroup.getBaseConnection(),
 				RDF.TYPE, Collections.singleton(classResource),
 				addedStatementsTypeFilter, 1, false);
@@ -272,7 +271,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			}
 
 			// filter by type against the base sail
-			planNode = new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
+			planNode = new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(),
 					RDF.TYPE, Collections.singleton(classResource),
 					planNode, 1, true);
 
@@ -355,7 +354,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			innerJoin = new Unique(innerJoin);
 
-			return new ExternalTypeFilterNode(connectionsGroup.getBaseConnection(),
+			return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(),
 					RDF.TYPE, Collections.singleton(classResource),
 					innerJoin, 1,
 					true);

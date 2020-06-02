@@ -24,10 +24,10 @@ import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 /**
  * @author Håvard Ottestad
  */
-public class ExternalTypeFilterNode implements PlanNode {
+public class ExternalPredicateObjectFilter implements PlanNode {
 
-	private SailConnection connection;
-	private Set<Resource> filterOnObject;
+	private final SailConnection connection;
+	private final Set<Resource> filterOnObject;
 	private final IRI filterOnPredicate;
 	PlanNode parent;
 	int index = 0;
@@ -35,7 +35,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ExternalTypeFilterNode(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
+	public ExternalPredicateObjectFilter(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
 			PlanNode parent, int index,
 			boolean returnMatching) {
 		this.connection = connection;
@@ -48,13 +48,12 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		PlanNode that = this;
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			Tuple next = null;
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
@@ -71,7 +70,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
-										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
+												+ ":IgnoredAsTypeMismatch",
+										temp, ExternalPredicateObjectFilter.this,
 										getId());
 							}
 						}
@@ -82,7 +83,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
-										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
+												+ ":IgnoredAsTypeMismatch",
+										temp, ExternalPredicateObjectFilter.this,
 										getId());
 							}
 						}
@@ -157,8 +160,11 @@ public class ExternalTypeFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalTypeFilterNode{" + "filterOnType="
-				+ Arrays.toString(filterOnObject.stream().map(Formatter::prefix).toArray()) + '}';
+		return "ExternalPredicateObjectFilter{" +
+				", filterOnPredicate=" + filterOnPredicate +
+				"filterOnObject=" + Arrays.toString(filterOnObject.stream().map(Formatter::prefix).toArray()) +
+				", index=" + index +
+				'}';
 	}
 
 	@Override

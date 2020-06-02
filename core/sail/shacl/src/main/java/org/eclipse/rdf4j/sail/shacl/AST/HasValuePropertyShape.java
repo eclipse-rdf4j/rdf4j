@@ -63,6 +63,10 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
+		// TODO - these plans are generally slow because they generate a lot of SPARQL queries and also they don't
+		// optimize for the case when everything already valid in the added statements. The code is also very
+		// repetitive.
+
 		if (negateThisPlan) {
 			if (overrideTargetNode != null) {
 				PlanNode planNode = overrideTargetNode.getPlanNode();

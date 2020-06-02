@@ -34,11 +34,10 @@ public class Unique implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		Unique that = this;
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			Set<Tuple> multiCardinalityDedupeSet;
 
@@ -89,7 +88,8 @@ public class Unique implements PlanNode {
 					} else {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
-									that.getClass().getSimpleName() + ":IgnoredNotUnique", temp, that, getId());
+									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique", temp, Unique.this,
+									getId());
 						}
 					}
 

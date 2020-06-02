@@ -70,18 +70,7 @@ public class AllSubjectsTarget extends NodeShape {
 
 			return connectionsGroup.getCachedNodeFor(select);
 		} else {
-			PlanNode select = new Unique(
-					new Sort(
-							new TrimTuple(
-									new UnorderedSelect(
-											connectionsGroup.getBaseConnection(),
-											null,
-											null,
-											null,
-											UnorderedSelect.OutputPattern.SubjectPredicateObject),
-									0,
-									1)));
-
+			PlanNode select = getAllSubjectsPlan(connectionsGroup.getBaseConnection());
 			return connectionsGroup.getCachedNodeFor(select);
 		}
 	}
@@ -93,44 +82,10 @@ public class AllSubjectsTarget extends NodeShape {
 
 		if (filterShape != null) {
 
-			/*
-			 * General approach here is to: 2. Get all subjects that match any of the statements patterns of the filter
-			 * shape 3. Feed this in as a bind into the SPARQL query generated from the filter shape
-			 */
-
-			PlanNode planNode = new EmptyNode();
-			for (StatementPattern statementPattern : statementPatternList) {
-				planNode = new UnionNode(planNode, new Sort(new TrimTuple(new UnorderedSelect(
-						connectionsGroup.getAddedStatements(),
-						null,
-						((IRI) statementPattern.getPredicateVar().getValue()),
-						(statementPattern.getObjectVar().getValue()),
-						UnorderedSelect.OutputPattern.SubjectPredicateObject
-
-				), 0, 1)));
-			}
-
-			planNode = new Unique(new Sort(planNode));
-
-			planNode = new BulkedExternalInnerJoin(planNode, connectionsGroup.getBaseConnection(), query, false, null,
-					"?a");
-
-			planNode = new Unique(new TrimTuple(planNode, 0, 1));
-
-			return planNode;
+			return getInnerPlanRemovedOrAdded(connectionsGroup, connectionsGroup.getAddedStatements());
 
 		} else {
-			PlanNode select = new Unique(
-					new Sort(
-							new TrimTuple(
-									new UnorderedSelect(
-											connectionsGroup.getAddedStatements(),
-											null,
-											null,
-											null,
-											UnorderedSelect.OutputPattern.SubjectPredicateObject),
-									0,
-									1)));
+			PlanNode select = getAllSubjectsPlan(connectionsGroup.getAddedStatements());
 
 			return connectionsGroup.getCachedNodeFor(select);
 		}
@@ -143,42 +98,55 @@ public class AllSubjectsTarget extends NodeShape {
 		assert planeNodeWrapper == null;
 		if (filterShape != null) {
 
-			PlanNode planNode = new EmptyNode();
-			for (StatementPattern statementPattern : statementPatternList) {
-				planNode = new UnionNode(planNode, new Sort(new TrimTuple(new UnorderedSelect(
-						connectionsGroup.getRemovedStatements(),
-						null,
-						((IRI) statementPattern.getPredicateVar().getValue()),
-						(statementPattern.getObjectVar().getValue()),
-						UnorderedSelect.OutputPattern.SubjectPredicateObject
-
-				), 0, 1)));
-			}
-
-			planNode = new Unique(new Sort(planNode));
-
-			planNode = new BulkedExternalInnerJoin(planNode, connectionsGroup.getBaseConnection(), query, false, null,
-					"?a");
-
-			planNode = new Unique(new TrimTuple(planNode, 0, 1));
-
-			return planNode;
+			return getInnerPlanRemovedOrAdded(connectionsGroup, connectionsGroup.getRemovedStatements());
 
 		} else {
-			PlanNode select = new Unique(
-					new Sort(
-							new TrimTuple(
-									new UnorderedSelect(
-											connectionsGroup.getRemovedStatements(),
-											null,
-											null,
-											null,
-											UnorderedSelect.OutputPattern.SubjectPredicateObject),
-									0,
-									1)));
+
+			PlanNode select = getAllSubjectsPlan(connectionsGroup.getRemovedStatements());
 
 			return connectionsGroup.getCachedNodeFor(select);
 		}
+	}
+
+	private PlanNode getInnerPlanRemovedOrAdded(ConnectionsGroup connectionsGroup, SailConnection removedStatements) {
+
+		// @formatter:off
+		/*
+		 * General approach here is to:
+		 *
+		 * 1. Get all subjects that match any of the statement patterns of the filter shape
+		 * 2. Feed this in as a bind into the SPARQL query generated from the filter shape
+		 */
+		// @formatter:on
+
+		PlanNode allPotentialTargetsFromTransaction = new EmptyNode();
+		for (StatementPattern statementPattern : statementPatternList) {
+
+			PlanNode statementsThatMatchPattern = new TrimTuple(
+					new UnorderedSelect(
+							removedStatements,
+							null,
+							((IRI) statementPattern.getPredicateVar().getValue()),
+							(statementPattern.getObjectVar().getValue()),
+							UnorderedSelect.OutputPattern.SubjectPredicateObject),
+					0,
+					1);
+
+			allPotentialTargetsFromTransaction = new UnionNode(allPotentialTargetsFromTransaction,
+					statementsThatMatchPattern);
+
+		}
+
+		allPotentialTargetsFromTransaction = new Unique(new Sort(allPotentialTargetsFromTransaction));
+
+		// TODO: The bulked external inner join could actually just be a bulked external sparql filter
+		PlanNode allTargetsThatReallyAreTargets = new BulkedExternalInnerJoin(allPotentialTargetsFromTransaction,
+				connectionsGroup.getBaseConnection(), query, false, null,
+				"?a");
+
+		allTargetsThatReallyAreTargets = new Unique(new TrimTuple(allTargetsThatReallyAreTargets, 0, 1));
+
+		return allTargetsThatReallyAreTargets;
 	}
 
 	@Override
@@ -211,6 +179,26 @@ public class AllSubjectsTarget extends NodeShape {
 			return new ExternalFilterIsSubject(connectionsGroup.getBaseConnection(), parent, 0)
 					.getTrueNode(UnBufferedPlanNode.class);
 		}
+
+	}
+
+	private PlanNode getAllSubjectsPlan(SailConnection sailConnection) {
+		// @formatter:off
+		return new Unique(
+			new Sort(
+				new TrimTuple(
+					new UnorderedSelect(
+						sailConnection,
+						null,
+						null,
+						null,
+						UnorderedSelect.OutputPattern.SubjectPredicateObject
+					),
+					0,
+					1)
+			)
+		);
+		// @formatter:on
 
 	}
 

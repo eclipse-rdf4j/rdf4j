@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -33,6 +34,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
@@ -42,6 +45,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
  * @author Heshan Jayasinghe
  */
 public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
+
+	private static final Logger logger = LoggerFactory.getLogger(NodeShape.class);
 
 	final Resource id;
 
@@ -97,8 +102,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		throw new IllegalStateException();
 	}
 
-	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape,
-			boolean printPlans, boolean validateEntireBaseSail) {
+	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape, boolean printPlans,
+			boolean validateEntireBaseSail) {
 
 		PlanNodeProvider overrideTargetNodeBufferedSplitter;
 		SailConnection addedStatements;
@@ -129,11 +134,9 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return Stream.concat(propertyShapesPlans, nodeShapesPlans);
 	}
 
-	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes,
-			ConnectionsGroup connectionsGroup,
+	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes, ConnectionsGroup connectionsGroup,
 			NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
-			SailConnection addedStatements,
-			SailConnection removedStatements) {
+			SailConnection addedStatements, SailConnection removedStatements) {
 
 		Stats stats = connectionsGroup.getStats();
 		return propertyShapes
@@ -158,6 +161,19 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id;
 	}
 
+	/**
+	 * Returns a query that can be run against the base sail to retrieve all targets that would be valid according to
+	 * this shape.
+	 *
+	 * Eg. A datatype restriction on foaf:age datatype == integer would look like:
+	 *
+	 * ?a foaf:age ?age_UUID. FILTER(isLiteral(?age_UUID) && datatype(?age_UUID) = xsd:integer)
+	 *
+	 * Where targetVar == ?a
+	 *
+	 * @param targetVar the SPARQL variable name used to bind the target nodes
+	 * @return sparql query
+	 */
 	protected String buildSparqlValidNodes(String targetVar) {
 
 		if (!propertyShapes.isEmpty() && !nodeShapes.isEmpty()) {
@@ -184,11 +200,24 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	}
 
+	/**
+	 * Get all statement patterns that would affect the validity of this shape.
+	 *
+	 * Eg. If the shape validates that all foaf:Person should have one foaf:name, then the statement pattern that would
+	 * affect the validity would be "?a foaf:name ?b". We don't consider the patterns that would affect the targets (eg.
+	 * foaf:Person).
+	 * 
+	 * @return
+	 */
 	protected Stream<StatementPattern> getStatementPatterns() {
 
 		return Stream.concat(
-				propertyShapes.stream().flatMap(PropertyShape::getStatementPatterns),
-				nodeShapes.stream().flatMap(PropertyShape::getStatementPatterns));
+				propertyShapes
+						.stream()
+						.flatMap(PropertyShape::getStatementPatterns),
+				nodeShapes
+						.stream()
+						.flatMap(PropertyShape::getStatementPatterns));
 	}
 
 	public static class Factory {
@@ -245,6 +274,9 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 					}
 
 					if (shaclSail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
+						logger.info(
+								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setExperimentalDashSupport(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
+
 						propertyShapes
 								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated()));
 						// target class nodeShapes are the only supported nodeShapes
@@ -283,14 +315,6 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public int hashCode() {
 		return Objects.hash(id, propertyShapes, nodeShapes);
-	}
-
-	public List<PathPropertyShape> getPropertyShapes() {
-		return propertyShapes;
-	}
-
-	public List<PathPropertyShape> getNodeShapes() {
-		return nodeShapes;
 	}
 
 }

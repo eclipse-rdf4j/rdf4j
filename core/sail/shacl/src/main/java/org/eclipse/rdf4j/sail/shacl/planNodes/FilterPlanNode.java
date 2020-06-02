@@ -71,7 +71,6 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 	private CloseableIteration<Tuple, SailException> iteratorInternal() {
-		FilterPlanNode that = this;
 
 		return new CloseableIteration<Tuple, SailException>() {
 
@@ -96,8 +95,9 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							trueNode.push(temp);
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
-								validationExecutionLogger.log(that.depth(),
-										that.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp, that, getId());
+								validationExecutionLogger.log(FilterPlanNode.this.depth(),
+										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
+										FilterPlanNode.this, getId());
 							}
 						}
 					} else {
@@ -105,8 +105,9 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							falseNode.push(temp);
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
-								validationExecutionLogger.log(that.depth(),
-										that.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp, that,
+								validationExecutionLogger.log(FilterPlanNode.this.depth(),
+										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
+										FilterPlanNode.this,
 										getId());
 							}
 						}

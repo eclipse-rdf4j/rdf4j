@@ -342,6 +342,24 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return shapes;
 	}
 
+	private void forceRefreshShapes() {
+		Lock writeLock = null;
+		try {
+			writeLock = acquireExclusiveWriteLock(null);
+			if (shapesRepo != null) {
+				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+					shapesRepoConnection.begin(IsolationLevels.NONE);
+					nodeShapes = refreshShapes(shapesRepoConnection);
+					shapesRepoConnection.commit();
+				}
+			}
+		} finally {
+			if (writeLock != null) {
+				releaseExclusiveWriteLock(writeLock);
+			}
+		}
+	}
+
 	@Override
 	public synchronized void shutDown() throws SailException {
 		if (shapesRepo != null) {
@@ -828,24 +846,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
 		this.experimentalDashSupport = experimentalDashSupport;
 		forceRefreshShapes();
-	}
-
-	private void forceRefreshShapes() {
-		Lock writeLock = null;
-		try {
-			writeLock = acquireExclusiveWriteLock(null);
-			if (shapesRepo != null) {
-				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-					shapesRepoConnection.begin(IsolationLevels.NONE);
-					nodeShapes = refreshShapes(shapesRepoConnection);
-					shapesRepoConnection.commit();
-				}
-			}
-		} finally {
-			if (writeLock != null) {
-				releaseExclusiveWriteLock(writeLock);
-			}
-		}
 	}
 
 	/**

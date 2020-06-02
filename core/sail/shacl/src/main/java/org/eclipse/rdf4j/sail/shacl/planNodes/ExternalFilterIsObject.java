@@ -36,7 +36,7 @@ public class ExternalFilterIsObject extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterIsSubject{" +
+		return "ExternalFilterIsObject{" +
 				"index=" + index +
 				'}';
 	}
