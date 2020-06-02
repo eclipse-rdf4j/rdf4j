@@ -17,7 +17,7 @@ import com.google.common.collect.testing.TestSetGenerator;
 
 /**
  * Creates Models, containing sample {@link Statement}s, for use in Java Collection Framework conformance testing.
- * 
+ *
  * @author Jeen Broekstra
  * @see ModelCollectionTest
  */

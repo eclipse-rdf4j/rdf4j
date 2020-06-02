@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * WriterSettings for the N-Triples writer features.
- * 
+ *
  * @author Peter Ansell
  */
 public class NTriplesWriterSettings {

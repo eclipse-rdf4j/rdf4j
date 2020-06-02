@@ -35,7 +35,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Creates a new binary value operator.
-	 * 
+	 *
 	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
 	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
 	 */
@@ -50,7 +50,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Gets the left argument of this binary value operator.
-	 * 
+	 *
 	 * @return The operator's left argument.
 	 */
 	public ValueExpr getLeftArg() {
@@ -59,7 +59,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Sets the left argument of this binary value operator.
-	 * 
+	 *
 	 * @param leftArg The (new) left argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setLeftArg(ValueExpr leftArg) {
@@ -70,7 +70,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Gets the right argument of this binary value operator.
-	 * 
+	 *
 	 * @return The operator's right argument.
 	 */
 	public ValueExpr getRightArg() {
@@ -79,7 +79,7 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 
 	/**
 	 * Sets the right argument of this binary value operator.
-	 * 
+	 *
 	 * @param rightArg The (new) right argument for this operator, must not be <tt>null</tt>.
 	 */
 	public void setRightArg(ValueExpr rightArg) {

@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
  * A structure representing a relevant source for some expression.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -68,23 +68,30 @@ public class StatementSource extends AbstractQueryModelNode {
 
 	@Override
 	public boolean equals(Object obj) {
-		if (this == obj)
+		if (this == obj) {
 			return true;
-		if (obj == null)
+		}
+		if (obj == null) {
 			return false;
-		if (getClass() != obj.getClass())
+		}
+		if (getClass() != obj.getClass()) {
 			return false;
+		}
 		StatementSource other = (StatementSource) obj;
 		if (id == null) {
-			if (other.id != null)
+			if (other.id != null) {
 				return false;
-		} else if (!id.equals(other.id))
+			}
+		} else if (!id.equals(other.id)) {
 			return false;
+		}
 		if (type == null) {
-			if (other.type != null)
+			if (other.type != null) {
 				return false;
-		} else if (!type.equals(other.type))
+			}
+		} else if (!type.equals(other.type)) {
 			return false;
+		}
 		return true;
 	}
 

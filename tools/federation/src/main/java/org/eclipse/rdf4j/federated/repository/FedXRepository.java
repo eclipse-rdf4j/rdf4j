@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A special {@link SailRepository} which performs the actions as defined in {@link FedXRepositoryConnection}.
- * 
+ *
  * @author as
  */
 public class FedXRepository extends SailRepository {
@@ -115,26 +115,27 @@ public class FedXRepository extends SailRepository {
 	/**
 	 * return the number of triples in the federation as string. Retrieving the size is only supported
 	 * {@link EndpointType#NativeStore} and {@link EndpointType#RemoteRepository}.
-	 * 
+	 *
 	 * If the federation contains other types of endpoints, the size is indicated as a lower bound, i.e. the string
 	 * starts with a larger sign.
-	 * 
+	 *
 	 * @return the number of triples in the federation
 	 */
 	public String getFederationSize() {
 		long size = 0;
 		boolean isLowerBound = false;
-		for (Endpoint e : federation.getMembers())
+		for (Endpoint e : federation.getMembers()) {
 			try {
 				size += e.size();
 			} catch (RepositoryException e1) {
 				isLowerBound = true;
 			}
+		}
 		return isLowerBound ? ">" + size : Long.toString(size);
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the {@link FederationContext}
 	 */
 	public FederationContext getFederationContext() {
@@ -142,7 +143,7 @@ public class FedXRepository extends SailRepository {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the {@link QueryManager} from the {@link FederationContext}
 	 */
 	public QueryManager getQueryManager() {

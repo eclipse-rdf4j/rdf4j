@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
 /**
  * RDF parser for <a href="https://www.w3.org/TR/trig/">RDF-1.1 TriG</a> files. This parser is not thread-safe,
  * therefore its public methods are synchronized.
- * 
+ *
  * @author Arjohn Kampman
  * @author Peter Ansell
  * @see TurtleParser
@@ -50,7 +50,7 @@ public class TriGParser extends TurtleParser {
 
 	/**
 	 * Creates a new TriGParser that will use the supplied ValueFactory to create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	public TriGParser(ValueFactory valueFactory) {

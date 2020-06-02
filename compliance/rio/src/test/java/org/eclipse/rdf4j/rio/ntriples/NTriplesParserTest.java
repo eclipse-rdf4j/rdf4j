@@ -13,7 +13,7 @@ import junit.framework.Test;
 
 /**
  * JUnit test for the N-Triples parser.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NTriplesParserTest extends AbstractNTriplesParserTest {

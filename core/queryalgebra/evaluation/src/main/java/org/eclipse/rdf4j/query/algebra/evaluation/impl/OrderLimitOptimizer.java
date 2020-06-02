@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Moves the Order node above the Projection when variables are projected.
- * 
+ *
  * @author James Leigh
  */
 public class OrderLimitOptimizer implements QueryOptimizer {

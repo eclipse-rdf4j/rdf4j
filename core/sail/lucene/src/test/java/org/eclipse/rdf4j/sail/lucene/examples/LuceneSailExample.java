@@ -29,14 +29,14 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
  * Example code showing how to use the LuceneSail
- * 
+ *
  * @author sauermann
  */
 public class LuceneSailExample {
 
 	/**
 	 * Create a lucene sail and use it
-	 * 
+	 *
 	 * @param args
 	 */
 	public static void main(String[] args) throws Exception {

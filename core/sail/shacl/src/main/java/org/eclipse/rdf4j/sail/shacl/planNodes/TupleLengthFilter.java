@@ -20,9 +20,9 @@ public class TupleLengthFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if (t.line.size() >= length) {
+		if (t.getLine().size() >= length) {
 			if (exact) {
-				return t.line.size() == length;
+				return t.getLine().size() == length;
 			} else {
 				return true;
 			}

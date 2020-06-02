@@ -47,7 +47,7 @@ public class Statements {
 	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
 	 * context, and sends each created statement to the supplied {@link Consumer}. If no context is supplied, only a
 	 * single statement (without any assigned context) is created.
-	 * 
+	 *
 	 * @param vf        the {@link ValueFactory} to use for creating statements.
 	 * @param subject   the subject of each statement. May not be null.
 	 * @param predicate the predicate of each statement. May not be null.
@@ -73,7 +73,7 @@ public class Statements {
 	/**
 	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
 	 * context. If no context is supplied, only a single statement (without any assigned context) is created.
-	 * 
+	 *
 	 * @param vf         the {@link ValueFactory} to use for creating statements.
 	 * @param subject    the subject of each statement. May not be null.
 	 * @param predicate  the predicate of each statement. May not be null.
@@ -94,10 +94,10 @@ public class Statements {
 	/**
 	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
 	 * and object, but with no assigned context.
-	 * 
+	 *
 	 * @param statement the statement to strip the context from
 	 * @return a statement without context
-	 * 
+	 *
 	 * @since 3.1.0
 	 */
 	public static Statement stripContext(Statement statement) {
@@ -107,11 +107,11 @@ public class Statements {
 	/**
 	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
 	 * and object, but with no assigned context.
-	 * 
+	 *
 	 * @param vf        the {@link ValueFactory} to use for creating a new {@link Statement}.
 	 * @param statement the statement to strip the context from.
 	 * @return a statement without context
-	 * 
+	 *
 	 * @since 3.1.0
 	 */
 	public static Statement stripContext(ValueFactory vf, Statement statement) {
@@ -124,7 +124,7 @@ public class Statements {
 	/**
 	 * Checks if the two statements represent the same triple (that is, they have equal subject, predicate, and object).
 	 * Context information is disregarded.
-	 * 
+	 *
 	 * @param st1 the first statement to compare. May not be null.
 	 * @param st2 the second statement to compare. May not be null.
 	 * @return {@code true} iff the subject, predicate and object of {@code st1} and {@code st2} are equal,

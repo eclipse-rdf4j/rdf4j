@@ -12,9 +12,9 @@ import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 
 /**
  * Interface for the server:
- * 
+ *
  * {@link SPARQLEmbeddedServer} and {@link NativeStoreServer}
- * 
+ *
  * @author as
  *
  */
@@ -28,7 +28,7 @@ public interface Server {
 
 	/**
 	 * Returns the actual {@link ConfigurableSailRepository} instance for the endpoint
-	 * 
+	 *
 	 * @param i the endpoint index starting with 1
 	 * @return
 	 */

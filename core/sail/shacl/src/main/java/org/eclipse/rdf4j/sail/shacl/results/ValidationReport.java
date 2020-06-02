@@ -79,6 +79,7 @@ public class ValidationReport {
 		return validationResult;
 	}
 
+	@Override
 	public String toString() {
 		return "ValidationReport{" +
 				"conforms=" + conforms +

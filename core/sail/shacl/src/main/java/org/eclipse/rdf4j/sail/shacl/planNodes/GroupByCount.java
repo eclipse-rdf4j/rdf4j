@@ -58,12 +58,13 @@ public class GroupByCount implements PlanNode {
 
 				next = new Tuple();
 
-				Value subject = tempNext.line.get(0);
+				Value subject = tempNext.getLine().get(0);
 
-				while (tempNext != null && (tempNext.line.get(0) == subject || tempNext.line.get(0).equals(subject))) {
+				while (tempNext != null
+						&& (tempNext.getLine().get(0) == subject || tempNext.getLine().get(0).equals(subject))) {
 
 					next.addHistory(tempNext);
-					if (tempNext.line.size() > 1) {
+					if (tempNext.getLine().size() > 1) {
 						count++;
 					}
 
@@ -79,7 +80,7 @@ public class GroupByCount implements PlanNode {
 				List<Value> line = new ArrayList<>(
 						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
 
-				next.line = line;
+				next.setLine(line);
 
 			}
 

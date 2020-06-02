@@ -106,8 +106,9 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	protected Set<String> getBindingNames() {
-		if (bindings.size() == 0)
+		if (bindings.size() == 0) {
 			return Collections.EMPTY_SET;
+		}
 		Set<String> names = new HashSet<>();
 		String qry = operation;
 		int b = qry.indexOf('{');
@@ -125,8 +126,9 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	protected String getQueryString() {
-		if (bindings.size() == 0)
+		if (bindings.size() == 0) {
 			return operation;
+		}
 		String qry = operation;
 		int b = qry.indexOf('{');
 		String select = qry.substring(0, b);

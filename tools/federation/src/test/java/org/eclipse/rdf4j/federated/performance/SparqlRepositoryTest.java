@@ -64,8 +64,9 @@ public class SparqlRepositoryTest {
 //		while (qRes2.hasNext()) {
 //			qRes2.next();
 //		}
-		for (Future<?> t : tasks)
+		for (Future<?> t : tasks) {
 			t.get();
+		}
 		System.out.println("Done");
 		executor.shutdown();
 		System.exit(1);

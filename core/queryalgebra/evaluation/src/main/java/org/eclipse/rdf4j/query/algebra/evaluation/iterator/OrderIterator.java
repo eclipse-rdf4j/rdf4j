@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Sorts the input and optionally applies limit and distinct.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */

@@ -22,7 +22,7 @@ import com.google.common.collect.Maps;
 /**
  * An implementation of {@link SourceSelectionCache} which uses an in memory Guava {@link Cache} as data structure to
  * maintain information.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -37,7 +37,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param cacheSpec a Guava compatible {@link CacheBuilderSpec}, if <code>null</code> the
 	 *                  {@link #DEFAULT_CACHE_SPEC} is used
 	 */
@@ -105,7 +105,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 
 	/**
 	 * Entry representing the state for a sub query
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -120,7 +120,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		/**
 		 * The {@link StatementSourceAssurance} for the given {@link Endpoint},
 		 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS if unknown.
-		 * 
+		 *
 		 * @param e
 		 * @return
 		 */

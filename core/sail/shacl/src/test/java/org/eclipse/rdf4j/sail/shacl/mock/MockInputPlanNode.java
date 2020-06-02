@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.mock;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -44,7 +43,7 @@ public class MockInputPlanNode implements PlanNode {
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
 				.map(Tuple::new)
-				.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
+				.sorted((a, b) -> new ValueComparator().compare(a.getLine().get(0), b.getLine().get(0)))
 				.collect(Collectors.toList());
 
 	}

@@ -117,13 +117,16 @@ public class QuerySpecBuilderTest {
 				assertEquals("second lucene query", querySpec.getQueryString());
 				assertNull(querySpec.getSubject());
 				matched2 = true;
-			} else
+			} else {
 				fail("Found unexpected query spec: " + querySpec.toString());
+			}
 		}
-		if (!matched1)
+		if (!matched1) {
 			fail("did not find query patter sub1");
-		if (!matched2)
+		}
+		if (!matched2) {
 			fail("did not find query patter sub2");
+		}
 	}
 
 	/**

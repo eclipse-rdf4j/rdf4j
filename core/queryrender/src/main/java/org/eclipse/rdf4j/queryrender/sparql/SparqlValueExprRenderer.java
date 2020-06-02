@@ -50,7 +50,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
  * <p>
  * Renders a {@link ValueExpr} into SPARQL syntax.
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception> {
@@ -69,7 +69,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 
 	/**
 	 * Return the rendering of the ValueExpr object
-	 * 
+	 *
 	 * @param theExpr the expression to render
 	 * @return the rendering
 	 * @throws Exception if there is an error while rendering
@@ -160,7 +160,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 
 	/**
 	 * Renders the tuple expression as a query string.
-	 * 
+	 *
 	 * @param theExpr the expr to render
 	 * @return the rendered expression
 	 * @throws Exception if there is an error while rendering

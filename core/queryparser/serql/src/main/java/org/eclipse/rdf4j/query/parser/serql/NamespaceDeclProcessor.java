@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.serql.ast.ASTNamespaceDecl;
 import org.eclipse.rdf4j.query.parser.serql.ast.ASTQName;
@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 
 /**
  * Processes the namespace declarations in a SeRQL query model.
- * 
+ *
  * @author Arjohn Kampman
  */
 class NamespaceDeclProcessor extends AbstractASTVisitor {
@@ -36,7 +36,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 	 * Processes prefix declarations in queries. This method collects all prefixes that are declared in the supplied
 	 * query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the query with
 	 * equivalent {@link ASTIRI} nodes.
-	 * 
+	 *
 	 * @param qc The query that needs to be processed.
 	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map to (value).
 	 * @throws MalformedQueryException If the query contains redefined prefixes or qnames that use undefined prefixes.
@@ -70,7 +70,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 			nsMap.put("rdfs", RDFS.NAMESPACE);
 		}
 		if (!nsMap.containsKey("xsd")) {
-			nsMap.put("xsd", XMLSchema.NAMESPACE);
+			nsMap.put("xsd", XSD.NAMESPACE);
 		}
 		if (!nsMap.containsKey("owl")) {
 			nsMap.put("owl", OWL.NAMESPACE);

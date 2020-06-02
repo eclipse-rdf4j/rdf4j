@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * @author James Leigh
- * 
+ *
  * @deprecated since 3.0.
  */
 @Deprecated

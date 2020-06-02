@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
  * RDF parser implementation for the {@link RDFFormat#NQUADS N-Quads} RDF format, extending the Rio N-Triples parser. A
  * specification of N-Quads can be found <a href="http://sw.deri.org/2008/07/n-quads/">here</a>. This parser is not
  * thread-safe, therefore its public methods are synchronized.
- * 
+ *
  * @author Joshua Shinavier
  */
 public class NQuadsParser extends NTriplesParser {

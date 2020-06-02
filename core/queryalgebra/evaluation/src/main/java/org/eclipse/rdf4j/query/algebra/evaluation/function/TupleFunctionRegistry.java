@@ -15,7 +15,7 @@ public class TupleFunctionRegistry extends ServiceRegistry<String, TupleFunction
 
 	/**
 	 * Gets the default TupleFunctionRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static synchronized TupleFunctionRegistry getInstance() {

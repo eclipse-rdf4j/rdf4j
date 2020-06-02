@@ -9,14 +9,14 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * {@link QueryModelNode}s that can constitute a variable scope change (such as group graph patterns, subselects, etc).
- * 
+ *
  * @author Jeen Broekstra
  */
 public interface VariableScopeChange {
 
 	/**
 	 * indicates if the node represents a variable scope change.
-	 * 
+	 *
 	 * @return true iff the node represents a variable scope change.
 	 *
 	 */

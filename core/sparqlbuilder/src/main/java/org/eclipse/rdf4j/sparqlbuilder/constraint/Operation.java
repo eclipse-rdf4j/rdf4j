@@ -1,16 +1,16 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 /**
  * A SPARQL Operation. Differs from a {@link Function} in the way operators and arguments are printed.
- * 
+ *
  * @param <T> The type of operation. Used to support fluency.
  */
 abstract class Operation<T extends Operation<T>> extends Expression<T> {
@@ -23,7 +23,9 @@ abstract class Operation<T extends Operation<T>> extends Expression<T> {
 	Operation(SparqlOperator operator, int operandLimit) {
 		super(operator);
 		this.operandLimit = operandLimit;
-//		parenthesize();
+		if (operator instanceof ConnectiveOperator) {
+			parenthesize();
+		}
 	}
 
 	@SuppressWarnings("unchecked")

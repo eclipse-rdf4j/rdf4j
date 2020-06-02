@@ -24,7 +24,7 @@ import org.springframework.web.servlet.View;
 
 /**
  * Base class for rendering query results.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */

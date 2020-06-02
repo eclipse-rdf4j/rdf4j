@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Interface for any scheduler.
- * 
+ *
  * @author Andreas Schwarte
  *
  * @see ControlledWorkerScheduler
@@ -21,34 +21,34 @@ public interface Scheduler<T> {
 
 	/**
 	 * Schedule the provided task.
-	 * 
+	 *
 	 * @param task
 	 */
 	public void schedule(ParallelTask<T> task);
 
 	/**
 	 * Callback to handle the result.
-	 * 
+	 *
 	 * @param res
 	 */
 	public void handleResult(CloseableIteration<T, QueryEvaluationException> res);
 
 	/**
 	 * Inform the scheduler that a certain task is done.
-	 * 
+	 *
 	 */
 	public void done();
 
 	/**
 	 * Toss an exception to the scheduler.
-	 * 
+	 *
 	 * @param e
 	 */
 	public void toss(Exception e);
 
 	/**
 	 * Abort the execution of running and queued tasks.
-	 * 
+	 *
 	 */
 	public void abort();
 
@@ -61,7 +61,7 @@ public interface Scheduler<T> {
 
 	/**
 	 * Determine if the scheduler has unfinished tasks.
-	 * 
+	 *
 	 * @return whether the scheduler is running
 	 */
 	public boolean isRunning();

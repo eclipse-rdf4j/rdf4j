@@ -12,7 +12,7 @@ import java.io.IOException;
 
 /**
  * An iterator that iterates over records, for example those in a BTree.
- * 
+ *
  * @see BTree
  * @author Arjohn Kampman
  */
@@ -20,7 +20,7 @@ public interface RecordIterator extends Closeable {
 
 	/**
 	 * Returns the next record in the BTree.
-	 * 
+	 *
 	 * @return A record that is stored in the BTree, or <tt>null</tt> if all records have been returned.
 	 * @exception IOException In case an I/O error occurred.
 	 */
@@ -28,7 +28,7 @@ public interface RecordIterator extends Closeable {
 
 	/**
 	 * Replaces the last record returned by {@link #next} with the specified record.
-	 * 
+	 *
 	 * @exception IOException In case an I/O error occurred.
 	 */
 	public void set(byte[] record) throws IOException;
@@ -36,7 +36,7 @@ public interface RecordIterator extends Closeable {
 	/**
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.
-	 * 
+	 *
 	 * @exception IOException In case an I/O error occurred.
 	 */
 	@Override

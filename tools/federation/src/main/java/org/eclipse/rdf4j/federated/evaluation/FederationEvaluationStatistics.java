@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
  * <p>
  * The statistics are instantiated per query.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */

@@ -18,7 +18,7 @@ import org.locationtech.spatial4j.shape.impl.BufferedLineString;
 
 /**
  * Default implementation of Spatial Algebra for use in situations where JTS support is not available.
- * 
+ *
  * @deprecated use {@link JtsSpatialAlgebra} instead.
  */
 @Deprecated

@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.model;
  * An RDF-1.1 blank node (aka <em>bnode</em>, aka <em>anonymous node</em>). A blank node has an identifier to be able to
  * compare it to other blank nodes internally. Please note that, conceptually, blank node equality can only be
  * determined by examining the statements that refer to them.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-blank-nodes">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface BNode extends Resource {
@@ -35,7 +35,7 @@ public interface BNode extends Resource {
 
 	/**
 	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>id.hashCode()</tt>.
-	 * 
+	 *
 	 * @return A hash code for the blank node.
 	 */
 	@Override

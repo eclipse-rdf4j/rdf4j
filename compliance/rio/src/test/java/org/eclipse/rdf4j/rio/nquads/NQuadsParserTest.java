@@ -13,7 +13,7 @@ import junit.framework.Test;
 
 /**
  * JUnit test for the N-Quads parser.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NQuadsParserTest extends AbstractNQuadsParserTest {

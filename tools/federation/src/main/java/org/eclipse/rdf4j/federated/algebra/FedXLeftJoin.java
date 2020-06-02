@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 
 /**
  * Abstraction of {@link LeftJoin} to maintain the {@link QueryInfo}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

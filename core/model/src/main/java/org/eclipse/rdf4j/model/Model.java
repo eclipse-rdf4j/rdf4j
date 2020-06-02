@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.model;
 
 import java.io.Serializable;
-import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -293,6 +292,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	public default Set<Resource> contexts() {
 		Set<Resource> subjects = stream().map(st -> st.getContext()).collect(Collectors.toSet());
 		return subjects;
-	};
+	}
+
+	;
 
 }

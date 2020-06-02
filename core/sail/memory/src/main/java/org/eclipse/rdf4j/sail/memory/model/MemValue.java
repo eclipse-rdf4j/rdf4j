@@ -38,21 +38,21 @@ public interface MemValue extends Value {
 	/**
 	 * Checks whether this MemValue has any statements. A MemValue object has statements if there is at least one
 	 * statement where it is used as the subject, predicate, object or context value.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the MemValue has statements, <tt>false</tt> otherwise.
 	 */
 	public boolean hasStatements();
 
 	/**
 	 * Gets the list of statements for which this MemValue is the object.
-	 * 
+	 *
 	 * @return A MemStatementList containing the statements.
 	 */
 	public MemStatementList getObjectStatementList();
 
 	/**
 	 * Gets the number of statements for which this MemValue is the object.
-	 * 
+	 *
 	 * @return An integer larger than or equal to 0.
 	 */
 	public int getObjectStatementCount();
@@ -70,7 +70,7 @@ public interface MemValue extends Value {
 	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
 	 * this MemValue's list of statements for which it is the object.
-	 * 
+	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot);

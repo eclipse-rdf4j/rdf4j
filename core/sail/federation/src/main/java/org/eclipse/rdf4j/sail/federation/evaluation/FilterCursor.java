@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 
 /**
  * Provides a convenient constructor for {@link FilterIterator} using the condition.
- * 
+ *
  * @author James Leigh
  */
 public class FilterCursor extends FilterIterator {

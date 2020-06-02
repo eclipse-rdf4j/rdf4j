@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A tuple expression that represents an nary-Join.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -28,7 +28,7 @@ public class NJoin extends NTuple implements TupleExpr {
 
 	/**
 	 * Construct an nary-tuple. Note that the parentNode of all arguments is set to this instance.
-	 * 
+	 *
 	 * @param args
 	 */
 	public NJoin(List<TupleExpr> args, QueryInfo queryInfo) {
@@ -48,7 +48,7 @@ public class NJoin extends NTuple implements TupleExpr {
 
 	/**
 	 * Returns the commons variables of the join with the given index.
-	 * 
+	 *
 	 * @param joinIndex the join index, starting with 1
 	 * @return the set of join variables
 	 */

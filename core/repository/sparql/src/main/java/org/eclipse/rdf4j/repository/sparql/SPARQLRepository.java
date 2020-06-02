@@ -26,18 +26,17 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
 
 /**
  * A proxy class to access any SPARQL endpoint. The instance must be initialized prior to using it.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
 	/**
 	 * Flag indicating if quad mode is enabled in newly created {@link SPARQLConnection}s.
-	 * 
+	 *
 	 * @see #enableQuadMode(boolean)
 	 */
 	private boolean quadMode = false;
-
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
@@ -58,7 +57,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	/**
 	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
-	 * 
+	 *
 	 * @param endpointUrl a SPARQL endpoint URL. May not be null.
 	 */
 	public SPARQLRepository(String endpointUrl) {
@@ -68,7 +67,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	/**
 	 * Create a new SPARQLRepository using the supplied query endpoint URL for queries, and the supplied update endpoint
 	 * URL for updates.
-	 * 
+	 *
 	 * @param queryEndpointUrl  a SPARQL endpoint URL for queries. May not be null.
 	 * @param updateEndpointUrl a SPARQL endpoint URL for updates. May not be null.
 	 * @throws IllegalArgumentException if one of the supplied endpoint URLs is null.
@@ -130,7 +129,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	/**
 	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
-	 * 
+	 *
 	 * @return a HTTPClient object.
 	 */
 	protected SPARQLProtocolSession createHTTPClient() {
@@ -181,7 +180,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	/**
 	 * Set the username and password to use for authenticating with the remote repository.
-	 * 
+	 *
 	 * @param username the username. Setting this to null will disable authentication.
 	 * @param password the password. Setting this to null will disable authentication.
 	 */
@@ -212,7 +211,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	/**
 	 * Get the additional HTTP headers which will be used
-	 * 
+	 *
 	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
@@ -223,7 +222,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
 	 * unusual server configurations. This will only take effect on connections subsequently returned by
 	 * {@link #getConnection()}.
-	 * 
+	 *
 	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
@@ -239,7 +238,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	 * <p>
 	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s as the setting is an immutable
 	 * configuration of a connection instance.
-	 * 
+	 *
 	 * @param flag flag to enable or disable the quad mode
 	 * @see SPARQLConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
 	 *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource...)

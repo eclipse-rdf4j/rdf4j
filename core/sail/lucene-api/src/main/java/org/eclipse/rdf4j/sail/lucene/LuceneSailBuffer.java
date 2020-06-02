@@ -21,10 +21,10 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * A buffer collecting all transaction operations (triples that need to be added, removed, clear operations) so that
  * they can be executed at once during commit.
- * 
+ *
  * @author sauermann
  * @author andriy.nikolov
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -39,8 +39,9 @@ public class LuceneSailBuffer {
 		private Statement delegate;
 
 		public ContextAwareStatementImpl(Statement delegate) {
-			if (delegate == null)
+			if (delegate == null) {
 				throw new RuntimeException("Trying to add/remove a null statement");
+			}
 			this.delegate = delegate;
 		}
 
@@ -66,8 +67,9 @@ public class LuceneSailBuffer {
 
 		@Override
 		public boolean equals(Object obj) {
-			if (this == obj)
+			if (this == obj) {
 				return true;
+			}
 			if (obj instanceof Statement) {
 				Statement other = (Statement) obj;
 
@@ -101,13 +103,15 @@ public class LuceneSailBuffer {
 		HashSet<Statement> removed = new HashSet<>();
 
 		public void add(Statement s) {
-			if (!removed.remove(s))
+			if (!removed.remove(s)) {
 				added.add(s);
+			}
 		}
 
 		public void remove(Statement s) {
-			if (!added.remove(s))
+			if (!added.remove(s)) {
 				removed.add(s);
+			}
 		}
 
 		/**
@@ -151,7 +155,7 @@ public class LuceneSailBuffer {
 
 	/**
 	 * Add this statement to the buffer
-	 * 
+	 *
 	 * @param s the statement
 	 */
 	public synchronized void add(Statement s) {
@@ -167,7 +171,7 @@ public class LuceneSailBuffer {
 
 	/**
 	 * Remove this statement to the buffer
-	 * 
+	 *
 	 * @param s the statement
 	 */
 	public synchronized void remove(Statement s) {
@@ -182,10 +186,11 @@ public class LuceneSailBuffer {
 	}
 
 	public synchronized void clear(Resource[] contexts) {
-		if ((contexts == null) || (contexts.length == 0))
+		if ((contexts == null) || (contexts.length == 0)) {
 			operations.add(new ClearOperation());
-		else
+		} else {
 			operations.add(new ClearContextOperation(contexts));
+		}
 	}
 
 	/**

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
  * <A href="http://www.w3.org/TR/rdf-sparql-query/#modOrderBy">SPARQL Query Language for RDF</a>.
- * 
+ *
  * @author james
  * @author Arjohn Kampman
  */

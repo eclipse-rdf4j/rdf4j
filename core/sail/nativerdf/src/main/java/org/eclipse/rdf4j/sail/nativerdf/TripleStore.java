@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
  * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
  * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
  * an actual RDF value.
- * 
+ *
  * @author Arjohn Kampman
  */
 @SuppressWarnings("deprecation")
@@ -253,7 +253,7 @@ class TripleStore implements Closeable {
 	/**
 	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
 	 * of 4 characters: 's', 'p', 'o' and 'c'.
-	 * 
+	 *
 	 * @param indexSpecStr A string like "spoc, pocs, cosp".
 	 * @return A Set containing the parsed index specifications.
 	 */
@@ -455,7 +455,7 @@ class TripleStore implements Closeable {
 
 	/**
 	 * If an index exists by context - use it, otherwise return null.
-	 * 
+	 *
 	 * @param readTransaction
 	 * @return All triples sorted by context or null if no context index exists
 	 * @throws IOException
@@ -725,7 +725,7 @@ class TripleStore implements Closeable {
 
 	/**
 	 * Remove triples
-	 * 
+	 *
 	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
@@ -745,7 +745,7 @@ class TripleStore implements Closeable {
 
 	/**
 	 * Remove triples by context
-	 * 
+	 *
 	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
@@ -764,7 +764,7 @@ class TripleStore implements Closeable {
 
 	/**
 	 * Remove triples
-	 * 
+	 *
 	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.

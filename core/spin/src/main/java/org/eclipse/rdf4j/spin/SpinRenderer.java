@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -100,7 +100,7 @@ import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
-import org.eclipse.rdf4j.repository.sail.helpers.SPARQLUpdateDataBlockParser;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -588,7 +588,7 @@ public class SpinRenderer {
 			handler.handleStatement(valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereBNode));
 
 			isSubQuery = true; // further projection elements are for
-								// sub-queries
+			// sub-queries
 
 			ListContext ctx = newList(whereBNode);
 			where.visit(this);
@@ -1046,11 +1046,11 @@ public class SpinRenderer {
 			node.getArg().visit(this);
 			if (node.hasLimit()) {
 				handler.handleStatement(valueFactory.createStatement(subject, SP.LIMIT_PROPERTY,
-						valueFactory.createLiteral(Long.toString(node.getLimit()), XMLSchema.INTEGER)));
+						valueFactory.createLiteral(Long.toString(node.getLimit()), XSD.INTEGER)));
 			}
 			if (node.hasOffset()) {
 				handler.handleStatement(valueFactory.createStatement(subject, SP.OFFSET_PROPERTY,
-						valueFactory.createLiteral(Long.toString(node.getOffset()), XMLSchema.INTEGER)));
+						valueFactory.createLiteral(Long.toString(node.getOffset()), XSD.INTEGER)));
 			}
 		}
 

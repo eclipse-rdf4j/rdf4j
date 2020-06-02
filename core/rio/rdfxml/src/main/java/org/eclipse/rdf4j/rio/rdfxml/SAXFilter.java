@@ -562,9 +562,25 @@ class SAXFilter implements ContentHandler {
 				}
 			}
 
-			// Insert this String before the first '>' character
-			int endOfFirstStartTag = charBuf.indexOf(">");
-			charBuf.insert(endOfFirstStartTag, contextPrefixes.toString());
+			int i = 0;
+			int opentag = 0;
+			while (i < charBuf.length()) {
+				char ch = charBuf.charAt(i);
+				if (ch == '<') {
+					if ((i + 1) < charBuf.length()) {
+						char nextChar = charBuf.charAt(i + 1);
+						if (nextChar != '/' && opentag == 0) {
+							opentag++;
+							int endOfFirstStartTag = charBuf.substring(i).indexOf(">");
+							charBuf.insert(endOfFirstStartTag + i, contextPrefixes.toString());
+						} else {
+							opentag--;
+						}
+					}
+				}
+				i += 1;
+			}
+
 		}
 
 		unknownPrefixesInXMLLiteral.clear();

@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link BooleanQueryResultParserFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanQueryResultParserRegistry
@@ -27,7 +27,7 @@ public class BooleanQueryResultParserRegistry
 
 	/**
 	 * Gets the default BooleanQueryResultParserRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static BooleanQueryResultParserRegistry getInstance() {

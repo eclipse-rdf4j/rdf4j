@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [1.8, 11]
+        jdk: [1.8, 13]
 
     steps:
     - uses: actions/checkout@v1
@@ -23,7 +23,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-maven-
     - name: Verify formatting
-      run: mvn -B formatter:validate impsort:check
+      run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
       run: mvn -B clean install -Pquick,\!formatting
     - name: Run tests

@@ -51,7 +51,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static final Set<String> REJECTED_DATATYPES = new HashSet<String>();
+	private static final Set<String> REJECTED_DATATYPES = new HashSet<>();
 
 	static {
 		REJECTED_DATATYPES.add("http://www.w3.org/2001/XMLSchema#float");
@@ -77,19 +77,21 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
 	 * much since to index xsd:float.
-	 * 
+	 *
 	 * @param literal the literal to be accepted
 	 * @return true if the given literal will be indexed by this LuceneIndex
 	 */
 	@Override
 	public boolean accept(Literal literal) {
 		// we reject null literals
-		if (literal == null)
+		if (literal == null) {
 			return false;
+		}
 
 		// we reject literals that are in the list of rejected data types
-		if ((literal.getDatatype() != null) && (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue())))
+		if ((literal.getDatatype() != null) && (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue()))) {
 			return false;
+		}
 
 		return true;
 	}
@@ -184,7 +186,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
 	 * done inside this method. The passed added/removed sets are disjunct, no statement can be in both
-	 * 
+	 *
 	 * @param added   all added statements, can have multiple subjects
 	 * @param removed all removed statements, can have multiple subjects
 	 */
@@ -246,10 +248,11 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					updater.add(document);
 
 					// THERE SHOULD BE NO DELETED TRIPLES ON A NEWLY ADDED RESOURCE
-					if (stmtsToRemove.containsKey(contextId))
+					if (stmtsToRemove.containsKey(contextId)) {
 						logger.info(
 								"Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.",
 								resource, contextId);
+					}
 				} else {
 					// update the Document
 
@@ -358,7 +361,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
 	 * subject id. (assume the existing document was deleted)
-	 * 
+	 *
 	 * @param statements the statements that make up the resource
 	 * @throws IOException
 	 */
@@ -395,7 +398,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * check if the passed statement should be added (is it indexed? is it stored?) and add it as predicate to the
 	 * passed document. No checks whether the predicate was already there.
-	 * 
+	 *
 	 * @param statement the statement to add
 	 * @param document  the document to add to
 	 */
@@ -449,7 +452,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	/**
 	 * Evaluates one Lucene Query. It distinguishes between two cases, the one where no subject is given and the one
 	 * were it is given.
-	 * 
+	 *
 	 * @param query the Lucene query to evaluate
 	 * @return QueryResult consisting of hits and highlighter
 	 */
@@ -481,7 +484,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	/**
 	 * This method generates bindings from the given result of a Lucene query.
-	 * 
+	 *
 	 * @param query the Lucene query
 	 * @return a LinkedHashSet containing generated bindings
 	 * @throws SailException
@@ -522,8 +525,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				// get the score of the hit
 				float score = hit.getScore();
@@ -534,8 +538,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					derivedBindings.addBinding(matchVar, resource);
 				}
 
-				if ((scoreVar != null) && (score > 0.0f))
+				if ((scoreVar != null) && (score > 0.0f)) {
 					derivedBindings.addBinding(scoreVar, SearchFields.scoreToLiteral(score));
+				}
 
 				if (snippetVar != null || propertyVar != null) {
 					if (hit.isHighlighted()) {
@@ -654,8 +659,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			for (DocumentDistance hit : hits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {
@@ -753,8 +759,9 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			for (DocumentResult hit : hits) {
 				// get the current hit
 				SearchDocument doc = hit.getDocument();
-				if (doc == null)
+				if (doc == null) {
 					continue;
+				}
 
 				List<String> geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));
 				for (String geometry : geometries) {

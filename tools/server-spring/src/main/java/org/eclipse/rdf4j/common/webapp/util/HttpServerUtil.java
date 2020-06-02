@@ -20,7 +20,7 @@ public class HttpServerUtil {
 	/**
 	 * Extracts the MIME type from the specified content type string. This method parses the content type string and
 	 * returns just the MIME type, ignoring any parameters that are included.
-	 * 
+	 *
 	 * @param contentType A content type string, e.g. <tt>application/xml; charset=utf-8</tt> .
 	 * @return The MIME type part of the specified content type string, or <tt>null</tt> if the specified content type
 	 *         string was <tt>null</tt>.
@@ -36,7 +36,7 @@ public class HttpServerUtil {
 	/**
 	 * Selects from a set of MIME types, the MIME type that has the highest quality score when matched with the Accept
 	 * headers in the supplied request.
-	 * 
+	 *
 	 * @param mimeTypes The set of available MIME types.
 	 * @param request   The request to match the MIME types against.
 	 * @return The MIME type that best matches the types that the client finds acceptable, or <tt>null</tt> in case no
@@ -99,7 +99,7 @@ public class HttpServerUtil {
 
 	/**
 	 * Checks if the first supplied MIME type is more specific than the second supplied MIME type.
-	 * 
+	 *
 	 * @param leftMimeTypeElem
 	 * @param rightMimeTypeElem
 	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false otherwise.
@@ -141,7 +141,7 @@ public class HttpServerUtil {
 
 	/**
 	 * Gets the elements of the request header with the specified name.
-	 * 
+	 *
 	 * @param request    The request to get the header from.
 	 * @param headerName The name of the header to get the elements of.
 	 * @return A List of {@link HeaderElement} objects.
@@ -171,7 +171,7 @@ public class HttpServerUtil {
 	/**
 	 * Splits the supplied string into sub parts using the specified splitChar as a separator, ignoring occurrences of
 	 * this character inside quoted strings.
-	 * 
+	 *
 	 * @param s         The header string to split into sub parts.
 	 * @param splitChar The character to use as separator.
 	 * @return A <tt>List</tt> of <tt>String</tt>s.
@@ -203,7 +203,7 @@ public class HttpServerUtil {
 	/**
 	 * Tries to match the specified MIME type spec against the list of Accept header elements, returning the applicable
 	 * header element if available.
-	 * 
+	 *
 	 * @param mimeTypeSpec   The MIME type to determine the quality for, e.g. "text/plain" or "application/xml;
 	 *                       charset=utf-8".
 	 * @param acceptElements A List of {@link HeaderElement} objects.
@@ -280,7 +280,7 @@ public class HttpServerUtil {
 	 * <td><tt>null</tt></td>
 	 * </tr>
 	 * </table>
-	 * 
+	 *
 	 * @param mimeTypeElem The MIME type element that should be generalized.
 	 * @return The generalized MIME type element, or <tt>null</tt> if it could not be generalized any further.
 	 */
@@ -318,7 +318,7 @@ public class HttpServerUtil {
 
 	/**
 	 * Gets the trimmed value of a request parameter as a String.
-	 * 
+	 *
 	 * @return The trimmed value, or null if the parameter does not exist.
 	 */
 	public static String getPostDataParameter(Map<String, Object> formData, String name) {

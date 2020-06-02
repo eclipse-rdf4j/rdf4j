@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -225,6 +225,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		try {
 			Resource subj = st.getSubject();
 			IRI pred = st.getPredicate();
+			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
 			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
 				handleList(st);
 			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
@@ -240,7 +241,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Internal method that differentiates between the pretty-print and streaming writer cases.
-	 * 
+	 *
 	 * @param st                     The next statement to write
 	 * @param endRDFCalled           True if endRDF has been called before this method is called. This is used to buffer
 	 *                               statements for pretty-printing before dumping them when all statements have been
@@ -255,7 +256,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
-
 		try {
 			if (subj.equals(lastWrittenSubject)) {
 				if (pred.equals(lastWrittenPredicate)) {
@@ -376,7 +376,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is suitable
 	 * for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be shortened in
 	 * this context.
-	 * 
+	 *
 	 * @param val        The {@link Value} to write.
 	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
 	 *                   {@link BNode} .
@@ -406,7 +406,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace definition that
 	 * is suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be
 	 * shortened in this context.
-	 * 
+	 *
 	 * @param res        The {@link Resource} to write.
 	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
 	 *                   {@link BNode} .
@@ -525,8 +525,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		IRI datatype = lit.getDatatype();
 
 		if (prettyPrint) {
-			if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
-					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype)) {
+			if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)
+					|| XSD.DOUBLE.equals(datatype) || XSD.BOOLEAN.equals(datatype)) {
 				try {
 					String normalized = XMLDatatypeUtil.normalize(label, datatype);
 					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
@@ -559,7 +559,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
-		} else if (!xsdStringToPlainLiteral || !XMLSchema.STRING.equals(datatype)) {
+		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
 			writer.write("^^");

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 /**
  * Converts Statement iteration (i.e. RepositoryResult) into the corresponding binding set. Note that exceptions are
  * converted appropriately as well.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class StatementConversionIteration extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {

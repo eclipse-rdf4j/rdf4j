@@ -27,7 +27,7 @@ import org.springframework.web.servlet.View;
 /**
  * View used to export a repository config. Renders the statements as RDF using a serialization specified using a
  * parameter or Accept header.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ConfigView implements View {

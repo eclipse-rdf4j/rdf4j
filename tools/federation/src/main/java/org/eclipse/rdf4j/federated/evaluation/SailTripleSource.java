@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A triple source to be used on any repository.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -166,7 +166,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 		/*
 		 * Implementation note:
-		 * 
+		 *
 		 * a special strategy is registered for NativeStore instances. The specialized strategy allows to evaluate
 		 * prepared queries without prior (obsolete) optimization.
 		 */

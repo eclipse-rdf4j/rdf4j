@@ -68,12 +68,14 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
 		if (repository == null) {
-			if (config.getInitParameter(REPOSITORY_PARAM) != null)
+			if (config.getInitParameter(REPOSITORY_PARAM) != null) {
 				setRepository((Repository) lookup(config, REPOSITORY_PARAM));
+			}
 		}
 		if (manager == null) {
-			if (config.getInitParameter(MANAGER_PARAM) == null)
+			if (config.getInitParameter(MANAGER_PARAM) == null) {
 				throw new MissingInitParameterException(MANAGER_PARAM);
+			}
 			manager = (RepositoryManager) lookup(config, MANAGER_PARAM);
 		}
 		if (info == null) {

@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * and can have one or more associated MIME types, zero or more associated file extensions and can specify a (default)
  * character encoding. Some formats are able to encode context information while other are not; this is indicated by the
  * value of {@link #supportsContexts}.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RDFFormat extends FileFormat {
@@ -187,7 +187,7 @@ public class RDFFormat extends FileFormat {
 	 * The file extension <code>.brf</code> is recommend for binary RDF documents. The media type is
 	 * <code>application/x-binary-rdf</code>.
 	 * </p>
-	 * 
+	 *
 	 * @see <a href="http://rivuli-development.com/2011/11/binary-rdf-in-sesame/">Binary RDF in Sesame</a>
 	 */
 	public static final RDFFormat BINARY = new RDFFormat("BinaryRDF", Arrays.asList("application/x-binary-rdf"), null,
@@ -272,7 +272,7 @@ public class RDFFormat extends FileFormat {
 	/**
 	 * Processes the supplied collection of {@link RDFFormat}s and assigns quality values to each based on whether
 	 * context must be supported and whether the format is preferred.
-	 * 
+	 *
 	 * @param rdfFormats      The {@link RDFFormat}s to process.
 	 * @param requireContext  True to decrease the quality value for formats where {@link RDFFormat#supportsContexts()}
 	 *                        returns false.
@@ -348,7 +348,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * A standard URI published by the W3C or another standards body to uniquely denote this format.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/ns/formats/">Unique URIs for File Formats</a>
 	 */
 	private IRI standardURI;
@@ -359,7 +359,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
 	 *                           file format.
@@ -381,7 +381,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
 	 *                           file format.
@@ -404,7 +404,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
 	 *                           file format.
@@ -426,7 +426,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeType           The MIME type of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the RDF/XML
 	 *                           file format.
@@ -449,7 +449,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
 	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
@@ -472,7 +472,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
 	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
@@ -496,7 +496,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
 	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
@@ -521,7 +521,7 @@ public class RDFFormat extends FileFormat {
 
 	/**
 	 * Creates a new RDFFormat object.
-	 * 
+	 *
 	 * @param name               The name of the RDF file format, e.g. "RDF/XML".
 	 * @param mimeTypes          The MIME types of the RDF file format, e.g. <tt>application/rdf+xml</tt> for the
 	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 
 /**
  * An in-memory store for namespace prefix information.
- * 
+ *
  * @author Arjohn Kampman
  */
 class MemNamespaceStore implements Iterable<SimpleNamespace> {

@@ -42,13 +42,13 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 /**
  * A triple source to be used for (remote) SPARQL endpoints.
  * <p>
- * 
+ *
  * This triple source supports the {@link SparqlEndpointConfiguration} for defining whether ASK queries are to be used
  * for source selection.
- * 
+ *
  * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr, QueryInfo)} is wrapped in a
  * {@link ConsumingIteration} to avoid blocking behavior..
- * 
+ *
  * @author Andreas Schwarte
  *
  */

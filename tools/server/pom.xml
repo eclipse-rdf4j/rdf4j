@@ -10,9 +10,6 @@
 	<packaging>war</packaging>
 	<name>RDF4J: HTTP server</name>
 	<description>HTTP server implementing a REST-style protocol</description>
-	<properties>
-		<jetty.version>9.2.28.v20190418</jetty.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -84,7 +81,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
-			<artifactId>jetty-jsp</artifactId>
+			<artifactId>apache-jsp</artifactId>
 			<version>${jetty.version}</version>
 			<scope>test</scope>
 			<exclusions>

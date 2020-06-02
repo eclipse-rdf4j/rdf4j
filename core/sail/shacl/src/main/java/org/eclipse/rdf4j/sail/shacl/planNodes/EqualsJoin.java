@@ -55,7 +55,8 @@ public class EqualsJoin implements PlanNode {
 				while (next == null) {
 					if (nextRight != null) {
 
-						if (nextLeft.line == nextRight.line || nextLeft.line.equals(nextRight.line)) {
+						if (nextLeft.getLine() == nextRight.getLine()
+								|| nextLeft.getLine().equals(nextRight.getLine())) {
 							if (useAsFilter) {
 								next = nextLeft;
 								next.addAllCausedByPropertyShape(nextRight.getCausedByPropertyShapes());

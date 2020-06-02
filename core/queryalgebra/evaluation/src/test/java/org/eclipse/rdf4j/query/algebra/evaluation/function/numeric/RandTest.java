@@ -15,7 +15,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -51,7 +51,7 @@ public class RandTest {
 			Literal random = rand.evaluate(f);
 
 			assertNotNull(random);
-			assertEquals(XMLSchema.DOUBLE, random.getDatatype());
+			assertEquals(XSD.DOUBLE, random.getDatatype());
 
 			double randomValue = random.doubleValue();
 

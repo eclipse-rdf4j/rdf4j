@@ -19,7 +19,7 @@ import java.util.StringTokenizer;
  * <p/>
  * Known deviations from the standard: - the range of years in this implementation is limited to Integer.MIN_VALUE to
  * Integer.MAX_VALUE for practical reasons.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/TR/xmlschema11-2/">W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes</a>
@@ -102,7 +102,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 	/**
 	 * Creates a new XMLDateTime object for the supplied xsd:dateTime string value.
-	 * 
+	 *
 	 * @param dateTimeString An xsd:dateTime lexical value, for example <tt>1999-05-31T13:20:00-05:00</tt>.
 	 * @throws IllegalArgumentException if the supplied lexical value does not constitute a valid xsd:dateTime.
 	 */
@@ -276,7 +276,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 	/**
 	 * Checks if the supplied month is a month with exactly 30 days.
-	 * 
+	 *
 	 * @param month the month
 	 * @return {@code true} iff the supplied month has exactly 30 days.
 	 */
@@ -287,7 +287,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Checks if the supplied year is a leap year (one in which February 29 occurs) according to the definition in
 	 * <a href="http://www.w3.org/TR/xmlschema11-2/#dateTime">the XML Schema XSD definition</a>
-	 * 
+	 *
 	 * @param year the year.
 	 * @return {@code true} if the supplied year is a leap year according to the XSD definition.
 	 */
@@ -399,7 +399,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 	/**
 	 * Returns the xsd:dateTime string-representation of this object.
-	 * 
+	 *
 	 * @return An xsd:dateTime value, e.g. <tt>1999-05-31T13:20:00-05:00</tt>.
 	 */
 	@Override
@@ -446,7 +446,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 	/**
 	 * Compares this DateTime object to another DateTime object.
-	 * 
+	 *
 	 * @throws ClassCastException If <tt>other</tt> is not a DateTime object.
 	 */
 	@Override

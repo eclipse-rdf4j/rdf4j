@@ -24,7 +24,7 @@ public class Union extends BinaryTupleOperator {
 
 	/**
 	 * Creates a new union operator that operates on the two specified arguments.
-	 * 
+	 *
 	 * @param leftArg  The left argument of the union operator.
 	 * @param rightArg The right argument of the union operator.
 	 */

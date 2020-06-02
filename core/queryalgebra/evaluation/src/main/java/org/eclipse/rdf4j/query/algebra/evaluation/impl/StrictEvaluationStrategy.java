@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -1198,7 +1198,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return RDF.LANGSTRING;
 			} else {
 				// simple literal
-				return XMLSchema.STRING;
+				return XSD.STRING;
 			}
 
 		}
@@ -1384,6 +1384,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					break;
 				case 'u':
 					f |= Pattern.UNICODE_CASE;
+					break;
+				case 'q':
+					f |= Pattern.LITERAL;
 					break;
 				default:
 					throw new ValueExprEvaluationException(flags);

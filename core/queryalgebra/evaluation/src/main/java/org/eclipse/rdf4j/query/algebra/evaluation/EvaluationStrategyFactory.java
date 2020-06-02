@@ -74,7 +74,7 @@ public interface EvaluationStrategyFactory {
 	/**
 	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
 	 * generated the most data.
-	 * 
+	 *
 	 * @param trackResultSize true to enable tracking.
 	 */
 	default void setTrackResultSize(boolean trackResultSize) {

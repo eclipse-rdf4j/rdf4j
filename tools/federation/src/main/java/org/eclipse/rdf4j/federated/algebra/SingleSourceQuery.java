@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A query which has a single relevant source. These queries can be sent entirely to the endpoint as-is.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SingleSourceQuery extends AbstractQueryModelNode implements TupleExpr, QueryRef {

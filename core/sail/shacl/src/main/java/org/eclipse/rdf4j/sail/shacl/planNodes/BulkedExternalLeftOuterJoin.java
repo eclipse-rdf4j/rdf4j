@@ -102,15 +102,15 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
 
-						if (rightPeek.line.get(0) == leftPeek.line.get(0)
-								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
+								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 							// we have a join !
 							joined = TupleHelper.join(leftPeek, rightPeek);
 							right.removeLast();
 
 							Tuple rightPeek2 = right.peekLast();
 
-							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
+							if (rightPeek2 == null || !rightPeek2.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 								// no more to join from right, pop left so we don't print it again.
 
 								left.removeLast();

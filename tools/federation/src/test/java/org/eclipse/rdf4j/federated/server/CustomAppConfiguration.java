@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.common.logging.LogReader;
 
 /**
  * A bean for configuring the RDF4J Http Server webapp. Makes sure to initialize the logging framework properly.
- * 
+ *
  * See <i>build/test/rdf4j-server/WEB-INF/rdf4j-http-server-servlet.xml</i>
- * 
+ *
  * @author andreas.schwarte
  *
  */

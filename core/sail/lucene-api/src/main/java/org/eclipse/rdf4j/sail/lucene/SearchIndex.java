@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * A SearchIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
  * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
- * 
+ *
  * @see LuceneSail
  */
 public interface SearchIndex {
@@ -47,7 +47,7 @@ public interface SearchIndex {
 	/**
 	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
 	 * much since to index xsd:float.
-	 * 
+	 *
 	 * @param literal the literal to be accepted
 	 * @return true if the given literal will be indexed by this LuceneIndex
 	 */
@@ -55,7 +55,7 @@ public interface SearchIndex {
 
 	/**
 	 * Returns true if the given property contains a geometry.
-	 * 
+	 *
 	 * @param propertyName
 	 * @return boolean
 	 */
@@ -63,7 +63,7 @@ public interface SearchIndex {
 
 	/**
 	 * Begins a transaction.
-	 * 
+	 *
 	 * @throws java.io.IOException
 	 */
 	void begin() throws IOException;
@@ -72,7 +72,7 @@ public interface SearchIndex {
 	 * Commits any changes done to the LuceneIndex since the last commit.The semantics is synchronous to
 	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the LuceneSailConnection is
 	 * committed/rollbacked.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	void commit() throws IOException;
@@ -81,7 +81,7 @@ public interface SearchIndex {
 
 	/**
 	 * Indexes the specified Statement.This should be called from within a begin-commit-rollback block.
-	 * 
+	 *
 	 * @param statement
 	 * @throws IOException
 	 */
@@ -89,9 +89,9 @@ public interface SearchIndex {
 
 	/**
 	 * Removes the specified Statement from the indexes.This should be called from within a begin-commit-rollback
-	 * 
+	 *
 	 * block.
-	 * 
+	 *
 	 * @param statement
 	 */
 	void removeStatement(Statement statement) throws IOException;
@@ -100,7 +100,7 @@ public interface SearchIndex {
 	 * Add many statements at the same time, remove many statements at the same time.Ordering by resource has to be done
 	 * inside this method. The passed added/removed sets are disjunct, no statement can be in both. This should be
 	 * called from within a begin-commit-rollback block.
-	 * 
+	 *
 	 * @param added   all added statements, can have multiple subjects
 	 * @param removed all removed statements, can have multiple subjects
 	 * @throws IOException
@@ -109,7 +109,7 @@ public interface SearchIndex {
 
 	/**
 	 * This should be called from within a begin-commit-rollback block.
-	 * 
+	 *
 	 * @param contexts
 	 * @throws IOException
 	 */
@@ -119,7 +119,7 @@ public interface SearchIndex {
 	 * Add a complete Lucene Document based on these statements.Do not search for an existing document with the same
 	 * subject id. (assume the existing document was deleted). This should be called from within a begin-commit-rollback
 	 * block.
-	 * 
+	 *
 	 * @param subject
 	 * @param statements the statements that make up the resource
 	 * @throws IOException
@@ -128,7 +128,7 @@ public interface SearchIndex {
 
 	/**
 	 * Clears the indexes.
-	 * 
+	 *
 	 * @throws java.io.IOException
 	 */
 	void clear() throws IOException;

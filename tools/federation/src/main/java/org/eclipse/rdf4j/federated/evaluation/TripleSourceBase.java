@@ -191,7 +191,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	/**
 	 * Set includeInferred depending on {@link QueryInfo#getIncludeInferred()}
-	 * 
+	 *
 	 * @param query
 	 * @param queryInfo
 	 */
@@ -208,7 +208,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Apply an upper bound of the maximum execution time using
 	 * {@link FedXUtil#applyMaxQueryExecutionTime(Operation, FederationContext)}.
-	 * 
+	 *
 	 * @param operation the operation
 	 */
 	protected void applyMaxExecutionTimeUpperBound(Operation operation) {
@@ -223,7 +223,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Convenience method to perform an operation on a {@link RepositoryConnection}. This method takes care for closing
 	 * resources as well error handling. The resulting iteration has to be supplied to the {@link ResultHolder}.
-	 * 
+	 *
 	 * @param operation the {@link ConnectionOperation}
 	 * @return the resulting iteration
 	 */
@@ -255,19 +255,19 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	/**
 	 * Interface defining the operation to be perform on the connection
-	 * 
+	 *
 	 * <p>
 	 * Typical pattern
 	 * </p>
-	 * 
+	 *
 	 * <pre>
 	 * CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res = withConnection((conn, resultHolder) -> {
 	 *  	// do something with conn
 	 * 		resultHolder.set(...)
 	 * });
-	 * 
+	 *
 	 * </pre>
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 * @param <T>
@@ -280,7 +280,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	/**
 	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
 	 * that the result holder should also be set with temporary results to properly allow error handling.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 * @param <T>

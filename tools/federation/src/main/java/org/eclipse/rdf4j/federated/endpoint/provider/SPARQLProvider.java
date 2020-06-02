@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
  * Provider for an Endpoint that uses a RDF4j {@link SPARQLRepository} as underlying repository. All SPARQL endpoints
  * are considered Remote.
  * <p>
- * 
+ *
  * This {@link SPARQLProvider} implements special hard-coded endpoint configuration for the DBpedia endpoint: the
  * support for ASK queries is always set to false.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformation> {
@@ -65,7 +65,7 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 
 	/**
 	 * Manipulate the endpoint configuration for certain common endpoints, e.g. DBpedia => does not support ASK queries
-	 * 
+	 *
 	 * @param location
 	 * @param ep
 	 * @return

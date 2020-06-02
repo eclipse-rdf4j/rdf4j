@@ -72,7 +72,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 /**
  * Provides a {@link RepositoryConnection} interface to any SPARQL endpoint.
- * 
+ *
  * @author James Leigh
  */
 public class SPARQLConnection extends AbstractRepositoryConnection implements HttpClientDependent {
@@ -103,6 +103,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
+	private boolean silentMode;
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
@@ -112,11 +113,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
+		this.silentMode = false;
 	}
 
 	@Override
 	public String toString() {
 		return client.getQueryURL();
+	}
+
+	public void enableSilentMode(boolean flag) {
+		this.silentMode = flag;
 	}
 
 	@Override
@@ -165,7 +171,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		try {
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
 			iter = query.evaluate();
-			result = new RepositoryResult<Resource>(new ExceptionConvertingIteration<Resource, RepositoryException>(
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<Resource, RepositoryException>(
 					new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter) {
 
 						@Override
@@ -265,7 +271,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(tupleQuery, subj, pred, obj, contexts);
 			tupleQuery.setIncludeInferred(includeInferred);
 			qRes = tupleQuery.evaluate();
-			result = new RepositoryResult<Statement>(new ExceptionConvertingIteration<Statement, RepositoryException>(
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<Statement, RepositoryException>(
 					toStatementIteration(qRes, subj, pred, obj)) {
 
 				@Override
@@ -313,7 +319,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			query.setIncludeInferred(includeInferred);
 			setBindings(query, subj, pred, obj, contexts);
 			gRes = query.evaluate();
-			result = new RepositoryResult<Statement>(
+			result = new RepositoryResult<>(
 					new ExceptionConvertingIteration<Statement, RepositoryException>(gRes) {
 
 						@Override
@@ -604,16 +610,21 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		boolean localTransaction = startLocalTransaction();
 
+		String clearMode = "CLEAR";
+		if (this.isSilentMode()) {
+			clearMode = "CLEAR SILENT";
+		}
+
 		if (contexts.length == 0) {
-			sparqlTransaction.append("CLEAR ALL ");
+			sparqlTransaction.append(clearMode + " ALL ");
 			sparqlTransaction.append("; ");
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					sparqlTransaction.append("CLEAR DEFAULT ");
+					sparqlTransaction.append(clearMode + " DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append("CLEAR GRAPH <" + context.stringValue() + "> ");
+					sparqlTransaction.append(clearMode + " GRAPH <" + context.stringValue() + "> ");
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
@@ -979,17 +990,21 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	/**
 	 * Shall graph information also be retrieved, e.g. for
 	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource...)}
-	 * 
+	 *
 	 * @return true if in quad mode
 	 */
 	protected boolean isQuadMode() {
 		return quadMode;
 	}
 
+	protected boolean isSilentMode() {
+		return silentMode;
+	}
+
 	/**
 	 * Converts a {@link TupleQueryResult} resulting from the {@link #EVERYTHING_WITH_GRAPH} to a statement by using the
 	 * respective values from the {@link BindingSet} or (if provided) the ones from the arguments.
-	 * 
+	 *
 	 * @param iter the {@link TupleQueryResult}
 	 * @param subj the subject {@link Resource} used as input or <code>null</code> if wildcard was used
 	 * @param pred the predicate {@link IRI} used as input or <code>null</code> if wildcard was used

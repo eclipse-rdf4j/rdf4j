@@ -34,7 +34,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 
 	/**
 	 * Creates a new LockingIteration.
-	 * 
+	 *
 	 * @param lock The lock to release when the itererator is closed, must not be <tt>null</tt>.
 	 * @param iter The underlying Iteration, must not be <tt>null</tt>.
 	 */

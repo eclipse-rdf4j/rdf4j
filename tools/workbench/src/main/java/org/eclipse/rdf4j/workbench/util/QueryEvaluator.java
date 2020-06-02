@@ -50,7 +50,7 @@ public final class QueryEvaluator {
 
 	/**
 	 * Evaluates the query submitted with the given request.
-	 * 
+	 *
 	 * @param builder   used to build the response
 	 * @param resp      the response object
 	 * @param out       the output writer
@@ -100,7 +100,7 @@ public final class QueryEvaluator {
 	/***
 	 * Evaluate a tuple query, and create an XML results document. This method completes writing of the response. !paged
 	 * means use all results.
-	 * 
+	 *
 	 * @param builder     response builder helper for generating the XML response to the client, which <em>must not</em>
 	 *                    have had start() called on it
 	 * @param xslPath     needed to begin writing response body after writing result count cookie
@@ -151,7 +151,7 @@ public final class QueryEvaluator {
 	/***
 	 * Evaluate a tuple query, and create an XML results document. It is still necessary to call end() on the builder
 	 * after calling this method.
-	 * 
+	 *
 	 * @param builder response builder helper for generating the XML response to the client, which <em>must</em> have
 	 *                had start() called on it
 	 * @param query   the query to be evaluated
@@ -173,7 +173,7 @@ public final class QueryEvaluator {
 
 	/***
 	 * Evaluate a graph query, and create an XML results document.
-	 * 
+	 *
 	 * @param builder     response builder helper for generating the XML response to the client, which <em>must not</em>
 	 *                    have had start() called on it
 	 * @param xslPath     needed to begin writing response body after writing result count cookie

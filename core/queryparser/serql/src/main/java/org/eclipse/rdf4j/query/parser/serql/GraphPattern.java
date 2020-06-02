@@ -155,7 +155,7 @@ class GraphPattern {
 
 	/**
 	 * Builds a combined tuple expression from the tuple expressions and constraints in this graph pattern.
-	 * 
+	 *
 	 * @return A tuple expression for this graph pattern.
 	 */
 	public TupleExpr buildTupleExpr() {

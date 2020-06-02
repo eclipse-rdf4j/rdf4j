@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 
 /**
  * Interface for algebra nodes that can return the free variables of the expression.
- * 
+ *
  * @author Andreas Schwarte
  * @see QueryAlgebraUtil#getFreeVars(org.eclipse.rdf4j.query.algebra.TupleExpr)
  */

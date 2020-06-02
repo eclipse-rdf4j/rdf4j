@@ -52,6 +52,7 @@ import ch.qos.logback.classic.Logger;
 public class AddRemoveBenchmarkEmpty {
 
 	private List<List<Statement>> allStatements;
+
 	{
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}

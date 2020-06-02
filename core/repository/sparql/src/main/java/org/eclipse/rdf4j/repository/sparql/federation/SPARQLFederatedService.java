@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 
 /**
  * Federated Service wrapping the {@link SPARQLRepository} to communicate with a SPARQL endpoint.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SPARQLFederatedService extends RepositoryFederatedService {

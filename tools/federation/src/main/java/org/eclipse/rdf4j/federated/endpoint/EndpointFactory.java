@@ -132,17 +132,17 @@ public class EndpointFactory {
 
 	/**
 	 * Load a {@link ResolvableEndpoint}
-	 * 
+	 *
 	 * <p>
 	 * The federation must be initialized with a {@link RepositoryResolver} ( see
 	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
 	 * the id provided by {@link Endpoint#getId()}
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * Note that the name is set to "http://" + repositoryId
 	 * </p>
-	 * 
+	 *
 	 * @param repositoryId the repository identifier
 	 * @param writable     whether to configure the endpoint as writable.
 	 * @return the configured {@link Endpoint}
@@ -320,9 +320,7 @@ public class EndpointFactory {
 			// TODO add reflection techniques to allow for flexibility
 			throw new UnsupportedOperationException("Operation not yet supported for generic type.");
 
-		}
-
-		else {
+		} else {
 			throw new FedXRuntimeException("Repository type not supported: " + repType.stringValue());
 		}
 

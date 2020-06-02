@@ -40,7 +40,7 @@ public class ConsoleIO {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param input
 	 * @param out
 	 * @param info
@@ -54,7 +54,7 @@ public class ConsoleIO {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param info
 	 * @throws IOException
 	 */
@@ -66,7 +66,7 @@ public class ConsoleIO {
 
 	/**
 	 * Build JLine line reader with default history
-	 * 
+	 *
 	 * @return line reader
 	 */
 	private LineReader buildLineReader() {
@@ -81,7 +81,7 @@ public class ConsoleIO {
 
 	/**
 	 * Get the JLine line reader
-	 * 
+	 *
 	 * @return line reader
 	 */
 	public LineReader getLineReader() {
@@ -90,7 +90,7 @@ public class ConsoleIO {
 
 	/**
 	 * Get JLine terminal output stream
-	 * 
+	 *
 	 * @return output stream
 	 */
 	public OutputStream getOutputStream() {
@@ -99,7 +99,7 @@ public class ConsoleIO {
 
 	/**
 	 * Read a command from input
-	 * 
+	 *
 	 * @return one line of input, or null on error
 	 * @throws IOException
 	 */
@@ -121,9 +121,9 @@ public class ConsoleIO {
 
 	/**
 	 * Get command prompt.
-	 * 
+	 *
 	 * Contains the name of the current repository when connected.
-	 * 
+	 *
 	 * @return command prompt string
 	 */
 	private String getPrompt() {
@@ -139,7 +139,7 @@ public class ConsoleIO {
 
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
-	 * 
+	 *
 	 * @return input string
 	 * @throws IOException
 	 */
@@ -149,7 +149,7 @@ public class ConsoleIO {
 
 	/**
 	 * Reads multiple lines from the input until a line that with a '.' on its own is read.
-	 * 
+	 *
 	 * @param prompt
 	 * @return input string
 	 * @throws IOException
@@ -179,7 +179,7 @@ public class ConsoleIO {
 
 	/**
 	 * Read message from input
-	 * 
+	 *
 	 * @param message one or multiple messages
 	 * @return input string
 	 * @throws IOException
@@ -196,7 +196,7 @@ public class ConsoleIO {
 
 	/**
 	 * Read password from input
-	 * 
+	 *
 	 * @param prompt prompt to display
 	 * @return password string
 	 * @throws IOException
@@ -211,7 +211,7 @@ public class ConsoleIO {
 
 	/**
 	 * Write a string
-	 * 
+	 *
 	 * @param string string to write
 	 */
 	public void write(final String string) {
@@ -227,7 +227,7 @@ public class ConsoleIO {
 
 	/**
 	 * Write a string, followed by a newline
-	 * 
+	 *
 	 * @param string string to write
 	 */
 	public void writeln(final String string) {
@@ -236,7 +236,7 @@ public class ConsoleIO {
 
 	/**
 	 * Write an error message
-	 * 
+	 *
 	 * @param errMsg error message
 	 */
 	public void writeError(final String errMsg) {
@@ -253,7 +253,7 @@ public class ConsoleIO {
 
 	/**
 	 * Write parser error
-	 * 
+	 *
 	 * @param prefix
 	 * @param lineNo line number
 	 * @param colNo  column number
@@ -273,7 +273,7 @@ public class ConsoleIO {
 
 	/**
 	 * Ask if the user wants to continue
-	 * 
+	 *
 	 * @param msg          confirmation question
 	 * @param defaultValue true when default is yes
 	 * @return true when continue
@@ -303,7 +303,7 @@ public class ConsoleIO {
 
 	/**
 	 * Whether to echo user input to output stream
-	 * 
+	 *
 	 * @param echo true to echo input
 	 */
 	protected void setEcho(boolean echo) {
@@ -312,7 +312,7 @@ public class ConsoleIO {
 
 	/**
 	 * Whether to suppress printing of prompts to output
-	 * 
+	 *
 	 * @param quiet true to suppress printing
 	 */
 	public void setQuiet(boolean quiet) {
@@ -335,7 +335,7 @@ public class ConsoleIO {
 
 	/**
 	 * Check if an error was written to the console
-	 * 
+	 *
 	 * @return true when error was written
 	 */
 	public boolean wasErrorWritten() {

@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.RDF4JConfigException;
 
 /**
  * Exception indicating a repository configuration problem.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RepositoryConfigException extends RDF4JConfigException {

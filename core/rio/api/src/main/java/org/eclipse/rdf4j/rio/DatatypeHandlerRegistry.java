@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
  * Registry of {@link DatatypeHandler}s.
- * 
+ *
  * @author Peter Ansell
  */
 public class DatatypeHandlerRegistry extends ServiceRegistry<String, DatatypeHandler> {
@@ -26,7 +26,7 @@ public class DatatypeHandlerRegistry extends ServiceRegistry<String, DatatypeHan
 
 	/**
 	 * Gets the default DatatypeHandlerRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static DatatypeHandlerRegistry getInstance() {

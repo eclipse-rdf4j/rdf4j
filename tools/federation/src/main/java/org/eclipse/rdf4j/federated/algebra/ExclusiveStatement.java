@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Represents a StatementPattern that can only produce results at a single endpoint, the owner.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ExclusiveStatement extends FedXStatementPattern implements ExclusiveTupleExpr {

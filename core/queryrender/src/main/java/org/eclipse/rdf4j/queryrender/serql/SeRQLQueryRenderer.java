@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.queryrender.QueryRenderer;
  * Implementation of the {@link QueryRenderer} interface which renders
  * {@link org.eclipse.rdf4j.query.parser.ParsedQuery} objects as strings in SeRQL syntax
  * </p>
- * 
+ *
  * @author Michael Grove
  */
 public class SeRQLQueryRenderer implements QueryRenderer {

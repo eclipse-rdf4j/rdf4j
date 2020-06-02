@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.federated.exception;
 /**
  * Exception to be thrown if during query evaluation a data source is not reachable, i.e. SocketException. All endpoints
  * are repaired and should work for the next query.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

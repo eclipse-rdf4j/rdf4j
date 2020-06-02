@@ -26,14 +26,14 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 /**
  * An in-memory store for namespace prefix information that uses a file for persistence. Namespaces are encoded in the
  * file as records as follows:
- * 
+ *
  * <pre>
  *   byte 1 - 2     : the length of the encoded namespace name
  *   byte 3 - A     : the UTF-8 encoded namespace name
  *   byte A+1 - A+2 : the length of the encoded namespace prefix
  *   byte A+3 - end : the UTF-8 encoded namespace prefix
  * </pre>
- * 
+ *
  * @author Arjohn Kampman
  */
 class NamespaceStore implements Iterable<SimpleNamespace> {

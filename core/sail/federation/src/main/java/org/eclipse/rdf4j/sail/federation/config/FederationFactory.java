@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sail.federation.Federation;
 
 /**
  * Creates a federation based on its configuration.
- * 
+ *
  * @see FederationConfig
  * @author James Leigh
  * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
@@ -29,7 +29,7 @@ public class FederationFactory implements SailFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see SailFactory#getSailType()
 	 */
 	public static final String SAIL_TYPE = "openrdf:Federation";

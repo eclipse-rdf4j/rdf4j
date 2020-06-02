@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Utility class for handling the details of federating "user repositories" managed by a
  * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
- * 
+ *
  * @author Dale Visser
  * @deprecated since 3.1.0. This module will be replaced by the new FedX federation module.
  */
@@ -59,7 +59,7 @@ public class RepositoryManagerFederator {
 	/**
 	 * Create an instance capable of federating "user repositories" within the given
 	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
-	 * 
+	 *
 	 * @param manager must manage the repositories to be added to new federations, and becomes the manager of any
 	 *                created federations
 	 */
@@ -72,7 +72,7 @@ public class RepositoryManagerFederator {
 	 * Adds a new repository to the {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}, which is a
 	 * federation of the given repository id's, which must also refer to repositories already managed by the
 	 * {@link org.eclipse.rdf4j.repository.manager.RepositoryManager}.
-	 * 
+	 *
 	 * @param fedID       the desired identifier for the new federation repository
 	 * @param description the desired description for the new federation repository
 	 * @param members     the identifiers of the repositories to federate, which must already exist and be managed by

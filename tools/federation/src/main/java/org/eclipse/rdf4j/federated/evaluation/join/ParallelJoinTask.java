@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * A task implementation representing a join, i.e. the provided expression is evaluated with the given bindings.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelJoinTask extends ParallelTaskBase<BindingSet> {

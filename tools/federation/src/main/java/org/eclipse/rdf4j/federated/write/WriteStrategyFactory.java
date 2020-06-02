@@ -14,11 +14,11 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 
 /**
  * Factory to create {@link WriteStrategy} instantiations.
- * 
+ *
  * <p>
  * Implementations must have a default constructor.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -26,7 +26,7 @@ public interface WriteStrategyFactory {
 
 	/**
 	 * Create the {@link WriteStrategy} using the provided context
-	 * 
+	 *
 	 * @param members           the current federation members
 	 * @param federationContext the federation context
 	 * @return the {@link WriteStrategy}

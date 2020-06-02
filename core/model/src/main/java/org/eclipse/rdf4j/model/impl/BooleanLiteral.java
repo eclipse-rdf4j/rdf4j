@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a boolean value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */
@@ -41,7 +41,7 @@ public class BooleanLiteral extends SimpleLiteral {
 	 * Creates an xsd:boolean typed literal with the specified value.
 	 */
 	protected BooleanLiteral(boolean value) {
-		super(Boolean.toString(value), XMLSchema.BOOLEAN);
+		super(Boolean.toString(value), XSD.BOOLEAN);
 		this.value = value;
 	}
 

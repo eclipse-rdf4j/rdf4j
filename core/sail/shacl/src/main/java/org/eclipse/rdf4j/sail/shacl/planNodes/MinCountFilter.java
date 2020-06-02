@@ -24,7 +24,7 @@ public class MinCountFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		Literal literal = (Literal) t.line.get(1);
+		Literal literal = (Literal) t.getLine().get(1);
 		return literal.longValue() >= minCount;
 	}
 

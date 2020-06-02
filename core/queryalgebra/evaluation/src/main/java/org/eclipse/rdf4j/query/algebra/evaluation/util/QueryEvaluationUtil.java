@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -38,7 +38,7 @@ public class QueryEvaluationUtil {
 	 * false if the operand value is NaN or is numerically equal to zero; otherwise the EBV is true.
 	 * <li>All other arguments, including unbound arguments, produce a type error.
 	 * </ul>
-	 * 
+	 *
 	 * @param value Some value.
 	 * @return The EBV of <tt>value</tt>.
 	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
@@ -49,16 +49,16 @@ public class QueryEvaluationUtil {
 			String label = literal.getLabel();
 			IRI datatype = literal.getDatatype();
 
-			if (datatype.equals(XMLSchema.STRING)) {
+			if (datatype.equals(XSD.STRING)) {
 				return label.length() > 0;
-			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
+			} else if (datatype.equals(XSD.BOOLEAN)) {
 				if ("true".equals(label) || "1".equals(label)) {
 					return true;
 				} else {
 					// also false for illegal values
 					return false;
 				}
-			} else if (datatype.equals(XMLSchema.DECIMAL)) {
+			} else if (datatype.equals(XSD.DECIMAL)) {
 				try {
 					String normDec = XMLDatatypeUtil.normalizeDecimal(label);
 					return !normDec.equals("0.0");
@@ -116,7 +116,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Compares the supplied {@link Literal} arguments using the supplied operator, using strict (minimally-conforming)
 	 * SPARQL 1.1 operator behavior.
-	 * 
+	 *
 	 * @param leftLit  the left literal argument of the comparison.
 	 * @param rightLit the right literal argument of the comparison.
 	 * @param operator the comparison operator to use.
@@ -131,7 +131,7 @@ public class QueryEvaluationUtil {
 
 	/**
 	 * Compares the supplied {@link Literal} arguments using the supplied operator.
-	 * 
+	 *
 	 * @param leftLit  the left literal argument of the comparison.
 	 * @param rightLit the right literal argument of the comparison.
 	 * @param operator the comparison operator to use.
@@ -161,7 +161,7 @@ public class QueryEvaluationUtil {
 		// string-typed literals with the same lexical value are considered equal.
 		IRI commonDatatype = null;
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
-			commonDatatype = XMLSchema.STRING;
+			commonDatatype = XSD.STRING;
 		}
 
 		Integer compareResult = null;
@@ -177,36 +177,36 @@ public class QueryEvaluationUtil {
 					// left and right arguments have different datatypes, try to find
 					// a
 					// more general, shared datatype
-					if (leftDatatype.equals(XMLSchema.DOUBLE) || rightDatatype.equals(XMLSchema.DOUBLE)) {
-						commonDatatype = XMLSchema.DOUBLE;
-					} else if (leftDatatype.equals(XMLSchema.FLOAT) || rightDatatype.equals(XMLSchema.FLOAT)) {
-						commonDatatype = XMLSchema.FLOAT;
-					} else if (leftDatatype.equals(XMLSchema.DECIMAL) || rightDatatype.equals(XMLSchema.DECIMAL)) {
-						commonDatatype = XMLSchema.DECIMAL;
+					if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
+						commonDatatype = XSD.DOUBLE;
+					} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
+						commonDatatype = XSD.FLOAT;
+					} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {
+						commonDatatype = XSD.DECIMAL;
 					} else {
-						commonDatatype = XMLSchema.INTEGER;
+						commonDatatype = XSD.INTEGER;
 					}
 				} else if (!strict && XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
 						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 					// We're not running in strict eval mode so we use extended datatype comparsion.
-					commonDatatype = XMLSchema.DATETIME;
+					commonDatatype = XSD.DATETIME;
 				} else if (!strict && XMLDatatypeUtil.isDurationDatatype(leftDatatype)
 						&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
-					commonDatatype = XMLSchema.DURATION;
+					commonDatatype = XSD.DURATION;
 				}
 			}
 
 			if (commonDatatype != null) {
 				try {
-					if (commonDatatype.equals(XMLSchema.DOUBLE)) {
+					if (commonDatatype.equals(XSD.DOUBLE)) {
 						compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());
-					} else if (commonDatatype.equals(XMLSchema.FLOAT)) {
+					} else if (commonDatatype.equals(XSD.FLOAT)) {
 						compareResult = Float.compare(leftLit.floatValue(), rightLit.floatValue());
-					} else if (commonDatatype.equals(XMLSchema.DECIMAL)) {
+					} else if (commonDatatype.equals(XSD.DECIMAL)) {
 						compareResult = leftLit.decimalValue().compareTo(rightLit.decimalValue());
 					} else if (XMLDatatypeUtil.isIntegerDatatype(commonDatatype)) {
 						compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());
-					} else if (commonDatatype.equals(XMLSchema.BOOLEAN)) {
+					} else if (commonDatatype.equals(XSD.BOOLEAN)) {
 						Boolean leftBool = leftLit.booleanValue();
 						Boolean rightBool = rightLit.booleanValue();
 						compareResult = leftBool.compareTo(rightBool);
@@ -222,7 +222,7 @@ public class QueryEvaluationUtil {
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
-							if (leftDatatype.equals(XMLSchema.DATETIME) && rightDatatype.equals(XMLSchema.DATETIME)) {
+							if (leftDatatype.equals(XSD.DATETIME) && rightDatatype.equals(XSD.DATETIME)) {
 								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
 							} else {
 								// We fallback to the regular RDF term compare
@@ -237,7 +237,7 @@ public class QueryEvaluationUtil {
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							compareResult = null; // We fallback to regular term comparison
 						}
-					} else if (commonDatatype.equals(XMLSchema.STRING)) {
+					} else if (commonDatatype.equals(XSD.STRING)) {
 						compareResult = leftLit.getLabel().compareTo(rightLit.getLabel());
 					}
 				} catch (IllegalArgumentException e) {
@@ -298,8 +298,8 @@ public class QueryEvaluationUtil {
 					if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 					}
-					boolean leftString = leftDatatype.equals(XMLSchema.STRING);
-					boolean rightString = rightDatatype.equals(XMLSchema.STRING);
+					boolean leftString = leftDatatype.equals(XSD.STRING);
+					boolean rightString = rightDatatype.equals(XSD.STRING);
 					boolean leftNumeric = XMLDatatypeUtil.isNumericDatatype(leftDatatype);
 					boolean rightNumeric = XMLDatatypeUtil.isNumericDatatype(rightDatatype);
 					boolean leftDate = XMLDatatypeUtil.isCalendarDatatype(leftDatatype);
@@ -343,14 +343,14 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied value is a "plain literal". A "plain literal" is a literal with no datatype and
 	 * optionally a language tag.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#dfn-plain-literal">RDF Literal
 	 *      Documentation</a>
 	 */
 	public static boolean isPlainLiteral(Value v) {
 		if (v instanceof Literal) {
 			Literal l = (Literal) v;
-			return (l.getDatatype().equals(XMLSchema.STRING));
+			return (l.getDatatype().equals(XSD.STRING));
 		}
 		return false;
 	}
@@ -358,7 +358,7 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied value is a "simple literal". A "simple literal" is a literal with no language tag nor
 	 * datatype.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Value v) {
@@ -371,18 +371,18 @@ public class QueryEvaluationUtil {
 
 	/**
 	 * Checks whether the supplied literal is a "simple literal". A "simple literal" is a literal with no language tag
-	 * and the datatype {@link XMLSchema#STRING}.
-	 * 
+	 * and the datatype {@link XSD#STRING}.
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
-		return !Literals.isLanguageLiteral(l) && l.getDatatype().equals(XMLSchema.STRING);
+		return !Literals.isLanguageLiteral(l) && l.getDatatype().equals(XSD.STRING);
 	}
 
 	/**
 	 * Checks whether the supplied literal is a "string literal". A "string literal" is either a simple literal, a plain
 	 * literal with language tag, or a literal with datatype xsd:string.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Value v) {
@@ -395,7 +395,7 @@ public class QueryEvaluationUtil {
 
 	/**
 	 * Checks whether the supplied two literal arguments are 'argument compatible' according to the SPARQL definition.
-	 * 
+	 *
 	 * @param arg1 the first argument
 	 * @param arg2 the second argument
 	 * @return true iff the two supplied arguments are argument compatible, false otherwise
@@ -424,16 +424,16 @@ public class QueryEvaluationUtil {
 	/**
 	 * Checks whether the supplied literal is a "string literal". A "string literal" is either a simple literal, a plain
 	 * literal with language tag, or a literal with datatype xsd:string.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
 		IRI datatype = l.getDatatype();
-		return Literals.isLanguageLiteral(l) || datatype.equals(XMLSchema.STRING);
+		return Literals.isLanguageLiteral(l) || datatype.equals(XSD.STRING);
 	}
 
 	private static boolean isSupportedDatatype(IRI datatype) {
-		return (XMLSchema.STRING.equals(datatype) || XMLDatatypeUtil.isNumericDatatype(datatype)
+		return (XSD.STRING.equals(datatype) || XMLDatatypeUtil.isNumericDatatype(datatype)
 				|| XMLDatatypeUtil.isCalendarDatatype(datatype));
 	}
 }

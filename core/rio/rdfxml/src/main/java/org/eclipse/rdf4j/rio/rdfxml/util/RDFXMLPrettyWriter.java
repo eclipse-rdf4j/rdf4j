@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  * descriptions in each other.
  * <p>
  * Example:
- * 
+ *
  * <pre>
  * &lt;rdf:Seq&gt;
  *    &lt;rdf:li&gt;
@@ -61,34 +61,34 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *    &lt;/rdf:li&gt;
  * &lt;/rdf:Seq&gt;
  * </pre>
- * 
+ *
  * Typed node elements means that we write out type information in the short form of
- * 
+ *
  * <pre>
  * &lt;foaf:Person rdf:about=&quot;...&quot;&gt;
  *     ...
  *  &lt;/foaf:Person&gt;
  * </pre>
- * 
+ *
  * instead of
- * 
+ *
  * <pre>
  * &lt;rdf:Description rdf:about=&quot;...&quot;&gt;
  *    &lt;rdf:type rdf:resource=&quot;http://xmlns.com/foaf/0.1/Person&quot;/&gt;
  *     ...
  *  &lt;/rdf:Description&gt;
  * </pre>
- * 
+ *
  * Empty property elements are of the form
- * 
+ *
  * <pre>
  * &lt;foaf:Person&gt;
  *    &lt;foaf:homepage rdf:resource=&quot;http://www.cs.vu.nl/&tilde;marta&quot;/&gt;
  * &lt;/foaf:Person&gt;
  * </pre>
- * 
+ *
  * instead of
- * 
+ *
  * <pre>
  * &lt;foaf:Person&gt;
  *    &lt;foaf:homepage&gt;
@@ -96,7 +96,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *    &lt;foaf:homepage&gt;
  * &lt;/foaf:Person&gt;
  * </pre>
- * 
+ *
  * @author Peter Mika (pmika@cs.vu.nl)
  */
 public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flushable {
@@ -127,7 +127,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	/**
 	 * Creates a new RDFXMLPrintWriter that will write to the supplied OutputStream.
-	 * 
+	 *
 	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public RDFXMLPrettyWriter(OutputStream out) {
@@ -145,7 +145,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	/**
 	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
-	 * 
+	 *
 	 * @param out The Writer to write the RDF/XML document to.
 	 */
 	public RDFXMLPrettyWriter(Writer out) {
@@ -231,7 +231,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 	/**
 	 * Write out the stacks until we find subject. If subject == null, write out the entire stack
-	 * 
+	 *
 	 * @param newSubject
 	 */
 	private void popStacks(Resource newSubject) throws IOException, RDFHandlerException {

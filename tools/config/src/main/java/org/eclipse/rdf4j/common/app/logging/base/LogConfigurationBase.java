@@ -18,7 +18,7 @@ public abstract class LogConfigurationBase extends AbstractLogConfiguration {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected LogConfigurationBase() throws IOException {

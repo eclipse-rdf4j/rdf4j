@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
  * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#tsv">SPARQL 1.1 Query Results TSV Format</a>
  * @author Jeen Broekstra
  */
@@ -155,8 +155,8 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 
 		IRI datatype = lit.getDatatype();
 
-		if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
-				|| XMLSchema.DOUBLE.equals(datatype)) {
+		if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)
+				|| XSD.DOUBLE.equals(datatype)) {
 			try {
 				writer.write(XMLDatatypeUtil.normalize(label, datatype));
 				return; // done
@@ -175,7 +175,7 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
-		} else if (!XMLSchema.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
+		} else if (!XSD.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {
 			writer.write("\"");
 			writer.write(encoded);
 			writer.write("\"");

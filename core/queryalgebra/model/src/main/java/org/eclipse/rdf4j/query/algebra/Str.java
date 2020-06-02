@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * The STR function, as defined in <a href="http://www.w3.org/TR/rdf-sparql-query/#func-str">SPARQL Query Language for
  * RDF</a>; returns the label of literals or the string representation of URIs.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class Str extends UnaryValueOperator {

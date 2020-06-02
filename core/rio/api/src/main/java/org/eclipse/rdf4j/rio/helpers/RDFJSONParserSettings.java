@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * A selection of parser settings specific to RDF/JSON parsers.
  * <p>
  * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFJSONParserSettings {

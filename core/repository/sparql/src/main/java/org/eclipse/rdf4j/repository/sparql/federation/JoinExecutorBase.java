@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * Base class for any join parallel join executor. Note that this class extends {@link LookAheadIteration} and thus any
  * implementation of this class is applicable for pipelining when used in a different thread (access to shared variables
  * is synchronized).
- * 
+ *
  * @author Andreas Schwarte
  */
 public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEvaluationException> {
@@ -154,7 +154,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 
 	/**
 	 * Gets whether this executor is finished or aborted.
-	 * 
+	 *
 	 * @return true if this executor is finished or aborted
 	 */
 	public boolean isFinished() {

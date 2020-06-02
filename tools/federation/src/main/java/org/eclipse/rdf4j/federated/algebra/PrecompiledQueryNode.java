@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Node representing a precompiled query.
- * 
+ *
  * @author Andreas Schwarte
  * @see SailTripleSource
  */

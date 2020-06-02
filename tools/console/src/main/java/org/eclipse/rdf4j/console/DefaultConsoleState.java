@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
  * Console state helper class
- * 
+ *
  * @author Bart Hanssens
  */
 class DefaultConsoleState implements ConsoleState {
@@ -79,7 +79,7 @@ class DefaultConsoleState implements ConsoleState {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param cfg
 	 */
 	DefaultConsoleState(AppConfiguration cfg) {

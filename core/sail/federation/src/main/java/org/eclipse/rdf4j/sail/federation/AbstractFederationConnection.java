@@ -157,8 +157,9 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	public FederatedServiceResolver getFederatedServiceResolver() {
-		if (federatedServiceResolver == null)
+		if (federatedServiceResolver == null) {
 			return federation.getFederatedServiceResolver();
+		}
 		return federatedServiceResolver;
 	}
 

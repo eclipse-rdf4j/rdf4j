@@ -15,9 +15,9 @@ public class NativeStoreProvideTest {
 
 	/**
 	 * Create a NativeStore using {@link NativeStoreProvider}.
-	 * 
+	 *
 	 * Makes the method accessible for test infrastructure
-	 * 
+	 *
 	 * @param store
 	 * @return
 	 */

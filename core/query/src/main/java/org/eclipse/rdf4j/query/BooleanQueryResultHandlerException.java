@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query;
 
 /**
  * An exception that can be thrown by an BooleanQueryResultHandler when it encounters an unrecoverable error.
- * 
+ *
  * @author Peter Ansell
  */
 public class BooleanQueryResultHandlerException extends QueryResultHandlerException {
@@ -18,7 +18,7 @@ public class BooleanQueryResultHandlerException extends QueryResultHandlerExcept
 
 	/**
 	 * Creates a new BooleanQueryResultHandlerException.
-	 * 
+	 *
 	 * @param msg An error message.
 	 */
 	public BooleanQueryResultHandlerException(String msg) {
@@ -27,7 +27,7 @@ public class BooleanQueryResultHandlerException extends QueryResultHandlerExcept
 
 	/**
 	 * Creates a new BooleanQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param cause The cause of the exception.
 	 */
 	public BooleanQueryResultHandlerException(Throwable cause) {
@@ -36,7 +36,7 @@ public class BooleanQueryResultHandlerException extends QueryResultHandlerExcept
 
 	/**
 	 * Creates a new BooleanQueryResultHandlerException wrapping another exception.
-	 * 
+	 *
 	 * @param msg   An error message.
 	 * @param cause The cause of the exception.
 	 */

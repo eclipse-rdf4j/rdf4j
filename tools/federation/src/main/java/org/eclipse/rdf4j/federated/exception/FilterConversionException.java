@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.federated.exception;
 
 /**
  * Thrown if a filter could not be converted.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FilterConversionException extends Exception {

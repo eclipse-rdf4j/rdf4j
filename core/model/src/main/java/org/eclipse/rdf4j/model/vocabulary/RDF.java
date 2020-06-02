@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for RDF primitives and for the RDF namespace.
- * 
+ *
  * @see <a href="http://www.w3.org/TR/REC-rdf-syntax/">RDF/XML Syntax Specification (Revised)</a>
  */
 public class RDF {

@@ -26,16 +26,16 @@ import com.google.common.collect.Maps;
  * Can be applied against a scenario created with {@link DataGenerator} and {@link ResultGenerator}. An example scenario
  * is on the classpath in "build/test/fedxPerformanceScenario.jar"
  * </p>
- * 
+ *
  * <p>
  * Note that the performance scenario does include the correctness check, i.e. it does not only evaluate the pure query
  * duration, but also checks the query results against a prepared result.
  * </p>
- * 
+ *
  * <p>
  * Example performance run in local environment:
  * </p>
- * 
+ *
  * <pre>
  * query01: avg=916, min=858, max=984
  * query02: avg=5, min=5, max=6
@@ -49,8 +49,8 @@ import com.google.common.collect.Maps;
  * query10: avg=785, min=664, max=1006
  * query11: avg=2465, min=2249, max=3707
  * </pre>
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
  *
  */
@@ -63,9 +63,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 
 	@Test
 	@Disabled
-	public void testPerformance() throws Throwable
-
-	{
+	public void testPerformance() throws Throwable {
 		String basePackage = "/tests/performance/";
 
 		/* prepare endpoints */

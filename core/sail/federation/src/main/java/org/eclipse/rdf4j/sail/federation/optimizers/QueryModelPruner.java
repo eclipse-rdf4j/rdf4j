@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.sail.federation.algebra.NaryJoin;
 /**
  * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex parts with
  * simpler parts.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class QueryModelPruner implements QueryOptimizer {

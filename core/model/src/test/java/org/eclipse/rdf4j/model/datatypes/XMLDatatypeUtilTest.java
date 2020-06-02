@@ -12,12 +12,12 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.Test;
 
 /**
  * Unit tests on {@link org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class XMLDatatypeUtilTest {
@@ -119,11 +119,11 @@ public class XMLDatatypeUtilTest {
 
 	@Test
 	public void testNormalize() {
-		assertEquals("-1.0E-1", XMLDatatypeUtil.normalize("-0.1", XMLSchema.DOUBLE));
-		assertEquals("1.0E-1", XMLDatatypeUtil.normalize("0.1", XMLSchema.DOUBLE));
-		assertEquals("1.001E2", XMLDatatypeUtil.normalize("100.1", XMLSchema.DOUBLE));
-		assertEquals("1.011E2", XMLDatatypeUtil.normalize("101.1", XMLSchema.DOUBLE));
-		assertEquals("-1.011E2", XMLDatatypeUtil.normalize("-101.1", XMLSchema.DOUBLE));
+		assertEquals("-1.0E-1", XMLDatatypeUtil.normalize("-0.1", XSD.DOUBLE));
+		assertEquals("1.0E-1", XMLDatatypeUtil.normalize("0.1", XSD.DOUBLE));
+		assertEquals("1.001E2", XMLDatatypeUtil.normalize("100.1", XSD.DOUBLE));
+		assertEquals("1.011E2", XMLDatatypeUtil.normalize("101.1", XSD.DOUBLE));
+		assertEquals("-1.011E2", XMLDatatypeUtil.normalize("-101.1", XSD.DOUBLE));
 	}
 
 	/**
@@ -134,44 +134,44 @@ public class XMLDatatypeUtilTest {
 	@Test
 	public void testIsValidValue() {
 
-		testValidation(VALID_FLOATS, XMLSchema.FLOAT, true);
-		testValidation(INVALID_FLOATS, XMLSchema.FLOAT, false);
+		testValidation(VALID_FLOATS, XSD.FLOAT, true);
+		testValidation(INVALID_FLOATS, XSD.FLOAT, false);
 
-		testValidation(VALID_DATES, XMLSchema.DATE, true);
-		testValidation(INVALID_DATES, XMLSchema.DATE, false);
+		testValidation(VALID_DATES, XSD.DATE, true);
+		testValidation(INVALID_DATES, XSD.DATE, false);
 
-		testValidation(VALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, true);
-		testValidation(INVALID_DATETIMESTAMPS, XMLSchema.DATETIMESTAMP, false);
+		testValidation(VALID_DATETIMESTAMPS, XSD.DATETIMESTAMP, true);
+		testValidation(INVALID_DATETIMESTAMPS, XSD.DATETIMESTAMP, false);
 
-		testValidation(VALID_TIMES, XMLSchema.TIME, true);
-		testValidation(INVALID_TIMES, XMLSchema.TIME, false);
+		testValidation(VALID_TIMES, XSD.TIME, true);
+		testValidation(INVALID_TIMES, XSD.TIME, false);
 
-		testValidation(VALID_GDAY, XMLSchema.GDAY, true);
-		testValidation(INVALID_GDAY, XMLSchema.GDAY, false);
+		testValidation(VALID_GDAY, XSD.GDAY, true);
+		testValidation(INVALID_GDAY, XSD.GDAY, false);
 
-		testValidation(VALID_GMONTH, XMLSchema.GMONTH, true);
-		testValidation(INVALID_GMONTH, XMLSchema.GMONTH, false);
+		testValidation(VALID_GMONTH, XSD.GMONTH, true);
+		testValidation(INVALID_GMONTH, XSD.GMONTH, false);
 
-		testValidation(VALID_GMONTHDAY, XMLSchema.GMONTHDAY, true);
-		testValidation(INVALID_GMONTHDAY, XMLSchema.GMONTHDAY, false);
+		testValidation(VALID_GMONTHDAY, XSD.GMONTHDAY, true);
+		testValidation(INVALID_GMONTHDAY, XSD.GMONTHDAY, false);
 
-		testValidation(VALID_GYEAR, XMLSchema.GYEAR, true);
-		testValidation(INVALID_GYEAR, XMLSchema.GYEAR, false);
+		testValidation(VALID_GYEAR, XSD.GYEAR, true);
+		testValidation(INVALID_GYEAR, XSD.GYEAR, false);
 
-		testValidation(VALID_GYEARMONTH, XMLSchema.GYEARMONTH, true);
-		testValidation(INVALID_GYEARMONTH, XMLSchema.GYEARMONTH, false);
+		testValidation(VALID_GYEARMONTH, XSD.GYEARMONTH, true);
+		testValidation(INVALID_GYEARMONTH, XSD.GYEARMONTH, false);
 
-		testValidation(VALID_DURATION, XMLSchema.DURATION, true);
-		testValidation(INVALID_DURATION, XMLSchema.DURATION, false);
+		testValidation(VALID_DURATION, XSD.DURATION, true);
+		testValidation(INVALID_DURATION, XSD.DURATION, false);
 
-		testValidation(VALID_DAYTIMEDURATION, XMLSchema.DAYTIMEDURATION, true);
-		testValidation(INVALID_DAYTIMEDURATION, XMLSchema.DAYTIMEDURATION, false);
+		testValidation(VALID_DAYTIMEDURATION, XSD.DAYTIMEDURATION, true);
+		testValidation(INVALID_DAYTIMEDURATION, XSD.DAYTIMEDURATION, false);
 
-		testValidation(VALID_QNAMES, XMLSchema.QNAME, true);
-		testValidation(INVALID_QNAMES, XMLSchema.QNAME, false);
+		testValidation(VALID_QNAMES, XSD.QNAME, true);
+		testValidation(INVALID_QNAMES, XSD.QNAME, false);
 
-		testValidation(VALID_URI, XMLSchema.ANYURI, true);
-		testValidation(INVALID_URI, XMLSchema.ANYURI, false);
+		testValidation(VALID_URI, XSD.ANYURI, true);
+		testValidation(INVALID_URI, XSD.ANYURI, false);
 	}
 
 	private void testValidation(String[] values, IRI datatype, boolean validValues) {
@@ -206,15 +206,15 @@ public class XMLDatatypeUtilTest {
 	@Test
 	public void testCompareDateTimeStamp() {
 		int sameOffset = XMLDatatypeUtil.compare("2019-12-06T00:00:00Z", "2019-12-06T00:00:00+00:00",
-				XMLSchema.DATETIMESTAMP);
+				XSD.DATETIMESTAMP);
 		assertTrue("Not the same", sameOffset == 0);
 
 		int offset1 = XMLDatatypeUtil.compare("2019-12-06T14:00:00+02:00", "2019-12-06T13:00:00+02:00",
-				XMLSchema.DATETIMESTAMP);
+				XSD.DATETIMESTAMP);
 		assertTrue("Wrong order", offset1 > 0);
 
 		int offset2 = XMLDatatypeUtil.compare("2019-12-06T12:00:00+02:00", "2019-12-06T13:00:00-04:00",
-				XMLSchema.DATETIMESTAMP);
+				XSD.DATETIMESTAMP);
 		assertTrue("Wrong order", offset2 < 0);
 	}
 

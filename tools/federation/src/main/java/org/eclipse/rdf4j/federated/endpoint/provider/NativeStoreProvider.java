@@ -25,12 +25,12 @@ import org.slf4j.LoggerFactory;
  * Provider for an Endpoint that uses a RDF4J {@link NativeStore} as underlying repository. For optimization purposes
  * the {@link SailSourceEvaluationStrategyFactory} is used to allow for evaluation of prepared queries without prior
  * optimization. Note that NativeStores are always classified as 'Local'.
- * 
+ *
  * <p>
  * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
  * path is used, the repository is created on the fly (if necessary).
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  */
 public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInformation> {
@@ -96,7 +96,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 	/**
 	 * Create a {@link NativeStore} and apply the {@link SailSourceEvaluationStrategyFactory}.
-	 * 
+	 *
 	 * @param store
 	 * @return the store
 	 */

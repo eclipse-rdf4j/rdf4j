@@ -76,7 +76,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 * 
+	 *
 	 * @param queryFile
 	 * @param expectedResultFile
 	 * @param checkOrder
@@ -157,7 +157,7 @@ public abstract class FedXBaseTest {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param localName
 	 * @return the IRI in the instance's {@link #defaultNamespace}
 	 */
@@ -175,7 +175,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read the query string from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -187,7 +187,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read resource from classpath as string, e.g. /tests/basic/data01endpoint1.ttl
-	 * 
+	 *
 	 * @param resource
 	 * @return
 	 * @throws IOException
@@ -203,7 +203,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read the expected tuple query result from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -237,7 +237,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read the expected graph query result from the specified resource
-	 * 
+	 *
 	 * @param resultFile
 	 * @return
 	 * @throws Exception
@@ -290,9 +290,9 @@ public abstract class FedXBaseTest {
 	}
 
 	/**
-	 * 
+	 *
 	 * Note: metod can only be used after initialization phase
-	 * 
+	 *
 	 * @return the current {@link FederationContext}
 	 */
 	protected abstract FederationContext federationContext();
@@ -303,7 +303,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Compare two tuple query results
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @param checkOrder
@@ -397,7 +397,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Compare two graphs
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @throws Exception
@@ -425,7 +425,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * A builder for {@link TupleQueryResult}s.
-	 * 
+	 *
 	 * @author as
 	 *
 	 */
@@ -440,7 +440,7 @@ public abstract class FedXBaseTest {
 
 		/**
 		 * Add the {@link BindingSet} to the result.
-		 * 
+		 *
 		 * @param b
 		 * @return
 		 * @throws IllegalArgumentException if the provided binding names is not a subset of the defined result binding

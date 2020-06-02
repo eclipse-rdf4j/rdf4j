@@ -15,7 +15,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#and(GraphPattern...)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param patterns the patterns to add
 	 * @return this
 	 */
@@ -28,7 +28,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#union(GraphPattern...)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param patterns the patterns to add
 	 * @return this
 	 */
@@ -41,7 +41,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#optional()}, but mutates and returns this instance
-	 * 
+	 *
 	 * @return this
 	 */
 	@Override
@@ -53,7 +53,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#optional(boolean)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param isOptional if this graph pattern should be optional or not
 	 * @return this
 	 */
@@ -66,7 +66,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#filter(Expression)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param constraint the filter constraint
 	 * @return this
 	 */
@@ -79,7 +79,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#minus(GraphPattern...)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param patterns the patterns to construct the <code>MINUS</code> graph pattern with
 	 * @return this
 	 */
@@ -92,7 +92,7 @@ public class GraphPatternNotTriples implements GraphPattern {
 
 	/**
 	 * Like {@link GraphPattern#from(GraphName)}, but mutates and returns this instance
-	 * 
+	 *
 	 * @param name the name to specify
 	 * @return this
 	 */

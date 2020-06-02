@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 
 /**
  * Builder for {@link FedXRepositoryConfig}
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FedXRepositoryConfigBuilder {
@@ -52,7 +52,7 @@ public class FedXRepositoryConfigBuilder {
 
 	/**
 	 * Build the {@link FedXRepositoryConfig} that can be used in the {@link RepositoryConfig}.
-	 * 
+	 *
 	 * @return the {@link FedXRepositoryConfig}
 	 */
 	public FedXRepositoryConfig build() {
@@ -63,7 +63,7 @@ public class FedXRepositoryConfigBuilder {
 
 	/**
 	 * Build the {@link RepositoryConfig}
-	 * 
+	 *
 	 * @param repositoryId    the repository identifier
 	 * @param repositoryTitle the repository title
 	 * @return the {@link RepositoryConfig} (incorporating {@link FedXRepositoryConfig})

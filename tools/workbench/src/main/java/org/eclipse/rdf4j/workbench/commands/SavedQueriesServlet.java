@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 /**
  * Servlet that provides a page to access saved queries.
- * 
+ *
  * @author Dale Visser
  */
 public class SavedQueriesServlet extends TransformationServlet {

@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 /**
  * The SPARQL built-in {@link Function} NOW, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-now">SPARQL Query Language for RDF</a>
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Now implements Function {

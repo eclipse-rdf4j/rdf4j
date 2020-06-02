@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -111,7 +111,7 @@ public class RegexTest {
 	@Test
 	public void testEvaluate5() throws QueryEvaluationException {
 
-		Literal expr = vf.createLiteral("foobar", XMLSchema.STRING);
+		Literal expr = vf.createLiteral("foobar", XSD.STRING);
 		Literal pattern = vf.createLiteral("FooBar");
 		Literal flags = vf.createLiteral("i");
 
@@ -127,7 +127,7 @@ public class RegexTest {
 	@Test
 	public void testEvaluate6() throws QueryEvaluationException {
 
-		Literal expr = vf.createLiteral("foobar", XMLSchema.TOKEN);
+		Literal expr = vf.createLiteral("foobar", XSD.TOKEN);
 		Literal pattern = vf.createLiteral("FooBar");
 		Literal flags = vf.createLiteral("i");
 

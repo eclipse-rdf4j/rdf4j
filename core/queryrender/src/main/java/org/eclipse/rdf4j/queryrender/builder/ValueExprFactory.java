@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
  * <p>
  * Collection of utility methods for building the various ValueExpr objects in the RDF4J query API.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */

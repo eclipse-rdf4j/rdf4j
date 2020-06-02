@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -22,7 +21,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,7 +45,7 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.model.vocabulary.SPL;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -284,7 +282,7 @@ public class SpinParser {
 				return ((Literal) v).intValue();
 			} catch (NumberFormatException e) {
 				throw new MalformedSpinException("Value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY
-						+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
+						+ " must be of datatype " + XSD.INTEGER + ": " + ruleProp);
 			}
 		} else {
 			throw new MalformedSpinException(
@@ -681,7 +679,7 @@ public class SpinParser {
 	}
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
-		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(
+		SortedSet<IRI> sortedArgs = new TreeSet<>(
 				(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 
@@ -1832,7 +1830,7 @@ public class SpinParser {
 			appendPrefix(RDFS.PREFIX, RDFS.NAMESPACE);
 			appendPrefix(SESAME.PREFIX, SESAME.NAMESPACE);
 			appendPrefix(OWL.PREFIX, OWL.NAMESPACE);
-			appendPrefix(XMLSchema.PREFIX, XMLSchema.NAMESPACE);
+			appendPrefix(XSD.PREFIX, XSD.NAMESPACE);
 			appendPrefix(FN.PREFIX, FN.NAMESPACE);
 			buf.append(" ");
 		}

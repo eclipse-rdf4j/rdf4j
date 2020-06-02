@@ -27,7 +27,7 @@ public class MinExclusiveFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		Value literal = t.line.get(1);
+		Value literal = t.getLine().get(1);
 
 		if (literal instanceof Literal) {
 			BigDecimal bigDecimal = ((Literal) literal).decimalValue();

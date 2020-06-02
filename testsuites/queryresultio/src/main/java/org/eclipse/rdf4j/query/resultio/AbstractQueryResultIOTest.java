@@ -29,7 +29,7 @@ import java.util.Random;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -51,7 +51,7 @@ public abstract class AbstractQueryResultIOTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * 
+	 *
 	 */
 	public AbstractQueryResultIOTest() {
 		super();
@@ -67,7 +67,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Override this to customise how the tuple parsing is performed, particularly to test background and other parsing
 	 * strategies.
-	 * 
+	 *
 	 * @param format The {@link TupleQueryResultFormat} for the parser.
 	 * @param in     The InputStream to parse
 	 * @return A {@link TupleQueryResult} that can be parsed.
@@ -108,28 +108,28 @@ public abstract class AbstractQueryResultIOTest {
 		solution1.addBinding("a", vf.createIRI("foo:bar"));
 
 		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());
-		solution2.addBinding("a", vf.createLiteral("2.0", XMLSchema.DOUBLE));
+		solution2.addBinding("a", vf.createLiteral("2.0", XSD.DOUBLE));
 
 		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());
 		solution3.addBinding("a", vf.createBNode("bnode3"));
 
 		MapBindingSet solution4 = new MapBindingSet(bindingNames.size());
-		solution4.addBinding("a", vf.createLiteral("''single-quoted string", XMLSchema.STRING));
+		solution4.addBinding("a", vf.createLiteral("''single-quoted string", XSD.STRING));
 
 		MapBindingSet solution5 = new MapBindingSet(bindingNames.size());
-		solution5.addBinding("a", vf.createLiteral("\"\"double-quoted string", XMLSchema.STRING));
+		solution5.addBinding("a", vf.createLiteral("\"\"double-quoted string", XSD.STRING));
 
 		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());
-		solution6.addBinding("a", vf.createLiteral("space at the end         ", XMLSchema.STRING));
+		solution6.addBinding("a", vf.createLiteral("space at the end         ", XSD.STRING));
 
 		MapBindingSet solution7 = new MapBindingSet(bindingNames.size());
-		solution7.addBinding("a", vf.createLiteral("space at the end         ", XMLSchema.STRING));
+		solution7.addBinding("a", vf.createLiteral("space at the end         ", XSD.STRING));
 
 		MapBindingSet solution8 = new MapBindingSet(bindingNames.size());
 		solution8.addBinding("a", vf.createLiteral("\"\"double-quoted string with no datatype"));
 
 		MapBindingSet solution9 = new MapBindingSet(bindingNames.size());
-		solution9.addBinding("a", vf.createLiteral("newline at the end \n", XMLSchema.STRING));
+		solution9.addBinding("a", vf.createLiteral("newline at the end \n", XSD.STRING));
 
 		MapBindingSet solution10 = new MapBindingSet(bindingNames.size());
 		solution10.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
@@ -151,7 +151,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution1.addBinding("c", vf.createLiteral("baz"));
 
 		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());
-		solution2.addBinding("a", vf.createLiteral("1", XMLSchema.INTEGER));
+		solution2.addBinding("a", vf.createLiteral("1", XSD.INTEGER));
 		solution2.addBinding("c", vf.createLiteral("Hello World!", "en"));
 
 		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());
@@ -464,7 +464,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a tuple results set without specifying a {@link TupleQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -490,7 +490,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a TupleQueryResultFormat is not able to parse a BooleanQueryResultFormat using
 	 * the deprecated {@link TupleQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed through
 	 * an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @param matchingBooleanFormat A BooleanQueryResultFormat that matches the given TupleQueryResultFormat .
@@ -661,7 +661,7 @@ public abstract class AbstractQueryResultIOTest {
 	/**
 	 * Tests that parsing a boolean without specifying a {@link BooleanQueryResultHandler} does not throw any
 	 * exceptions.
-	 * 
+	 *
 	 * @param format
 	 * @param input
 	 * @throws QueryResultParseException
@@ -681,7 +681,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * Tests that the parser returned for a BooleanQueryResultFormat is not able to parse a TupleQueryResultFormat using
 	 * the deprecated {@link BooleanQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed
 	 * through an exception of type {@link QueryResultParseException}.
-	 * 
+	 *
 	 * @param format
 	 * @param tqr
 	 * @param matchingTupleFormat A TupleQueryResultFormat that matches the given BooleanQueryResultFormat.
