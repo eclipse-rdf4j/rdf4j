@@ -8,24 +8,24 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
-public class InversePath extends Path {
+public class AlternativePath extends Path {
 
-	private final Path inversePath;
+	private final Path alternativePath;
 
-	public InversePath(Resource id, Resource inversePath, RepositoryConnection connection) {
+	public AlternativePath(Resource id, Resource alternativePath, RepositoryConnection connection) {
 		super(id);
-		this.inversePath = Path.buildPath(connection, inversePath);
+		this.alternativePath = Path.buildPath(connection, alternativePath);
 
 	}
 
 	@Override
 	public String toString() {
-		return "InversePath{ " + inversePath + " }";
+		return "AlternativePath{ " + alternativePath + " }";
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.INVERSE_PATH, inversePath.getId());
-		inversePath.toModel(inversePath.getId(), model, exported);
+		model.add(subject, SHACL.ALTERNATIVE_PATH, alternativePath.getId());
+		alternativePath.toModel(alternativePath.getId(), model, exported);
 	}
 }

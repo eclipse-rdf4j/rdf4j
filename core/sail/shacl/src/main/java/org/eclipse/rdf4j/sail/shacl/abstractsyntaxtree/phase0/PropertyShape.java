@@ -65,7 +65,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			model.add(subject, SHACL.PROPERTY, getId());
 		}
 
-		path.toModel(getId(), model, exported);
+		model.add(getId(), SHACL.PATH, path.getId());
+		path.toModel(path.getId(), model, exported);
 
 		if (exported.contains(getId())) {
 			return;
