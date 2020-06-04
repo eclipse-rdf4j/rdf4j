@@ -1,7 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Model;
@@ -14,28 +12,30 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponen
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
-	List<ConstraintComponent> constraintComponent = new ArrayList<>();
-
 	public NodeShape() {
 	}
 
-	public static NodeShape getInstance(ConstraintComponent parent, ShaclProperties properties,
+	public NodeShape(NodeShape nodeShape) {
+		super(nodeShape);
+	}
+
+	public static NodeShape getInstance(ShaclProperties properties,
 			RepositoryConnection connection, Cache cache) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new NodeShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(parent, properties, connection, cache);
+			shape.populate(properties, connection, cache);
 		}
 
 		return (NodeShape) shape;
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
+	public void populate(ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
-		super.populate(parent, properties, connection, cache);
+		super.populate(properties, connection, cache);
 
 		if (properties.getMinCount() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:MinCount in " + getId());
@@ -52,6 +52,11 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);
 
+	}
+
+	@Override
+	protected NodeShape shallowClone() {
+		return new NodeShape(this);
 	}
 
 	@Override

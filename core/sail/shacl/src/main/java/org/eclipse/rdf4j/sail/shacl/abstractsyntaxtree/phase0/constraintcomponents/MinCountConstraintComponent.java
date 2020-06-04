@@ -12,7 +12,7 @@ public class MinCountConstraintComponent implements ConstraintComponent {
 
 	long minCount;
 
-	public MinCountConstraintComponent(ConstraintComponent parent, long minCount) {
+	public MinCountConstraintComponent(long minCount) {
 		this.minCount = minCount;
 	}
 

@@ -24,7 +24,7 @@ public class AndConstraintComponent implements ConstraintComponent {
 	List<Shape> and;
 	Resource id;
 
-	public AndConstraintComponent(ConstraintComponent parent, Resource id, RepositoryConnection connection,
+	public AndConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		this.id = id;
 		and = toList(connection, id)
@@ -32,9 +32,9 @@ public class AndConstraintComponent implements ConstraintComponent {
 				.map(v -> new ShaclProperties((Resource) v, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(this, p, connection, cache);
+						return NodeShape.getInstance(p, connection, cache);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(this, p, connection, cache);
+						return PropertyShape.getInstance(p, connection, cache);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})

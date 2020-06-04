@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubj
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable {
 	Resource id;
-	ConstraintComponent parent;
 
 	List<Target> target = new ArrayList<>();
 
@@ -51,15 +50,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	List<Literal> message;
 	Severity severity;
 
+	List<ConstraintComponent> constraintComponent = new ArrayList<>();
+
 	public Shape() {
 	}
 
-	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
+	public Shape(Shape shape) {
+		this.deactivated = shape.deactivated;
+		this.message = shape.message;
+		this.severity = shape.severity;
+		this.id = shape.id;
+	}
+
+	public void populate(ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
-		this.parent = parent;
 
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
@@ -89,17 +96,50 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 			Set<Resource> resources = getTargetableShapes(connection);
 
-			return resources.stream()
+			List<Shape> collect = resources.stream()
 					.map(r -> new ShaclProperties(r, connection))
 					.map(p -> {
 						if (p.getType() == SHACL.NODE_SHAPE) {
-							return NodeShape.getInstance(null, p, connection, cache);
+							return NodeShape.getInstance(p, connection, cache);
 						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-							return PropertyShape.getInstance(null, p, connection, cache);
+							return PropertyShape.getInstance(p, connection, cache);
 						}
 						throw new IllegalStateException("Unknown shape type for " + p.getId());
 					})
 					.collect(Collectors.toList());
+
+			// split into shapes by target and constraint component to be able to run them in parallel
+			return collect.stream().flatMap(s -> {
+				List<Shape> temp = new ArrayList<>();
+				s.target.forEach(target -> {
+					s.constraintComponent.forEach(constraintComponent -> {
+
+						if (constraintComponent instanceof PropertyShape) {
+							((PropertyShape) constraintComponent).constraintComponent
+									.forEach(propertyConstraintComponent -> {
+										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
+												.shallowClone();
+										clonedConstraintComponent.constraintComponent.add(propertyConstraintComponent);
+
+										Shape shape = s.shallowClone();
+										shape.target.add(target);
+										shape.constraintComponent.add(clonedConstraintComponent);
+										temp.add(shape);
+									});
+
+						} else {
+							Shape shape = s.shallowClone();
+							shape.target.add(target);
+							shape.constraintComponent.add(constraintComponent);
+							temp.add(shape);
+
+						}
+
+					});
+				});
+				return temp.stream();
+			}).collect(Collectors.toList());
+
 		}
 
 		private static Set<Resource> getTargetableShapes(RepositoryConnection connection) {
@@ -130,6 +170,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 	}
 
+	protected abstract Shape shallowClone();
+
 	public void toModel(Model model) {
 		toModel(null, model, new HashSet<>());
 	}
@@ -158,90 +200,90 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		properties.getProperty()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(this, p, connection, cache))
+				.map(p -> PropertyShape.getInstance(p, connection, cache))
 				.forEach(constraintComponent::add);
 
 		properties.getNode()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(this, p, connection, cache))
+				.map(p -> NodeShape.getInstance(p, connection, cache))
 				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
-			constraintComponent.add(new MinCountConstraintComponent(this, properties.getMinCount()));
+			constraintComponent.add(new MinCountConstraintComponent(properties.getMinCount()));
 		}
 
 		if (properties.getMaxCount() != null) {
-			constraintComponent.add(new MaxCountConstraintComponent(this, properties.getMaxCount()));
+			constraintComponent.add(new MaxCountConstraintComponent(properties.getMaxCount()));
 		}
 
 		if (properties.getDatatype() != null) {
-			constraintComponent.add(new DatatypeConstraintComponent(this, properties.getDatatype()));
+			constraintComponent.add(new DatatypeConstraintComponent(properties.getDatatype()));
 		}
 
 		if (properties.getMinLength() != null) {
-			constraintComponent.add(new MinLengthConstraintComponent(this, properties.getMinLength()));
+			constraintComponent.add(new MinLengthConstraintComponent(properties.getMinLength()));
 		}
 
 		if (properties.getMaxLength() != null) {
-			constraintComponent.add(new MaxLengthConstraintComponent(this, properties.getMaxLength()));
+			constraintComponent.add(new MaxLengthConstraintComponent(properties.getMaxLength()));
 		}
 
 		if (properties.getMinInclusive() != null) {
-			constraintComponent.add(new MinInclusiveConstraintComponent(this, properties.getMinInclusive()));
+			constraintComponent.add(new MinInclusiveConstraintComponent(properties.getMinInclusive()));
 		}
 
 		if (properties.getMaxInclusive() != null) {
-			constraintComponent.add(new MaxInclusiveConstraintComponent(this, properties.getMaxInclusive()));
+			constraintComponent.add(new MaxInclusiveConstraintComponent(properties.getMaxInclusive()));
 		}
 
 		if (properties.getMinExclusive() != null) {
-			constraintComponent.add(new MinExclusiveConstraintComponent(this, properties.getMinExclusive()));
+			constraintComponent.add(new MinExclusiveConstraintComponent(properties.getMinExclusive()));
 		}
 
 		if (properties.getMaxExclusive() != null) {
-			constraintComponent.add(new MaxExclusiveConstraintComponent(this, properties.getMaxExclusive()));
+			constraintComponent.add(new MaxExclusiveConstraintComponent(properties.getMaxExclusive()));
 		}
 
 		if (properties.isUniqueLang()) {
-			constraintComponent.add(new UniqueLangConstraintComponent(this));
+			constraintComponent.add(new UniqueLangConstraintComponent());
 		}
 
 		if (properties.getPattern() != null) {
 			constraintComponent
-					.add(new PatternConstraintComponent(this, properties.getPattern(), properties.getFlags()));
+					.add(new PatternConstraintComponent(properties.getPattern(), properties.getFlags()));
 		}
 
 		if (properties.getLanguageIn() != null) {
-			constraintComponent.add(new LanguageInConstraintComponent(this, connection, properties.getLanguageIn()));
+			constraintComponent.add(new LanguageInConstraintComponent(connection, properties.getLanguageIn()));
 		}
 
 		if (properties.getIn() != null) {
-			constraintComponent.add(new InConstraintComponent(this, connection, properties.getIn()));
+			constraintComponent.add(new InConstraintComponent(connection, properties.getIn()));
 		}
 
 		if (properties.getNodeKind() != null) {
-			constraintComponent.add(new NodeKindConstraintComponent(this, properties.getNodeKind()));
+			constraintComponent.add(new NodeKindConstraintComponent(properties.getNodeKind()));
 		}
 
 		properties.getOr()
 				.stream()
-				.map(or -> new OrConstraintComponent(this, or, connection, cache))
+				.map(or -> new OrConstraintComponent(or, connection, cache))
 				.forEach(constraintComponent::add);
 
 		properties.getAnd()
 				.stream()
-				.map(and -> new AndConstraintComponent(this, and, connection, cache))
+				.map(and -> new AndConstraintComponent(and, connection, cache))
 				.forEach(constraintComponent::add);
 
 		properties.getNot()
 				.stream()
-				.map(or -> new NotConstraintComponent(this, or, connection, cache))
+				.map(or -> new NotConstraintComponent(or, connection, cache))
 				.forEach(constraintComponent::add);
 
 		properties.getClazz()
 				.stream()
-				.map(clazz -> new ClassConstraintComponent(this, clazz))
+				.map(clazz -> new ClassConstraintComponent(clazz))
 				.forEach(constraintComponent::add);
 
 		return constraintComponent;

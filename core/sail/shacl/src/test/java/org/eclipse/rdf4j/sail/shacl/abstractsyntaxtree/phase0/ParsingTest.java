@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.HashSet;
@@ -40,6 +42,25 @@ public class ParsingTest {
 		Rio.write(emptyModel, System.out, RDFFormat.TURTLE, writerConfig);
 
 		System.out.println();
+
+	}
+
+	@Test
+	public void testSplitting() throws IOException, NoSuchFieldException {
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclExactly.ttl");
+
+		List<Shape> shapes = shaclSail.refreshShapesPhase0();
+
+		assertEquals(8, shapes.size());
+
+		shapes.forEach(shape -> {
+			assertEquals(1, shape.target.size());
+			assertEquals(1, shape.constraintComponent.size());
+
+			if (shape.constraintComponent.get(0) instanceof PropertyShape) {
+				assertEquals(1, ((PropertyShape) shape.constraintComponent.get(0)).constraintComponent.size());
+			}
+		});
 
 	}
 }

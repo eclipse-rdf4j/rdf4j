@@ -10,7 +10,7 @@ public class ClassConstraintComponent implements ConstraintComponent {
 
 	Resource clazz;
 
-	public ClassConstraintComponent(ConstraintComponent parent, Resource clazz) {
+	public ClassConstraintComponent(Resource clazz) {
 		this.clazz = clazz;
 	}
 

@@ -12,7 +12,7 @@ public class PatternConstraintComponent implements ConstraintComponent {
 	String pattern;
 	String flags;
 
-	public PatternConstraintComponent(ConstraintComponent parent, String pattern, String flags) {
+	public PatternConstraintComponent(String pattern, String flags) {
 		this.pattern = pattern;
 		this.flags = flags;
 	}

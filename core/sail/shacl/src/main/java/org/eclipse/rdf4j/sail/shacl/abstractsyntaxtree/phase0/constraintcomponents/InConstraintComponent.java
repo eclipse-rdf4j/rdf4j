@@ -22,7 +22,7 @@ public class InConstraintComponent implements ConstraintComponent {
 	private final Set<Value> in;
 	private final Resource id;
 
-	public InConstraintComponent(ConstraintComponent parent, RepositoryConnection connection, Resource in) {
+	public InConstraintComponent(RepositoryConnection connection, Resource in) {
 		this.id = in;
 		this.in = new HashSet<>(toList(connection, in));
 	}

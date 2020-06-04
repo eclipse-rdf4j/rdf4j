@@ -12,7 +12,7 @@ public class MaxCountConstraintComponent implements ConstraintComponent {
 
 	long maxCount;
 
-	public MaxCountConstraintComponent(ConstraintComponent parent, long maxCount) {
+	public MaxCountConstraintComponent(long maxCount) {
 		this.maxCount = maxCount;
 	}
 

@@ -368,7 +368,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	@Experimental
-	@Deprecated
 	public List<Shape> refreshShapesPhase0() throws SailException {
 
 		SailRepository shapesRepoCache = new SailRepository(

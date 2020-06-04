@@ -17,8 +17,6 @@ import org.slf4j.LoggerFactory;
 public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
-	List<ConstraintComponent> constraintComponent;
-
 	List<String> name;
 	List<String> description;
 	Object defaultValue;
@@ -26,23 +24,33 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	Path path;
 
-	public static PropertyShape getInstance(ConstraintComponent parent, ShaclProperties properties,
-			RepositoryConnection connection,
-			Cache cache) {
+	public PropertyShape() {
+	}
+
+	public PropertyShape(PropertyShape propertyShape) {
+		super(propertyShape);
+		this.name = propertyShape.name;
+		this.description = propertyShape.description;
+		this.defaultValue = propertyShape.defaultValue;
+		this.group = propertyShape.group;
+		this.path = propertyShape.path;
+	}
+
+	public static PropertyShape getInstance(ShaclProperties properties, RepositoryConnection connection, Cache cache) {
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new PropertyShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(parent, properties, connection, cache);
+			shape.populate(properties, connection, cache);
 		}
 
 		return (PropertyShape) shape;
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
+	public void populate(ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
-		super.populate(parent, properties, connection, cache);
+		super.populate(properties, connection, cache);
 
 		this.path = Path.buildPath(connection, properties.getPath());
 
@@ -51,6 +59,11 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		}
 
 		constraintComponent = getConstraintComponents(properties, connection, cache);
+	}
+
+	@Override
+	protected Shape shallowClone() {
+		return new PropertyShape(this);
 	}
 
 	@Override

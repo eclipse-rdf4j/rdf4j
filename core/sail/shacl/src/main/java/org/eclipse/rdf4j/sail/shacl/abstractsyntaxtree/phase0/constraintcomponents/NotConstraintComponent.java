@@ -22,16 +22,16 @@ public class NotConstraintComponent implements ConstraintComponent {
 	Shape not;
 	Resource id;
 
-	public NotConstraintComponent(ConstraintComponent parent, Resource id, RepositoryConnection connection,
+	public NotConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		this.id = id;
 
 		ShaclProperties p = new ShaclProperties(id, connection);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			not = NodeShape.getInstance(this, p, connection, cache);
+			not = NodeShape.getInstance(p, connection, cache);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-			not = PropertyShape.getInstance(this, p, connection, cache);
+			not = PropertyShape.getInstance(p, connection, cache);
 		} else {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}

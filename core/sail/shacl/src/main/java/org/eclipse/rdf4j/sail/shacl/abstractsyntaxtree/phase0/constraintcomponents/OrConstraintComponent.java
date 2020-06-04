@@ -24,7 +24,7 @@ public class OrConstraintComponent implements ConstraintComponent {
 	List<Shape> or;
 	Resource id;
 
-	public OrConstraintComponent(ConstraintComponent parent, Resource id, RepositoryConnection connection,
+	public OrConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		this.id = id;
 		or = toList(connection, id)
@@ -32,9 +32,9 @@ public class OrConstraintComponent implements ConstraintComponent {
 				.map(v -> new ShaclProperties((Resource) v, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(this, p, connection, cache);
+						return NodeShape.getInstance(p, connection, cache);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(this, p, connection, cache);
+						return PropertyShape.getInstance(p, connection, cache);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})

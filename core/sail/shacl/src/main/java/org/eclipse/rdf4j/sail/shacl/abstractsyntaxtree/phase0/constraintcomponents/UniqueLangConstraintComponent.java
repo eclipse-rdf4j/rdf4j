@@ -9,7 +9,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public class UniqueLangConstraintComponent implements ConstraintComponent {
 
-	public UniqueLangConstraintComponent(ConstraintComponent parent) {
+	public UniqueLangConstraintComponent() {
 	}
 
 	@Override

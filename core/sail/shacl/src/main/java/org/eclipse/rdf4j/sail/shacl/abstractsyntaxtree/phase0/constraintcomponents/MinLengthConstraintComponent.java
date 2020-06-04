@@ -12,7 +12,7 @@ public class MinLengthConstraintComponent implements ConstraintComponent {
 
 	long minLength;
 
-	public MinLengthConstraintComponent(ConstraintComponent parent, long minLength) {
+	public MinLengthConstraintComponent(long minLength) {
 		this.minLength = minLength;
 	}
 

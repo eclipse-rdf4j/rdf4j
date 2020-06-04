@@ -22,7 +22,7 @@ public class LanguageInConstraintComponent implements ConstraintComponent {
 	private final Set<String> languageIn;
 	private final Resource id;
 
-	public LanguageInConstraintComponent(ConstraintComponent parent, RepositoryConnection connection,
+	public LanguageInConstraintComponent(RepositoryConnection connection,
 			Resource languageIn) {
 		this.id = languageIn;
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());

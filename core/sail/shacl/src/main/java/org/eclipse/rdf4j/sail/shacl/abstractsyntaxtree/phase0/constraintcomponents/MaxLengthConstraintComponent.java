@@ -12,7 +12,7 @@ public class MaxLengthConstraintComponent implements ConstraintComponent {
 
 	long maxLength;
 
-	public MaxLengthConstraintComponent(ConstraintComponent parent, long maxLength) {
+	public MaxLengthConstraintComponent(long maxLength) {
 		this.maxLength = maxLength;
 	}
 
