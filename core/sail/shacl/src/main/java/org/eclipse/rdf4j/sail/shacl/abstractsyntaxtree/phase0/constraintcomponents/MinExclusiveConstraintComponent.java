@@ -7,7 +7,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-public class MinExclusiveConstraintComponent implements ConstraintComponent {
+public class MinExclusiveConstraintComponent extends AbstractConstraintComponent {
 
 	Literal minExclusive;
 

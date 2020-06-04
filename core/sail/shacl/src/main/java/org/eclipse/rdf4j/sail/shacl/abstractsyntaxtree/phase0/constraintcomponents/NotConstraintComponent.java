@@ -17,14 +17,14 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 
-public class NotConstraintComponent implements ConstraintComponent {
-	Shape not;
-	Resource id;
+public class NotConstraintComponent extends AbstractConstraintComponent {
+	final Shape not;
 
 	public NotConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
-		this.id = id;
+		super(id);
 
 		ShaclProperties p = new ShaclProperties(id, connection);
 
@@ -40,7 +40,7 @@ public class NotConstraintComponent implements ConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.NOT, id);
+		model.add(subject, SHACL.NOT, getId());
 
 		not.toModel(null, model, exported);
 
@@ -62,6 +62,12 @@ public class NotConstraintComponent implements ConstraintComponent {
 
 		return ret;
 
+	}
+
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		super.setTargetChain(targetChain);
+		not.setTargetChain(targetChain);
 	}
 
 }

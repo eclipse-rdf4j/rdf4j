@@ -1,37 +1,32 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.TargetChainInterface;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 
-public class InConstraintComponent extends AbstractConstraintComponent {
+public abstract class AbstractConstraintComponent implements ConstraintComponent {
 
-	private final Set<Value> in;
+	private Resource id;
+	TargetChain targetChain;
 
-	public InConstraintComponent(RepositoryConnection connection, Resource in) {
-		super(in);
-		this.in = new HashSet<>(toList(connection, in));
+	public AbstractConstraintComponent(Resource id) {
+		this.id = id;
 	}
 
-	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.IN, getId());
-		TreeSet<Value> values = new TreeSet<>(new ValueComparator());
-		values.addAll(in);
-		RDFCollections.asRDF(values, getId(), model);
+	public AbstractConstraintComponent() {
+
+	}
+
+	public Resource getId() {
+		return id;
 	}
 
 	static List<Value> toList(RepositoryConnection connection, Resource orList) {
@@ -52,4 +47,13 @@ public class InConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
+	@Override
+	public TargetChain getTargetChain() {
+		return targetChain;
+	}
+
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		this.targetChain = targetChain;
+	}
 }

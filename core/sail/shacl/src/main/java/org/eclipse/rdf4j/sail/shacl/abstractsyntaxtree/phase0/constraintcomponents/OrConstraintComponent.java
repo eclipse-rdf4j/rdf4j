@@ -19,14 +19,14 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 
-public class OrConstraintComponent implements ConstraintComponent {
+public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
-	Resource id;
 
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
-		this.id = id;
+		super(id);
 		or = toList(connection, id)
 				.stream()
 				.map(v -> new ShaclProperties((Resource) v, connection))
@@ -44,13 +44,13 @@ public class OrConstraintComponent implements ConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.OR, id);
-		RDFCollections.asRDF(or.stream().map(Shape::getId).collect(Collectors.toList()), id, model);
+		model.add(subject, SHACL.OR, getId());
+		RDFCollections.asRDF(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
-		if (exported.contains(id)) {
+		if (exported.contains(getId())) {
 			return;
 		}
-		exported.add(id);
+		exported.add(getId());
 		or.forEach(o -> o.toModel(null, model, exported));
 
 	}
@@ -71,6 +71,12 @@ public class OrConstraintComponent implements ConstraintComponent {
 
 		return ret;
 
+	}
+
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		super.setTargetChain(targetChain);
+		or.forEach(a -> a.setTargetChain(targetChain));
 	}
 
 }

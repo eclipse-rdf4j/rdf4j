@@ -6,7 +6,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-public class DatatypeConstraintComponent implements ConstraintComponent {
+public class DatatypeConstraintComponent extends AbstractConstraintComponent {
 
 	Resource datatype;
 

@@ -7,7 +7,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
-public class PatternConstraintComponent implements ConstraintComponent {
+public class PatternConstraintComponent extends AbstractConstraintComponent {
 
 	String pattern;
 	String flags;

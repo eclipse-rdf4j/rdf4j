@@ -1,13 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
-import static org.junit.Assert.assertEquals;
-
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.util.HashSet;
-import java.util.List;
-
-import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -20,10 +12,16 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.junit.Test;
 
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+
 public class ParsingTest {
 
 	@Test
-	public void initialTest() throws IOException, NoSuchFieldException {
+	public void initialTest() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/datatype/not/shacl.ttl");
 
 		List<Shape> shapes = shaclSail.refreshShapesPhase0();
@@ -46,7 +44,7 @@ public class ParsingTest {
 	}
 
 	@Test
-	public void testSplitting() throws IOException, NoSuchFieldException {
+	public void testSplitting() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclExactly.ttl");
 
 		List<Shape> shapes = shaclSail.refreshShapesPhase0();

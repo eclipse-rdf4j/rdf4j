@@ -36,13 +36,15 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponen
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.PatternConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.Target;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
 
-abstract public class Shape implements ConstraintComponent, Identifiable, Exportable {
+abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 	Resource id;
+	TargetChain targetChain;
 
 	List<Target> target = new ArrayList<>();
 
@@ -60,6 +62,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		this.message = shape.message;
 		this.severity = shape.severity;
 		this.id = shape.id;
+		this.targetChain = shape.targetChain;
 	}
 
 	public void populate(ShaclProperties properties, RepositoryConnection connection,
@@ -86,88 +89,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	@Override
 	public Resource getId() {
 		return id;
-	}
-
-	public static class Factory {
-
-		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail sail) {
-
-			Cache cache = new Cache();
-
-			Set<Resource> resources = getTargetableShapes(connection);
-
-			List<Shape> collect = resources.stream()
-					.map(r -> new ShaclProperties(r, connection))
-					.map(p -> {
-						if (p.getType() == SHACL.NODE_SHAPE) {
-							return NodeShape.getInstance(p, connection, cache);
-						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-							return PropertyShape.getInstance(p, connection, cache);
-						}
-						throw new IllegalStateException("Unknown shape type for " + p.getId());
-					})
-					.collect(Collectors.toList());
-
-			// split into shapes by target and constraint component to be able to run them in parallel
-			return collect.stream().flatMap(s -> {
-				List<Shape> temp = new ArrayList<>();
-				s.target.forEach(target -> {
-					s.constraintComponent.forEach(constraintComponent -> {
-
-						if (constraintComponent instanceof PropertyShape) {
-							((PropertyShape) constraintComponent).constraintComponent
-									.forEach(propertyConstraintComponent -> {
-										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
-												.shallowClone();
-										clonedConstraintComponent.constraintComponent.add(propertyConstraintComponent);
-
-										Shape shape = s.shallowClone();
-										shape.target.add(target);
-										shape.constraintComponent.add(clonedConstraintComponent);
-										temp.add(shape);
-									});
-
-						} else {
-							Shape shape = s.shallowClone();
-							shape.target.add(target);
-							shape.constraintComponent.add(constraintComponent);
-							temp.add(shape);
-
-						}
-
-					});
-				});
-				return temp.stream();
-			}).collect(Collectors.toList());
-
-		}
-
-		private static Set<Resource> getTargetableShapes(RepositoryConnection connection) {
-			Set<Resource> collect;
-			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
-					.stream()) {
-				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
-						.stream()) {
-					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
-							.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
-							.stream()) {
-						try (Stream<Statement> TARGET_OBJECTS_OF = connection
-								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
-								.stream()) {
-
-							collect = Stream
-									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
-									.reduce(Stream::concat)
-									.get()
-									.map(Statement::getSubject)
-									.collect(Collectors.toSet());
-						}
-
-					}
-				}
-			}
-			return collect;
-		}
 	}
 
 	protected abstract Shape shallowClone();
@@ -287,5 +208,117 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				.forEach(constraintComponent::add);
 
 		return constraintComponent;
+	}
+
+	@Override
+	public TargetChain getTargetChain() {
+		return targetChain;
+	}
+
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		this.targetChain = targetChain;
+		constraintComponent.forEach(c -> c.setTargetChain(targetChain));
+	}
+
+	public static class Factory {
+
+		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail sail) {
+
+			List<Shape> parsed = parse(connection);
+			List<Shape> split = split(parsed);
+			calculateTargetChain(split);
+
+			return split;
+		}
+
+		private static void calculateTargetChain(List<Shape> parsed) {
+			for (Shape shape : parsed) {
+				assert (shape.target.size() == 1);
+
+				shape.setTargetChain(new TargetChain().add(shape.target.get(0)));
+
+			}
+
+		}
+
+		private static List<Shape> split(List<Shape> collect) {
+			// split into shapes by target and constraint component to be able to run them in parallel
+			return collect.stream().flatMap(s -> {
+				List<Shape> temp = new ArrayList<>();
+				s.target.forEach(target -> {
+					s.constraintComponent.forEach(constraintComponent -> {
+
+						if (constraintComponent instanceof PropertyShape) {
+							((PropertyShape) constraintComponent).constraintComponent
+									.forEach(propertyConstraintComponent -> {
+										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
+												.shallowClone();
+										clonedConstraintComponent.constraintComponent.add(propertyConstraintComponent);
+
+										Shape shape = s.shallowClone();
+										shape.target.add(target);
+										shape.constraintComponent.add(clonedConstraintComponent);
+										temp.add(shape);
+									});
+
+						} else {
+							Shape shape = s.shallowClone();
+							shape.target.add(target);
+							shape.constraintComponent.add(constraintComponent);
+							temp.add(shape);
+
+						}
+
+					});
+				});
+				return temp.stream();
+			}).collect(Collectors.toList());
+		}
+
+		private static List<Shape> parse(RepositoryConnection connection) {
+			Cache cache = new Cache();
+
+			Set<Resource> resources = getTargetableShapes(connection);
+
+			return resources.stream()
+					.map(r -> new ShaclProperties(r, connection))
+					.map(p -> {
+						if (p.getType() == SHACL.NODE_SHAPE) {
+							return NodeShape.getInstance(p, connection, cache);
+						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+							return PropertyShape.getInstance(p, connection, cache);
+						}
+						throw new IllegalStateException("Unknown shape type for " + p.getId());
+					})
+					.collect(Collectors.toList());
+		}
+
+		private static Set<Resource> getTargetableShapes(RepositoryConnection connection) {
+			Set<Resource> collect;
+			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
+					.stream()) {
+				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
+						.stream()) {
+					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
+							.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
+							.stream()) {
+						try (Stream<Statement> TARGET_OBJECTS_OF = connection
+								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
+								.stream()) {
+
+							collect = Stream
+									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
+									.reduce(Stream::concat)
+									.get()
+									.map(Statement::getSubject)
+									.collect(Collectors.toSet());
+						}
+
+					}
+				}
+			}
+			return collect;
+		}
 	}
 }

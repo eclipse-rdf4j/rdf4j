@@ -8,7 +8,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
-public class MaxLengthConstraintComponent implements ConstraintComponent {
+public class MaxLengthConstraintComponent extends AbstractConstraintComponent {
 
 	long maxLength;
 

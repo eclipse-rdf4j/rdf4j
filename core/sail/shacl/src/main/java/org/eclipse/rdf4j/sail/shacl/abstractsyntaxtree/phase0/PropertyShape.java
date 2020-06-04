@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,5 +87,10 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 		constraintComponent.forEach(c -> c.toModel(getId(), model, exported));
 
+	}
+
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		super.setTargetChain(targetChain.add(path));
 	}
 }

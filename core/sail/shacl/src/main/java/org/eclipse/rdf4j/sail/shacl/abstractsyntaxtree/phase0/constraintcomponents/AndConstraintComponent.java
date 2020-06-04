@@ -19,14 +19,14 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 
-public class AndConstraintComponent implements ConstraintComponent {
+public class AndConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> and;
-	Resource id;
 
 	public AndConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
-		this.id = id;
+		super(id);
 		and = toList(connection, id)
 				.stream()
 				.map(v -> new ShaclProperties((Resource) v, connection))
@@ -44,13 +44,13 @@ public class AndConstraintComponent implements ConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.AND, id);
-		RDFCollections.asRDF(and.stream().map(Shape::getId).collect(Collectors.toList()), id, model);
+		model.add(subject, SHACL.AND, getId());
+		RDFCollections.asRDF(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
-		if (exported.contains(id)) {
+		if (exported.contains(getId())) {
 			return;
 		}
-		exported.add(id);
+		exported.add(getId());
 		and.forEach(o -> o.toModel(null, model, exported));
 
 	}
@@ -73,4 +73,9 @@ public class AndConstraintComponent implements ConstraintComponent {
 
 	}
 
+	@Override
+	public void setTargetChain(TargetChain targetChain) {
+		super.setTargetChain(targetChain);
+		and.forEach(a -> a.setTargetChain(targetChain));
+	}
 }

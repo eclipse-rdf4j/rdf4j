@@ -17,23 +17,22 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
-public class LanguageInConstraintComponent implements ConstraintComponent {
+public class LanguageInConstraintComponent extends AbstractConstraintComponent {
 
 	private final Set<String> languageIn;
-	private final Resource id;
 
 	public LanguageInConstraintComponent(RepositoryConnection connection,
 			Resource languageIn) {
-		this.id = languageIn;
+		super(languageIn);
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.LANGUAGE_IN, id);
+		model.add(subject, SHACL.LANGUAGE_IN, getId());
 		RDFCollections.asRDF(new TreeSet<>(languageIn).stream()
 				.map(l -> SimpleValueFactory.getInstance().createLiteral(l))
-				.collect(Collectors.toList()), id, model);
+				.collect(Collectors.toList()), getId(), model);
 	}
 
 	static List<Value> toList(RepositoryConnection connection, Resource orList) {

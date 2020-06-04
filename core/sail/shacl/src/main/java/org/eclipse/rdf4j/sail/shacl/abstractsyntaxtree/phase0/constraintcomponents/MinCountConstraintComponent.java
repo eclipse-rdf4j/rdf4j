@@ -8,7 +8,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 
-public class MinCountConstraintComponent implements ConstraintComponent {
+public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	long minCount;
 
