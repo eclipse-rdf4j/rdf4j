@@ -67,7 +67,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain);
-		not.setTargetChain(targetChain);
+		not.setTargetChain(targetChain.setOptimizable(false));
 	}
 
 }

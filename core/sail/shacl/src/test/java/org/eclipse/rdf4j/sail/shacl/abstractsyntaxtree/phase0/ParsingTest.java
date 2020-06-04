@@ -1,5 +1,11 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import static org.junit.Assert.assertEquals;
+
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -11,12 +17,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
 
 public class ParsingTest {
 

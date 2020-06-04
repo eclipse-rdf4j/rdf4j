@@ -76,7 +76,9 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain);
-		or.forEach(a -> a.setTargetChain(targetChain));
+		for (Shape shape : or) {
+			shape.setTargetChain(targetChain.setOptimizable(false));
+		}
 	}
 
 }

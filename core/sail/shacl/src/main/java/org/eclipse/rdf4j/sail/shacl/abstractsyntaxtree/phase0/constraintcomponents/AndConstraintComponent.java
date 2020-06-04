@@ -76,6 +76,8 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain);
-		and.forEach(a -> a.setTargetChain(targetChain));
+		for (Shape shape : and) {
+			shape.setTargetChain(targetChain.setOptimizable(false));
+		}
 	}
 }
