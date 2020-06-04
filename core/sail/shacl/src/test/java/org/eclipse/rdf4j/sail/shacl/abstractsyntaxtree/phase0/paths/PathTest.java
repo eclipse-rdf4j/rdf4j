@@ -60,6 +60,15 @@ public class PathTest {
 	}
 
 	@Test
+	public void nestedSequencePath() throws IOException {
+
+		String pathString = "ex:1 sh:path (ex:hasChild (ex:hasChild (((ex:hasChild ex:hasChild) (ex:hasChild ex:hasChild)) ex:hasChild))) .";
+
+		testPath(pathString);
+
+	}
+
+	@Test
 	public void zeroOrMorePath() throws IOException {
 
 		String pathString = "ex:1 sh:path [sh:zeroOrMorePath ex:hasChild].";
