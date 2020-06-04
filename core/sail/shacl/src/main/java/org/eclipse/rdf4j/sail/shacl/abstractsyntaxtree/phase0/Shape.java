@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.AndConstraintComponent;
@@ -54,7 +54,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	public Shape() {
 	}
 
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
@@ -83,7 +83,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	public static class Factory {
 
-		public static List<Shape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
+		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail sail) {
 
 			Cache cache = new Cache();
 
@@ -102,7 +102,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					.collect(Collectors.toList());
 		}
 
-		private static Set<Resource> getTargetableShapes(SailRepositoryConnection connection) {
+		private static Set<Resource> getTargetableShapes(RepositoryConnection connection) {
 			Set<Resource> collect;
 			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
 					.stream()) {
@@ -150,7 +150,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		model.addAll(modelBuilder.build());
 	}
 
-	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, SailRepositoryConnection connection,
+	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
 
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();

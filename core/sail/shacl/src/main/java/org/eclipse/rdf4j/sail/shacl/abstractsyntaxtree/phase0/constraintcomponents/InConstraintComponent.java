@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 public class InConstraintComponent implements ConstraintComponent {
 
 	private final Set<Value> in;
 	private final Resource id;
 
-	public InConstraintComponent(ConstraintComponent parent, SailRepositoryConnection connection, Resource in) {
+	public InConstraintComponent(ConstraintComponent parent, RepositoryConnection connection, Resource in) {
 		this.id = in;
 		this.in = new HashSet<>(toList(connection, in));
 	}
@@ -35,7 +35,7 @@ public class InConstraintComponent implements ConstraintComponent {
 		RDFCollections.asRDF(values, id, model);
 	}
 
-	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
+	static List<Value> toList(RepositoryConnection connection, Resource orList) {
 		List<Value> ret = new ArrayList<>();
 		while (!orList.equals(RDF.NIL)) {
 			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {

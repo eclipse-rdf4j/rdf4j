@@ -8,7 +8,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 
@@ -20,7 +20,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	public static NodeShape getInstance(ConstraintComponent parent, ShaclProperties properties,
-			SailRepositoryConnection connection, Cache cache) {
+			RepositoryConnection connection, Cache cache) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
@@ -33,7 +33,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
 		super.populate(parent, properties, connection, cache);
 

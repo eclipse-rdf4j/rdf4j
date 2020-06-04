@@ -3,16 +3,14 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.SimplePath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +27,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	Path path;
 
 	public static PropertyShape getInstance(ConstraintComponent parent, ShaclProperties properties,
-			SailRepositoryConnection connection,
+			RepositoryConnection connection,
 			Cache cache) {
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
@@ -42,7 +40,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public void populate(ConstraintComponent parent, ShaclProperties properties, SailRepositoryConnection connection,
+	public void populate(ConstraintComponent parent, ShaclProperties properties, RepositoryConnection connection,
 			Cache cache) {
 		super.populate(parent, properties, connection, cache);
 

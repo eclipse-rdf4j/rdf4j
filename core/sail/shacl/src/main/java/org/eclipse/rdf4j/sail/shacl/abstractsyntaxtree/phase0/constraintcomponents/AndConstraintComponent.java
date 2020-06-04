@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
@@ -24,7 +24,7 @@ public class AndConstraintComponent implements ConstraintComponent {
 	List<Shape> and;
 	Resource id;
 
-	public AndConstraintComponent(ConstraintComponent parent, Resource id, SailRepositoryConnection connection,
+	public AndConstraintComponent(ConstraintComponent parent, Resource id, RepositoryConnection connection,
 			Cache cache) {
 		this.id = id;
 		and = toList(connection, id)
@@ -55,7 +55,7 @@ public class AndConstraintComponent implements ConstraintComponent {
 
 	}
 
-	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
+	static List<Value> toList(RepositoryConnection connection, Resource orList) {
 		List<Value> ret = new ArrayList<>();
 		while (!orList.equals(RDF.NIL)) {
 			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {

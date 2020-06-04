@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,7 +71,7 @@ public class ShaclProperties {
 	public ShaclProperties() {
 	}
 
-	public ShaclProperties(Resource id, SailRepositoryConnection connection) {
+	public ShaclProperties(Resource id, RepositoryConnection connection) {
 		this.id = id;
 		try (Stream<Statement> stream = connection.getStatements(id, null, null, true).stream()) {
 			stream.forEach(statement -> {

@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 
 public class LanguageInConstraintComponent implements ConstraintComponent {
 
 	private final Set<String> languageIn;
 	private final Resource id;
 
-	public LanguageInConstraintComponent(ConstraintComponent parent, SailRepositoryConnection connection,
+	public LanguageInConstraintComponent(ConstraintComponent parent, RepositoryConnection connection,
 			Resource languageIn) {
 		this.id = languageIn;
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
@@ -36,7 +36,7 @@ public class LanguageInConstraintComponent implements ConstraintComponent {
 				.collect(Collectors.toList()), id, model);
 	}
 
-	static List<Value> toList(SailRepositoryConnection connection, Resource orList) {
+	static List<Value> toList(RepositoryConnection connection, Resource orList) {
 		List<Value> ret = new ArrayList<>();
 		while (!orList.equals(RDF.NIL)) {
 			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
