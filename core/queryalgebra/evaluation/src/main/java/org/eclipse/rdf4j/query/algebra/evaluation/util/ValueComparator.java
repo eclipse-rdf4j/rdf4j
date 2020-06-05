@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
  */
 public class ValueComparator implements Comparator<Value> {
 
+	private boolean strict = true;
+
 	@Override
 	public int compare(Value o1, Value o2) {
 		// check equality
@@ -87,6 +89,14 @@ public class ValueComparator implements Comparator<Value> {
 		return compareTriples((Triple) o1, (Triple) o2);
 	}
 
+	public void setStrict(boolean flag) {
+		this.strict = flag;
+	}
+
+	public boolean getStrict() {
+		return this.strict;
+	}
+
 	private int compareBNodes(BNode leftBNode, BNode rightBNode) {
 		return leftBNode.getID().compareTo(rightBNode.getID());
 	}
@@ -99,14 +109,15 @@ public class ValueComparator implements Comparator<Value> {
 		// Additional constraint for ORDER BY: "A plain literal is lower
 		// than an RDF literal with type xsd:string of the same lexical
 		// form."
+
 		if (!(QueryEvaluationUtil.isPlainLiteral(leftLit) || QueryEvaluationUtil.isPlainLiteral(rightLit))) {
 			try {
-				boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT);
+				boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
 
 				if (isSmaller) {
 					return -1;
 				} else {
-					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ);
+					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
 					if (isEquivalent) {
 						return 0;
 					}

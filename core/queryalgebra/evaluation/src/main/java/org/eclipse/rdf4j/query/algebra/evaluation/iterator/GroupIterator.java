@@ -478,14 +478,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
-			boolean strict = true;
 			if (strategy instanceof ExtendedEvaluationStrategy) {
-				strict = false;
+				comparator.setStrict(false);
 			}
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
-				} else if (QueryEvaluationUtil.compare(v, min, Compare.CompareOp.LE, strict)) {
+				} else if (comparator.compare(v, min) < 0) {
 					min = v;
 				}
 			}
@@ -512,15 +511,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
-			boolean strict = true;
 			if (strategy instanceof ExtendedEvaluationStrategy) {
-				strict = false;
+				comparator.setStrict(false);
 			}
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
 					max = v;
-				} else if (QueryEvaluationUtil.compare(v, max, Compare.CompareOp.GE, strict)) {
+				} else if (comparator.compare(v, max) > 0) {
 					max = v;
 				}
 			}
