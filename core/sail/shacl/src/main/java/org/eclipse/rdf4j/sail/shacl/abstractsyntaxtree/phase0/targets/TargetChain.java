@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class TargetChain {
@@ -36,4 +37,11 @@ public class TargetChain {
 		return targetChain;
 	}
 
+	public List<Object> getChain() {
+		return Collections.unmodifiableList(chain);
+	}
+
+	public boolean isOptimizable() {
+		return optimizable;
+	}
 }

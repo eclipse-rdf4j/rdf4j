@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -81,4 +82,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		}
 	}
 
+	public List<Shape> getOr() {
+		return Collections.unmodifiableList(or);
+	}
 }
