@@ -7,28 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml.util;
 
-import java.io.Closeable;
-import java.io.Flushable;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.Writer;
-import java.util.Stack;
-
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
+
+import java.io.*;
+import java.util.Stack;
 
 /**
  * An extension of RDFXMLWriter that outputs a more concise form of RDF/XML. The resulting output is semantically
@@ -374,7 +364,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	 * Used both in writeStartSubject and writeEmptySubject.
 	 */
 	private void writeNodeStartOfStartTag(Node node) throws IOException, RDFHandlerException {
-		Boolean compactXML = getWriterConfig().get(XMLWriterSettings.COMPACT_XML);
+		Boolean inlineBlankNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
 		Value value = node.getValue();
 
 		if (node.hasType()) {
@@ -390,7 +380,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
 		} else {
 			BNode bNode = (BNode) value;
-			if (!compactXML)
+			if (!inlineBlankNodes)
 				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
 		}
 	}
