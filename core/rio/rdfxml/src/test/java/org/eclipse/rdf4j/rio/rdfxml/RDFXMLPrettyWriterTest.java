@@ -130,7 +130,8 @@ public class RDFXMLPrettyWriterTest extends RDFWriterTest {
 				"<rdf:Description rdf:about=\"http://example.org/subject\">\n" +
 				"\t<relation xmlns=\"http://example.org/\">\n" +
 				"\t\t<rdf:Description>\n" +
-				"\t\t\t<rdfs:label rdf:datatype=\"http://www.w3.org/2001/XMLSchema#string\">the blank node</rdfs:label>\n" +
+				"\t\t\t<rdfs:label rdf:datatype=\"http://www.w3.org/2001/XMLSchema#string\">the blank node</rdfs:label>\n"
+				+
 				"\t\t</rdf:Description>\n" +
 				"\t</relation>\n" +
 				"</rdf:Description>\n" +
