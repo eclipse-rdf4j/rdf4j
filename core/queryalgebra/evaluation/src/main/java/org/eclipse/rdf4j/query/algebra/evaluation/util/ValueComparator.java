@@ -93,7 +93,7 @@ public class ValueComparator implements Comparator<Value> {
 		this.strict = flag;
 	}
 
-	public boolean getStrict() {
+	public boolean isStrict() {
 		return this.strict;
 	}
 

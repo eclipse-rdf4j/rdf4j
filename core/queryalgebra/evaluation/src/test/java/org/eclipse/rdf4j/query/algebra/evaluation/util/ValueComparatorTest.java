@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.junit.Test;
@@ -151,5 +152,14 @@ public class ValueComparatorTest {
 		List<Literal> valueList = Arrays.asList(year1234, float2000, int1000);
 		Collections.sort(valueList, cmp);
 		assertTrue(valueList.indexOf(int1000) < valueList.indexOf(float2000));
+	}
+
+	@Test
+	public void testDateTypeComparisons() throws Exception {
+		cmp.setStrict(false);
+		assertTrue(cmp.isStrict() == false);
+		Literal date1 = vf.createLiteral("2019-09-02", XMLSchema.DATE);
+		Literal date2 = vf.createLiteral("2019-10-02", XMLSchema.DATE);
+		assertTrue(cmp.compare(date1, date2) < 0);
 	}
 }
