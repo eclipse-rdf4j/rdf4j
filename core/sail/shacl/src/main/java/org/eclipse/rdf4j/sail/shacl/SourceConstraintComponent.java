@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public enum SourceConstraintComponent {
@@ -28,6 +29,7 @@ public enum SourceConstraintComponent {
 	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT),
 	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT),
 	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT),
+	ValueInConstraintComponent(DASH.ValueInConstraintComponent),
 	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT),
 	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT),
 	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT);

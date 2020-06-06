@@ -404,7 +404,7 @@ abstract public class AbstractShaclTest {
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
-					"utf-8");
+					StandardCharsets.UTF_8);
 
 			s = removeLeadingPrefixStatements(s);
 

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -43,8 +44,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 
-		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
-		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
+		parsedQuery = parseQuery(query);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;

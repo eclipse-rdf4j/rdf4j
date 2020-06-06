@@ -14,11 +14,7 @@ ex:PersonShape
         		a sh:Shape ;
         		sh:property [
         			sh:path rdf:type ;
-        			sh:or (
-        			        [ sh:hasValue ex:Person ]
-        			        [ sh:hasValue ex:SecondTarget ]
-        			)
-        			 ;
+        			dash:valueIn (ex:Person ex:SecondTarget) ;
         		]
         	] ;
 

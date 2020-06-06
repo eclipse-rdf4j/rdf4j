@@ -23,15 +23,16 @@ public class ShaclProperties {
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
 	private final List<Resource> clazz = new ArrayList<>(0);
-	private List<Resource> or = new ArrayList<>(0);
-	private List<Resource> and = new ArrayList<>(0);
-	private List<Resource> not = new ArrayList<>(0);
+	private final List<Resource> or = new ArrayList<>(0);
+	private final List<Resource> and = new ArrayList<>(0);
+	private final List<Resource> not = new ArrayList<>(0);
 	private Long minCount;
 	private Long maxCount;
 
 	private Resource datatype;
 	private Resource in;
 	private Value hasValue;
+	private Resource valueIn;
 
 	private Long minLength;
 	private Long maxLength;
@@ -46,15 +47,15 @@ public class ShaclProperties {
 	private Literal minInclusive;
 	private Literal maxInclusive;
 
-	private List<String> pattern = new ArrayList<>();
+	private final List<String> pattern = new ArrayList<>();
 	private String flags = "";
 
-	private Set<Resource> targetClass = new HashSet<>();
-	private TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
-	private Set<IRI> targetSubjectsOf = new HashSet<>();
-	private Set<IRI> targetObjectsOf = new HashSet<>();
+	private final Set<Resource> targetClass = new HashSet<>();
+	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
+	private final Set<IRI> targetSubjectsOf = new HashSet<>();
+	private final Set<IRI> targetObjectsOf = new HashSet<>();
 
-	private List<Resource> target = new ArrayList<>();
+	private final List<Resource> target = new ArrayList<>();
 	private Resource filterShape;
 
 	private boolean deactivated = false;
@@ -196,6 +197,12 @@ public class ShaclProperties {
 					}
 					hasValue = object;
 					break;
+				case "http://datashapes.org/dash#valueIn":
+					if (valueIn != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					valueIn = (Resource) object;
+					break;
 				case "http://www.w3.org/ns/shacl#filterShape":
 					if (filterShape != null) {
 						throw new IllegalStateException(predicate + " already populated");
@@ -325,5 +332,9 @@ public class ShaclProperties {
 
 	public Resource getFilterShape() {
 		return filterShape;
+	}
+
+	public Resource getValueIn() {
+		return valueIn;
 	}
 }

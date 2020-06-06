@@ -301,8 +301,8 @@ public class OrPropertyShape extends PathPropertyShape {
 				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
 				.filter(Optional::isPresent)
 				.map(Optional::get)
-				.reduce((a, b) -> "\n{\n" + a + "\n} UNION {\n" + b + "\n}")
-				.orElse("");
+				.collect(Collectors.joining("\n} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
+						"\n}"));
 
 	}
 
