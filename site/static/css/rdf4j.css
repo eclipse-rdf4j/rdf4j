@@ -35,18 +35,11 @@ td,th {
   border-bottom: 3px solid white;
 }
 
-div.doc-section {
-  float: left;
-  width: 400px;
-  margin-left: 10px;
-}
 
-@media screen and (max-width: 600px) {
-  div.doc-section {
-    float: none;
-    width: 100%;
-    margin-left: 0px;
-  }
+div.doc-section {
+  float: none;
+  width: 100%;
+  margin-left: 0px;
 }
 
 h4.doc-section-header {
