@@ -86,6 +86,12 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 						Tuple rightPeek = right.peekLast();
 
+						assert leftPeek != null;
+						assert rightPeek != null;
+
+						assert leftPeek.getLine() != null;
+						assert rightPeek.getLine() != null;
+
 						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
 								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 							// we have a join !

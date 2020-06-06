@@ -46,13 +46,13 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
-@Measurement(iterations = 10)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class TargetBenchmarkInitialData {
+public class ComplexTargetBenchmark {
 	{
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
@@ -60,9 +60,7 @@ public class TargetBenchmarkInitialData {
 	@Param({ "1", "1000", "100000" })
 	public int existingTargets = 10;
 
-	@Param({ "shaclDatatypePredicateObjectTarget.ttl", "shaclDatatypeSparqlTarget.ttl",
-			"shaclDatatypeTargetFilter.ttl" })
-	public String shape;
+	public String shape = "shaclDatatypeTargetFilterWithUnion.ttl";
 
 	public int NUMBER_OF_TRANSACTIONS = 10;
 
@@ -73,7 +71,7 @@ public class TargetBenchmarkInitialData {
 	SailRepository repository;
 
 	@Setup(Level.Trial)
-	public void trialSetup() {
+	public void trialSetup() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -87,8 +85,12 @@ public class TargetBenchmarkInitialData {
 			for (int i = 0; i < BenchmarkConfigs.STATEMENTS_PER_TRANSACTION; i++) {
 				IRI iri = vf.createIRI("http://example.com/transaction_" + i + "_" + j);
 				statements.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
-				statements.add(vf.createStatement(iri, FOAF.AGE,
-						vf.createLiteral(i)));
+				statements.add(vf.createStatement(iri, FOAF.AGE, vf.createLiteral(i)));
+
+				IRI iri2 = vf.createIRI("http://example.com/transaction_2" + i + "_" + j);
+				statements.add(vf.createStatement(iri2, RDF.TYPE, RDFS.CLASS));
+				statements.add(vf.createStatement(iri2, FOAF.AGE, vf.createLiteral(i)));
+
 			}
 		}
 
@@ -97,6 +99,9 @@ public class TargetBenchmarkInitialData {
 			initialStatements.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
 			initialStatements.add(vf.createStatement(iri, FOAF.AGE, vf.createLiteral(j)));
 
+			IRI iri2 = vf.createIRI("http://example.com/base_2" + j);
+			initialStatements.add(vf.createStatement(iri2, RDF.TYPE, RDFS.CLASS));
+			initialStatements.add(vf.createStatement(iri2, FOAF.AGE, vf.createLiteral(j)));
 		}
 
 		System.gc();
@@ -104,7 +109,7 @@ public class TargetBenchmarkInitialData {
 	}
 
 	@Setup(Level.Invocation)
-	public void invocationSetup() throws IOException {
+	public void invocationSetup() throws IOException, InterruptedException {
 
 		repository = new SailRepository(Utils.getInitializedShaclSail(shape));
 
@@ -122,15 +127,10 @@ public class TargetBenchmarkInitialData {
 		((ShaclSail) repository.getSail()).enableValidation();
 
 		System.gc();
-
 	}
 
 	@Benchmark
 	public void benchmark() throws Exception {
-		runBenchmark(repository);
-	}
-
-	private void runBenchmark(SailRepository repository) {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : transactions) {

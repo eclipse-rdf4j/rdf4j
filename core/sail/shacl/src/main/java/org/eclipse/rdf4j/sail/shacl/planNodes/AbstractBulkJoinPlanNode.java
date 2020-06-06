@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -35,6 +36,8 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	ParsedQuery parseQuery(String query) {
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
+		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
+		// semantics of SPARQL but where we don't actually want a new scope.
 		query = query.replace("#VALUES_INJECTION_POINT#", "\nVALUES (?a) {}\n");
 		String completeQuery = "select * where { \nVALUES (?a) {}\n" + query + "\n}\nORDER BY ?a";
 		return queryParserFactory.getParser().parseQuery(completeQuery, null);
@@ -54,6 +57,9 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery,
 			String[] variables) {
+
+//		Explanation explain = connection.explain(Explanation.Level.Timed, parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true, 10000);
+//		System.out.println(explain);
 
 		try (Stream<? extends BindingSet> stream = connection
 				.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)

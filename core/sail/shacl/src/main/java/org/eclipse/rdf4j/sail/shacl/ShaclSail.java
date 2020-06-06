@@ -662,6 +662,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Enabled the SHACL validation on commit()
 	 */
 	public void enableValidation() {
+		forceRefreshShapes();
 		this.validationEnabled = true;
 	}
 

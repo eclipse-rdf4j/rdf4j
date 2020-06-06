@@ -206,7 +206,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	 * Eg. If the shape validates that all foaf:Person should have one foaf:name, then the statement pattern that would
 	 * affect the validity would be "?a foaf:name ?b". We don't consider the patterns that would affect the targets (eg.
 	 * foaf:Person).
-	 * 
+	 *
 	 * @return
 	 */
 	protected Stream<StatementPattern> getStatementPatterns() {
@@ -226,7 +226,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 			try (Stream<Statement> stream = connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE).stream()) {
 				return stream.map(Statement::getSubject).flatMap(shapeId -> {
 
-					List<NodeShape> propertyShapes = new ArrayList<>(2);
+					List<NodeShape> propertyShapes = new ArrayList<>();
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
