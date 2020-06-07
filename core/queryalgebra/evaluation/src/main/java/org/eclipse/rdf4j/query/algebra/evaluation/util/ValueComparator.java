@@ -111,22 +111,21 @@ public class ValueComparator implements Comparator<Value> {
 		// form."
 
 		if (!(QueryEvaluationUtil.isPlainLiteral(leftLit) || QueryEvaluationUtil.isPlainLiteral(rightLit))) {
-			try {
-				boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
-
-				if (isSmaller) {
-					return -1;
-				} else {
-					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
-					if (isEquivalent) {
-						return 0;
-					}
-					return 1;
+//			try {
+			boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
+			if (isSmaller) {
+				return -1;
+			} else {
+				boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
+				if (isEquivalent) {
+					return 0;
 				}
-			} catch (ValueExprEvaluationException e) {
-				// literals cannot be compared using the '<' operator, continue
-				// below
+				return 1;
 			}
+//			} catch (ValueExprEvaluationException e) {
+//				// literals cannot be compared using the '<' operator, continue
+//				// below
+//			}
 		}
 
 		int result = 0;
