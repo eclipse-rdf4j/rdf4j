@@ -198,7 +198,7 @@ public class SailUpdateExecutor {
 
 		// clear destination
 		final long start = System.currentTimeMillis();
-		con.clear(destination);
+		con.clear((Resource) destination);
 		final long clearTime = (System.currentTimeMillis() - start) / 1000;
 
 		if (maxExecutionTime > 0) {
@@ -210,7 +210,7 @@ public class SailUpdateExecutor {
 		// get all statements from source and add them to destination
 		CloseableIteration<? extends Statement, SailException> statements = null;
 		try {
-			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), source);
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource) source);
 
 			if (maxExecutionTime > 0) {
 				statements = new TimeLimitIteration<Statement, SailException>(statements,
@@ -225,7 +225,7 @@ public class SailUpdateExecutor {
 
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), destination);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource) destination);
 			}
 		} finally {
 			if (statements != null) {
@@ -254,7 +254,7 @@ public class SailUpdateExecutor {
 		// get all statements from source and add them to destination
 		CloseableIteration<? extends Statement, SailException> statements = null;
 		try {
-			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), source);
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource) source);
 
 			if (maxExecTime > 0) {
 				statements = new TimeLimitIteration<Statement, SailException>(statements, 1000L * maxExecTime) {
@@ -268,7 +268,7 @@ public class SailUpdateExecutor {
 
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), destination);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource) destination);
 			}
 		} finally {
 			if (statements != null) {
@@ -296,7 +296,7 @@ public class SailUpdateExecutor {
 
 		// clear destination
 		final long start = System.currentTimeMillis();
-		con.clear(destination);
+		con.clear((Resource) destination);
 		final long clearTime = (System.currentTimeMillis() - start) / 1000;
 
 		if (maxExecutionTime > 0 && clearTime > maxExecutionTime) {
@@ -307,7 +307,7 @@ public class SailUpdateExecutor {
 		CloseableIteration<? extends Statement, SailException> statements = null;
 
 		try {
-			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), source);
+			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource) source);
 			if (maxExecutionTime > 0) {
 				statements = new TimeLimitIteration<Statement, SailException>(statements,
 						1000L * (maxExecutionTime - clearTime)) {
@@ -321,8 +321,8 @@ public class SailUpdateExecutor {
 
 			while (statements.hasNext()) {
 				Statement st = statements.next();
-				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), destination);
-				con.removeStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), source);
+				con.addStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource) destination);
+				con.removeStatement(uc, st.getSubject(), st.getPredicate(), st.getObject(), (Resource) source);
 			}
 		} finally {
 			if (statements != null) {
@@ -696,7 +696,7 @@ public class SailUpdateExecutor {
 				if (mappedObject != null) {
 					patternValue = mappedObject.getValue();
 					if (patternValue instanceof Resource) {
-						object = patternValue;
+						object = (Resource) patternValue;
 					}
 				} else {
 					object = vf.createBNode();
