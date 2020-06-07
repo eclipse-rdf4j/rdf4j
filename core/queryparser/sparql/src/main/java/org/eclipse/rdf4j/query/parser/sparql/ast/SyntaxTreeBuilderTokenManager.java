@@ -1810,43 +1810,43 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	static final long[] jjbitVec0 = {
-			0xfffffffffffffffeL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0xfffffffffffffffeL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 	static final long[] jjbitVec2 = {
-			0x0L, 0x0L, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0x0L, 0x0L, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 	static final long[] jjbitVec3 = {
-			0xfffe7000fffffff6L, 0xffffffffffffffffL, 0xffffffffffffffffL, 0x5e00000000ffffffL
+		0xfffe7000fffffff6L, 0xffffffffffffffffL, 0xffffffffffffffffL, 0x5e00000000ffffffL
 	};
 	static final long[] jjbitVec4 = {
-			0x0L, 0x0L, 0x0L, 0xff7fffffff7fffffL
+		0x0L, 0x0L, 0x0L, 0xff7fffffff7fffffL
 	};
 	static final long[] jjbitVec5 = {
-			0x0L, 0xbfff000000000000L, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0x0L, 0xbfff000000000000L, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 	static final long[] jjbitVec6 = {
-			0x3000L, 0xffff000000000000L, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0x3000L, 0xffff000000000000L, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 	static final long[] jjbitVec7 = {
-			0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffL, 0x0L
+		0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffL, 0x0L
 	};
 	static final long[] jjbitVec8 = {
-			0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffL
+		0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffL
 	};
 	static final long[] jjbitVec9 = {
-			0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffff00000000ffffL
+		0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffff00000000ffffL
 	};
 	static final long[] jjbitVec10 = {
-			0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0x3fffffffffffffffL
+		0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL, 0x3fffffffffffffffL
 	};
 	static final long[] jjbitVec11 = {
-			0x0L, 0x0L, 0x80000000000000L, 0xff7fffffff7fffffL
+		0x0L, 0x0L, 0x80000000000000L, 0xff7fffffff7fffffL
 	};
 	static final long[] jjbitVec12 = {
-			0xffffffffffffffffL, 0xbfffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0xffffffffffffffffL, 0xbfffffffffffffffL, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 	static final long[] jjbitVec13 = {
-			0x8000000000003000L, 0xffff000000000001L, 0xffffffffffffffffL, 0xffffffffffffffffL
+		0x8000000000003000L, 0xffff000000000001L, 0xffffffffffffffffL, 0xffffffffffffffffL
 	};
 
 	private int jjMoveNfa_0(int startState, int curPos) {
@@ -3189,12 +3189,12 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	static final int[] jjnextStates = {
-			96, 97, 98, 100, 101, 106, 107, 132, 133, 134, 136, 141, 111, 112, 113, 115,
-			120, 78, 89, 91, 36, 37, 39, 31, 32, 34, 7, 8, 41, 42, 43, 45,
-			46, 48, 52, 53, 54, 56, 57, 59, 72, 73, 75, 76, 79, 80, 81, 83,
-			84, 86, 121, 122, 127, 128, 142, 143, 148, 149, 72, 73, 74, 75, 76, 77,
-			66, 69, 70, 13, 14, 82, 88, 104, 105, 108, 109, 118, 119, 125, 126, 129,
-			130, 139, 140, 146, 147, 150, 151, 155, 156,
+		96, 97, 98, 100, 101, 106, 107, 132, 133, 134, 136, 141, 111, 112, 113, 115,
+		120, 78, 89, 91, 36, 37, 39, 31, 32, 34, 7, 8, 41, 42, 43, 45,
+		46, 48, 52, 53, 54, 56, 57, 59, 72, 73, 75, 76, 79, 80, 81, 83,
+		84, 86, 121, 122, 127, 128, 142, 143, 148, 149, 72, 73, 74, 75, 76, 77,
+		66, 69, 70, 13, 14, 82, 88, 104, 105, 108, 109, 118, 119, 125, 126, 129,
+		130, 139, 140, 146, 147, 150, 151, 155, 156,
 	};
 
 	private static final boolean jjCanMove_0(int hiByte, int i1, int i2, long l1, long l2) {
@@ -3263,34 +3263,34 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 
 	/** Token literal values. */
 	public static final String[] jjstrLiteralImages = {
-			"", null, null, null, "\50", "\51", "\173", "\175", "\133", "\135", "\73",
-			"\54", "\56", "\75", "\41\75", "\76", "\74", "\74\75", "\76\75", "\41", "\174\174",
-			"\46\46", "\53", "\55", "\52", "\77", "\57", "\174", "\136", "\136\136", null, null,
-			"\141", null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, "\74\74", "\76\76", };
+		"", null, null, null, "\50", "\51", "\173", "\175", "\133", "\135", "\73",
+		"\54", "\56", "\75", "\41\75", "\76", "\74", "\74\75", "\76\75", "\41", "\174\174",
+		"\46\46", "\53", "\55", "\52", "\77", "\57", "\174", "\136", "\136\136", null, null,
+		"\141", null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, "\74\74", "\76\76", };
 
 	/** Lexer state names. */
 	public static final String[] lexStateNames = {
-			"DEFAULT",
+		"DEFAULT",
 	};
 	static final long[] jjtoToken = {
-			0xfffffffffffffff1L, 0xffffffffffffffffL, 0x180001f87fffffffL,
+		0xfffffffffffffff1L, 0xffffffffffffffffL, 0x180001f87fffffffL,
 	};
 	static final long[] jjtoSkip = {
-			0xcL, 0x0L, 0x0L,
+		0xcL, 0x0L, 0x0L,
 	};
 	static final long[] jjtoSpecial = {
-			0x8L, 0x0L, 0x0L,
+		0x8L, 0x0L, 0x0L,
 	};
 	protected CharStream input_stream;
 	private final int[] jjrounds = new int[157];
@@ -3334,7 +3334,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	public void SwitchTo(int lexState) {
 		if (lexState >= 1 || lexState < 0) {
 			throw new TokenMgrError("Error: Ignoring invalid lexical state : " + lexState + ". State unchanged.",
-					TokenMgrError.INVALID_LEXICAL_STATE);
+				TokenMgrError.INVALID_LEXICAL_STATE);
 		} else {
 			curLexState = lexState;
 		}
@@ -3432,7 +3432,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 				error_after = curPos <= 1 ? "" : input_stream.GetImage();
 			}
 			throw new TokenMgrError(EOFSeen, curLexState, error_line, error_column, error_after, curChar,
-					TokenMgrError.LEXICAL_ERROR);
+				TokenMgrError.LEXICAL_ERROR);
 		}
 	}
 

@@ -36,6 +36,7 @@ abstract class HDTArray extends HDTPart {
 		LOG64(1),
 		UINT32(2),
 		UINT64(3);
+
 		private final int value;
 
 		/**
@@ -95,7 +96,7 @@ abstract class HDTArray extends HDTPart {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-				CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
+			CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
 
 			nrbits = cis.read();
 			long l = VByte.decode(cis);

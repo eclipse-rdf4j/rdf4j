@@ -36,6 +36,7 @@ abstract class HDTPart {
 		HEADER((byte) 2),
 		DICTIONARY((byte) 3),
 		TRIPLES((byte) 4);
+
 		private final byte value;
 
 		/**
@@ -263,7 +264,7 @@ abstract class HDTPart {
 
 		if (calc != expect) {
 			throw new IOException("CRC does not match: calculated " +
-					Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
+				Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
 		}
 	}
 }
