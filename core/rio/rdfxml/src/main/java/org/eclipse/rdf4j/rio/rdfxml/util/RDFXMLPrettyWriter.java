@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml.util;
 
+import java.io.*;
+import java.util.Stack;
+
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -16,9 +19,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
-
-import java.io.*;
-import java.util.Stack;
 
 /**
  * An extension of RDFXMLWriter that outputs a more concise form of RDF/XML. The resulting output is semantically
