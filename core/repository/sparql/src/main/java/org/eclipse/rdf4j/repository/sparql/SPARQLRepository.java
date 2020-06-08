@@ -37,7 +37,6 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	 * @see #enableQuadMode(boolean)
 	 */
 	private boolean quadMode = false;
-
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
