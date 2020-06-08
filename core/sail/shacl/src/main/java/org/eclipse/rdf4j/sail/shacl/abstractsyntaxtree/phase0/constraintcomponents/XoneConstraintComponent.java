@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
@@ -28,9 +29,9 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	public XoneConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		super(id);
-		xone = toList(connection, id)
+		xone = HelperTool.toList(connection, id, Resource.class)
 				.stream()
-				.map(v -> new ShaclProperties((Resource) v, connection))
+				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
 						return NodeShape.getInstance(p, connection, cache);
@@ -46,7 +47,7 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.XONE, getId());
-		RDFCollections.asRDF(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		HelperTool.listToRdf(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
 		if (exported.contains(getId())) {
 			return;

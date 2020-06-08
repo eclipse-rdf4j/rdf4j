@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
@@ -27,9 +28,9 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	public AndConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		super(id);
-		and = toList(connection, id)
+		and = HelperTool.toList(connection, id, Resource.class)
 				.stream()
-				.map(v -> new ShaclProperties((Resource) v, connection))
+				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
 						return NodeShape.getInstance(p, connection, cache);
@@ -45,7 +46,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.AND, getId());
-		RDFCollections.asRDF(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		HelperTool.listToRdf(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
 		if (exported.contains(getId())) {
 			return;

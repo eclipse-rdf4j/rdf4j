@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Cache;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
@@ -23,9 +24,9 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		super(id);
-		or = toList(connection, id)
+		or = HelperTool.toList(connection, id, Resource.class)
 				.stream()
-				.map(v -> new ShaclProperties((Resource) v, connection))
+				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
 						return NodeShape.getInstance(p, connection, cache);
@@ -35,13 +36,12 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})
 				.collect(Collectors.toList());
-
 	}
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.OR, getId());
-		RDFCollections.asRDF(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		HelperTool.listToRdf(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
 		if (exported.contains(getId())) {
 			return;

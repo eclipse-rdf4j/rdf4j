@@ -6,6 +6,9 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 public class ZeroOrMorePath extends Path {
 
@@ -26,5 +29,10 @@ public class ZeroOrMorePath extends Path {
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.ZERO_OR_MORE_PATH, zeroOrMorePath.getId());
 		zeroOrMorePath.toModel(zeroOrMorePath.getId(), model, exported);
+	}
+
+	@Override
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
+		return null;
 	}
 }

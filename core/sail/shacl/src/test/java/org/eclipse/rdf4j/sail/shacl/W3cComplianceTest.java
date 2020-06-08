@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -70,7 +69,7 @@ public class W3cComplianceTest {
 
 		Utils.loadShapeData(sailRepository, resourceName);
 
-		List<Shape> shapes = ((ShaclSail) sailRepository.getSail()).refreshShapesPhase0();
+		List<Shape> shapes = shaclSail.getCurrentShapes();
 
 		Model statements = shapes.stream()
 				.map(shape -> shape.toModel(new DynamicModelFactory().createEmptyModel()))

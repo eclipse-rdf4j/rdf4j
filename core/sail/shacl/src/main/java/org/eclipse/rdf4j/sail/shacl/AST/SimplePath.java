@@ -53,7 +53,7 @@ public class SimplePath extends Path {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
 				path, null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
-			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+			unorderedSelect = planeNodeWrapper.apply(unorderedSelect);
 		}
 		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 	}
@@ -64,7 +64,7 @@ public class SimplePath extends Path {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
 				path, null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
-			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+			unorderedSelect = planeNodeWrapper.apply(unorderedSelect);
 		}
 		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 	}

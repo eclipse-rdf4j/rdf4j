@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -32,12 +34,9 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 	}
 
-	interface FilterAttacher {
-		FilterPlanNode attachFilter(PlanNode parent);
-	}
-
 	static public PlanNode getGenericSingleObjectPlan(ConnectionsGroup connectionsGroup, NodeShape nodeShape,
-			FilterAttacher filterAttacher, PathPropertyShape pathPropertyShape, PlanNodeProvider overrideTargetNode,
+			Function<PlanNode, FilterPlanNode> filterAttacher, PathPropertyShape pathPropertyShape,
+			PlanNodeProvider overrideTargetNode,
 			boolean negatePlan) {
 		if (overrideTargetNode != null) {
 
@@ -55,9 +54,9 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 			}
 
 			if (negatePlan) {
-				return filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
@@ -71,9 +70,9 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 					});
 
 			if (negatePlan) {
-				return filterAttacher.attachFilter(targets).getTrueNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(targets).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return filterAttacher.attachFilter(targets).getFalseNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(targets).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
@@ -82,10 +81,10 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 		if (negatePlan) {
 			invalidValuesDirectOnPath = pathPropertyShape.getPlanAddedStatements(connectionsGroup,
-					planNode -> filterAttacher.attachFilter(planNode).getTrueNode(UnBufferedPlanNode.class));
+					planNode -> filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class));
 		} else {
 			invalidValuesDirectOnPath = pathPropertyShape.getPlanAddedStatements(connectionsGroup,
-					planNode -> filterAttacher.attachFilter(planNode).getFalseNode(UnBufferedPlanNode.class));
+					planNode -> filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class));
 		}
 
 		InnerJoin innerJoin = new InnerJoin(
@@ -113,9 +112,9 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 			top = new UnionNode(top, bulkedExternalInnerJoin);
 
 			if (negatePlan) {
-				return filterAttacher.attachFilter(top).getTrueNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(top).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				return filterAttacher.attachFilter(top).getFalseNode(UnBufferedPlanNode.class);
+				return filterAttacher.apply(top).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClassConstraintComponent;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClas
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 	Resource id;
@@ -59,7 +61,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	List<Literal> message;
 	Severity severity;
 
-	List<ConstraintComponent> constraintComponent = new ArrayList<>();
+	List<ConstraintComponent> constraintComponents = new ArrayList<>();
 
 	public Shape() {
 	}
@@ -261,7 +263,30 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		this.targetChain = targetChain;
-		constraintComponent.forEach(c -> c.setTargetChain(targetChain));
+		constraintComponents.forEach(c -> c.setTargetChain(targetChain));
+	}
+
+	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean validateEntireBaseSail) {
+		assert constraintComponents.size() == 1;
+
+		ValidationApproach validationApproach = ValidationApproach.SPARQL;
+		if (!validateEntireBaseSail) {
+			validationApproach = constraintComponents.stream()
+					.map(ConstraintComponent::getPreferedValidationApproach)
+					.reduce(ValidationApproach::reduce)
+					.get();
+		}
+
+		if (validationApproach == ValidationApproach.SPARQL) {
+			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans);
+
+		} else if (validationApproach == ValidationApproach.Transactional) {
+			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans);
+		} else {
+			throw new UnsupportedOperationException("Unkown validation approach: " + validationApproach);
+		}
+
 	}
 
 	public static class Factory {
@@ -290,25 +315,25 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			return collect.stream().flatMap(s -> {
 				List<Shape> temp = new ArrayList<>();
 				s.target.forEach(target -> {
-					s.constraintComponent.forEach(constraintComponent -> {
+					s.constraintComponents.forEach(constraintComponent -> {
 
 						if (constraintComponent instanceof PropertyShape) {
-							((PropertyShape) constraintComponent).constraintComponent
+							((PropertyShape) constraintComponent).constraintComponents
 									.forEach(propertyConstraintComponent -> {
 										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
 												.shallowClone();
-										clonedConstraintComponent.constraintComponent.add(propertyConstraintComponent);
+										clonedConstraintComponent.constraintComponents.add(propertyConstraintComponent);
 
 										Shape shape = s.shallowClone();
 										shape.target.add(target);
-										shape.constraintComponent.add(clonedConstraintComponent);
+										shape.constraintComponents.add(clonedConstraintComponent);
 										temp.add(shape);
 									});
 
 						} else {
 							Shape shape = s.shallowClone();
 							shape.target.add(target);
-							shape.constraintComponent.add(constraintComponent);
+							shape.constraintComponents.add(constraintComponent);
 							temp.add(shape);
 
 						}
@@ -364,4 +389,5 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			return collect;
 		}
 	}
+
 }

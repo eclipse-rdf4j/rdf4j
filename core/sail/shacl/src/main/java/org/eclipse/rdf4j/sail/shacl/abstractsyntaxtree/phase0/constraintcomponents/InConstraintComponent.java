@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
 
 public class InConstraintComponent extends AbstractConstraintComponent {
 
@@ -23,7 +24,7 @@ public class InConstraintComponent extends AbstractConstraintComponent {
 
 	public InConstraintComponent(RepositoryConnection connection, Resource in) {
 		super(in);
-		this.in = new HashSet<>(toList(connection, in));
+		this.in = new HashSet<>(HelperTool.toList(connection, in, Value.class));
 	}
 
 	@Override
@@ -31,7 +32,7 @@ public class InConstraintComponent extends AbstractConstraintComponent {
 		model.add(subject, SHACL.IN, getId());
 		TreeSet<Value> values = new TreeSet<>(new ValueComparator());
 		values.addAll(in);
-		RDFCollections.asRDF(values, getId(), model);
+		HelperTool.listToRdf(values, getId(), model);
 	}
 
 }

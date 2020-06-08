@@ -1,18 +1,19 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Stream;
-
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.TargetChainInterface;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class AbstractConstraintComponent implements ConstraintComponent {
+
+	private static final Logger logger = LoggerFactory.getLogger(AbstractConstraintComponent.class);
 
 	private Resource id;
 	TargetChain targetChain;
@@ -29,24 +30,6 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		return id;
 	}
 
-	static List<Value> toList(RepositoryConnection connection, Resource orList) {
-		List<Value> ret = new ArrayList<>();
-		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
-
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.REST, null).stream()) {
-				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
-		}
-
-		return ret;
-
-	}
-
 	@Override
 	public TargetChain getTargetChain() {
 		return targetChain;
@@ -56,4 +39,26 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	public void setTargetChain(TargetChain targetChain) {
 		this.targetChain = targetChain;
 	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+		logger.warn("SPARQL based calidation for {} has not been implemented", getConstraintComponent());
+		return new EmptyNode();
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+		logger.warn("Transactional validation for {} has not been implemented", getConstraintComponent());
+		return new EmptyNode();
+	}
+
+	protected IRI getConstraintComponent() {
+		return SimpleValueFactory.getInstance().createIRI("http://TODO/" + this.getClass().getSimpleName());
+	}
+
+	@Override
+	public ValidationApproach getPreferedValidationApproach() {
+		return ValidationApproach.Transactional;
+	}
+
 }

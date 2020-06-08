@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -12,6 +13,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 
 public class ClosedConstraintComponent extends AbstractConstraintComponent {
@@ -32,10 +34,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 		}).collect(Collectors.toList());
 
 		if (ignoredProperties != null) {
-			this.ignoredProperties = toList(connection, ignoredProperties)
-					.stream()
-					.map(v -> ((IRI) v))
-					.collect(Collectors.toList());
+			this.ignoredProperties = HelperTool.toList(connection, ignoredProperties, IRI.class);
 		} else {
 			this.ignoredProperties = Collections.emptyList();
 		}

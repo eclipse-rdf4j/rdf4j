@@ -8,7 +8,11 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
@@ -50,7 +54,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		 * Also not supported here is: - sh:lessThan - sh:lessThanOrEquals - sh:qualifiedValueShape
 		 */
 
-		constraintComponent = getConstraintComponents(properties, connection, cache);
+		constraintComponents = getConstraintComponents(properties, connection, cache);
 
 	}
 
@@ -73,7 +77,33 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		}
 		exported.add(getId());
 
-		constraintComponent.forEach(c -> c.toModel(getId(), model, exported));
+		constraintComponents.forEach(c -> c.toModel(getId(), model, exported));
 
+	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+		return null;
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+
+		PlanNode union = new EmptyNode();
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			union = new UnionNode(union,
+					constraintComponent.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans));
+		}
+
+		return union;
+	}
+
+	@Override
+	public ValidationApproach getPreferedValidationApproach() {
+		return constraintComponents.stream()
+				.map(ConstraintComponent::getPreferedValidationApproach)
+				.reduce(ValidationApproach::reduce)
+				.orElse(ValidationApproach.Transactional);
 	}
 }

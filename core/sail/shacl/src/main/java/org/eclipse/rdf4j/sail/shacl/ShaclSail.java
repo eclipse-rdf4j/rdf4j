@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -166,11 +168,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
 
-	private List<NodeShape> nodeShapes = Collections.emptyList();
+	private List<Shape> shapes = Collections.emptyList();
 
-	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
-	private static String PROPERTY_SHAPE_WITH_TARGET;
+	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
+	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
+	private static final String PROPERTY_SHAPE_WITH_TARGET;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -335,7 +337,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.NONE);
-			nodeShapes = refreshShapes(shapesRepoConnection);
+			shapes = refreshShapes(shapesRepoConnection);
 			shapesRepoConnection.commit();
 		}
 
@@ -343,32 +345,32 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
-
-		SailRepository shapesRepoCache = new SailRepository(
-				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
-
-		shapesRepoCache.init();
-		List<NodeShape> shapes;
-
-		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
-			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
-			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
-				shapesRepoCacheConnection.add(statements);
-			}
-
-			runInferencingSparqlQueries(shapesRepoCacheConnection);
-			shapesRepoCacheConnection.commit();
-
-			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
-		}
-
-		shapesRepoCache.shutDown();
-		return shapes;
-	}
+//	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
+//
+//		SailRepository shapesRepoCache = new SailRepository(
+//				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+//
+//		shapesRepoCache.init();
+//		List<NodeShape> shapes;
+//
+//		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
+//			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+//			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+//				shapesRepoCacheConnection.add(statements);
+//			}
+//
+//			runInferencingSparqlQueries(shapesRepoCacheConnection);
+//			shapesRepoCacheConnection.commit();
+//
+//			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
+//		}
+//
+//		shapesRepoCache.shutDown();
+//		return shapes;
+//	}
 
 	@Experimental
-	public List<Shape> refreshShapesPhase0() throws SailException {
+	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 
 		SailRepository shapesRepoCache = new SailRepository(
 				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
@@ -376,21 +378,16 @@ public class ShaclSail extends NotifyingSailWrapper {
 		shapesRepoCache.init();
 		List<Shape> shapes;
 
-		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-			shapesRepoConnection.begin(IsolationLevels.NONE);
-
-			try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
-				shapesRepoCacheConnection.begin(IsolationLevels.NONE);
-				try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
-						false)) {
-					shapesRepoCacheConnection.add(statements);
-				}
-				runInferencingSparqlQueries(shapesRepoCacheConnection);
-
-				shapesRepoCacheConnection.commit();
-				shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
+		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
+			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
+					false)) {
+				shapesRepoCacheConnection.add(statements);
 			}
-			shapesRepoConnection.commit();
+			runInferencingSparqlQueries(shapesRepoCacheConnection);
+
+			shapesRepoCacheConnection.commit();
+			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
 		}
 
 		shapesRepoCache.shutDown();
@@ -421,7 +418,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		initialized.set(false);
 		executorService[0] = null;
-		nodeShapes = Collections.emptyList();
+		shapes = Collections.emptyList();
 		super.shutDown();
 	}
 
@@ -460,8 +457,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return shaclSailConnection;
 	}
 
-	List<NodeShape> getNodeShapes() {
-		return nodeShapes;
+	List<Shape> getShapes() {
+		return shapes;
 	}
 
 	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
@@ -568,8 +565,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 //
 //	}
 
-	void setNodeShapes(List<NodeShape> nodeShapes) {
-		this.nodeShapes = nodeShapes;
+	void setShapes(List<Shape> shapes) {
+		this.shapes = shapes;
 	}
 
 	/**
@@ -827,5 +824,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 		});
 		// this is a soft operation, the thread pool will actually wait until the task above has completed
 		ex.shutdown();
+	}
+
+	@Deprecated
+	@InternalUseOnly
+	public List<Shape> getCurrentShapes() {
+		return shapes;
 	}
 }

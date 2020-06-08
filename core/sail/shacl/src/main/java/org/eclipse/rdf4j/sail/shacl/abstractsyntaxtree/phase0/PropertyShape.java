@@ -9,9 +9,13 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +49,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			shape.populate(properties, connection, cache);
 		}
 
-		if (shape.constraintComponent.isEmpty()) {
+		if (shape.constraintComponents.isEmpty()) {
 			shape.deactivated = true;
 		}
 
@@ -63,7 +67,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
-		constraintComponent = getConstraintComponents(properties, connection, cache);
+		constraintComponents = getConstraintComponents(properties, connection, cache);
 	}
 
 	@Override
@@ -89,12 +93,37 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		}
 		exported.add(getId());
 
-		constraintComponent.forEach(c -> c.toModel(getId(), model, exported));
+		constraintComponents.forEach(c -> c.toModel(getId(), model, exported));
 
 	}
 
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain.add(path));
+	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+		return null;
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans) {
+		PlanNode union = new EmptyNode();
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			union = new UnionNode(union,
+					constraintComponent.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans));
+		}
+
+		return union;
+	}
+
+	@Override
+	public ValidationApproach getPreferedValidationApproach() {
+		return constraintComponents.stream()
+				.map(ConstraintComponent::getPreferedValidationApproach)
+				.reduce(ValidationApproach::reduce)
+				.orElse(ValidationApproach.Transactional);
 	}
 }

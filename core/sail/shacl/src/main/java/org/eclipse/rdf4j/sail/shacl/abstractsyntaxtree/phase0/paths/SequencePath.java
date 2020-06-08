@@ -16,6 +16,10 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 public class SequencePath extends Path {
 
@@ -23,8 +27,9 @@ public class SequencePath extends Path {
 
 	public SequencePath(Resource id, RepositoryConnection connection) {
 		super(id);
-		sequence = toList(connection, id).stream()
-				.map(p -> Path.buildPath(connection, (Resource) p))
+		sequence = HelperTool.toList(connection, id, Resource.class)
+				.stream()
+				.map(p -> Path.buildPath(connection, p))
 				.collect(Collectors.toList());
 
 	}
@@ -40,42 +45,12 @@ public class SequencePath extends Path {
 
 		List<Resource> values = sequence.stream().map(Path::getId).collect(Collectors.toList());
 
-		toRdf(id, model, values);
+		HelperTool.listToRdf(values, id, model);
 	}
 
-	private void toRdf(Resource current, Model model, List<Resource> values) {
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		Iterator<Resource> iter = values.iterator();
-		while (iter.hasNext()) {
-			Resource value = iter.next();
-			model.add(current, RDF.FIRST, value);
-
-			if (iter.hasNext()) {
-				Resource next = vf.createBNode();
-				model.add(current, RDF.REST, next);
-				current = next;
-			} else {
-				model.add(current, RDF.REST, RDF.NIL);
-			}
-		}
-	}
-
-	static List<Value> toList(RepositoryConnection connection, Resource orList) {
-		List<Value> ret = new ArrayList<>();
-		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
-
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.REST, null).stream()) {
-				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
-		}
-
-		return ret;
-
+	@Override
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
+		return null;
 	}
 
 }

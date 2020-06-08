@@ -41,9 +41,9 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect = shaclSail.getNodeShapes()
+				List<PlanNode> collect = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.collect(Collectors.toList());
 
 				assertEquals(0, collect.size());
@@ -53,9 +53,9 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.collect(Collectors.toList());
 				assertEquals(2, collect2.size());
 
@@ -97,9 +97,9 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect1 = shaclSail.getNodeShapes()
+				List<PlanNode> collect1 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.collect(Collectors.toList());
 				assertEquals(1, collect1.size());
 
@@ -110,9 +110,9 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.collect(Collectors.toList());
 				assertEquals(1, collect2.size());
 			}
@@ -120,9 +120,9 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect3 = shaclSail.getNodeShapes()
+				List<PlanNode> collect3 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.collect(Collectors.toList());
 				assertEquals(2, collect3.size());
 			}

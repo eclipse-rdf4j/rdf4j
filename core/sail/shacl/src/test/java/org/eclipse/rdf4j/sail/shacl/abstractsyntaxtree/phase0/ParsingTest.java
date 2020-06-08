@@ -24,7 +24,7 @@ public class ParsingTest {
 	public void initialTest() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("test-cases/datatype/not/shacl.ttl");
 
-		List<Shape> shapes = shaclSail.refreshShapesPhase0();
+		List<Shape> shapes = shaclSail.getCurrentShapes();
 
 		DynamicModel emptyModel = new DynamicModelFactory().createEmptyModel();
 
@@ -47,16 +47,16 @@ public class ParsingTest {
 	public void testSplitting() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclExactly.ttl");
 
-		List<Shape> shapes = shaclSail.refreshShapesPhase0();
+		List<Shape> shapes = shaclSail.getCurrentShapes();
 
 		assertEquals(8, shapes.size());
 
 		shapes.forEach(shape -> {
 			assertEquals(1, shape.target.size());
-			assertEquals(1, shape.constraintComponent.size());
+			assertEquals(1, shape.constraintComponents.size());
 
-			if (shape.constraintComponent.get(0) instanceof PropertyShape) {
-				assertEquals(1, ((PropertyShape) shape.constraintComponent.get(0)).constraintComponent.size());
+			if (shape.constraintComponents.get(0) instanceof PropertyShape) {
+				assertEquals(1, ((PropertyShape) shape.constraintComponents.get(0)).constraintComponents.size());
 			}
 		});
 

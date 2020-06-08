@@ -8,8 +8,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Identifiable;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 public abstract class Path implements Identifiable, Exportable {
 
@@ -64,4 +67,5 @@ public abstract class Path implements Identifiable, Exportable {
 
 	}
 
+	public abstract PlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper);
 }
