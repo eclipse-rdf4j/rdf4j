@@ -25,7 +25,6 @@ public class W3CApprovedSPARQL11SyntaxTest extends SPARQL11SyntaxComplianceTest 
 	public W3CApprovedSPARQL11SyntaxTest(String displayName, String testURI, String name, String queryFileURL,
 			boolean positiveTest) {
 		super(displayName, testURI, name, queryFileURL, positiveTest);
-		// TODO Auto-generated constructor stub
 	}
 
 	@Override

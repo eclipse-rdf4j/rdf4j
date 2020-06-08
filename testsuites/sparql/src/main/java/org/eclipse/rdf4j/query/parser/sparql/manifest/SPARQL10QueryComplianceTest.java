@@ -85,7 +85,7 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 						.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
-			SPARQLQueryManifest manifest = new SPARQLQueryManifest(pop, excludedSubdirs);
+			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs);
 			tests.addAll(manifest.getTests());
 			manifests.addAll(manifest.getSubManifests());
 		}

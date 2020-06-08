@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-import static org.assertj.core.api.Assertions.fail;
-import static org.assertj.core.api.Assumptions.assumeThat;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -26,14 +23,11 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -50,7 +44,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
@@ -64,27 +57,23 @@ import org.slf4j.LoggerFactory;
  * @see https://www.w3.org/2009/sparql/docs/tests/
  */
 @RunWith(Parameterized.class)
-public abstract class SPARQL11UpdateComplianceTest {
+public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQL11UpdateComplianceTest.class);
 
 	private static final String[] defaultIgnoredTests = {
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRDT() TypeErrors",
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRLANG() TypeErrors",
-			// known issue: SES-937
-			"sq03 - Subquery within graph pattern, graph variable is not bound"
+//			// test case incompatible with RDF 1.1 - see
+//			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+//			"STRDT() TypeErrors",
+//			// test case incompatible with RDF 1.1 - see
+//			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+//			"STRLANG() TypeErrors",
+//			// known issue: SES-937
+//			"sq03 - Subquery within graph pattern, graph variable is not bound"
 	};
 
-	private List<String> ignoredTests = new ArrayList<>(Arrays.asList(defaultIgnoredTests));
+	private static final List<String> excludedSubdirs = Arrays.asList("service");
 
-	private static final String[] excludedSubdirs = { "service" };
-
-	private String testURI;
-	private String name;
 	private String queryFileURL;
 	private String resultFileURL;
 	private Dataset dataset;
@@ -111,8 +100,7 @@ public abstract class SPARQL11UpdateComplianceTest {
 	public SPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
 			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
 			Map<String, IRI> resultNamedGraphs) {
-		this.testURI = testURI;
-		this.name = name;
+		super(displayName, testURI, name);
 		this.requestFile = requestFile;
 		this.inputDefaultGraphURI = defaultGraphURI;
 		this.inputNamedGraphs = inputNamedGraphs;
@@ -203,9 +191,9 @@ public abstract class SPARQL11UpdateComplianceTest {
 
 	protected abstract Repository newRepository() throws Exception;
 
-	@Test
-	public void test() throws Exception {
-		runTest();
+	@Override
+	protected Repository getDataRepository() {
+		return this.dataRep;
 	}
 
 	private static Object[][] getTestData() {
@@ -219,7 +207,7 @@ public abstract class SPARQL11UpdateComplianceTest {
 						.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
-			Manifest manifest = new Manifest(pop);
+			SPARQLUpdateTestManifest manifest = new SPARQLUpdateTestManifest(pop);
 			tests.addAll(manifest.tests);
 			manifests.addAll(manifest.subManifests);
 		}
@@ -230,11 +218,11 @@ public abstract class SPARQL11UpdateComplianceTest {
 		return result;
 	}
 
-	static class Manifest {
+	static class SPARQLUpdateTestManifest {
 		List<Object[]> tests = new ArrayList<>();
 		List<String> subManifests = new ArrayList<>();
 
-		public Manifest(String filename) {
+		public SPARQLUpdateTestManifest(String filename) {
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
@@ -355,10 +343,10 @@ public abstract class SPARQL11UpdateComplianceTest {
 		}
 	}
 
-	private void runTest() throws Exception {
-		assumeThat(getIgnoredTests().contains(name)).withFailMessage("test case '%s' is ignored", name).isFalse();
+	@Override
+	protected void runTest() throws Exception {
 
-		logger.debug("running {}", name);
+		logger.debug("running {}", getName());
 
 		RepositoryConnection con = dataRep.getConnection();
 		RepositoryConnection erCon = expectedResultRepo.getConnection();
@@ -402,79 +390,5 @@ public abstract class SPARQL11UpdateComplianceTest {
 		} finally {
 			stream.close();
 		}
-	}
-
-	private final void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult)
-			throws Exception {
-		if (!Models.isomorphic(expectedResult, queryResult)) {
-			StringBuilder message = new StringBuilder(128);
-			message.append("\n============ ");
-			message.append(name);
-			message.append(" =======================\n");
-			message.append("Expected result: \n");
-			for (Statement st : expectedResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', name.length(), message);
-			message.append("========================\n");
-
-			message.append("Query result: \n");
-			for (Statement st : queryResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', name.length(), message);
-			message.append("========================\n");
-
-			logger.error(message.toString());
-			fail(message.toString());
-		}
-	}
-
-	/**
-	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
-	 *
-	 * @param subManifestFile the url of a sub-manifest
-	 * @param excludedSubdirs an array of directory names. May be null.
-	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match for the
-	 *         supplied sub-manifest, <code>true</code> otherwise.
-	 */
-	private static boolean includeSubManifest(String subManifestFile, String[] excludedSubdirs) {
-		boolean result = true;
-
-		if (excludedSubdirs != null && excludedSubdirs.length > 0) {
-			int index = subManifestFile.lastIndexOf('/');
-			String path = subManifestFile.substring(0, index);
-			String sd = path.substring(path.lastIndexOf('/') + 1);
-
-			for (String subdir : excludedSubdirs) {
-				if (sd.equals(subdir)) {
-					result = false;
-					break;
-				}
-			}
-		}
-		return result;
-	}
-
-	/**
-	 * @return the ignoredTests
-	 */
-	protected List<String> getIgnoredTests() {
-		return ignoredTests;
-	}
-
-	protected void addIgnoredTest(String ignoredTest) {
-		this.ignoredTests.add(ignoredTest);
-	}
-
-	/**
-	 * @param ignoredTests the ignoredTests to set
-	 */
-	protected void setIgnoredTests(List<String> ignoredTests) {
-		this.ignoredTests = ignoredTests;
 	}
 }

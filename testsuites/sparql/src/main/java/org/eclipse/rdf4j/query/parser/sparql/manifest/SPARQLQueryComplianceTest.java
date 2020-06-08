@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
-import static org.assertj.core.api.Assumptions.assumeThat;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,8 +16,6 @@ import java.io.InputStreamReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -28,9 +25,9 @@ import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Dataset;
@@ -43,6 +40,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.dawg.DAWGTestResultSetUtil;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserRegistry;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
@@ -50,34 +48,30 @@ import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Base functionality for SPARQL qurey compliance test suites based on a {@link SPARQLQueryManifest}.
+ * Base functionality for SPARQL query compliance test suites .
  *
  * @author Jeen Broekstra
  *
  */
-public abstract class SPARQLQueryComplianceTest {
+public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLQueryComplianceTest.class);
 
-	private List<String> ignoredTests = new ArrayList<>();
-
-	private final String displayName;
-	private final String testURI;
-	private final String name;
 	private final String queryFileURL;
 	private final String resultFileURL;
 	private final Dataset dataset;
@@ -96,9 +90,7 @@ public abstract class SPARQLQueryComplianceTest {
 	 */
 	public SPARQLQueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
 			String resultFileURL, Dataset dataset, boolean ordered) {
-		this.displayName = displayName;
-		this.testURI = testURI;
-		this.name = name;
+		super(displayName, testURI, name);
 		this.queryFileURL = queryFileURL;
 		this.resultFileURL = resultFileURL;
 		this.dataset = dataset;
@@ -131,15 +123,10 @@ public abstract class SPARQLQueryComplianceTest {
 		}
 	}
 
-	@Test
-	public void test() throws Exception {
-		runTest();
-	}
-
+	@Override
 	protected void runTest() throws Exception {
-		assumeThat(getIgnoredTests().contains(name)).withFailMessage("test case '%s' is ignored", name).isFalse();
 
-		logger.debug("running {}", name);
+		logger.debug("running {}", getName());
 
 		try (RepositoryConnection conn = getDataRepository().getConnection()) {
 			// Some SPARQL Tests have non-XSD datatypes that must pass for the test
@@ -175,32 +162,6 @@ public abstract class SPARQLQueryComplianceTest {
 
 	protected abstract Repository newRepository() throws Exception;
 
-	/**
-	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
-	 *
-	 * @param subManifestFile the url of a sub-manifest
-	 * @param excludedSubdirs an array of directory names. May be null.
-	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match for the
-	 *         supplied sub-manifest, <code>true</code> otherwise.
-	 */
-	static boolean includeSubManifest(String subManifestFile, List<String> excludedSubdirs) {
-		boolean result = true;
-
-		if (excludedSubdirs != null && !excludedSubdirs.isEmpty()) {
-			int index = subManifestFile.lastIndexOf('/');
-			String path = subManifestFile.substring(0, index);
-			String sd = path.substring(path.lastIndexOf('/') + 1);
-
-			for (String subdir : excludedSubdirs) {
-				if (sd.equals(subdir)) {
-					result = false;
-					break;
-				}
-			}
-		}
-		return result;
-	}
-
 	private final Repository createRepository() throws Exception {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
@@ -208,53 +169,6 @@ public abstract class SPARQLQueryComplianceTest {
 			con.clearNamespaces();
 		}
 		return repo;
-	}
-
-	private final void uploadDataset(Dataset dataset) throws Exception {
-		try (RepositoryConnection con = getDataRepository().getConnection()) {
-			// Merge default and named graphs to filter duplicates
-			Set<IRI> graphURIs = new HashSet<>();
-			graphURIs.addAll(dataset.getDefaultGraphs());
-			graphURIs.addAll(dataset.getNamedGraphs());
-
-			for (Resource graphURI : graphURIs) {
-				upload(((IRI) graphURI), graphURI);
-			}
-		}
-	}
-
-	private void upload(IRI graphURI, Resource context) throws Exception {
-		RepositoryConnection con = getDataRepository().getConnection();
-
-		try {
-			con.begin();
-			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
-			RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());
-			rdfParser.setVerifyData(false);
-			rdfParser.setDatatypeHandling(DatatypeHandling.IGNORE);
-			// rdfParser.setPreserveBNodeIDs(true);
-
-			RDFInserter rdfInserter = new RDFInserter(con);
-			rdfInserter.enforceContext(context);
-			rdfParser.setRDFHandler(rdfInserter);
-
-			URL graphURL = new URL(graphURI.toString());
-			InputStream in = graphURL.openStream();
-			try {
-				rdfParser.parse(in, graphURI.toString());
-			} finally {
-				in.close();
-			}
-
-			con.commit();
-		} catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
-			}
-			throw e;
-		} finally {
-			con.close();
-		}
 	}
 
 	private final String readQueryString() throws IOException {
@@ -325,35 +239,6 @@ public abstract class SPARQLQueryComplianceTest {
 		return result;
 	}
 
-	private final void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult) throws Exception {
-		if (!Models.isomorphic(expectedResult, queryResult)) {
-			StringBuilder message = new StringBuilder(128);
-			message.append("\n============ ");
-			message.append(name);
-			message.append(" =======================\n");
-			message.append("Expected result: \n");
-			for (Statement st : expectedResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', name.length(), message);
-			message.append("========================\n");
-
-			message.append("Query result: \n");
-			for (Statement st : queryResult) {
-				message.append(st.toString());
-				message.append("\n");
-			}
-			message.append("=============");
-			StringUtil.appendN('=', name.length(), message);
-			message.append("========================\n");
-
-			logger.error(message.toString());
-			fail(message.toString());
-		}
-	}
-
 	private final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
 			throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
@@ -412,7 +297,7 @@ public abstract class SPARQLQueryComplianceTest {
 
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
-			message.append(name);
+			message.append(getName());
 			message.append(" =======================\n");
 
 			if (!missingBindings.isEmpty()) {
@@ -423,7 +308,7 @@ public abstract class SPARQLQueryComplianceTest {
 				}
 
 				message.append("=============");
-				StringUtil.appendN('=', name.length(), message);
+				StringUtil.appendN('=', getName().length(), message);
 				message.append("========================\n");
 			}
 
@@ -434,7 +319,7 @@ public abstract class SPARQLQueryComplianceTest {
 				}
 
 				message.append("=============");
-				StringUtil.appendN('=', name.length(), message);
+				StringUtil.appendN('=', getName().length(), message);
 				message.append("========================\n");
 			}
 
@@ -475,39 +360,138 @@ public abstract class SPARQLQueryComplianceTest {
 		}
 	}
 
-	private final void printBindingSet(BindingSet bs, StringBuilder appendable) {
-		List<String> names = new ArrayList<>(bs.getBindingNames());
-		Collections.sort(names);
-
-		for (String name : names) {
-			if (bs.hasBinding(name)) {
-				appendable.append(bs.getBinding(name));
-				appendable.append(' ');
-			}
-		}
-		appendable.append("\n");
-	}
-
+	@Override
 	protected Repository getDataRepository() {
 		return this.dataRepository;
 	}
 
-	/**
-	 * @return the ignoredTests
-	 */
-	protected List<String> getIgnoredTests() {
-		return ignoredTests;
-	}
+	static class SPARQLQueryTestManifest {
+		private final List<Object[]> tests = new ArrayList<>();
+		private final List<String> subManifests = new ArrayList<>();
 
-	protected void addIgnoredTest(String ignoredTest) {
-		this.ignoredTests.add(ignoredTest);
-	}
+		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs) {
+			this(filename, excludedSubdirs, true);
+		}
 
-	/**
-	 * @param ignoredTests the ignoredTests to set
-	 */
-	protected void setIgnoredTests(List<String> ignoredTests) {
-		this.ignoredTests = ignoredTests;
-	}
+		public SPARQLQueryTestManifest(String filename, List<String> excludedSubdirs, boolean approvedOnly) {
+			SailRepository sailRepository = new SailRepository(new MemoryStore());
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
+						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+						+ "SELECT DISTINCT ?manifestFile "
+						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+
+				try (TupleQueryResult manifestResults = connection
+						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
+						.evaluate()) {
+					for (BindingSet bindingSet : manifestResults) {
+						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
+						if (SPARQLQueryComplianceTest.includeSubManifest(subManifestFile, excludedSubdirs)) {
+							getSubManifests().add(subManifestFile);
+						}
+					}
+				}
+
+				StringBuilder query = new StringBuilder(512);
+				query.append(" PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> \n");
+				query.append(" PREFIX dawgt: <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#> \n");
+				query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
+				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
+				query.append(
+						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+				query.append(" WHERE { [] rdf:first ?testURI . \n");
+				if (approvedOnly) {
+					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
+				}
+				query.append(" ?testURI mf:name ?testName; \n");
+				query.append("          mf:result ?resultFile . \n");
+				query.append(" OPTIONAL { ?testURI mf:checkOrder ?ordered } \n");
+				query.append(" OPTIONAL { ?testURI  mf:requires ?requirement } \n");
+				query.append(" ?testURI mf:action ?action. \n");
+				query.append(" ?action qt:query ?queryFile . \n");
+				query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
+				query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
+				// skip tests involving CSV result files, these are not query tests
+				query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
+				// skip tests involving entailment regimes
+				query.append(" FILTER(!BOUND(?regime)) \n");
+				// skip test involving basic federation, these are tested separately.
+				query.append(" FILTER (!BOUND(?requirement) || (?requirement != mf:BasicFederation)) \n");
+				query.append(" }\n");
+
+				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {
+
+					query.setLength(0);
+					query.append(" PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> \n");
+					query.append(" SELECT ?graph \n");
+					query.append(" WHERE { ?action qt:graphData ?graph } \n");
+					TupleQuery namedGraphsQuery = connection.prepareTupleQuery(query.toString());
+
+					for (BindingSet bs : result) {
+						// FIXME I'm sure there's a neater way to do this
+						String testName = bs.getValue("testName").stringValue();
+						String displayName = filename.substring(0, filename.lastIndexOf('/'));
+						displayName = displayName.substring(displayName.lastIndexOf('/') + 1, displayName.length())
+								+ ": " + testName;
+
+						IRI defaultGraphURI = (IRI) bs.getValue("defaultGraph");
+						Value action = bs.getValue("action");
+						Value ordered = bs.getValue("ordered");
+
+						SimpleDataset dataset = null;
+
+						// Query named graphs
+						namedGraphsQuery.setBinding("action", action);
+						try (TupleQueryResult namedGraphs = namedGraphsQuery.evaluate()) {
+							if (defaultGraphURI != null || namedGraphs.hasNext()) {
+								dataset = new SimpleDataset();
+								if (defaultGraphURI != null) {
+									dataset.addDefaultGraph(defaultGraphURI);
+								}
+								while (namedGraphs.hasNext()) {
+									BindingSet graphBindings = namedGraphs.next();
+									IRI namedGraphURI = (IRI) graphBindings.getValue("graph");
+									dataset.addNamedGraph(namedGraphURI);
+								}
+							}
+						}
+
+						getTests().add(new Object[] {
+								displayName,
+								bs.getValue("testURI").stringValue(),
+								testName,
+								bs.getValue("queryFile").stringValue(),
+								bs.getValue("resultFile").stringValue(),
+								dataset,
+								Literals.getBooleanValue(ordered, false) });
+					}
+				}
+
+			}
+
+		}
+
+		/**
+		 * @return the tests
+		 */
+		public List<Object[]> getTests() {
+			return tests;
+		}
+
+		/**
+		 * @return the subManifests
+		 */
+		public List<String> getSubManifests() {
+			return subManifests;
+		}
+
+	}
 }

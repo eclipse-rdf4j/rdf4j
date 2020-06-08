@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
  *
  * @author Jeen Broekstra
  */
-public class MemorySPARQLUpdateTest extends SPARQL11UpdateComplianceTest {
+public class MemorySPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
-	public MemorySPARQLUpdateTest(String displayName, String testURI, String name, String requestFile,
+	public MemorySPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
 			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
 			Map<String, IRI> resultNamedGraphs) {
 		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
