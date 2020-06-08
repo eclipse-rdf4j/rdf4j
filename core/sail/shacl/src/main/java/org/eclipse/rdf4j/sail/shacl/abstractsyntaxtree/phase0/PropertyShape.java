@@ -45,6 +45,10 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			shape.populate(properties, connection, cache);
 		}
 
+		if (shape.constraintComponent.isEmpty()) {
+			shape.deactivated = true;
+		}
+
 		return (PropertyShape) shape;
 	}
 

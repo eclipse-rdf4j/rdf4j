@@ -18,14 +18,17 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -52,6 +55,35 @@ public class W3cComplianceTest {
 	@Test
 	public void test() throws IOException {
 		runTest(testCasePath);
+	}
+
+	@Test
+	public void parsingTest() throws IOException {
+		runParsingTest(testCasePath);
+	}
+
+	private void runParsingTest(URL resourceName) throws IOException {
+		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository sailRepository = new SailRepository(shaclSail);
+
+		Utils.loadShapeData(sailRepository, resourceName);
+
+		List<Shape> shapes = ((ShaclSail) sailRepository.getSail()).refreshShapesPhase0();
+
+		Model statements = shapes.stream()
+				.map(shape -> shape.toModel(new DynamicModelFactory().createEmptyModel()))
+				.reduce((a, b) -> {
+					a.addAll(b);
+					return a;
+				})
+				.orElse(null);
+
+		assert statements != null;
+
+		System.out.println(AbstractShaclTest.toTurleString(statements));
+
 	}
 
 	private static Set<URL> getTestFiles() {

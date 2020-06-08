@@ -602,7 +602,7 @@ abstract public class AbstractShaclTest {
 
 	}
 
-	private static String toTurleString(Model parse) {
+	static String toTurleString(Model parse) {
 		parse = new TreeModel(new ArrayList<>(parse));
 
 		parse.setNamespace(SHACL.NS);

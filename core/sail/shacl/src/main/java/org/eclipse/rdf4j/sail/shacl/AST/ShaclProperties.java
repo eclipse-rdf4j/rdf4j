@@ -28,10 +28,17 @@ public class ShaclProperties {
 
 	List<Resource> clazz = new ArrayList<>();
 	List<Resource> or = new ArrayList<>();
+	List<Resource> xone = new ArrayList<>();
 	List<Resource> and = new ArrayList<>();
 	List<Resource> not = new ArrayList<>();
 	List<Resource> node = new ArrayList<>();
 	List<Resource> property = new ArrayList<>();
+	List<Value> hasValue = new ArrayList<>();
+
+	List<IRI> equals = new ArrayList<>();
+	List<IRI> disjoint = new ArrayList<>();
+	List<IRI> lessThan = new ArrayList<>();
+	List<IRI> lessThanOrEquals = new ArrayList<>();
 
 	Long minCount;
 	Long maxCount;
@@ -64,6 +71,9 @@ public class ShaclProperties {
 
 	boolean uniqueLang = false;
 
+	boolean closed = false;
+	Resource ignoredProperties;
+
 	Resource id;
 
 	List<Literal> message = new ArrayList<>();
@@ -87,6 +97,9 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#or":
 					or.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#xone":
+					xone.add((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#and":
 					and.add((Resource) object);
@@ -196,6 +209,15 @@ public class ShaclProperties {
 				case "http://www.w3.org/ns/shacl#uniqueLang":
 					uniqueLang = ((Literal) object).booleanValue();
 					break;
+				case "http://www.w3.org/ns/shacl#closed":
+					closed = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#ignoredProperties":
+					if (ignoredProperties != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					ignoredProperties = ((Resource) object);
+					break;
 				case "http://www.w3.org/ns/shacl#flags":
 					if (flags != null) {
 						throw new IllegalStateException(predicate + " already populated");
@@ -213,6 +235,22 @@ public class ShaclProperties {
 						throw new IllegalStateException(predicate + " already populated");
 					}
 					in = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#hasValue":
+					hasValue.add(object);
+					break;
+
+				case "http://www.w3.org/ns/shacl#equals":
+					equals.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#disjoint":
+					disjoint.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#lessThan":
+					lessThan.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#lessThanOrEquals":
+					lessThanOrEquals.add((IRI) object);
 					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
@@ -345,5 +383,37 @@ public class ShaclProperties {
 
 	public List<Resource> getNode() {
 		return node;
+	}
+
+	public boolean isClosed() {
+		return closed;
+	}
+
+	public Resource getIgnoredProperties() {
+		return ignoredProperties;
+	}
+
+	public List<Resource> getXone() {
+		return xone;
+	}
+
+	public List<Value> getHasValue() {
+		return hasValue;
+	}
+
+	public List<IRI> getEquals() {
+		return equals;
+	}
+
+	public List<IRI> getDisjoint() {
+		return disjoint;
+	}
+
+	public List<IRI> getLessThan() {
+		return lessThan;
+	}
+
+	public List<IRI> getLessThanOrEquals() {
+		return lessThanOrEquals;
 	}
 }

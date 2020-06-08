@@ -1,13 +1,18 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.RDFCollections;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
@@ -17,13 +22,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 
-public class OrConstraintComponent extends AbstractConstraintComponent {
-	List<Shape> or;
+public class XoneConstraintComponent extends AbstractConstraintComponent {
+	List<Shape> xone;
 
-	public OrConstraintComponent(Resource id, RepositoryConnection connection,
+	public XoneConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
 		super(id);
-		or = toList(connection, id)
+		xone = toList(connection, id)
 				.stream()
 				.map(v -> new ShaclProperties((Resource) v, connection))
 				.map(p -> {
@@ -40,26 +45,26 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.OR, getId());
-		RDFCollections.asRDF(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		model.add(subject, SHACL.XONE, getId());
+		RDFCollections.asRDF(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
 		if (exported.contains(getId())) {
 			return;
 		}
 		exported.add(getId());
-		or.forEach(o -> o.toModel(null, model, exported));
+		xone.forEach(o -> o.toModel(null, model, exported));
 
 	}
 
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain);
-		for (Shape shape : or) {
+		for (Shape shape : xone) {
 			shape.setTargetChain(targetChain.setOptimizable(false));
 		}
 	}
 
-	public List<Shape> getOr() {
-		return Collections.unmodifiableList(or);
+	public List<Shape> getXone() {
+		return Collections.unmodifiableList(xone);
 	}
 }

@@ -55,24 +55,6 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
-	static List<Value> toList(RepositoryConnection connection, Resource orList) {
-		List<Value> ret = new ArrayList<>();
-		while (!orList.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
-
-			try (Stream<Statement> stream = connection.getStatements(orList, RDF.REST, null).stream()) {
-				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
-		}
-
-		return ret;
-
-	}
-
 	@Override
 	public void setTargetChain(TargetChain targetChain) {
 		super.setTargetChain(targetChain);

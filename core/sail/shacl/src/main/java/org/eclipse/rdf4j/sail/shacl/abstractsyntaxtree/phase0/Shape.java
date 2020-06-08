@@ -18,10 +18,16 @@ import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClassConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClosedConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.DatatypeConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.DisjointConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.EqualsConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.HasValueConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.InConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.LanguageInConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.LessThanConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.LessThanOrEqualsConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxExclusiveConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.MaxInclusiveConstraintComponent;
@@ -35,6 +41,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponen
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.PatternConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.UniqueLangConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.XoneConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClass;
@@ -93,8 +100,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	protected abstract Shape shallowClone();
 
-	public void toModel(Model model) {
+	public Model toModel(Model model) {
 		toModel(null, model, new HashSet<>());
+		return model;
 	}
 
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
@@ -187,9 +195,19 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			constraintComponent.add(new NodeKindConstraintComponent(properties.getNodeKind()));
 		}
 
+		if (properties.isClosed()) {
+			constraintComponent.add(new ClosedConstraintComponent(connection, properties.getProperty(),
+					properties.getIgnoredProperties()));
+		}
+
 		properties.getOr()
 				.stream()
 				.map(or -> new OrConstraintComponent(or, connection, cache))
+				.forEach(constraintComponent::add);
+
+		properties.getXone()
+				.stream()
+				.map(xone -> new XoneConstraintComponent(xone, connection, cache))
 				.forEach(constraintComponent::add);
 
 		properties.getAnd()
@@ -204,7 +222,32 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 		properties.getClazz()
 				.stream()
-				.map(clazz -> new ClassConstraintComponent(clazz))
+				.map(ClassConstraintComponent::new)
+				.forEach(constraintComponent::add);
+
+		properties.getHasValue()
+				.stream()
+				.map(HasValueConstraintComponent::new)
+				.forEach(constraintComponent::add);
+
+		properties.getEquals()
+				.stream()
+				.map(EqualsConstraintComponent::new)
+				.forEach(constraintComponent::add);
+
+		properties.getDisjoint()
+				.stream()
+				.map(DisjointConstraintComponent::new)
+				.forEach(constraintComponent::add);
+
+		properties.getLessThan()
+				.stream()
+				.map(LessThanConstraintComponent::new)
+				.forEach(constraintComponent::add);
+
+		properties.getLessThanOrEquals()
+				.stream()
+				.map(LessThanOrEqualsConstraintComponent::new)
 				.forEach(constraintComponent::add);
 
 		return constraintComponent;

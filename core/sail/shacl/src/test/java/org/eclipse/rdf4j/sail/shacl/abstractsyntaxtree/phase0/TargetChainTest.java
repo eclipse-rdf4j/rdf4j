@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.IOException;
 import java.util.List;
 
@@ -8,8 +10,6 @@ import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.OrConstraintComponent;
 import org.junit.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 public class TargetChainTest {
 
