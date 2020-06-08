@@ -93,7 +93,14 @@ public abstract class SPARQL10QueryComplianceTest {
 			// incompatible with SPARQL 1.1 - syntax for decimals was modified
 			"Basic - Term 7",
 			// Test is incorrect: assumes timezoned date is comparable with non-timezoned
-			"date-2" };
+			"date-2",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"Strings: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"All: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"SELECT REDUCED ?x with strings"
+	};
 
 	private List<String> ignoredTests = new ArrayList<>(Arrays.asList(defaultIgnoredTests));
 
@@ -256,8 +263,8 @@ public abstract class SPARQL10QueryComplianceTest {
 						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("testName").stringValue();
 						String displayName = filename.substring(
-								filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(),
+								filename.lastIndexOf("testcases-sparql-1.0-w3c/")
+										+ "testcases-sparql-1.0-w3c/".length(),
 								filename.lastIndexOf("/"))
 								+ ": " + testName;
 
