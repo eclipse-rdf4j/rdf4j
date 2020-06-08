@@ -365,7 +365,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		return this.dataRepository;
 	}
 
-	static class SPARQLQueryTestManifest {
+	protected static class SPARQLQueryTestManifest {
 		private final List<Object[]> tests = new ArrayList<>();
 		private final List<String> subManifests = new ArrayList<>();
 
