@@ -138,10 +138,8 @@ public class FedXConnection extends AbstractSailConnection {
 
 		try {
 			// make sure to apply any external bindings
-			// Note: we use a conditional check for performance reasons.
-			// Further note that we subtract -1 from the size as the baseUri is optional
 			BindingSet queryBindings = EmptyBindingSet.getInstance();
-			if (bindings.size() > FedXRepositoryConnection.FEDX_BINDINGS.size() - 1) {
+			if (!FedXRepositoryConnection.FEDX_BINDINGS.containsAll(bindings.getBindingNames())) {
 				MapBindingSet actualQueryBindings = new MapBindingSet();
 				bindings.forEach(binding -> {
 					if (!FedXRepositoryConnection.FEDX_BINDINGS.contains(binding.getName())) {
