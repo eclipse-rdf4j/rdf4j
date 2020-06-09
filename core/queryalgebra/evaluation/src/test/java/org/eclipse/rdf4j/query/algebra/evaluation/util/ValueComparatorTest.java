@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -21,7 +19,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Test;
 
 /**
@@ -161,8 +158,8 @@ public class ValueComparatorTest {
 		cmp.setStrict(false);
 		assertTrue(cmp.isStrict() == false);
 		Literal date1 = vf.createLiteral("2019-09-02", XMLSchema.DATE);
-		Literal date2 = vf.createLiteral("2020", XMLSchema.GYEAR);
-		assertTrue(cmp.compare(date1, date2) < 0);
+		Literal date2 = vf.createLiteral("2018", XMLSchema.GYEAR);
+		assertTrue(cmp.compare(date1, date2) > 0);
 	}
 
 	@Test
@@ -170,14 +167,7 @@ public class ValueComparatorTest {
 		cmp.setStrict(true);
 		assertTrue(cmp.isStrict() == true);
 		Literal date1 = vf.createLiteral("2019-09-02", XMLSchema.DATE);
-		Literal date2 = vf.createLiteral("2020", XMLSchema.GYEAR);
-		try {
-			cmp.compare(date1, date2);
-			fail("Did not find expected exception");
-		} catch (ValueExprEvaluationException e) {
-			assertEquals(true, e.getMessage()
-					.contains(
-							"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators"));
-		}
+		Literal date2 = vf.createLiteral("2018", XMLSchema.GYEAR);
+		assertTrue(cmp.compare(date1, date2) < 0);
 	}
 }
