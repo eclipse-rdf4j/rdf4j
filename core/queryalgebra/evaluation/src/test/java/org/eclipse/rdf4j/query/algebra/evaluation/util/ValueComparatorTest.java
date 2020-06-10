@@ -157,8 +157,8 @@ public class ValueComparatorTest {
 	public void testNonStrictComparisons() throws Exception {
 		cmp.setStrict(false);
 		assertTrue(cmp.isStrict() == false);
-		Literal date1 = vf.createLiteral("2019-09-02", XMLSchema.DATE);
-		Literal date2 = vf.createLiteral("2018", XMLSchema.GYEAR);
+		Literal date1 = vf.createLiteral("2019-09-02", XSD.DATE);
+		Literal date2 = vf.createLiteral("2018", XSD.GYEAR);
 		assertTrue(cmp.compare(date1, date2) > 0);
 	}
 
@@ -166,8 +166,8 @@ public class ValueComparatorTest {
 	public void testStrictComparisons() throws Exception {
 		cmp.setStrict(true);
 		assertTrue(cmp.isStrict() == true);
-		Literal date1 = vf.createLiteral("2019-09-02", XMLSchema.DATE);
-		Literal date2 = vf.createLiteral("2018", XMLSchema.GYEAR);
+		Literal date1 = vf.createLiteral("2019-09-02", XSD.DATE);
+		Literal date2 = vf.createLiteral("2018", XSD.GYEAR);
 		assertTrue(cmp.compare(date1, date2) < 0);
 	}
 }
