@@ -10,6 +10,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 public class EffectiveTarget {
 
@@ -71,6 +72,8 @@ public class EffectiveTarget {
 			}
 
 		} else {
+			// complex chain
+
 			System.out.println("HERE");
 
 			List<StatementPattern> collect = chain.stream()
@@ -84,9 +87,10 @@ public class EffectiveTarget {
 					.orElse("");
 
 			System.out.println(query);
-			// complex chain
 
-			throw new UnsupportedOperationException();
+			return new TargetChainRetriever(connectionsGroup.getAddedStatements(), connectionsGroup.getBaseConnection(),
+					collect, query);
+
 		}
 
 	}

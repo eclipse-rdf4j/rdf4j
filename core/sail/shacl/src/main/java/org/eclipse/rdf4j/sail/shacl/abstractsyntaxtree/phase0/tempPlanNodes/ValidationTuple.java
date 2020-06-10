@@ -15,7 +15,10 @@ public class ValidationTuple {
 	static ValueComparator valueComparator = new ValueComparator();
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
-		return targetChain.equals(nextRight.targetChain);
+		Value current = targetChain.get(targetChain.size() - 1);
+		Value currentRight = nextRight.targetChain.get(nextRight.targetChain.size() - 1);
+
+		return current.equals(currentRight);
 	}
 
 	public List<Value> getTargetChain() {
