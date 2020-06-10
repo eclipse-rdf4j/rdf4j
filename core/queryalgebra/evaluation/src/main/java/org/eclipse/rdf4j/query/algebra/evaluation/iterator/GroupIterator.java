@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
@@ -45,7 +46,10 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.mapdb.DB;
@@ -474,6 +478,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				comparator.setStrict(false);
+			}
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
@@ -504,6 +511,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				comparator.setStrict(false);
+			}
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {

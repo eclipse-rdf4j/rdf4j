@@ -497,23 +497,27 @@ public class SailUpdateExecutor {
 				protected BindingSet convert(BindingSet sourceBinding) throws QueryEvaluationException {
 					if (whereClause instanceof SingletonSet && sourceBinding instanceof EmptyBindingSet
 							&& uc.getBindingSet() != null) {
-						// in the case of an empty WHERE clause, we use the
-						// supplied
-						// bindings to produce triples to DELETE/INSERT
+						// in the case of an empty WHERE clause, we use the supplied bindings to produce triples to
+						// DELETE/INSERT
 						return uc.getBindingSet();
 					} else {
-						// check if any supplied bindings do not occur in the
-						// bindingset
-						// produced by the WHERE clause. If so, merge.
+						// check if any supplied bindings do not occur in the bindingset produced by the WHERE clause.
+						// If so, merge.
 						Set<String> uniqueBindings = new HashSet<>(uc.getBindingSet().getBindingNames());
 						uniqueBindings.removeAll(sourceBinding.getBindingNames());
 						if (uniqueBindings.size() > 0) {
 							MapBindingSet mergedSet = new MapBindingSet();
 							for (String bindingName : sourceBinding.getBindingNames()) {
-								mergedSet.addBinding(sourceBinding.getBinding(bindingName));
+								final Binding binding = sourceBinding.getBinding(bindingName);
+								if (binding != null) {
+									mergedSet.addBinding(binding);
+								}
 							}
 							for (String bindingName : uniqueBindings) {
-								mergedSet.addBinding(uc.getBindingSet().getBinding(bindingName));
+								final Binding binding = uc.getBindingSet().getBinding(bindingName);
+								if (binding != null) {
+									mergedSet.addBinding(binding);
+								}
 							}
 							return mergedSet;
 						}
