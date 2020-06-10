@@ -7,11 +7,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 
 public class TargetChain {
 
-	private final ArrayDeque<Object> chain = new ArrayDeque<>();
+	private final ArrayDeque<Targetable> chain = new ArrayDeque<>();
 
 	private boolean optimizable = true;
 
@@ -22,7 +23,7 @@ public class TargetChain {
 		optimizable = targetChain.optimizable;
 	}
 
-	public TargetChain add(Object o) {
+	public TargetChain add(Targetable o) {
 
 		TargetChain targetChain = new TargetChain(this);
 		targetChain.chain.addAll(this.chain);
@@ -42,7 +43,7 @@ public class TargetChain {
 		return targetChain;
 	}
 
-	public Collection<Object> getChain() {
+	public Collection<Targetable> getChain() {
 		return Collections.unmodifiableCollection(chain);
 	}
 
@@ -51,7 +52,7 @@ public class TargetChain {
 	}
 
 	public Optional<Path> getPath() {
-		Object last = chain.getLast();
+		Targetable last = chain.getLast();
 
 		if (last instanceof Path) {
 			return Optional.of((Path) last);
@@ -62,7 +63,7 @@ public class TargetChain {
 
 	public EffectiveTarget getEffectiveTarget() {
 
-		ArrayDeque<Object> newChain = new ArrayDeque<>(chain);
+		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
 		newChain.removeLast();
 
 		return new EffectiveTarget(newChain);

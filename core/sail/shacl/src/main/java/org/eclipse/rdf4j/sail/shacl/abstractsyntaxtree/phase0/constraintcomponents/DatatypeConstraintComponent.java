@@ -37,28 +37,22 @@ public class DatatypeConstraintComponent extends AbstractConstraintComponent {
 	public TupleValidationPlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans) {
 
-		if (targetChain.getChain().size() == 2) {
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget();
 
-			EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget();
+		Optional<Path> path = targetChain.getPath();
+		if (path.isPresent()) {
 
-			Optional<Path> path = targetChain.getPath();
-			if (path.isPresent()) {
+			TupleValidationPlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
 
-				TupleValidationPlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
+			TupleValidationPlanNode invalidValuesDirectOnPath = path.get()
+					.getAdded(connectionsGroup,
+							planNode -> new DatatypeFilter(planNode, datatype)
+									.getFalseNode(UnBufferedPlanNode.class));
 
-				TupleValidationPlanNode invalidValuesDirectOnPath = path.get()
-						.getAdded(connectionsGroup,
-								planNode -> new DatatypeFilter(planNode, datatype)
-										.getFalseNode(UnBufferedPlanNode.class));
-
-				return new ValidationInnerJoin(addedTargets, invalidValuesDirectOnPath);
-			} else {
-				throw new UnsupportedOperationException();
-			}
-
+			return new ValidationInnerJoin(addedTargets, invalidValuesDirectOnPath);
+		} else {
+			throw new UnsupportedOperationException();
 		}
-
-		throw new UnsupportedOperationException();
 
 	}
 }

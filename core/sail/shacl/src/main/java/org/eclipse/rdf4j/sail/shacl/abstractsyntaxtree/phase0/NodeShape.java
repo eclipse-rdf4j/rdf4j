@@ -87,7 +87,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public TupleValidationPlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 
 	@Override

@@ -108,7 +108,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	@Override
 	public TupleValidationPlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans) {
-		return null;
+		throw new UnsupportedOperationException();
 	}
 
 	@Override

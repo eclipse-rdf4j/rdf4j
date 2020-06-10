@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -51,7 +53,17 @@ public class SequencePath extends Path {
 
 	@Override
 	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
-		return null;
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public String getQueryFragment(Var subject, Var object) {
+		throw new UnsupportedOperationException();
 	}
 
 }

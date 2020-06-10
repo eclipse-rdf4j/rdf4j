@@ -1,10 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -34,6 +37,16 @@ public class AlternativePath extends Path {
 
 	@Override
 	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
-		return null;
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public String getQueryFragment(Var subject, Var object) {
+		throw new UnsupportedOperationException();
 	}
 }

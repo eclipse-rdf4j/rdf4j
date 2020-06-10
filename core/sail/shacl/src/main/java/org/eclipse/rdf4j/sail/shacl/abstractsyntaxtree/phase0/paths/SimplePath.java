@@ -1,10 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.AST.PlaneNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
@@ -49,5 +52,16 @@ public class SimplePath extends Path {
 
 	@Override
 	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+		return Stream.of(new StatementPattern(subject, new Var(predicate), object));
+	}
+
+	@Override
+	public String getQueryFragment(Var subject, Var object) {
+
+		return "?" + subject.getName() + " <" + predicate + "> ?" + object.getName() + " .";
 	}
 }
