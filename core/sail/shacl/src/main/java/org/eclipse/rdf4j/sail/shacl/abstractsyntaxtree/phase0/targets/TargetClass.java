@@ -11,10 +11,13 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
@@ -33,7 +36,7 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
+	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
@@ -45,7 +48,9 @@ public class TargetClass extends Target {
 					new Select(connectionsGroup.getAddedStatements(), getQueryFragment("?a", "?c", null), "?a", "?c"));
 		}
 
-		return new Unique(new TrimTuple(planNode, 0, 1));
+		Unique targets = new Unique(new TrimTuple(planNode, 0, 1));
+
+		return new ValidationTupleMapper(targets, Tuple::getLine, null, null);
 	}
 
 	@Override

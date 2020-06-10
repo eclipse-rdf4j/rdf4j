@@ -43,7 +43,7 @@ public class SetFilterNode implements PlanNode {
 			private void calulateNext() {
 				while (next == null && iterator.hasNext()) {
 					Tuple temp = iterator.next();
-					boolean contains = targetNodeList.contains(temp.getlist().get(index));
+					boolean contains = targetNodeList.contains(temp.getLine().get(index));
 					if (returnValid && contains) {
 						next = temp;
 					} else if (!returnValid && !contains) {

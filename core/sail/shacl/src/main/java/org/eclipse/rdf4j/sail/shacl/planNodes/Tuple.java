@@ -74,10 +74,6 @@ public class Tuple implements Comparable<Tuple> {
 		causedByPropertyShapes = new ArrayDeque<>(causedByPropertyShapes);
 	}
 
-	public List<Value> getlist() {
-		return line;
-	}
-
 	@Override
 	public String toString() {
 		String propertyShapeDescrption = "";

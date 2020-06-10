@@ -114,7 +114,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 			previous = next;
 
-			Value value = next.getlist().get(1);
+			Value value = next.getLine().get(1);
 
 			if (value instanceof Literal) {
 				Optional<String> lang = ((Literal) value).getLanguage();

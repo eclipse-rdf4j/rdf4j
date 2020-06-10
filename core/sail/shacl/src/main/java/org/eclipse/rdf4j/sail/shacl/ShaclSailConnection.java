@@ -40,6 +40,9 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationSingleCloseablePlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -357,12 +360,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							validateEntireBaseSail))
 					.filter(Objects::nonNull)
 					.map(temp -> () -> {
-						PlanNode planNode = new SingleCloseablePlanNode(temp);
+						TupleValidationPlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
 
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);
 
-						try (Stream<Tuple> stream = planNode.iterator().stream()) {
+						try (Stream<ValidationTuple> stream = planNode.iterator().stream()) {
 //							if (GlobalValidationExecutionLogging.loggingEnabled) {
 //								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 //								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
@@ -374,7 +377,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							List<Tuple> collect = new ArrayList<>(stream.map(p -> {
+								Tuple tuple = new Tuple();
+
+								tuple.setLine(p.getTargetChain());
+								tuple.getLine().add(p.getValue());
+
+								return tuple;
+							}).collect(Collectors.toList()));
 							validationExecutionLogger.flush();
 
 //							if (sail.isPerformanceLogging()) {

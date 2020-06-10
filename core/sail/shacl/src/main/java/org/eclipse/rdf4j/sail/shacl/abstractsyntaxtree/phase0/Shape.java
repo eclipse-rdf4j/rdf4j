@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClas
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
@@ -266,7 +267,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		constraintComponents.forEach(c -> c.setTargetChain(targetChain));
 	}
 
-	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	public TupleValidationPlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			boolean validateEntireBaseSail) {
 		assert constraintComponents.size() == 1;
 

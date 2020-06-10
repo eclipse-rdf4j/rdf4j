@@ -10,7 +10,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
 
 public class TargetNode extends Target {
 	private final TreeSet<Value> targetNode;
@@ -27,7 +27,7 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
+	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup) {
 		return null;
 	}
 
