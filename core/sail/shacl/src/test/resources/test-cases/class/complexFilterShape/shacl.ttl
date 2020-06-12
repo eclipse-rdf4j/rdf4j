@@ -9,8 +9,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:target [a dash:AllSubjectsTarget] ;
-	sh:filterShape [
+	sh:targetShape [
         		a sh:Shape ;
         		sh:or (
         		        [ sh:and ([sh:path rdf:type; sh:hasValue ex:Person] [sh:path rdf:type; sh:hasValue ex:Person]) ]

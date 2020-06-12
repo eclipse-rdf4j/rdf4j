@@ -596,8 +596,8 @@ public class SHACL {
 	/** sh:targetSubjectsOf */
 	public static final IRI TARGET_SUBJECTS_OF;
 
-	/** sh:filterTarget */
-	public static final IRI FILTER_SHAPE;
+	/** sh:targetShape */
+	public static final IRI TARGET_SHAPE;
 
 	/** sh:uniqueLang */
 	public static final IRI UNIQUE_LANG;
@@ -833,6 +833,6 @@ public class SHACL {
 		XONE = factory.createIRI(NAMESPACE, "xone");
 		ZERO_OR_MORE_PATH = factory.createIRI(NAMESPACE, "zeroOrMorePath");
 		ZERO_OR_ONE_PATH = factory.createIRI(NAMESPACE, "zeroOrOnePath");
-		FILTER_SHAPE = factory.createIRI(NAMESPACE, "filterShape");
+		TARGET_SHAPE = factory.createIRI(NAMESPACE, "targetShape");
 	}
 }

@@ -87,7 +87,7 @@ public class ExperimentalFeaturesTest {
 		SailRepository shaclRepository = Utils
 				.getInitializedShaclRepository("test-cases/class/simpleFilterShape/shacl.ttl", false);
 
-		((ShaclSail) shaclRepository.getSail()).setExperimentalFilterShapeSupport(true);
+		((ShaclSail) shaclRepository.getSail()).setExperimentalTargetShapeSupport(true);
 		((ShaclSail) shaclRepository.getSail()).setExperimentalDashSupport(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {

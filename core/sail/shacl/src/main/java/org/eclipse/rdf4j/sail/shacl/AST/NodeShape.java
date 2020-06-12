@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -250,6 +249,16 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 								new TargetObjectsOf(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
 										shaclProperties.getTargetObjectsOf()));
 					}
+
+					if (shaclSail.isExperimentalTargetShapeSupport()) {
+						shaclProperties.getTargetShape()
+								.stream()
+								.map(targetShape -> new TargetShape(shapeId, shaclSail, connection,
+										shaclProperties.isDeactivated(), targetShape))
+								.forEach(propertyShapes::add);
+
+					}
+
 					if (!shaclProperties.getTarget().isEmpty()) {
 						shaclProperties.getTarget()
 								.forEach(sparqlTarget -> {
@@ -266,7 +275,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 									if (shaclSail.isExperimentalDashSupport() && connection.hasStatement(sparqlTarget,
 											RDF.TYPE, DASH.AllSubjectsTarget, true)) {
 										propertyShapes.add(new AllSubjectsTarget(shapeId, shaclSail, connection,
-												shaclProperties.isDeactivated(), shaclProperties.getFilterShape()));
+												shaclProperties.isDeactivated()));
 									}
 
 								});

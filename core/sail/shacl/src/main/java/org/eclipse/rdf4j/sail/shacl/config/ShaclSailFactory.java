@@ -64,7 +64,7 @@ public class ShaclSailFactory implements SailFactory {
 			sail.setPerformanceLogging(shaclSailConfig.isPerformanceLogging());
 			sail.setSerializableValidation(shaclSailConfig.isSerializableValidation());
 			sail.setRdfsSubClassReasoning(shaclSailConfig.isRdfsSubClassReasoning());
-			sail.setExperimentalFilterShapeSupport(shaclSailConfig.isExperimentalFilterShapeSupport());
+			sail.setExperimentalTargetShapeSupport(shaclSailConfig.isExperimentalTargetShapeSupport());
 			sail.setExperimentalDashSupport(shaclSailConfig.isExperimentalDashSupport());
 		}
 

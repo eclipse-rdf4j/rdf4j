@@ -186,7 +186,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
-	private boolean experimentalFilterShapeSupport = ShaclSailConfig.EXPERIMENTAL_FILTER_SHAPE_SUPPORT_DEFAULT;
+	private boolean experimentalTargetShapeSupport = ShaclSailConfig.EXPERIMENTAL_TARGET_SHAPE_SUPPORT_DEFAULT;
 	private boolean experimentalDashSupport = ShaclSailConfig.EXPERIMENTAL_DASH_SUPPORT_DEFAULT;
 
 	static {
@@ -240,7 +240,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
 	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
-	 * paths are supported. sh:filterShape requires that experimental support is enabled for that feature.
+	 * paths are supported. sh:targetShape requires that experimental support is enabled for that feature.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -275,7 +275,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
-				SHACL.FILTER_SHAPE);
+				SHACL.TARGET_SHAPE);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -817,10 +817,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
 	 * sh:path.
 	 *
-	 * @param experimentalFilterShapeSupport true to enable (default: false)
+	 * @param experimentalTargetShapeSupport true to enable (default: false)
 	 */
-	public void setExperimentalFilterShapeSupport(boolean experimentalFilterShapeSupport) {
-		this.experimentalFilterShapeSupport = experimentalFilterShapeSupport;
+	public void setExperimentalTargetShapeSupport(boolean experimentalTargetShapeSupport) {
+		this.experimentalTargetShapeSupport = experimentalTargetShapeSupport;
 		forceRefreshShapes();
 	}
 
@@ -834,8 +834,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 *
 	 * @return true if enabled
 	 */
-	public boolean isExperimentalFilterShapeSupport() {
-		return experimentalFilterShapeSupport;
+	public boolean isExperimentalTargetShapeSupport() {
+		return experimentalTargetShapeSupport;
 	}
 
 	/**

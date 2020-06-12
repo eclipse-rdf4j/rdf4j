@@ -22,10 +22,10 @@ public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
-	private final List<Resource> clazz = new ArrayList<>(0);
-	private final List<Resource> or = new ArrayList<>(0);
-	private final List<Resource> and = new ArrayList<>(0);
-	private final List<Resource> not = new ArrayList<>(0);
+	private final List<Resource> clazz = new ArrayList<>();
+	private final List<Resource> or = new ArrayList<>();
+	private final List<Resource> and = new ArrayList<>();
+	private final List<Resource> not = new ArrayList<>();
 	private Long minCount;
 	private Long maxCount;
 
@@ -54,9 +54,9 @@ public class ShaclProperties {
 	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
 	private final Set<IRI> targetSubjectsOf = new HashSet<>();
 	private final Set<IRI> targetObjectsOf = new HashSet<>();
+	private final List<Resource> targetShape = new ArrayList<>();
 
 	private final List<Resource> target = new ArrayList<>();
-	private Resource filterShape;
 
 	private boolean deactivated = false;
 
@@ -203,11 +203,8 @@ public class ShaclProperties {
 					}
 					valueIn = (Resource) object;
 					break;
-				case "http://www.w3.org/ns/shacl#filterShape":
-					if (filterShape != null) {
-						throw new IllegalStateException(predicate + " already populated");
-					}
-					filterShape = (Resource) object;
+				case "http://www.w3.org/ns/shacl#targetShape":
+					targetShape.add((Resource) object);
 					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
@@ -330,8 +327,8 @@ public class ShaclProperties {
 		return target;
 	}
 
-	public Resource getFilterShape() {
-		return filterShape;
+	public List<Resource> getTargetShape() {
+		return targetShape;
 	}
 
 	public Resource getValueIn() {

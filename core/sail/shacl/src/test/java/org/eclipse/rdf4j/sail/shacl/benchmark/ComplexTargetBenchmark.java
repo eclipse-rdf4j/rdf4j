@@ -114,7 +114,7 @@ public class ComplexTargetBenchmark {
 		repository = new SailRepository(Utils.getInitializedShaclSail(shape));
 
 		((ShaclSail) repository.getSail()).setExperimentalDashSupport(true);
-		((ShaclSail) repository.getSail()).setExperimentalFilterShapeSupport(true);
+		((ShaclSail) repository.getSail()).setExperimentalTargetShapeSupport(true);
 
 		((ShaclSail) repository.getSail()).disableValidation();
 

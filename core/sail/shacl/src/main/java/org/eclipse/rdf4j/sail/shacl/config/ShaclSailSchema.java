@@ -55,8 +55,8 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
-	public final static IRI EXPERIMENTAL_FILTER_SHAPE_SUPPORT = create("experimentalFilterShapeSupport");
+	/** <code>http://rdf4j.org/config/sail/shacl#experimentalTargetShapeSupport</code> */
+	public final static IRI EXPERIMENTAL_TARGET_SHAPE_SUPPORT = create("experimentalTargetShapeSupport");
 
 	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
 	public final static IRI EXPERIMENTAL_DASH_SUPPORT = create("experimentalDashSupport");

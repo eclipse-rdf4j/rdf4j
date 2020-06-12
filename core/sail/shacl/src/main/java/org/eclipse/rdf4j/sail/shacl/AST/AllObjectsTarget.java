@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 /**
- * sh:targetObjectsOf
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -43,11 +42,15 @@ public class AllObjectsTarget extends NodeShape {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
+		return getPlanNode(connectionsGroup, connectionsGroup.getBaseConnection());
+	}
+
+	private PlanNode getPlanNode(ConnectionsGroup connectionsGroup, SailConnection baseConnection) {
 		PlanNode select = new Unique(
 				new Sort(
 						new TrimTuple(
 								new UnorderedSelect(
-										connectionsGroup.getBaseConnection(),
+										baseConnection,
 										null,
 										null,
 										null,
@@ -63,47 +66,19 @@ public class AllObjectsTarget extends NodeShape {
 			PlaneNodeWrapper planeNodeWrapper) {
 
 		assert planeNodeWrapper == null;
-		PlanNode select = new Unique(
-				new Sort(
-						new TrimTuple(
-								new UnorderedSelect(
-										connectionsGroup.getAddedStatements(),
-										null,
-										null,
-										null,
-										UnorderedSelect.OutputPattern.ObjectPredicateSubject),
-								0,
-								1)));
-
-		return connectionsGroup.getCachedNodeFor(select);
+		return getPlanNode(connectionsGroup, connectionsGroup.getAddedStatements());
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
 		assert planeNodeWrapper == null;
-		PlanNode select = new Unique(
-				new Sort(
-						new TrimTuple(
-								new UnorderedSelect(
-										connectionsGroup.getRemovedStatements(),
-										null,
-										null,
-										null,
-										UnorderedSelect.OutputPattern.ObjectPredicateSubject),
-								0,
-								1)));
-
-		return connectionsGroup.getCachedNodeFor(select);
+		return getPlanNode(connectionsGroup, connectionsGroup.getRemovedStatements());
 	}
 
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
-		if (stats.isEmpty()) {
-			return false;
-		}
-
-		return true;
+		return !stats.isEmpty();
 	}
 
 	@Override
