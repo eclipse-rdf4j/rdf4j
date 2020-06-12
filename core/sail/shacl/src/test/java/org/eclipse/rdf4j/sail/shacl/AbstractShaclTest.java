@@ -94,6 +94,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/datatype/allObjects",
 		"test-cases/datatype/not",
 		"test-cases/datatype/notNodeShape",
+		"test-cases/datatype/notNodeShapeTargetShape",
+		"test-cases/datatype/notTargetShape",
 		"test-cases/datatype/notNodeShapeAnd",
 		"test-cases/datatype/notNot",
 		"test-cases/datatype/notTargetNode",
