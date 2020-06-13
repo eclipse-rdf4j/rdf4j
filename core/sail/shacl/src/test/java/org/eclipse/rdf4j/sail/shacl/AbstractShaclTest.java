@@ -171,10 +171,15 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValue/and",
 //		"test-cases/hasValue/not",
 //		"test-cases/hasValue/not2",
+//		"test-cases/hasValue/not2",
+		"test-cases/hasValue/targetNode",
+		"test-cases/hasValue/targetNode2",
 		"test-cases/valueIn/simple",
 		"test-cases/valueIn/and",
 		"test-cases/valueIn/not",
-		"test-cases/valueIn/not2"
+		"test-cases/valueIn/not2",
+		"test-cases/valueIn/targetNode",
+		"test-cases/valueIn/targetNode2"
 	)
 		.distinct()
 		.sorted()
