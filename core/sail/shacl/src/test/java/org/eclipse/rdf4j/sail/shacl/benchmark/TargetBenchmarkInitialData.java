@@ -73,7 +73,7 @@ public class TargetBenchmarkInitialData {
 	SailRepository repository;
 
 	@Setup(Level.Trial)
-	public void trialSetup() {
+	public void trialSetup() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -100,11 +100,11 @@ public class TargetBenchmarkInitialData {
 		}
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Setup(Level.Invocation)
-	public void invocationSetup() throws IOException {
+	public void invocationSetup() throws IOException, InterruptedException {
 
 		repository = new SailRepository(Utils.getInitializedShaclSail(shape));
 
@@ -122,7 +122,7 @@ public class TargetBenchmarkInitialData {
 		((ShaclSail) repository.getSail()).enableValidation();
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Benchmark

@@ -62,7 +62,7 @@ public class NotClassBenchmarkEmpty {
 	private final IRI ANIMAL = vf.createIRI("http://example.com/ns#Animal");
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -91,7 +91,7 @@ public class NotClassBenchmarkEmpty {
 		}));
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Benchmark

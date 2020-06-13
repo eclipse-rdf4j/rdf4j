@@ -105,7 +105,7 @@ public class ComplexTargetBenchmark {
 		}
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Setup(Level.Invocation)
@@ -127,6 +127,7 @@ public class ComplexTargetBenchmark {
 		((ShaclSail) repository.getSail()).enableValidation();
 
 		System.gc();
+		Thread.sleep(100);
 	}
 
 	@Benchmark

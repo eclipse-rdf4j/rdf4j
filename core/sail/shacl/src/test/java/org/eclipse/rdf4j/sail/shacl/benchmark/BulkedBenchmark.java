@@ -94,10 +94,11 @@ public class BulkedBenchmark {
 	}
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 		System.gc();
+		Thread.sleep(100);
 	}
 
 	@Benchmark

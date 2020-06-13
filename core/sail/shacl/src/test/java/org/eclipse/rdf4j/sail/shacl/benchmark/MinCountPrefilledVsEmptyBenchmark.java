@@ -90,7 +90,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		}
 		shaclRepo.enableValidation();
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@TearDown(Level.Invocation)

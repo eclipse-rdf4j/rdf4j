@@ -116,6 +116,7 @@ public class MinCountBenchmarkPrefilled {
 			connection.add(allStatements2);
 		}
 		System.gc();
+		Thread.sleep(100);
 	}
 
 	@TearDown(Level.Invocation)

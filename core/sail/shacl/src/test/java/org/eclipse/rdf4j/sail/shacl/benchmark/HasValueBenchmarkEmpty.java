@@ -10,14 +10,13 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -45,17 +44,28 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class ClassBenchmarkEmpty {
+public class HasValueBenchmarkEmpty {
+
 	{
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
+	ValueFactory vf = SimpleValueFactory.getInstance();
+
+	static String ex = "http://example.com/ns#";
+
+	IRI Person = vf.createIRI(ex, "Person");
+	IRI knows = vf.createIRI(ex, "knows");
+	IRI steve = vf.createIRI(ex, "steve");
+	IRI peter = vf.createIRI(ex, "peter");
+
 	private List<List<Statement>> allStatements;
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Iteration)
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
@@ -64,11 +74,11 @@ public class ClassBenchmarkEmpty {
 
 		allStatements = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
 			IRI iri = vf.createIRI("http://example.com/" + i + "_" + j);
-			IRI friend = vf.createIRI("http://example.com/friend" + i + "_" + j);
-
-			statements.add(vf.createStatement(iri, RDF.TYPE, FOAF.PERSON));
-			statements.add(vf.createStatement(iri, FOAF.KNOWS, friend));
-			statements.add(vf.createStatement(friend, RDF.TYPE, FOAF.PERSON));
+			statements.add(vf.createStatement(iri, RDF.TYPE, Person));
+			statements.add(vf.createStatement(iri, knows, vf.createLiteral(i)));
+			statements.add(vf.createStatement(iri, knows, vf.createBNode()));
+			statements.add(vf.createStatement(iri, knows, steve));
+			statements.add(vf.createStatement(iri, knows, peter));
 		}));
 
 		System.gc();
@@ -78,20 +88,25 @@ public class ClassBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclClassBenchmark.ttl"));
+		SailRepository repository = new SailRepository(
+				Utils.getInitializedShaclSail("test-cases/hasValue/simple/shacl.ttl"));
+
+//		((ShaclSail) repository.getSail()).setIgnoreNoShapesLoadedException(true);
+//		((ShaclSail) repository.getSail()).disableValidation();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-				connection.begin();
+				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.add(statements);
 				connection.commit();
 			}
 		}
+
 		repository.shutDown();
 
 	}
@@ -104,47 +119,51 @@ public class ClassBenchmarkEmpty {
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
+			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.commit();
 		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-				connection.begin();
+				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.add(statements);
 				connection.commit();
 			}
 		}
-		repository.shutDown();
+
+//		repository.shutDown();
 
 	}
 
-	@Benchmark
-	public void sparqlInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select * where {?a a <" + FOAF.PERSON + ">. ?a <"
-								+ FOAF.KNOWS + "> ?c. FILTER(NOT EXISTS{?c a <" + FOAF.PERSON + ">})}")
-						.evaluate()
-						.stream()) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
-		repository.shutDown();
-
-	}
+//	@Benchmark
+//	public void sparqlInsteadOfShacl() {
+//
+//		SailRepository repository = new SailRepository(new MemoryStore());
+//
+//		repository.init();
+//
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			connection.begin(IsolationLevels.SNAPSHOT);
+//			connection.commit();
+//		}
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			for (List<Statement> statements : allStatements) {
+//				connection.begin(IsolationLevels.SNAPSHOT);
+//				connection.add(statements);
+//				try (Stream<BindingSet> stream = connection
+//						.prepareTupleQuery(
+//							"select * where {?a a <" +ex+"Person" + ">; " +
+//								"<" +ex+"knows"+"> ?knows. " +
+//								"FILTER(?knows != <http://www.w3.org/2001/XMLSchema#int>)}")
+//						.evaluate()
+//						.stream()) {
+//					stream.forEach(System.out::println);
+//				}
+//				connection.commit();
+//			}
+//		}
+//
+////		repository.shutDown();
+//
+//	}
 
 }

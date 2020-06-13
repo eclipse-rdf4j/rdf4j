@@ -56,7 +56,7 @@ public class UniqueLangBenchmarkEmpty {
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -72,7 +72,7 @@ public class UniqueLangBenchmarkEmpty {
 		}));
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Benchmark

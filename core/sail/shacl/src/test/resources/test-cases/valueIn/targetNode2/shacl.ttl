@@ -10,6 +10,6 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetNode ex:steve ;
-	dash:valueIn (ex:peter, ex:mary, ex:kate) ;
+	dash:valueIn (ex:peter ex:mary ex:kate) ;
 	 .
 
