@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -168,13 +169,13 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	public static class Factory {
 
 		public static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
-				NodeShape nodeShape) {
+				NodeShape nodeShape, ShaclSail shaclSail) {
 
 			try (Stream<Statement> stream = connection.getStatements(ShapeId, SHACL.PROPERTY, null).stream()) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
 					List<PathPropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
 							propertyShapeId,
-							null);
+							null, shaclSail);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
 			}
@@ -183,7 +184,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 		public static List<PathPropertyShape> getPropertyShapesInner(SailRepositoryConnection connection,
 				NodeShape nodeShape,
-				Resource propertyShapeId, PathPropertyShape parent) {
+				Resource propertyShapeId, PathPropertyShape parent, ShaclSail shaclSail) {
 			List<PathPropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
@@ -206,7 +207,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 			if (!shaclProperties.getOr().isEmpty()) {
 				shaclProperties.getOr().forEach(or -> {
 					propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), or));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), or, shaclSail));
 				});
 			}
 			if (shaclProperties.getMinLength() != null) {
@@ -265,13 +266,13 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 			if (!shaclProperties.getAnd().isEmpty()) {
 				shaclProperties.getAnd().forEach(and -> {
 					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), and));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), and, shaclSail));
 				});
 			}
 			if (!shaclProperties.getNot().isEmpty()) {
 				shaclProperties.getNot().forEach(not -> {
 					propertyShapes.add(new NotPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), not));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), not, shaclSail));
 				});
 			}
 			if (shaclProperties.getIn() != null) {
@@ -288,7 +289,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
 						shaclProperties.getHasValue()));
 			}
-			if (shaclProperties.getValueIn() != null) {
+			if (shaclProperties.getValueIn() != null && shaclSail.isExperimentalDashSupport()) {
 				propertyShapes.add(new ValueInPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
 						shaclProperties.getValueIn()));

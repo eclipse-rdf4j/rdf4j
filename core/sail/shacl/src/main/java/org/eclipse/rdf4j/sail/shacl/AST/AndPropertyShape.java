@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
@@ -42,9 +43,9 @@ public class AndPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
 	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource and) {
+			PathPropertyShape parent, Resource path, Resource and, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
-		this.and = getPropertyShapes(connection, nodeShape, and);
+		this.and = getPropertyShapes(connection, nodeShape, shaclSail, and);
 
 		if (!this.and.stream().flatMap(Collection::stream).findAny().isPresent()) {
 			logger.warn("sh:and contained no supported shapes: " + id);
@@ -54,9 +55,10 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	private List<List<PathPropertyShape>> getPropertyShapes(SailRepositoryConnection connection, NodeShape nodeShape,
+			ShaclSail shaclSail,
 			Resource and) {
 		return toList(connection, and).stream()
-				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this)
+				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this, shaclSail)
 						.stream()
 						.filter(s -> !s.deactivated)
 						.collect(Collectors.toList()))

@@ -58,6 +58,8 @@ public class ValueInPropertyShape extends PathPropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
+		assert this.getPath() != null : "We don't currently support dash:ValueIn without a path";
+
 		return new EmptyNode();
 
 	}

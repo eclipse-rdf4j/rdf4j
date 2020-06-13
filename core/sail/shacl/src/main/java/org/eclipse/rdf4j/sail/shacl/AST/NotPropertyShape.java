@@ -16,10 +16,10 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -40,10 +40,11 @@ public class NotPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NotPropertyShape.class);
 
 	NotPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource not) {
+			PathPropertyShape parent, Resource path, Resource not, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
-		List<List<PathPropertyShape>> collect = Factory.getPropertyShapesInner(connection, nodeShape, not, this)
+		List<List<PathPropertyShape>> collect = Factory
+				.getPropertyShapesInner(connection, nodeShape, not, this, shaclSail)
 				.stream()
 				.filter(s -> !s.deactivated)
 				.map(Collections::singletonList)

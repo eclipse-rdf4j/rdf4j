@@ -55,8 +55,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	public NodeShape(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
 		if (!deactivated) {
-			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
-			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id, null);
+			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this, shaclSail);
+			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id, null, shaclSail);
 		}
 	}
 
