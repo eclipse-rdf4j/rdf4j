@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -82,7 +82,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode planNode;
 
 			if (getPath() == null) {
-				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
+				planNode = new TupleMapper(overrideTargetNode.getPlanNode(), t -> {
 					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
@@ -127,7 +127,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 		}
 
 		if (getPath() == null) {
-			PlanNode targets = new ModifyTuple(
+			PlanNode targets = new TupleMapper(
 					nodeShape.getPlanAddedStatements(connectionsGroup, null),
 					t -> {
 						t.getLine().add(t.getLine().get(0));
@@ -226,7 +226,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			// do bulked external join for the removed class statements again the query above.
 			// Essentially gets data that is now invalid because of the removed type statement
-			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new ModifyTuple(
+			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new TupleMapper(
 					new BulkedExternalInnerJoin(removedTypeStatements, connectionsGroup.getBaseConnection(), query,
 							false,
 							null, "?a", "?c"),
@@ -259,7 +259,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 			PlanNode planNode;
 
 			if (getPath() == null) {
-				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
+				planNode = new TupleMapper(overrideTargetNode.getPlanNode(), t -> {
 					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
@@ -335,7 +335,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 				// do bulked external join for the removed class statements again the query above.
 				// Essentially gets data that is now invalid because of the removed type statement
-				PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new ModifyTuple(
+				PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new TupleMapper(
 						new BulkedExternalInnerJoin(newAddedByClassResource, connectionsGroup.getBaseConnection(),
 								query,
 								false, null, "?a",
@@ -437,7 +437,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			// do bulked external join for the removed class statements again the query above.
 			// Essentially gets data that is now invalid because of the removed type statement
-			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new ModifyTuple(
+			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new TupleMapper(
 					new BulkedExternalInnerJoin(removedTypeStatements, connectionsGroup.getBaseConnection(), query,
 							false,
 							null, "?a", "?c"),
@@ -467,7 +467,7 @@ public class ClassPropertyShape extends PathPropertyShape {
 
 			// do bulked external join for the removed class statements again the query above.
 			// Essentially gets data that is now invalid because of the removed type statement
-			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new ModifyTuple(
+			PlanNode invalidDataDueToRemovedTypeStatement = new Sort(new TupleMapper(
 					new BulkedExternalInnerJoin(removedTypeStatements, connectionsGroup.getBaseConnection(), query,
 							false,
 							null, "?a", "?c"),

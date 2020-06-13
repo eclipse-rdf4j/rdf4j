@@ -13,13 +13,13 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
-public class ModifyTuple implements PlanNode {
+public class TupleMapper implements PlanNode {
 	PlanNode parent;
 	ModifyTupleInterface function;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ModifyTuple(PlanNode parent, ModifyTupleInterface function) {
+	public TupleMapper(PlanNode parent, ModifyTupleInterface function) {
 		this.parent = parent;
 		this.function = function;
 	}

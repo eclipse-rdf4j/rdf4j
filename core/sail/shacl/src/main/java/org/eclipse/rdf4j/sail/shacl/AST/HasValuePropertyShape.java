@@ -7,6 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -27,9 +31,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleHelper;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValueInFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +73,27 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		// TODO - these plans are generally slow because they generate a lot of SPARQL queries and also they don't
 		// optimize for the case when everything already valid in the added statements. The code is also very
 		// repetitive.
+
+		if(getPath() == null){
+			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+			if(overrideTargetNode != null) addedTargets = overrideTargetNode.getPlanNode();
+
+			PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
+				List<Value> line = t.getLine();
+				t.getLine().add(line.get(0));
+				return t;
+			});
+
+			if(negateThisPlan){
+				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue))).getTrueNode(UnBufferedPlanNode.class);
+			}else {
+				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue))).getFalseNode(UnBufferedPlanNode.class);
+			}
+
+			return new EnrichWithShape(invalidTargets,this);
+
+
+		}
 
 		if (negateThisPlan) {
 			if (overrideTargetNode != null) {

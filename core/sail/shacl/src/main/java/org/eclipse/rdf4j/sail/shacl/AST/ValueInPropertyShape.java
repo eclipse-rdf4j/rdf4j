@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -22,11 +25,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ValueInFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,15 +42,15 @@ import org.slf4j.LoggerFactory;
  */
 public class ValueInPropertyShape extends PathPropertyShape {
 
-	private final List<Value> valueIn;
+	private final Set<Value> valueIn;
 	private static final Logger logger = LoggerFactory.getLogger(ValueInPropertyShape.class);
 
 	ValueInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path,
 			Resource valueIn) {
-		super(id, connection, nodeShape, true, parent, path);
+		super(id, connection, nodeShape, deactivated, parent, path);
 
-		this.valueIn = toList(connection, valueIn);
+		this.valueIn = toSet(connection, valueIn);
 
 		assert (!this.valueIn.isEmpty());
 
@@ -58,9 +65,29 @@ public class ValueInPropertyShape extends PathPropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
-		assert this.getPath() != null : "We don't currently support dash:ValueIn without a path";
+		if(getPath() == null){
+			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+			if(overrideTargetNode != null) addedTargets = overrideTargetNode.getPlanNode();
 
-		return new EmptyNode();
+			PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
+				List<Value> line = t.getLine();
+				t.getLine().add(line.get(0));
+				return t;
+			});
+
+			if(negateThisPlan){
+				invalidTargets = new ValueInFilter(invalidTargets, valueIn).getTrueNode(UnBufferedPlanNode.class);
+			}else {
+				invalidTargets = new ValueInFilter(invalidTargets, valueIn).getFalseNode(UnBufferedPlanNode.class);
+
+			}
+
+			return new EnrichWithShape(invalidTargets,this);
+
+
+		}
+
+		return new EnrichWithShape(new EmptyNode(),this);
 
 	}
 

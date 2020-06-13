@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -91,7 +91,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			String negationQuery = query + "\n FILTER(NOT EXISTS{" + query1 + "})";
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
-			select = new ModifyTuple(select, (a) -> {
+			select = new TupleMapper(select, (a) -> {
 				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(0));
 
 				return a;

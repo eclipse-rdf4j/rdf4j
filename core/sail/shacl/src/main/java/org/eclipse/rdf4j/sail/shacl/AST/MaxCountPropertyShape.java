@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -87,7 +87,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			String negationQuery = query + "\n" + query1 + "\n" + query2 + "\nFILTER(?d != ?e)";
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
-			select = new ModifyTuple(select, (a) -> {
+			select = new TupleMapper(select, (a) -> {
 				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
 
 				return a;

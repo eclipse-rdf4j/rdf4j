@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
@@ -44,7 +44,7 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 			PlanNode planNode;
 
 			if (pathPropertyShape.getPath() == null) {
-				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
+				planNode = new TupleMapper(overrideTargetNode.getPlanNode(), t -> {
 					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
@@ -64,7 +64,7 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 		if (pathPropertyShape.getPath() == null) {
 
-			PlanNode targets = new ModifyTuple(
+			PlanNode targets = new TupleMapper(
 					nodeShape.getPlanAddedStatements(connectionsGroup, null), t -> {
 						t.getLine().add(t.getLine().get(0));
 						return t;
