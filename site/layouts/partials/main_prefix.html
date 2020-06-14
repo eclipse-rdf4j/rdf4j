@@ -1,0 +1,23 @@
+<!-- 
+  Copyright (c) 2019 Eclipse Foundation, Inc.
+
+  This program and the accompanying materials are made available under the
+  terms of the Eclipse Public License v. 2.0 which is available at
+  http://www.eclipse.org/legal/epl-2.0.
+
+  Contributors:
+    Eric Poirier <eric.poirier@eclipse-foundation.org>
+
+  SPDX-License-Identifier: EPL-2.0
+-->
+
+<main>
+  <div class="{{- .Params.container | default .Site.Params.container | default "container"}}">
+    {{ if ne .Page.Params.hide_sidebar true }}
+      <div class="row">
+        <div class="{{- .Params.main_content_class | default .Site.Params.main_content_class | default "col-md-18 padding-bottom-30"}}">
+    {{ end }}
+
+    {{ if ne .Page.Params.hide_page_title true }}
+      <h1>{{ .Title | safeHTML | title }}</h1>
+    {{ end }}

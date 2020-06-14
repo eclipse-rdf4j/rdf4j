@@ -29,13 +29,22 @@ pygmentsStyle = "github"
   name = "Eclipse RDF4J developers"
   website = "https://rdf4j.org/"
 
+[taxonomies]
+  category = "categories"
+  author = "authors"
+
 [permalinks]
   news = "/:sections/:year/:month/:day/:slug/"
 
 [[menu.main]]
+    name = "News"
+    url = "/news/"
+    weight = 1
+
+[[menu.main]]
     name = "About RDF4J"
     url = "/about/"
-    weight = 1
+    weight = 2
 
 [[menu.main]]
     name = "Documentation"

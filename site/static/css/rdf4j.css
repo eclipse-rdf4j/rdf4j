@@ -47,6 +47,13 @@ h4.doc-section-header {
   margin-bottom: 0px;
 }
 
+.big-emoji {
+  float: left;
+  font-size: 9em;
+  line-height: 1em;
+  margin-right: 4px;
+}
+
 .doc-section-header a:link, .doc-section-header a:visited {
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
