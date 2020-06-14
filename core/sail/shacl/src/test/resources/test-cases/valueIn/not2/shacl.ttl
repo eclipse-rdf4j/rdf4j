@@ -22,7 +22,7 @@ ex:PersonShape
 	                [
 
 		                        sh:path ex:knows ;
-		                        dash:valueIn (ex:peter ex:mary ex:kate)  ;
+		                        dash:valueIn (ex:steve ex:mary ex:kate)  ;
 
 	                ]
 

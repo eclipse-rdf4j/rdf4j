@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
+import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -43,14 +44,11 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 0)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC"})
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures",
-		"-XX:StartFlightRecording=delay=30s,duration=120s,filename=recording.jfr,settings=profile",
-		"-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions",
-		"-XX:+DebugNonSafepoints" })
-@Measurement(iterations = 30)
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseG1GC" })
+//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:+UseG1GC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ValueInBenchmarkEmpty {
 
@@ -129,7 +127,8 @@ public class ValueInBenchmarkEmpty {
 	@Benchmark
 	public void noShacl() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
+		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
+//		SailRepository repository = new SailRepository((new MemoryStore()));
 
 		repository.init();
 

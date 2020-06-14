@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
+import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -114,7 +115,7 @@ public class HasValueBenchmarkEmpty {
 	@Benchmark
 	public void noShacl() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
+		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
 
 		repository.init();
 

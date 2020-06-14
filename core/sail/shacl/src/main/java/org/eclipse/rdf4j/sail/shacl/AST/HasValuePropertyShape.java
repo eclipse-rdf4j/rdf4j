@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -25,13 +24,11 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.TupleHelper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
@@ -71,12 +68,13 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		// TODO - these plans are generally slow because they generate a lot of SPARQL queries and also they don't
-		// optimize for the case when everything already valid in the added statements. The code is also very
-		// repetitive.
+		// optimize for the case when everything already valid in the added statements.
 
-		if(getPath() == null){
+		if (getPath() == null) {
 			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
-			if(overrideTargetNode != null) addedTargets = overrideTargetNode.getPlanNode();
+			if (overrideTargetNode != null) {
+				addedTargets = overrideTargetNode.getPlanNode();
+			}
 
 			PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
 				List<Value> line = t.getLine();
@@ -84,95 +82,87 @@ public class HasValuePropertyShape extends PathPropertyShape {
 				return t;
 			});
 
-			if(negateThisPlan){
-				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue))).getTrueNode(UnBufferedPlanNode.class);
-			}else {
-				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue))).getFalseNode(UnBufferedPlanNode.class);
+			if (negateThisPlan) {
+				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue)))
+						.getTrueNode(UnBufferedPlanNode.class);
+			} else {
+				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue)))
+						.getFalseNode(UnBufferedPlanNode.class);
 			}
 
-			return new EnrichWithShape(invalidTargets,this);
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 
+			return new EnrichWithShape(invalidTargets, this);
 
 		}
+
+		if (overrideTargetNode != null) {
+			PlanNode planNode = overrideTargetNode.getPlanNode();
+
+			ExternalFilterByQuery externalFilterByQuery = new ExternalFilterByQuery(
+					connectionsGroup.getBaseConnection(), planNode, 0, buildSparqlValidNodes("?this"), "?this");
+
+			if (negateThisPlan) {
+				planNode = externalFilterByQuery.getTrueNode(UnBufferedPlanNode.class);
+			} else {
+				planNode = externalFilterByQuery.getFalseNode(UnBufferedPlanNode.class);
+			}
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
+
+			return new EnrichWithShape(planNode, this);
+		}
+
+		PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+
+		ExternalFilterByQuery externalFilterByQuery = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
+				planAddedStatements, 0,
+				buildSparqlValidNodes("?this"), "?this");
+
+		PlanNode invalidValues;
 
 		if (negateThisPlan) {
-			if (overrideTargetNode != null) {
-				PlanNode planNode = overrideTargetNode.getPlanNode();
-				planNode = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), planNode, 0,
-						buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
-				if (printPlans) {
-					String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
-					logger.info(planAsGraphvizDot);
-				}
-
-				return new EnrichWithShape(planNode, this);
-			}
-
-			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
-
-			PlanNode invalidValues = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
-					planAddedStatements, 0,
-					buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
-
-			if (connectionsGroup.getStats().hasAdded()) {
-
-				PlaneNodeWrapper planeNodeWrapper = planNode -> {
-					PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
-					return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
-							buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
-				};
-
-				invalidValues = new UnionNode(invalidValues,
-						getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
-			}
-
-			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
-				logger.info(planAsGraphvizDot);
-			}
-
-			return new EnrichWithShape(invalidValues, this);
-
+			invalidValues = externalFilterByQuery.getTrueNode(UnBufferedPlanNode.class);
 		} else {
-
-			if (overrideTargetNode != null) {
-				PlanNode planNode = overrideTargetNode.getPlanNode();
-
-				planNode = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), planNode, 0,
-						buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
-				if (printPlans) {
-					String planAsGraphvizDot = getPlanAsGraphvizDot(planNode, connectionsGroup);
-					logger.info(planAsGraphvizDot);
-				}
-
-				return new EnrichWithShape(planNode, this);
-			}
-
-			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
-
-			PlanNode invalidValues = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
-					planAddedStatements, 0,
-					buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
-
-			if (connectionsGroup.getStats().hasRemoved()) {
-
-				PlaneNodeWrapper planeNodeWrapper = planNode -> {
-					PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
-					return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
-							buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
-				};
-
-				invalidValues = new UnionNode(invalidValues,
-						getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
-			}
-
-			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
-				logger.info(planAsGraphvizDot);
-			}
-
-			return new EnrichWithShape(invalidValues, this);
+			invalidValues = externalFilterByQuery.getFalseNode(UnBufferedPlanNode.class);
 		}
+
+		if (negateThisPlan && connectionsGroup.getStats().hasAdded()) {
+
+			PlaneNodeWrapper planeNodeWrapper = planNode -> {
+				PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
+				return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
+						buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
+			};
+
+			invalidValues = new UnionNode(invalidValues,
+					getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
+		}
+
+		if (!negateThisPlan && connectionsGroup.getStats().hasRemoved()) {
+
+			PlaneNodeWrapper planeNodeWrapper = planNode -> {
+				PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
+				return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
+						buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
+			};
+
+			invalidValues = new UnionNode(invalidValues,
+					getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
+		}
+
+		if (printPlans) {
+			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
+			logger.info(planAsGraphvizDot);
+		}
+
+		return new EnrichWithShape(invalidValues, this);
+
 	}
 
 	@Override
