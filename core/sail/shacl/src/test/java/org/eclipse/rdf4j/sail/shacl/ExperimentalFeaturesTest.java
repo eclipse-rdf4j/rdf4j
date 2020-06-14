@@ -66,10 +66,10 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test
-	public void filterShape() throws Exception {
+	public void targetShape() throws Exception {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleFilterShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -82,13 +82,13 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
-	public void filterShapeFailure() throws Throwable {
+	public void targetShapeFailure() throws Throwable {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleFilterShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
 
-		((ShaclSail) shaclRepository.getSail()).setExperimentalTargetShapeSupport(true);
 		((ShaclSail) shaclRepository.getSail()).setExperimentalDashSupport(true);
+		((ShaclSail) shaclRepository.getSail()).setExperimentalTargetShapeSupport(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

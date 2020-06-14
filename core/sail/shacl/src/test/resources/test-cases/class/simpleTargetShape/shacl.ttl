@@ -10,7 +10,7 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetShape [
-        		a sh:Shape ;
+        		a sh:NodeShape ;
         		sh:property [
         			sh:path rdf:type ;
         			dash:valueIn (ex:Person ex:SecondTarget) ;

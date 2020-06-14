@@ -176,7 +176,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	protected String buildSparqlValidNodes(String targetVar) {
 
 		if (!propertyShapes.isEmpty() && !nodeShapes.isEmpty()) {
-			throw new UnsupportedOperationException("FilterShapes don't support both nodeshapes and property shapes!");
+			throw new UnsupportedOperationException(
+					"sh:targetShape don't support both nodeshapes and property shapes!");
 		}
 
 		if (!propertyShapes.isEmpty()) {

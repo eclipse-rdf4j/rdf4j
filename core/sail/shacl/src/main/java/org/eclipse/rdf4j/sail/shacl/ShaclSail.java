@@ -810,12 +810,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Enable (or disable) support for sh:filterShape. Filter shapes were part of an early SHACL Public Draft.
-	 *
-	 * Examples here https://www.w3.org/TR/2015/WD-shacl-20151008/#filterShape
-	 *
-	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
-	 * sh:path.
+	 * Enable (or disable) support for sh:targetShape.
 	 *
 	 * @param experimentalTargetShapeSupport true to enable (default: false)
 	 */
@@ -825,12 +820,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Support for sh:filterShape. Filter shapes were part of an early SHACL Public Draft.
-	 *
-	 * Examples here https://www.w3.org/TR/2015/WD-shacl-20151008/#filterShape
-	 *
-	 * Keep in mind that the examples use sh:predicate instead of sh:path. Always use the most up-to-date syntax, eg.
-	 * sh:path.
+	 * Support for sh:targetShape.
 	 *
 	 * @return true if enabled
 	 */

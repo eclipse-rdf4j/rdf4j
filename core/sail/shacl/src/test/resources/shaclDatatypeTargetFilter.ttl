@@ -11,8 +11,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:target [a dash:AllSubjectsTarget] ;
-	sh:filterShape [
+	sh:targetShape [
         	a sh:Shape ;
         	sh:property [
         		sh:path rdf:type ;

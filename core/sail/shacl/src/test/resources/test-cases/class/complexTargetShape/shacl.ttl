@@ -10,21 +10,10 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetShape [
-        		a sh:Shape ;
-        		sh:and (
-        		        [
-        		                sh:path rdf:type;
-        		                sh:hasValue ex:Person
-        		        ]
-
-        		        [
-        		                sh:path rdfs:label;
-        		                sh:or (
-        		                        [ sh:hasValue "Peter" ]
-        		                        [ sh:hasValue "Jennifer" ]
-        		                        [ sh:hasValue "Sue" ]
-        		                )
-        		        ]
+        		a sh:NodeShape ;
+        		sh:or (
+        		        [ sh:and ([sh:path rdf:type; sh:hasValue ex:Person] [sh:path rdf:type; sh:hasValue ex:Person]) ]
+        		        [ sh:and ([sh:path rdf:type; sh:hasValue ex:SecondTarget] [sh:path rdf:type; sh:hasValue ex:SecondTarget]) ]
         		);
         	] ;
 

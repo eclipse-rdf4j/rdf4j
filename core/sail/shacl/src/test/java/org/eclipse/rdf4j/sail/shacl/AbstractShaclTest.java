@@ -73,15 +73,15 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/allSubjects",
 		"test-cases/class/and",
 		"test-cases/class/and2",
-		"test-cases/class/complexFilterShape",
-		"test-cases/class/complexFilterShape2",
+		"test-cases/class/complexTargetShape",
+		"test-cases/class/complexTargetShape2",
 		"test-cases/class/multipleClass",
 		"test-cases/class/not",
 		"test-cases/class/not2",
 		"test-cases/class/notAnd",
 		"test-cases/class/notNotSimple",
 		"test-cases/class/simple",
-		"test-cases/class/simpleFilterShape",
+		"test-cases/class/simpleTargetShape",
 //		"test-cases/class/sparqlTarget", // NOT CURRENTLY SUPPORTED
 //		"test-cases/class/sparqlTargetNot", // NOT CURRENTLY SUPPORTED
 		"test-cases/class/subclass",

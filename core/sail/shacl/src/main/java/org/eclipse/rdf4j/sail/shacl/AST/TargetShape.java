@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -47,6 +48,11 @@ public class TargetShape extends NodeShape {
 	TargetShape(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
 			Resource targetShape) {
 		super(id, shaclSail, connection, deactivated);
+
+		if (connection.hasStatement(targetShape, SHACL.PATH, null, false)) {
+			throw new UnsupportedOperationException(
+					"Experimental sh:targetShape support only supports sh:NodeShape and not sh:PropertyShape");
+		}
 
 		this.targetShape = new NodeShape(targetShape, shaclSail, connection, false);
 		statementPatternList = this.targetShape.getStatementPatterns().collect(Collectors.toList());
