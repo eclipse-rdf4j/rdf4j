@@ -632,8 +632,8 @@ abstract public class AbstractShaclTest {
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
-		shaclSail.setExperimentalTargetShapeSupport(true);
-		shaclSail.setExperimentalDashSupport(true);
+		shaclSail.setShaclAdvancedFeatures(true);
+		shaclSail.setDashDataShapes(true);
 
 		repository.init();
 

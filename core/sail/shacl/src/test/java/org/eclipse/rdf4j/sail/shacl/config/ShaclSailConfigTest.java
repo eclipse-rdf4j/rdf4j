@@ -9,8 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_DASH_SUPPORT;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.EXPERIMENTAL_TARGET_SHAPE_SUPPORT;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.DASH_DATA_SHAPES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
@@ -19,6 +18,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALID
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SHACL_ADVANCED_FEATURES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 import static org.junit.Assert.assertTrue;
@@ -48,8 +48,8 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isTrue();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isFalse();
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
-		assertThat(shaclSailConfig.isExperimentalTargetShapeSupport()).isFalse();
-		assertThat(shaclSailConfig.isExperimentalDashSupport()).isFalse();
+		assertThat(shaclSailConfig.isShaclAdvancedFeatures()).isFalse();
+		assertThat(shaclSailConfig.isDashDataShapes()).isFalse();
 
 	}
 
@@ -71,8 +71,8 @@ public class ShaclSailConfigTest {
 				.add(GLOBAL_LOG_VALIDATION_EXECUTION, true)
 				.add(RDFS_SUB_CLASS_REASONING, false)
 				.add(PERFORMANCE_LOGGING, true)
-				.add(EXPERIMENTAL_TARGET_SHAPE_SUPPORT, true)
-				.add(EXPERIMENTAL_DASH_SUPPORT, true)
+				.add(SHACL_ADVANCED_FEATURES, true)
+				.add(DASH_DATA_SHAPES, true)
 				.add(SERIALIZABLE_VALIDATION, false);
 
 		shaclSailConfig.parse(mb.build(), implNode);
@@ -88,8 +88,8 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isRdfsSubClassReasoning()).isFalse();
 		assertThat(shaclSailConfig.isPerformanceLogging()).isTrue();
 		assertThat(shaclSailConfig.isSerializableValidation()).isFalse();
-		assertThat(shaclSailConfig.isExperimentalTargetShapeSupport()).isTrue();
-		assertThat(shaclSailConfig.isExperimentalDashSupport()).isTrue();
+		assertThat(shaclSailConfig.isShaclAdvancedFeatures()).isTrue();
+		assertThat(shaclSailConfig.isDashDataShapes()).isTrue();
 
 	}
 
@@ -136,8 +136,8 @@ public class ShaclSailConfigTest {
 		assertTrue(m.contains(node, RDFS_SUB_CLASS_REASONING, null));
 		assertTrue(m.contains(node, PERFORMANCE_LOGGING, null));
 		assertTrue(m.contains(node, SERIALIZABLE_VALIDATION, null));
-		assertTrue(m.contains(node, EXPERIMENTAL_TARGET_SHAPE_SUPPORT, null));
-		assertTrue(m.contains(node, EXPERIMENTAL_DASH_SUPPORT, null));
+		assertTrue(m.contains(node, SHACL_ADVANCED_FEATURES, null));
+		assertTrue(m.contains(node, DASH_DATA_SHAPES, null));
 
 	}
 

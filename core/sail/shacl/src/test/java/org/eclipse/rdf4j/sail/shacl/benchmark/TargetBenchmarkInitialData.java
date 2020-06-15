@@ -108,8 +108,8 @@ public class TargetBenchmarkInitialData {
 
 		repository = new SailRepository(Utils.getInitializedShaclSail(shape));
 
-		((ShaclSail) repository.getSail()).setExperimentalDashSupport(true);
-		((ShaclSail) repository.getSail()).setExperimentalTargetShapeSupport(true);
+		((ShaclSail) repository.getSail()).setDashDataShapes(true);
+		((ShaclSail) repository.getSail()).setShaclAdvancedFeatures(true);
 
 		((ShaclSail) repository.getSail()).disableValidation();
 

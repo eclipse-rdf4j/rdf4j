@@ -55,11 +55,9 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#experimentalTargetShapeSupport</code> */
-	public final static IRI EXPERIMENTAL_TARGET_SHAPE_SUPPORT = create("experimentalTargetShapeSupport");
+	public final static IRI SHACL_ADVANCED_FEATURES = create("shaclAdvancedFeatures");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
-	public final static IRI EXPERIMENTAL_DASH_SUPPORT = create("experimentalDashSupport");
+	public final static IRI DASH_DATA_SHAPES = create("dashDataShapes");
 
 	private static IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);

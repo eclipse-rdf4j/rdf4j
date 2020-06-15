@@ -21,7 +21,7 @@ import org.junit.Test;
 /**
  * @author Håvard Ottestad
  */
-public class ExperimentalFeaturesTest {
+public class ExtendedFeaturesetTest {
 
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 	IRI ex_knows = vf.createIRI("http://example.com/ns#knows");
@@ -33,7 +33,7 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test
-	public void testDash() throws Exception {
+	public void testDashIsDisabledByDefault() throws Exception {
 
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
 				false);
@@ -47,11 +47,11 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
-	public void testDashFailure() throws Throwable {
+	public void testThatDashCanBeEnabled() throws Throwable {
 
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
 				false);
-		((ShaclSail) shaclRepository.getSail()).setExperimentalDashSupport(true);
+		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -66,7 +66,7 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test
-	public void targetShape() throws Exception {
+	public void testTargetShapeIsDisabledByDefault() throws Exception {
 
 		SailRepository shaclRepository = Utils
 				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
@@ -82,13 +82,13 @@ public class ExperimentalFeaturesTest {
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
-	public void targetShapeFailure() throws Throwable {
+	public void testThatTargetShapesCanBeEnabled() throws Throwable {
 
 		SailRepository shaclRepository = Utils
 				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
 
-		((ShaclSail) shaclRepository.getSail()).setExperimentalDashSupport(true);
-		((ShaclSail) shaclRepository.getSail()).setExperimentalTargetShapeSupport(true);
+		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
+		((ShaclSail) shaclRepository.getSail()).setShaclAdvancedFeatures(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

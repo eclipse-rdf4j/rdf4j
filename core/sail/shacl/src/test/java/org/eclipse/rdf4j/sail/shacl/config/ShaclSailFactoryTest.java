@@ -58,8 +58,8 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
-		config.setExperimentalTargetShapeSupport(!config.isExperimentalTargetShapeSupport());
-		config.setExperimentalDashSupport(!config.isExperimentalDashSupport());
+		config.setShaclAdvancedFeatures(!config.isShaclAdvancedFeatures());
+		config.setDashDataShapes(!config.isDashDataShapes());
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -78,8 +78,8 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
-		assertThat(sail.isExperimentalTargetShapeSupport()).isEqualTo(config.isExperimentalTargetShapeSupport());
-		assertThat(sail.isExperimentalDashSupport()).isEqualTo(config.isExperimentalDashSupport());
+		assertThat(sail.isShaclAdvancedFeatures()).isEqualTo(config.isShaclAdvancedFeatures());
+		assertThat(sail.isDashDataShapes()).isEqualTo(config.isDashDataShapes());
 	}
 
 }

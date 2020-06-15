@@ -251,7 +251,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 										shaclProperties.getTargetObjectsOf()));
 					}
 
-					if (shaclSail.isExperimentalTargetShapeSupport()) {
+					if (shaclSail.isShaclAdvancedFeatures()) {
 						shaclProperties.getTargetShape()
 								.stream()
 								.map(targetShape -> new TargetShape(shapeId, shaclSail, connection,
@@ -267,13 +267,13 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 //										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
 //												shaclProperties.isDeactivated(), sparqlTarget));
 //									}
-									if (shaclSail.isExperimentalDashSupport() && connection.hasStatement(sparqlTarget,
+									if (shaclSail.isDashDataShapes() && connection.hasStatement(sparqlTarget,
 											RDF.TYPE, DASH.AllObjectsTarget, true)) {
 										propertyShapes.add(
 												new AllObjectsTarget(shapeId, shaclSail, connection,
 														shaclProperties.isDeactivated()));
 									}
-									if (shaclSail.isExperimentalDashSupport() && connection.hasStatement(sparqlTarget,
+									if (shaclSail.isDashDataShapes() && connection.hasStatement(sparqlTarget,
 											RDF.TYPE, DASH.AllSubjectsTarget, true)) {
 										propertyShapes.add(new AllSubjectsTarget(shapeId, shaclSail, connection,
 												shaclProperties.isDeactivated()));

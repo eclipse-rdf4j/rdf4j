@@ -104,7 +104,7 @@ public class ValueInBenchmarkEmpty {
 		SailRepository repository = new SailRepository(
 				Utils.getInitializedShaclSail("test-cases/valueIn/simple/shacl.ttl"));
 
-		((ShaclSail) repository.getSail()).setExperimentalDashSupport(true);
+		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 //		((ShaclSail) repository.getSail()).disableValidation();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

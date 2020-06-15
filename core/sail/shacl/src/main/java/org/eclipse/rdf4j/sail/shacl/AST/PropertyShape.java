@@ -309,7 +309,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
 						shaclProperties.getHasValue()));
 			}
-			if (shaclProperties.getValueIn() != null && shaclSail.isExperimentalDashSupport()) {
+			if (shaclProperties.getValueIn() != null && shaclSail.isDashDataShapes()) {
 				propertyShapes.add(new ValueInPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
 						shaclProperties.getValueIn()));

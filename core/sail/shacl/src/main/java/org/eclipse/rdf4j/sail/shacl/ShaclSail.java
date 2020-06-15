@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
@@ -159,10 +160,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
-	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
-	private static String PROPERTY_SHAPE_WITH_TARGET;
-	private static String DASH_CONSTANTS;
+	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
+	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
+	private static final String PROPERTY_SHAPE_WITH_TARGET;
+	private static final String DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -186,8 +187,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
-	private boolean experimentalTargetShapeSupport = ShaclSailConfig.EXPERIMENTAL_TARGET_SHAPE_SUPPORT_DEFAULT;
-	private boolean experimentalDashSupport = ShaclSailConfig.EXPERIMENTAL_DASH_SUPPORT_DEFAULT;
+	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
 	static {
 		try {
@@ -810,42 +811,56 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Enable (or disable) support for sh:targetShape.
+	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
+	 * currently enables support for sh:targetShape.
 	 *
-	 * @param experimentalTargetShapeSupport true to enable (default: false)
+	 * EXPERIMENTAL!
+	 *
+	 * @param shaclAdvancedFeatures true to enable (default: false)
 	 */
-	public void setExperimentalTargetShapeSupport(boolean experimentalTargetShapeSupport) {
-		this.experimentalTargetShapeSupport = experimentalTargetShapeSupport;
+	@Experimental
+	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
+		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
 		forceRefreshShapes();
 	}
 
 	/**
-	 * Support for sh:targetShape.
+	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
+	 * currently enables support for sh:targetShape.
+	 *
+	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
 	 */
-	public boolean isExperimentalTargetShapeSupport() {
-		return experimentalTargetShapeSupport;
+	@Experimental
+	public boolean isShaclAdvancedFeatures() {
+		return shaclAdvancedFeatures;
 	}
 
 	/**
-	 * Enable support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget
-	 * and dash:AllSubjectsTarget.
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:valueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
 	 *
-	 * @param experimentalDashSupport true to enable (default: false)
+	 * EXPERIMENTAL!
+	 *
+	 * @param dashDataShapes true to enable (default: false)
 	 */
-	public void setExperimentalDashSupport(boolean experimentalDashSupport) {
-		this.experimentalDashSupport = experimentalDashSupport;
+	@Experimental
+	public void setDashDataShapes(boolean dashDataShapes) {
+		this.dashDataShapes = dashDataShapes;
 		forceRefreshShapes();
 	}
 
 	/**
-	 * Support for DASH (http://datashapes.org/dash). Currently this enables support for dash:AllObjectsTarget and
-	 * dash:AllSubjectsTarget.
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:valueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+	 *
+	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
 	 */
-	public boolean isExperimentalDashSupport() {
-		return experimentalDashSupport;
+	@Experimental
+	public boolean isDashDataShapes() {
+		return dashDataShapes;
 	}
 }
