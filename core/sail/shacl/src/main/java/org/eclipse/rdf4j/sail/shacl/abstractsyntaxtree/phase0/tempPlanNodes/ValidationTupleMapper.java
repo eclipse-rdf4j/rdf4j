@@ -116,5 +116,6 @@ public class ValidationTupleMapper implements TupleValidationPlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

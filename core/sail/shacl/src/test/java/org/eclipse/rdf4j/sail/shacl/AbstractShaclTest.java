@@ -283,7 +283,7 @@ abstract public class AbstractShaclTest {
 		.collect(Collectors.toList());
 
 	// @formatter:on
-
+	static boolean fullLogging = false;
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
@@ -430,6 +430,8 @@ abstract public class AbstractShaclTest {
 				.sorted()
 				.collect(Collectors.toList());
 
+		Model validationReportActual = new LinkedHashModel();
+
 		for (File queryFile : queries) {
 			try {
 				String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
@@ -449,7 +451,8 @@ abstract public class AbstractShaclTest {
 					}
 					exception = true;
 					logger.debug(sailException.getMessage());
-
+					validationReportActual = ((ShaclSailValidationException) sailException.getCause())
+							.validationReportAsModel();
 					printResults(sailException);
 				}
 			} catch (IOException e) {
@@ -461,6 +464,9 @@ abstract public class AbstractShaclTest {
 		shaclRepository.shutDown();
 
 		if (ran) {
+
+			testValidationReport(dataPath, validationReportActual);
+
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse("Expected transaction to succeed", exception);
 			} else {
@@ -468,6 +474,34 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
+	}
+
+	private static void testValidationReport(String dataPath, Model validationReportActual) {
+		try {
+			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
+					.getResourceAsStream(dataPath + "report.ttl");
+			if (resourceAsStream == null) {
+				logger.error(dataPath + "report.ttl did not exist. Creating an empty file!");
+
+				String file = AbstractShaclTest.class.getClassLoader()
+						.getResource(dataPath)
+						.getFile()
+						.replace("/target/test-classes/", "/src/test/resources/");
+				boolean newFile = new File(file + "report.ttl").createNewFile();
+				assertTrue(newFile);
+
+			}
+
+			Model validationReportExpected = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
+
+			if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
+				String validationReportExpectedString = modelToString(validationReportExpected);
+				String validationReportActualString = modelToString(validationReportActual);
+				assertEquals(validationReportExpectedString, validationReportActualString);
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	private static void printCurrentState(SailRepository shaclRepository) {
@@ -485,23 +519,33 @@ abstract public class AbstractShaclTest {
 
 				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 					LinkedHashModel model = stream.collect(Collectors.toCollection(LinkedHashModel::new));
-					model.setNamespace("ex", "http://example.com/ns#");
-					model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
-					model.setNamespace(XSD.PREFIX, XSD.NAMESPACE);
-					model.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
-					model.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 
-					WriterConfig writerConfig = new WriterConfig();
-					writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-					writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+					String prettyPrintedModel = modelToString(model);
+
 					System.out.println("### CURRENT REPOSITORY STATE ###");
-					Rio.write(model, System.out, RDFFormat.TURTLE, writerConfig);
+					System.out.println(prettyPrintedModel);
 					System.out.println("################################################\n");
 
 				}
 			}
 
 		}
+	}
+
+	private static String modelToString(Model model) {
+		StringWriter stringWriter = new StringWriter();
+		model.setNamespace("ex", "http://example.com/ns#");
+		model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
+		model.setNamespace(XSD.PREFIX, XSD.NAMESPACE);
+		model.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
+		model.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(model, stringWriter, RDFFormat.TURTLE, writerConfig);
+
+		return stringWriter.toString();
 	}
 
 	private static void printFile(String filename) {
@@ -567,6 +611,7 @@ abstract public class AbstractShaclTest {
 
 		boolean exception = false;
 		boolean ran = false;
+		Model validationReportActual = new LinkedHashModel();
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
 			shaclSailConnection.begin(isolationLevel);
@@ -601,6 +646,8 @@ abstract public class AbstractShaclTest {
 				exception = true;
 				logger.debug(sailException.getMessage());
 
+				validationReportActual = ((ShaclSailValidationException) sailException.getCause())
+						.validationReportAsModel();
 				printResults(sailException);
 			}
 		}
@@ -608,6 +655,8 @@ abstract public class AbstractShaclTest {
 		shaclRepository.shutDown();
 
 		if (ran) {
+			testValidationReport(dataPath, validationReportActual);
+
 			if (expectedResult == ExpectedResult.valid) {
 				assertFalse(exception);
 			} else {
@@ -671,6 +720,8 @@ abstract public class AbstractShaclTest {
 		shaclRepository.shutDown();
 
 		printResults(report);
+
+		testValidationReport(dataPath, report.asModel());
 
 		if (expectedResult == ExpectedResult.valid) {
 			assertTrue(report.conforms());
@@ -778,23 +829,6 @@ abstract public class AbstractShaclTest {
 		printResults(validationReport);
 	}
 
-	String getShaclPath() {
-		String shaclPath = testCasePath;
-
-		if (!shaclPath.endsWith("/")) {
-			shaclPath = shaclPath + "/";
-		}
-
-		return shaclPath + "shacl.ttl";
-	}
-
-	enum ExpectedResult {
-		valid,
-		invalid
-	}
-
-	static boolean fullLogging = false;
-
 	private static SailRepository getShaclSail() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
@@ -832,6 +866,21 @@ abstract public class AbstractShaclTest {
 				"\t\t.distinct()\n" +
 				"\t\t.sorted()\n" +
 				"\t\t.collect(Collectors.toList());");
+	}
+
+	String getShaclPath() {
+		String shaclPath = testCasePath;
+
+		if (!shaclPath.endsWith("/")) {
+			shaclPath = shaclPath + "/";
+		}
+
+		return shaclPath + "shacl.ttl";
+	}
+
+	enum ExpectedResult {
+		valid,
+		invalid
 	}
 
 }

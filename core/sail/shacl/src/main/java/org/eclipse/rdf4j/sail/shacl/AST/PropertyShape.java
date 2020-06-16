@@ -8,6 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -30,16 +40,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
-
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should
@@ -101,8 +101,8 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	protected static String toString(List<List<PathPropertyShape>> propertyShapes) {
 
 		List<String> collect = propertyShapes.stream()
-			.map(l -> Arrays.toString(l.toArray()))
-			.collect(Collectors.toList());
+				.map(l -> Arrays.toString(l.toArray()))
+				.collect(Collectors.toList());
 
 		return Arrays.toString(collect.toArray());
 
@@ -110,19 +110,19 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-							PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-										   PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-											 PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		throw new IllegalStateException("Should never get here!!!");
 	}
 
@@ -146,26 +146,26 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 		stringBuilder.append("digraph  {").append("\n");
 		stringBuilder.append("labelloc=t;\nfontsize=30;\nlabel=\"" + this.getClass().getSimpleName() + "\";")
-			.append("\n");
+				.append("\n");
 
 		stringBuilder.append(System.identityHashCode(connectionsGroup.getBaseConnection())
-			+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
+				+ " [label=\"Base sail\" nodeShape=pentagon fillcolor=lightblue style=filled];").append("\n");
 		stringBuilder
-			.append(System.identityHashCode(connectionsGroup.getPreviousStateConnection())
-				+ " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];")
-			.append("\n");
+				.append(System.identityHashCode(connectionsGroup.getPreviousStateConnection())
+						+ " [label=\"Previous state connection\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		MemoryStore addedStatements = ((MemoryStoreConnection) connectionsGroup.getAddedStatements()).getSail();
 		MemoryStore removedStatements = ((MemoryStoreConnection) connectionsGroup.getRemovedStatements()).getSail();
 
 		stringBuilder
-			.append(System.identityHashCode(addedStatements)
-				+ " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
-			.append("\n");
+				.append(System.identityHashCode(addedStatements)
+						+ " [label=\"Added statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 		stringBuilder
-			.append(System.identityHashCode(removedStatements)
-				+ " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
-			.append("\n");
+				.append(System.identityHashCode(removedStatements)
+						+ " [label=\"Removed statements\" nodeShape=pentagon fillcolor=lightblue style=filled];")
+				.append("\n");
 
 		planNode.getPlanAsGraphvizDot(stringBuilder);
 
@@ -205,7 +205,7 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		}
 		PropertyShape that = (PropertyShape) o;
 		return deactivated == that.deactivated &&
-			id.equals(that.id);
+				id.equals(that.id);
 	}
 
 	@Override
@@ -237,13 +237,13 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 	public static class Factory {
 
 		public static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
-																NodeShape nodeShape, ShaclSail shaclSail) {
+				NodeShape nodeShape, ShaclSail shaclSail) {
 
 			try (Stream<Statement> stream = connection.getStatements(ShapeId, SHACL.PROPERTY, null).stream()) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
 					List<PathPropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
-						propertyShapeId,
-						null, shaclSail);
+							propertyShapeId,
+							null, shaclSail);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
 			}
@@ -251,112 +251,113 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		}
 
 		public static List<PathPropertyShape> getPropertyShapesInner(SailRepositoryConnection connection,
-																	 NodeShape nodeShape,
-																	 Resource propertyShapeId, PathPropertyShape parent, ShaclSail shaclSail) {
+				NodeShape nodeShape,
+				Resource propertyShapeId, PathPropertyShape parent, ShaclSail shaclSail) {
 			List<PathPropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
 			if (shaclProperties.getMinCount() != null && shaclProperties.getMinCount() > 0) {
 				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMinCount()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinCount()));
 			}
 			if (shaclProperties.getMaxCount() != null) {
 				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMaxCount()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxCount()));
 			}
 			if (shaclProperties.getDatatype() != null) {
 				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getDatatype()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getDatatype()));
 			}
 			shaclProperties.getOr().forEach(or -> {
 				propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), or, shaclSail));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), or, shaclSail));
 			});
 
 			if (shaclProperties.getMinLength() != null) {
 				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMinLength()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinLength()));
 			}
 			if (shaclProperties.getMaxLength() != null) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMaxLength()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxLength()));
 			}
 			shaclProperties.getPattern().forEach(pattern -> {
 				propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), pattern,
-					shaclProperties.getFlags()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), pattern,
+						shaclProperties.getFlags()));
 			});
 
 			if (shaclProperties.getLanguageIn() != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getLanguageIn()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getLanguageIn()));
 			}
 			if (shaclProperties.getNodeKind() != null) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getNodeKind()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getNodeKind()));
 			}
 			if (shaclProperties.getMinExclusive() != null) {
 				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMinExclusive()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinExclusive()));
 			}
 			if (shaclProperties.getMaxExclusive() != null) {
 				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMaxExclusive()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxExclusive()));
 			}
 			if (shaclProperties.getMaxInclusive() != null) {
 				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMaxInclusive()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxInclusive()));
 			}
 			if (shaclProperties.getMinInclusive() != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getMinInclusive()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinInclusive()));
 			}
-				shaclProperties.getClazz().forEach(clazz -> {
-					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
+			shaclProperties.getClazz().forEach(clazz -> {
+				propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), clazz));
-				});
+			});
 
-				shaclProperties.getAnd().forEach(and -> {
-					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
+			shaclProperties.getAnd().forEach(and -> {
+				propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), and, shaclSail));
-				});
+			});
 
-				shaclProperties.getNot().forEach(not -> {
-					propertyShapes.add(new NotPropertyShape(propertyShapeId, connection, nodeShape,
+			shaclProperties.getNot().forEach(not -> {
+				propertyShapes.add(new NotPropertyShape(propertyShapeId, connection, nodeShape,
 						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), not, shaclSail));
-				});
+			});
 
 			if (shaclProperties.getIn() != null) {
 				propertyShapes.add(new InPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), shaclProperties.getIn()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), shaclProperties.getIn()));
 			}
 			if (shaclProperties.isUniqueLang()) {
 				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.isUniqueLang()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.isUniqueLang()));
 			}
 
 			shaclProperties.getHasValue()
-				.forEach(hasValue -> propertyShapes.add(new HasValuePropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					hasValue)));
+					.forEach(hasValue -> propertyShapes
+							.add(new HasValuePropertyShape(propertyShapeId, connection, nodeShape,
+									shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+									hasValue)));
 
 			if (shaclProperties.getValueIn() != null && shaclSail.isDashDataShapes()) {
 				propertyShapes.add(new ValueInPropertyShape(propertyShapeId, connection, nodeShape,
-					shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
-					shaclProperties.getValueIn()));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getValueIn()));
 			}
 
 			return propertyShapes;
