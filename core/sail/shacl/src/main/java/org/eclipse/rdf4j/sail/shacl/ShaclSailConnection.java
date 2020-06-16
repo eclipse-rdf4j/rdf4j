@@ -583,7 +583,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			} else {
 				if (!(writeLock != null && writeLock.isActive())) {
-					readLock = sail.acquireReadlock();
+					readLock = sail.acquireReadLock();
 				}
 			}
 
@@ -652,7 +652,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} finally {
 
 			if (readLock != null) {
-				readLock = sail.releaseReadlock(readLock);
+				readLock = sail.releaseReadLock(readLock);
 			}
 			assert readLock == null;
 

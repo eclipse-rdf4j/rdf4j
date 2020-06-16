@@ -93,7 +93,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		PlanNode addedByPath = super.getPlanAddedStatements(connectionsGroup, null);
 
-		addedByPath = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), addedByPath);
+		addedByPath = nodeShape.getTargetFilter(connectionsGroup, addedByPath);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
@@ -163,6 +163,6 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

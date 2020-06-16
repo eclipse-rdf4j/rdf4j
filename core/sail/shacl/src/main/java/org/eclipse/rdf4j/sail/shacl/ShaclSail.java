@@ -173,6 +173,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
 	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
 	private static final String PROPERTY_SHAPE_WITH_TARGET;
+	private static final String DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -196,6 +197,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
+	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static SchemaCachingRDFSInferencer shaclVocabulary;
@@ -210,7 +213,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
 					"shacl-sparql-inference/propertyShapeWithTarget.rq");
-
+			DASH_CONSTANTS = resourceAsString(
+					"shacl-sparql-inference/dashConstants.rq");
 			shaclVocabulary = createShaclVocbulary();
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
@@ -268,7 +272,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
-	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths are supported.
+	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
+	 * paths are supported. sh:targetShape requires that experimental support is enabled for that feature.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -300,7 +305,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.UNIQUE_LANG,
 				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF,
-				SHACL.INVERSE_PATH);
+				SHACL.HAS_VALUE,
+				SHACL.TARGET_PROP,
+				SHACL.INVERSE_PATH,
+				SHACL.TARGET_SHAPE);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -384,14 +392,31 @@ public class ShaclSail extends NotifyingSailWrapper {
 					false)) {
 				shapesRepoCacheConnection.add(statements);
 			}
-			runInferencingSparqlQueries(shapesRepoCacheConnection);
-
+			runInferencingSparqlQueriesToFixPoint(shapesRepoCacheConnection);
 			shapesRepoCacheConnection.commit();
 			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
 		}
 
 		shapesRepoCache.shutDown();
 		return shapes;
+	}
+
+	private void forceRefreshShapes() {
+		Lock writeLock = null;
+		try {
+			writeLock = acquireExclusiveWriteLock(null);
+			if (shapesRepo != null) {
+				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+					shapesRepoConnection.begin(IsolationLevels.NONE);
+					shapes = refreshShapes(shapesRepoConnection);
+					shapesRepoConnection.commit();
+				}
+			}
+		} finally {
+			if (writeLock != null) {
+				releaseExclusiveWriteLock(writeLock);
+			}
+		}
 	}
 
 	@Override
@@ -461,7 +486,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return shapes;
 	}
 
-	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+	private void runInferencingSparqlQueriesToFixPoint(SailRepositoryConnection shaclSailConnection) {
 
 		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
 		if (shaclSailConnection.isEmpty()) {
@@ -475,6 +500,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
 			// shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
+			shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 
@@ -522,7 +548,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return null;
 	}
 
-	Lock acquireReadlock() {
+	Lock acquireReadLock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
 					"Deadlock detected when a single thread uses multiple connections " +
@@ -537,7 +563,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	Lock releaseReadlock(Lock lock) {
+	Lock releaseReadLock(Lock lock) {
 		assert lock != null;
 
 		lock.release();
@@ -559,7 +585,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 //			}
 //		}
 //
-//		System.out.println("convertToReadLock");
 //		return readLock;
 //
 //
@@ -614,8 +639,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
 	 * or rdfs:Resource in an environment with a reasoner.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
+	@Deprecated
 	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
 		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
 	}
@@ -623,9 +651,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
 	 */
+	@Deprecated
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return this.undefinedTargetValidatesAllSubjects;
 	}
@@ -690,6 +721,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Enabled the SHACL validation on commit()
 	 */
 	public void enableValidation() {
+		forceRefreshShapes();
 		this.validationEnabled = true;
 	}
 
@@ -711,15 +743,25 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return this.logValidationPlans;
 	}
 
+	/**
+	 * Deprecated since 3.3.0 and planned removed!
+	 *
+	 * @return
+	 */
+	@Deprecated
 	public boolean isIgnoreNoShapesLoadedException() {
 		return this.ignoreNoShapesLoadedException;
 	}
 
 	/**
+	 *
+	 * Deprecated since 3.3.0 and planned removed!
+	 *
 	 * Check if shapes have been loaded into the shapes graph before other data is added
 	 *
 	 * @param ignoreNoShapesLoadedException
 	 */
+	@Deprecated
 	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
 		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
 	}
@@ -830,5 +872,59 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@InternalUseOnly
 	public List<Shape> getCurrentShapes() {
 		return shapes;
+	}
+
+	/**
+	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
+	 * currently enables support for sh:targetShape.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @param shaclAdvancedFeatures true to enable (default: false)
+	 */
+	@Experimental
+	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
+		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
+		forceRefreshShapes();
+	}
+
+	/**
+	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
+	 * currently enables support for sh:targetShape.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @return true if enabled
+	 */
+	@Experimental
+	public boolean isShaclAdvancedFeatures() {
+		return shaclAdvancedFeatures;
+	}
+
+	/**
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:valueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @param dashDataShapes true to enable (default: false)
+	 */
+	@Experimental
+	public void setDashDataShapes(boolean dashDataShapes) {
+		this.dashDataShapes = dashDataShapes;
+		forceRefreshShapes();
+	}
+
+	/**
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:valueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @return true if enabled
+	 */
+	@Experimental
+	public boolean isDashDataShapes() {
+		return dashDataShapes;
 	}
 }

@@ -24,7 +24,7 @@ public class Main {
 	}
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("")
+		Options opt = new OptionsBuilder().include("TargetBenchmarkInitialData.*")
 
 				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.build();

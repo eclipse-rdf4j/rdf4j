@@ -20,11 +20,11 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MinCountFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -91,7 +91,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			String negationQuery = query + "\n FILTER(NOT EXISTS{" + query1 + "})";
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
-			select = new ModifyTuple(select, (a) -> {
+			select = new TupleMapper(select, (a) -> {
 				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(0));
 
 				return a;
@@ -109,7 +109,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode planRemovedStatements = new Unique(
 					new TrimTuple(getPlanRemovedStatements(connectionsGroup, null), 0, 1));
 
-			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(),
+			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(connectionsGroup,
 					planRemovedStatements);
 
 			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
@@ -120,7 +120,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode planAddedStatements1 = getPlanAddedStatements(connectionsGroup, null);
 
-			planAddedStatements1 = (nodeShape).getTargetFilter(connectionsGroup.getBaseConnection(),
+			planAddedStatements1 = (nodeShape).getTargetFilter(connectionsGroup,
 					planAddedStatements1);
 
 			topNode = new UnionNode(unique, planAddedStatements1);
@@ -138,7 +138,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 			PlanNode addedByPath = getPlanAddedStatements(connectionsGroup, null);
 
-			addedByPath = (nodeShape).getTargetFilter(connectionsGroup.getBaseConnection(), addedByPath);
+			addedByPath = (nodeShape).getTargetFilter(connectionsGroup, addedByPath);
 
 			topNode = new UnionNode(planAddedForShape, addedByPath);
 
@@ -217,6 +217,6 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

@@ -75,9 +75,120 @@ abstract public class AbstractShaclTest {
 
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
-
 	private static final List<String> testCasePaths = Stream.of(
 //		"test-cases/and-or/datatypeNodeShape",
+//		"test-cases/class/allObjects",
+//		"test-cases/class/allSubjects",
+//		"test-cases/class/and",
+//		"test-cases/class/and2",
+//		"test-cases/class/complexTargetShape",
+//		"test-cases/class/complexTargetShape2",
+//		"test-cases/class/multipleClass",
+//		"test-cases/class/not",
+//		"test-cases/class/not2",
+//		"test-cases/class/notAnd",
+//		"test-cases/class/notNotSimple",
+//		"test-cases/class/simple",
+//		"test-cases/class/simpleTargetShape",
+////		"test-cases/class/sparqlTarget", // NOT CURRENTLY SUPPORTED
+////		"test-cases/class/sparqlTargetNot", // NOT CURRENTLY SUPPORTED
+//		"test-cases/class/subclass",
+//		"test-cases/class/targetNode",
+//		"test-cases/class/validateTarget",
+//		"test-cases/class/validateTargetNot",
+//		"test-cases/complex/dcat",
+//		"test-cases/complex/foaf",
+////		"test-cases/complex/sparqlTarget", // NOT CURRENTLY SUPPORTED
+//		"test-cases/datatype/allObjects",
+//		"test-cases/datatype/not",
+//		"test-cases/datatype/notNodeShape",
+//		"test-cases/datatype/notNodeShapeTargetShape",
+//		"test-cases/datatype/notTargetShape",
+//		"test-cases/datatype/notNodeShapeAnd",
+//		"test-cases/datatype/notNot",
+//		"test-cases/datatype/notTargetNode",
+//		"test-cases/datatype/simple",
+////		"test-cases/datatype/sparqlTarget", // NOT CURRENTLY SUPPORTED
+//		"test-cases/datatype/targetNode",
+//		"test-cases/datatype/targetNode2",
+//		"test-cases/datatype/targetNodeLang",
+//		"test-cases/datatype/targetObjectsOf",
+//		"test-cases/datatype/targetSubjectsOf",
+//		"test-cases/datatype/targetSubjectsOfSingle",
+//		"test-cases/deactivated/nodeshape",
+//		"test-cases/deactivated/or",
+//		"test-cases/deactivated/propertyshape",
+//		"test-cases/functionalProperty/multipleFunctional",
+//		"test-cases/functionalProperty/multipleFunctionalOr",
+//		"test-cases/functionalProperty/singleFunctional",
+//		"test-cases/implicitTargetClass/simple",
+//		"test-cases/in/notAnd",
+//		"test-cases/in/notOr",
+//		"test-cases/in/simple",
+//		"test-cases/languageIn/simple",
+//		"test-cases/maxCount/not",
+//		"test-cases/maxCount/not2",
+//		"test-cases/maxCount/notNot",
+//		"test-cases/maxCount/simple",
+//		"test-cases/maxCount/simpleInversePath",
+////		"test-cases/maxCount/sparqlTarget", // NOT CURRENTLY SUPPORTED
+//		"test-cases/maxCount/targetNode",
+//		"test-cases/maxExclusive/simple",
+//		"test-cases/maxExclusiveMinLength/not",
+//		"test-cases/maxExclusiveMinLength/simple",
+//		"test-cases/maxInclusive/simple",
+//		"test-cases/maxLength/simple",
+//		"test-cases/minCount/not",
+//		"test-cases/minCount/simple",
+//		"test-cases/minCount/targetNode",
+//		"test-cases/minExclusive/dateVsTime",
+//		"test-cases/minExclusive/simple",
+//		"test-cases/minInclusive/simple",
+//		"test-cases/minLength/simple",
+//		"test-cases/nodeKind/not",
+//		"test-cases/nodeKind/simple",
+//		"test-cases/nodeKind/simpleInversePath",
+//		"test-cases/nodeKind/validateTarget",
+//		"test-cases/or/class",
+//		"test-cases/or/class2",
+//		"test-cases/or/class2InversePath",
+//		"test-cases/or/classValidateTarget",
+//		"test-cases/or/datatype",
+//		"test-cases/or/datatype2",
+//		"test-cases/or/datatypeDifferentPaths",
+//		"test-cases/or/datatypeNodeShape",
+//		"test-cases/or/datatypeTargetNode",
+//		"test-cases/or/implicitAnd",
+////		"test-cases/or/implicitAndSparqlTarget",
+//		"test-cases/or/inheritance",
+//		"test-cases/or/inheritance-deep",
+//		"test-cases/or/inheritanceNodeShape",
+//		"test-cases/or/maxCount",
+//		"test-cases/or/minCount",
+//		"test-cases/or/minCountDifferentPath",
+//		"test-cases/or/minCountMaxCount",
+//		"test-cases/or/multiple",
+//		"test-cases/or/nodeKindMinLength",
+//		"test-cases/or/nodeKindValidateTarget",
+//		"test-cases/pattern/multiple",
+//		"test-cases/pattern/simple",
+//		"test-cases/propertyShapeWithTarget/simple",
+//		"test-cases/uniqueLang/not",
+//		"test-cases/uniqueLang/simple",
+//		"test-cases/hasValue/simple",
+//		"test-cases/hasValue/and",
+//		"test-cases/hasValue/not",
+//		"test-cases/hasValue/not2",
+//		"test-cases/hasValue/not2",
+//		"test-cases/hasValue/targetNode",
+//		"test-cases/hasValue/targetNode2",
+//		"test-cases/valueIn/simple",
+//		"test-cases/valueIn/and",
+//		"test-cases/valueIn/not",
+//		"test-cases/valueIn/not2",
+//		"test-cases/valueIn/targetNode",
+//		"test-cases/valueIn/targetNode2",
+		//		"test-cases/and-or/datatypeNodeShape",
 //		"test-cases/class/and",
 //		"test-cases/class/and2",
 //		"test-cases/class/multipleClass",
@@ -165,6 +276,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/functionalProperty/singleFunctional",
 //		"test-cases/functionalProperty/multipleFunctional",
 //		"test-cases/functionalProperty/multipleFunctionalOr"
+
 	)
 		.distinct()
 		.sorted()
@@ -243,16 +355,21 @@ abstract public class AbstractShaclTest {
 		List<Object[]> ret = new ArrayList<>();
 
 		for (String testCasePath : testCasePaths) {
-			for (ExpectedResult baseCase : ExpectedResult.values()) {
-				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
-					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
-							IsolationLevels.SERIALIZABLE)) {
-						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
-						ret.add(temp);
-					}
+			List<Object[]> temp = new ArrayList<>();
 
-				});
+			for (ExpectedResult baseCase : ExpectedResult.values()) {
+				List<Object[]> collect = findTestCases(testCasePath, baseCase.name())
+						.stream()
+						.flatMap(path -> Stream
+								.of(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)
+								.map(isolationLevel -> new Object[] { testCasePath, path, baseCase, isolationLevel }))
+						.collect(Collectors.toList());
+
+				temp.addAll(collect);
 			}
+			assert !temp.isEmpty() : "There were no test cases for: " + testCasePath;
+			ret.addAll(temp);
+
 		}
 
 		return ret;
@@ -291,7 +408,7 @@ abstract public class AbstractShaclTest {
 				connection.begin(isolationLevel);
 				ValueFactory vf = connection.getValueFactory();
 				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
-						vf.createLiteral("auto-generated!"), vf.createBNode());
+						vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
 				try {
 					connection.commit();
 				} catch (RepositoryException sailException) {
@@ -395,19 +512,38 @@ abstract public class AbstractShaclTest {
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
-					"utf-8");
-			s = Arrays
-					.stream(s.split("\n"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@prefix"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@base"))
-					.filter(a -> !a.trim().toUpperCase().startsWith("PREFIX "))
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
+					StandardCharsets.UTF_8);
+
+			s = removeLeadingPrefixStatements(s);
+
 			System.out.println(s);
 			System.out.println("################################################\n");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private static String removeLeadingPrefixStatements(String s) {
+		String[] split = s.split("\n");
+		s = "";
+		boolean skippingPrefixes = true;
+
+		for (String s1 : split) {
+			if (skippingPrefixes) {
+				if (!(s1.trim().equals("") ||
+						s1.trim().toLowerCase().startsWith("@prefix") ||
+						s1.trim().toLowerCase().startsWith("@base") ||
+						s1.trim().toLowerCase().startsWith("prefix"))) {
+					skippingPrefixes = false;
+				}
+			}
+
+			if (!skippingPrefixes) {
+				s += s1 + "\n";
+			}
+
+		}
+		return s;
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
@@ -669,10 +805,33 @@ abstract public class AbstractShaclTest {
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
+		shaclSail.setShaclAdvancedFeatures(true);
+		shaclSail.setDashDataShapes(true);
 
 		repository.init();
 
 		return repository;
+	}
+
+	/**
+	 * Sort and output testCasePaths
+	 *
+	 * @param args
+	 */
+	public static void main(String[] args) {
+
+		System.out.println("\n\tprivate static final List<String> testCasePaths = Stream.of(");
+		String testCasesString = testCasePaths
+				.stream()
+				.map(a -> "\t\t\"" + a + "\"")
+				.reduce((a, b) -> a + ",\n" + b)
+				.orElse("");
+
+		System.out.println(testCasesString);
+		System.out.println("\t)\n" +
+				"\t\t.distinct()\n" +
+				"\t\t.sorted()\n" +
+				"\t\t.collect(Collectors.toList());");
 	}
 
 }

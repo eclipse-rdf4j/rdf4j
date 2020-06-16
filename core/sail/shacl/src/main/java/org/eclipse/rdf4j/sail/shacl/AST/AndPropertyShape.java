@@ -12,11 +12,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
@@ -40,18 +43,37 @@ public class AndPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
 	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource and) {
+			PathPropertyShape parent, Resource path, Resource and, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
-		this.and = toList(connection, and).stream()
-				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
-				.collect(Collectors.toList());
+		this.and = getPropertyShapes(connection, nodeShape, shaclSail, and);
 
+		if (!this.and.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:and contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
+
+	}
+
+	private List<List<PathPropertyShape>> getPropertyShapes(SailRepositoryConnection connection, NodeShape nodeShape,
+			ShaclSail shaclSail,
+			Resource and) {
+		return toList(connection, and).stream()
+				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this, shaclSail)
+						.stream()
+						.filter(s -> !s.deactivated)
+						.collect(Collectors.toList()))
+				.collect(Collectors.toList());
 	}
 
 	public AndPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
 			List<List<PathPropertyShape>> and) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.and = and;
+
+		if (!this.and.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:and contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	@Override
@@ -66,8 +88,14 @@ public class AndPropertyShape extends PathPropertyShape {
 			OrPropertyShape orPropertyShape = new OrPropertyShape(getId(), nodeShape, deactivated, this, null,
 					and);
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					overrideTargetNode, false, true);
+
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(plan,
+						connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 
 			return new EnrichWithShape(plan.getParent(), this);
 
@@ -77,13 +105,18 @@ public class AndPropertyShape extends PathPropertyShape {
 			PlanNode plan = and.get(0)
 					.get(0)
 					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(plan,
+						connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(plan, this);
 		}
 
 		List<PlanNode> plans = and
 				.stream()
 				.flatMap(List::stream)
-				.map(shape -> shape.getPlan(connectionsGroup, printPlans, overrideTargetNode, negateSubPlans,
+				.map(shape -> shape.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans,
 						false))
 				.collect(Collectors.toList());
 
@@ -110,6 +143,12 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		if (iteratorData == IteratorData.aggregated) {
 			unionPlan = new AggregateIteratorTypeOverride(new Unique(new TrimTuple(unionPlan, 0, 1)));
+		}
+
+		if (printPlans) {
+			String planAsGraphvizDot = getPlanAsGraphvizDot(unionPlan,
+					connectionsGroup);
+			logger.info(planAsGraphvizDot);
 		}
 
 		return new EnrichWithShape(unionPlan, this);
@@ -167,16 +206,43 @@ public class AndPropertyShape extends PathPropertyShape {
 	}
 
 	public boolean childrenHasOwnPath() {
-		return and.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
+		return and
+				.stream()
+				.flatMap(a -> a
+						.stream()
+						.map(PathPropertyShape::hasOwnPath))
+				.anyMatch(a -> a);
 	}
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		Optional<PlanNode> reduce = and.stream()
+		Optional<PlanNode> reduce = and
+				.stream()
 				.flatMap(Collection::stream)
 				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
 				.reduce((a, b) -> new UnionNode(a, b));
 
 		return new Unique(reduce.get());
+	}
+
+	@Override
+	public String buildSparqlValidNodes(String targetVar) {
+		return and.stream()
+				.map(propertyShapes -> propertyShapes
+						.stream()
+						.map(propertyShape -> propertyShape.buildSparqlValidNodes(targetVar))
+						.reduce((a, b) -> a + "\n" + b))
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns() {
+		return and
+				.stream()
+				.flatMap(Collection::stream)
+				.flatMap(PropertyShape::getStatementPatterns);
 	}
 }

@@ -92,11 +92,10 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	public CloseableIteration<Tuple, SailException> internalIterator() {
 
-		InnerJoin that = this;
 		return new CloseableIteration<Tuple, SailException>() {
 
-			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
-			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
+			final CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
 
 			Tuple next;
 			Tuple nextLeft;

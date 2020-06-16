@@ -8,7 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
@@ -29,4 +33,6 @@ abstract public class Path implements RequiresEvalutation, QueryGenerator, PlanG
 	public Resource getId() {
 		return id;
 	}
+
+	public abstract Stream<StatementPattern> getStatementsPatterns(Var start, Var end);
 }

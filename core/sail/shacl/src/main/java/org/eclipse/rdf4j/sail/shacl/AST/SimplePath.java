@@ -10,8 +10,12 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
@@ -32,7 +36,7 @@ public class SimplePath extends Path {
 
 	private final IRI path;
 
-	SimplePath(IRI id) {
+	public SimplePath(IRI id) {
 		super(id);
 		this.path = id;
 
@@ -122,5 +126,12 @@ public class SimplePath extends Path {
 	@Override
 	public String toString() {
 		return path.toString();
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementsPatterns(Var start, Var end) {
+		return Stream
+				.of(new StatementPattern(start, new Var(UUID.randomUUID().toString(), path), end));
+
 	}
 }

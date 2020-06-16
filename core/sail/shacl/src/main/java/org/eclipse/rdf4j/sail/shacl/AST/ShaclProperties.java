@@ -24,59 +24,63 @@ public class ShaclProperties {
 
 	// every shape is either a sh:NodeShape or a sh:PropertyShape, we default to NodeShape since sh:path has domain
 	// sh:PropertyShape so the reasoner will figure that out
-	IRI type = SHACL.NODE_SHAPE;
+	private IRI type = SHACL.NODE_SHAPE;
 
-	List<Resource> clazz = new ArrayList<>();
-	List<Resource> or = new ArrayList<>();
-	List<Resource> xone = new ArrayList<>();
-	List<Resource> and = new ArrayList<>();
-	List<Resource> not = new ArrayList<>();
-	List<Resource> node = new ArrayList<>();
-	List<Resource> property = new ArrayList<>();
-	List<Value> hasValue = new ArrayList<>();
+	private final List<Resource> clazz = new ArrayList<>();
+	private final List<Resource> or = new ArrayList<>();
+	private final List<Resource> xone = new ArrayList<>();
+	private final List<Resource> and = new ArrayList<>();
+	private final List<Resource> not = new ArrayList<>();
+	private final List<Resource> node = new ArrayList<>();
+	private final List<Resource> property = new ArrayList<>();
 
-	List<IRI> equals = new ArrayList<>();
-	List<IRI> disjoint = new ArrayList<>();
-	List<IRI> lessThan = new ArrayList<>();
-	List<IRI> lessThanOrEquals = new ArrayList<>();
+	private final List<IRI> equals = new ArrayList<>();
+	private final List<IRI> disjoint = new ArrayList<>();
+	private final List<IRI> lessThan = new ArrayList<>();
+	private final List<IRI> lessThanOrEquals = new ArrayList<>();
 
-	Long minCount;
-	Long maxCount;
+	private Long minCount;
+	private Long maxCount;
 
-	Resource datatype;
-	Resource in;
+	private Resource datatype;
+	private Resource in;
+	private final List<Value> hasValue = new ArrayList<>();
+	private Resource valueIn;
 
-	Long minLength;
-	Long maxLength;
+	private Long minLength;
+	private Long maxLength;
 
-	Resource languageIn;
-	Resource nodeKind;
+	private Resource languageIn;
+	private Resource nodeKind;
 
-	Resource path;
+	private Resource path;
 
-	Literal minExclusive;
-	Literal maxExclusive;
-	Literal minInclusive;
-	Literal maxInclusive;
+	private Literal minExclusive;
+	private Literal maxExclusive;
+	private Literal minInclusive;
+	private Literal maxInclusive;
 
-	String pattern;
-	String flags;
+	private final List<String> pattern = new ArrayList<>();
+	private String flags = "";
 
-	Set<Resource> targetClass = new HashSet<>();
-	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
-	Set<IRI> targetSubjectsOf = new HashSet<>();
-	Set<IRI> targetObjectsOf = new HashSet<>();
+	private final Set<Resource> targetClass = new HashSet<>();
+	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
+	private final Set<IRI> targetSubjectsOf = new HashSet<>();
+	private final Set<IRI> targetObjectsOf = new HashSet<>();
+	private final List<Resource> targetShape = new ArrayList<>();
 
-	boolean deactivated = false;
+	private final List<Resource> target = new ArrayList<>();
 
-	boolean uniqueLang = false;
+	private boolean deactivated = false;
+
+	private boolean uniqueLang = false;
 
 	boolean closed = false;
-	Resource ignoredProperties;
+	private Resource ignoredProperties;
 
-	Resource id;
+	private Resource id;
 
-	List<Literal> message = new ArrayList<>();
+	private final List<Literal> message = new ArrayList<>();
 
 	public ShaclProperties() {
 	}
@@ -183,10 +187,7 @@ public class ShaclProperties {
 					maxInclusive = (Literal) object;
 					break;
 				case "http://www.w3.org/ns/shacl#pattern":
-					if (pattern != null) {
-						throw new IllegalStateException(predicate + " already populated");
-					}
-					pattern = object.stringValue();
+					pattern.add(object.stringValue());
 					break;
 				case "http://www.w3.org/ns/shacl#class":
 					clazz.add((Resource) object);
@@ -236,10 +237,6 @@ public class ShaclProperties {
 					}
 					in = (Resource) object;
 					break;
-				case "http://www.w3.org/ns/shacl#hasValue":
-					hasValue.add(object);
-					break;
-
 				case "http://www.w3.org/ns/shacl#equals":
 					equals.add((IRI) object);
 					break;
@@ -251,6 +248,21 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#lessThanOrEquals":
 					lessThanOrEquals.add((IRI) object);
+					break;
+				case "http://www.w3.org/ns/shacl#target":
+					target.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#hasValue":
+					hasValue.add(object);
+					break;
+				case "http://datashapes.org/dash#valueIn":
+					if (valueIn != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					valueIn = (Resource) object;
+					break;
+				case "http://www.w3.org/ns/shacl#targetShape":
+					targetShape.add((Resource) object);
 					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
@@ -333,7 +345,7 @@ public class ShaclProperties {
 		return maxInclusive;
 	}
 
-	public String getPattern() {
+	public List<String> getPattern() {
 		return pattern;
 	}
 
@@ -415,5 +427,17 @@ public class ShaclProperties {
 
 	public List<IRI> getLessThanOrEquals() {
 		return lessThanOrEquals;
+	}
+
+	public List<Resource> getTarget() {
+		return target;
+	}
+
+	public List<Resource> getTargetShape() {
+		return targetShape;
+	}
+
+	public Resource getValueIn() {
+		return valueIn;
 	}
 }

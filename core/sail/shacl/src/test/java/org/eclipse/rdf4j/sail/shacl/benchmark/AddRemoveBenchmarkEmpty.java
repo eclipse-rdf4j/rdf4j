@@ -58,7 +58,7 @@ public class AddRemoveBenchmarkEmpty {
 	}
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -77,7 +77,7 @@ public class AddRemoveBenchmarkEmpty {
 			}
 		}
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Benchmark

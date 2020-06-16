@@ -20,8 +20,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalTypeFilterNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -40,8 +41,9 @@ public class TargetClass extends NodeShape {
 
 	private final Set<Resource> targetClass;
 
-	TargetClass(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<Resource> targetClass) {
-		super(id, connection, deactivated);
+	TargetClass(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
+			Set<Resource> targetClass) {
+		super(id, shaclSail, connection, deactivated);
 		this.targetClass = targetClass;
 		assert !this.targetClass.isEmpty();
 
@@ -126,8 +128,9 @@ public class TargetClass extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalTypeFilterNode(shaclSailConnection, targetClass, parent, 0, true);
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), RDF.TYPE, targetClass, parent, 0,
+				true);
 	}
 
 	@Override
