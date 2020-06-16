@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -37,8 +38,9 @@ public class TargetObjectsOf extends NodeShape {
 
 	private final Set<IRI> targetObjectsOf;
 
-	TargetObjectsOf(Resource id, SailRepositoryConnection connection, boolean deactivated, Set<IRI> targetObjectsOf) {
-		super(id, connection, deactivated);
+	TargetObjectsOf(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
+			Set<IRI> targetObjectsOf) {
+		super(id, shaclSail, connection, deactivated);
 		this.targetObjectsOf = targetObjectsOf;
 		assert !this.targetObjectsOf.isEmpty();
 
@@ -60,6 +62,7 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
@@ -80,6 +83,7 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
 			IRI iri = targetObjectsOf.stream().findAny().get();
@@ -117,8 +121,8 @@ public class TargetObjectsOf extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
-		return new ExternalFilterByPredicate(shaclSailConnection, targetObjectsOf, parent, 0,
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalFilterByPredicate(connectionsGroup.getBaseConnection(), targetObjectsOf, parent, 0,
 				ExternalFilterByPredicate.On.Object);
 	}
 

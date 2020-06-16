@@ -51,8 +51,9 @@ public class ShaclLoadingBenchmark {
 	}
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		System.gc();
+		Thread.sleep(100);
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);

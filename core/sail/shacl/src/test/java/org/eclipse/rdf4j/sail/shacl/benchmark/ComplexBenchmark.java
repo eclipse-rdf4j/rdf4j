@@ -58,8 +58,8 @@ public class ComplexBenchmark {
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
-	private static String transaction1;
-	private static String transaction2;
+	private static final String transaction1;
+	private static final String transaction2;
 
 	static {
 		try {
@@ -76,8 +76,9 @@ public class ComplexBenchmark {
 	}
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		System.gc();
+		Thread.sleep(100);
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);

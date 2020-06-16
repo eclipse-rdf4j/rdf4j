@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -43,8 +44,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 
-		String completeQuery = "select * where { VALUES (?a) {}" + query + "} order by ?a";
-		parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null);
+		parsedQuery = parseQuery(query);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -57,13 +57,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			ArrayDeque<Tuple> left = new ArrayDeque<>();
+			final ArrayDeque<Tuple> left = new ArrayDeque<>();
 
-			ArrayDeque<Tuple> right = new ArrayDeque<>();
+			final ArrayDeque<Tuple> right = new ArrayDeque<>();
 
-			ArrayDeque<Tuple> joined = new ArrayDeque<>();
+			final ArrayDeque<Tuple> joined = new ArrayDeque<>();
 
-			CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
+			final CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
@@ -85,6 +85,12 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						Tuple leftPeek = left.peekLast();
 
 						Tuple rightPeek = right.peekLast();
+
+						assert leftPeek != null;
+						assert rightPeek != null;
+
+						assert leftPeek.getLine() != null;
+						assert rightPeek.getLine() != null;
 
 						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
 								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {

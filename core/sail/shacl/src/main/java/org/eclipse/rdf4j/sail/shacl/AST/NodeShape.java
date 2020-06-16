@@ -17,8 +17,10 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -31,6 +33,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents the NodeShape node. NodeShape nodes can have multiple property
@@ -41,16 +45,18 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
  */
 public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGenerator {
 
+	private static final Logger logger = LoggerFactory.getLogger(NodeShape.class);
+
 	final Resource id;
 
 	private List<PathPropertyShape> propertyShapes = Collections.emptyList();
 	private List<PathPropertyShape> nodeShapes = Collections.emptyList();
 
-	public NodeShape(Resource id, SailRepositoryConnection connection, boolean deactivated) {
+	public NodeShape(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated) {
 		this.id = id;
 		if (!deactivated) {
-			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this);
-			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id, null);
+			propertyShapes = PropertyShape.Factory.getPropertyShapes(id, connection, this, shaclSail);
+			nodeShapes = PropertyShape.Factory.getPropertyShapesInner(connection, this, id, null, shaclSail);
 		}
 	}
 
@@ -66,6 +72,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
@@ -76,6 +83,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
@@ -93,8 +101,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		throw new IllegalStateException();
 	}
 
-	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape,
-			boolean printPlans, boolean validateEntireBaseSail) {
+	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape, boolean printPlans,
+			boolean validateEntireBaseSail) {
 
 		PlanNodeProvider overrideTargetNodeBufferedSplitter;
 		SailConnection addedStatements;
@@ -125,11 +133,9 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return Stream.concat(propertyShapesPlans, nodeShapesPlans);
 	}
 
-	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes,
-			ConnectionsGroup connectionsGroup,
+	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes, ConnectionsGroup connectionsGroup,
 			NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
-			SailConnection addedStatements,
-			SailConnection removedStatements) {
+			SailConnection addedStatements, SailConnection removedStatements) {
 
 		Stats stats = connectionsGroup.getStats();
 		return propertyShapes
@@ -154,42 +160,136 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id;
 	}
 
+	/**
+	 * Returns a query that can be run against the base sail to retrieve all targets that would be valid according to
+	 * this shape.
+	 *
+	 * Eg. A datatype restriction on foaf:age datatype == integer would look like:
+	 *
+	 * ?a foaf:age ?age_UUID. FILTER(isLiteral(?age_UUID) && datatype(?age_UUID) = xsd:integer)
+	 *
+	 * Where targetVar == ?a
+	 *
+	 * @param targetVar the SPARQL variable name used to bind the target nodes
+	 * @return sparql query
+	 */
+	protected String buildSparqlValidNodes(String targetVar) {
+
+		if (!propertyShapes.isEmpty() && !nodeShapes.isEmpty()) {
+			throw new UnsupportedOperationException(
+					"sh:targetShape don't support both nodeshapes and property shapes!");
+		}
+
+		if (!propertyShapes.isEmpty()) {
+			return propertyShapes
+					.stream()
+					.map(propertyShapes -> propertyShapes.buildSparqlValidNodes(targetVar))
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+		}
+
+		if (!nodeShapes.isEmpty()) {
+			return nodeShapes
+					.stream()
+					.map(propertyShapes -> propertyShapes.buildSparqlValidNodes(targetVar))
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+		}
+
+		return "";
+
+	}
+
+	/**
+	 * Get all statement patterns that would affect the validity of this shape.
+	 *
+	 * Eg. If the shape validates that all foaf:Person should have one foaf:name, then the statement pattern that would
+	 * affect the validity would be "?a foaf:name ?b". We don't consider the patterns that would affect the targets (eg.
+	 * foaf:Person).
+	 *
+	 * @return
+	 */
+	protected Stream<StatementPattern> getStatementPatterns() {
+
+		return Stream.concat(
+				propertyShapes
+						.stream()
+						.flatMap(PropertyShape::getStatementPatterns),
+				nodeShapes
+						.stream()
+						.flatMap(PropertyShape::getStatementPatterns));
+	}
+
 	public static class Factory {
 
-		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail sail) {
+		public static List<NodeShape> getShapes(SailRepositoryConnection connection, ShaclSail shaclSail) {
 			try (Stream<Statement> stream = connection.getStatements(null, RDF.TYPE, SHACL.NODE_SHAPE).stream()) {
 				return stream.map(Statement::getSubject).flatMap(shapeId -> {
 
-					List<NodeShape> propertyShapes = new ArrayList<>(2);
+					List<NodeShape> propertyShapes = new ArrayList<>();
 
 					ShaclProperties shaclProperties = new ShaclProperties(shapeId, connection);
 
-					if (!shaclProperties.targetClass.isEmpty()) {
-						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetClass));
+					if (!shaclProperties.getTargetClass().isEmpty()) {
+						propertyShapes
+								.add(new TargetClass(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
+										shaclProperties.getTargetClass()));
 					}
-					if (!shaclProperties.targetNode.isEmpty()) {
-						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetNode));
+					if (!shaclProperties.getTargetNode().isEmpty()) {
+						propertyShapes
+								.add(new TargetNode(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
+										shaclProperties.getTargetNode()));
 					}
-					if (!shaclProperties.targetSubjectsOf.isEmpty()) {
-						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetSubjectsOf));
+					if (!shaclProperties.getTargetSubjectsOf().isEmpty()) {
+						propertyShapes.add(
+								new TargetSubjectsOf(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
+										shaclProperties.getTargetSubjectsOf()));
 					}
-					if (!shaclProperties.targetObjectsOf.isEmpty()) {
-						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetObjectsOf));
+					if (!shaclProperties.getTargetObjectsOf().isEmpty()) {
+						propertyShapes.add(
+								new TargetObjectsOf(shapeId, shaclSail, connection, shaclProperties.isDeactivated(),
+										shaclProperties.getTargetObjectsOf()));
 					}
 
-					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
-						propertyShapes.add(new NodeShape(shapeId, connection, shaclProperties.deactivated)); // target
-						// class
-						// nodeShapes
-						// are
-						// the
-						// only
-						// supported
-						// nodeShapes
+					if (shaclSail.isShaclAdvancedFeatures()) {
+						shaclProperties.getTargetShape()
+								.stream()
+								.map(targetShape -> new TargetShape(shapeId, shaclSail, connection,
+										shaclProperties.isDeactivated(), targetShape))
+								.forEach(propertyShapes::add);
+
+					}
+
+					if (!shaclProperties.getTarget().isEmpty()) {
+						shaclProperties.getTarget()
+								.forEach(sparqlTarget -> {
+//									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
+//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
+//												shaclProperties.isDeactivated(), sparqlTarget));
+//									}
+									if (shaclSail.isDashDataShapes() && connection.hasStatement(sparqlTarget,
+											RDF.TYPE, DASH.AllObjectsTarget, true)) {
+										propertyShapes.add(
+												new AllObjectsTarget(shapeId, shaclSail, connection,
+														shaclProperties.isDeactivated()));
+									}
+									if (shaclSail.isDashDataShapes() && connection.hasStatement(sparqlTarget,
+											RDF.TYPE, DASH.AllSubjectsTarget, true)) {
+										propertyShapes.add(new AllSubjectsTarget(shapeId, shaclSail, connection,
+												shaclProperties.isDeactivated()));
+									}
+
+								});
+
+					}
+
+					if (shaclSail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
+						logger.info(
+								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setExperimentalDashSupport(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
+
+						propertyShapes
+								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated()));
+						// target class nodeShapes are the only supported nodeShapes
 					}
 
 					return propertyShapes.stream();
@@ -204,7 +304,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		return id.toString();
 	}
 
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		return parent;
 	}
 

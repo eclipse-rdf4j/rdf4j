@@ -43,6 +43,15 @@ public class Select implements PlanNode {
 	public Select(SailConnection connection, String query, String... variables) {
 		assert variables.length > 0;
 		this.connection = connection;
+		if (query.trim().equals("")) {
+			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
+
+			// empty set
+			query = "" +
+					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
+					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+		}
+
 		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
 		this.variables = variables;
 	}
@@ -51,7 +60,7 @@ public class Select implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
+			final CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
 			{
 

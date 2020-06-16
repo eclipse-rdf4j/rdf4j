@@ -204,6 +204,6 @@ public abstract class PathPropertyShape extends PropertyShape {
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Select select = new Select(connectionsGroup.getBaseConnection(), "?a ?b ?c", "?a");
 		Unique unique = new Unique(select);
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), unique);
+		return nodeShape.getTargetFilter(connectionsGroup, unique);
 	}
 }

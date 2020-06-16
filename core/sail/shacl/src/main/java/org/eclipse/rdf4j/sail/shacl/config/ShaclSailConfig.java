@@ -20,6 +20,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_V
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -47,6 +48,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
 	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
+	public static final boolean SHACL_ADVANCED_FEATURES_DEFAULT = false;
+	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -59,6 +62,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;
 	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;
+	private boolean shaclAdvancedFeatures = SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -68,68 +73,72 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		super(ShaclSailFactory.SAIL_TYPE, delegate);
 	}
 
+	@Deprecated
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return undefinedTargetValidatesAllSubjects;
+	}
+
+	@Deprecated
+	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
+		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
 	}
 
 	public boolean isLogValidationPlans() {
 		return logValidationPlans;
 	}
 
-	public boolean isLogValidationViolations() {
-		return logValidationViolations;
-	}
-
-	public boolean isGlobalLogValidationExecution() {
-		return globalLogValidationExecution;
-	}
-
-	public boolean isIgnoreNoShapesLoadedException() {
-		return ignoreNoShapesLoadedException;
-	}
-
-	public boolean isValidationEnabled() {
-		return validationEnabled;
-	}
-
-	public boolean isParallelValidation() {
-		return parallelValidation;
-	}
-
-	public boolean isCacheSelectNodes() {
-		return cacheSelectNodes;
-	}
-
-	public void setParallelValidation(boolean parallelValidation) {
-		this.parallelValidation = parallelValidation;
-	}
-
-	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
-		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
-	}
-
 	public void setLogValidationPlans(boolean logValidationPlans) {
 		this.logValidationPlans = logValidationPlans;
+	}
+
+	public boolean isLogValidationViolations() {
+		return logValidationViolations;
 	}
 
 	public void setLogValidationViolations(boolean logValidationViolations) {
 		this.logValidationViolations = logValidationViolations;
 	}
 
+	public boolean isGlobalLogValidationExecution() {
+		return globalLogValidationExecution;
+	}
+
+	public void setGlobalLogValidationExecution(boolean globalLogValidationExecution) {
+		this.globalLogValidationExecution = globalLogValidationExecution;
+	}
+
+	@Deprecated
+	public boolean isIgnoreNoShapesLoadedException() {
+		return ignoreNoShapesLoadedException;
+	}
+
+	@Deprecated
 	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
 		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
+	}
+
+	public boolean isValidationEnabled() {
+		return validationEnabled;
 	}
 
 	public void setValidationEnabled(boolean validationEnabled) {
 		this.validationEnabled = validationEnabled;
 	}
 
-	public void setCacheSelectNodes(boolean cacheSelectNodes) {
-		this.cacheSelectNodes = cacheSelectNodes;
+	public boolean isParallelValidation() {
+		return parallelValidation;
 	}
 
-	public void setGlobalLogValidationExecution(boolean globalLogValidationExecution) {
-		this.globalLogValidationExecution = globalLogValidationExecution;
+	public void setParallelValidation(boolean parallelValidation) {
+		this.parallelValidation = parallelValidation;
+	}
+
+	public boolean isCacheSelectNodes() {
+		return cacheSelectNodes;
+	}
+
+	public void setCacheSelectNodes(boolean cacheSelectNodes) {
+		this.cacheSelectNodes = cacheSelectNodes;
 	}
 
 	public boolean isRdfsSubClassReasoning() {
@@ -156,6 +165,26 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.serializableValidation = serializableValidation;
 	}
 
+	@Experimental
+	public boolean isShaclAdvancedFeatures() {
+		return shaclAdvancedFeatures;
+	}
+
+	@Experimental
+	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
+		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
+	}
+
+	@Experimental
+	public boolean isDashDataShapes() {
+		return dashDataShapes;
+	}
+
+	@Experimental
+	public void setDashDataShapes(boolean dashDataShapes) {
+		this.dashDataShapes = dashDataShapes;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -173,6 +202,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
 		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
 		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
+		m.add(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
+		m.add(implNode, ShaclSailSchema.DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
 		return implNode;
 	}
 
@@ -183,26 +214,43 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		try {
 			Models.objectLiteral(m.getStatements(implNode, PARALLEL_VALIDATION, null))
 					.ifPresent(l -> setParallelValidation(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null))
 					.ifPresent(l -> setUndefinedTargetValidatesAllSubjects(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_PLANS, null))
 					.ifPresent(l -> setLogValidationPlans(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_VIOLATIONS, null))
 					.ifPresent(l -> setLogValidationViolations(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null))
 					.ifPresent(l -> setIgnoreNoShapesLoadedException(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, VALIDATION_ENABLED, null))
 					.ifPresent(l -> setValidationEnabled(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, CACHE_SELECT_NODES, null))
 					.ifPresent(l -> setCacheSelectNodes(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null))
 					.ifPresent(l -> setGlobalLogValidationExecution(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, RDFS_SUB_CLASS_REASONING, null))
 					.ifPresent(l -> setRdfsSubClassReasoning(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, PERFORMANCE_LOGGING, null))
 					.ifPresent(l -> setPerformanceLogging(l.booleanValue()));
+
 			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
+
+			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, null))
+					.ifPresent(l -> setShaclAdvancedFeatures(l.booleanValue()));
+
+			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.DASH_DATA_SHAPES, null))
+					.ifPresent(l -> setDashDataShapes(l.booleanValue()));
+
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);
 		}
