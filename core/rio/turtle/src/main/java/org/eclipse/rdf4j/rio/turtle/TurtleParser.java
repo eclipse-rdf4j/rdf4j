@@ -1254,7 +1254,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IOException
 	 */
 	protected void unread(String string) throws IOException {
-		int i = string.codePointCount(0, string.length());
+		int i = string.length();
 		while (i > 0) {
 			final int codePoint = string.codePointBefore(i);
 			if (Character.isSupplementaryCodePoint(codePoint)) {
