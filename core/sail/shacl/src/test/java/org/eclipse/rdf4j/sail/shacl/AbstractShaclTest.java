@@ -207,10 +207,10 @@ abstract public class AbstractShaclTest {
 //		"test-cases/datatype/notNodeShape",
 //		"test-cases/datatype/notNot",
 //		"test-cases/datatype/notTargetNode",
-//		"test-cases/datatype/simple"
+		"test-cases/datatype/simple",
 		"test-cases/datatype/simpleNode",
-		"test-cases/datatype/simpleNodeNested"
-//		"test-cases/datatype/simpleNested"
+		"test-cases/datatype/simpleNodeNested",
+		"test-cases/datatype/simpleNested"
 //		"test-cases/datatype/targetNode",
 //		"test-cases/datatype/targetNode2",
 //		"test-cases/datatype/targetNodeLang",
@@ -444,11 +444,14 @@ abstract public class AbstractShaclTest {
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);
 					connection.prepareUpdate(query).execute();
+					printCurrentState(shaclRepository);
 					connection.commit();
 				} catch (RepositoryException sailException) {
 					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 						throw sailException;
 					}
+
+
 					exception = true;
 					logger.debug(sailException.getMessage());
 					validationReportActual = ((ShaclSailValidationException) sailException.getCause())

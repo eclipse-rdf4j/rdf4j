@@ -4,27 +4,14 @@
 @prefix sh:    <http://www.w3.org/ns/shacl#> .
 @prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
 
-[ a          sh:ValidationReport ;
-  sh:result  _:b0
-] .
-
 [ a            sh:ValidationReport ;
   sh:conforms  false ;
   sh:result    [ a                             sh:ValidationResult ;
-                 sh:detail                     _:b0 ;
                  sh:focusNode                  ex:validPerson1 ;
                  sh:resultPath                 ex:age ;
                  sh:resultSeverity             sh:Violation ;
-                 sh:sourceConstraintComponent  sh:NodeConstraintComponent ;
+                 sh:sourceConstraintComponent  sh:DatatypeConstraintComponent ;
                  sh:sourceShape                []  ;
                  sh:value                      "123"
                ]
 ] .
-
-_:b0    a                             sh:ValidationResult ;
-        sh:focusNode                  "123" ;
-        sh:resultSeverity             sh:Violation ;
-        sh:sourceConstraintComponent  sh:DatatypeConstraintComponent ;
-        sh:sourceShape                ex:node ;
-        sh:value                      "123" .
-
