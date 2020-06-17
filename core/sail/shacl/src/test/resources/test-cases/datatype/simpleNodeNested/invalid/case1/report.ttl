@@ -4,21 +4,9 @@
 @prefix sh:    <http://www.w3.org/ns/shacl#> .
 @prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
 
-[ a            sh:ValidationReport ;
-  sh:conforms  false ;
-  sh:result    [ a                             sh:ValidationResult ;
-                 sh:detail                     _:b0 ;
-                 sh:focusNode                  ex:validPerson1 ;
-                 sh:resultPath                 ex:knows ;
-                 sh:resultSeverity             sh:Violation ;
-                 sh:sourceConstraintComponent  sh:NodeConstraintComponent ;
-                 sh:sourceShape                []  ;
-                 sh:value                      _:b1
-               ]
-] .
-
 _:b0    a                             sh:ValidationResult ;
-        sh:focusNode                  _:b1 ;
+        sh:focusNode                  ex:p2 ;
+        sh:resultMessage              "Value must be a valid literal of type integer" ;
         sh:resultPath                 ex:age ;
         sh:resultSeverity             sh:Violation ;
         sh:sourceConstraintComponent  sh:DatatypeConstraintComponent ;
@@ -27,4 +15,18 @@ _:b0    a                             sh:ValidationResult ;
 
 [ a          sh:ValidationReport ;
   sh:result  _:b0
+] .
+
+[ a            sh:ValidationReport ;
+  sh:conforms  false ;
+  sh:result    [ a                             sh:ValidationResult ;
+                 sh:detail                     _:b0 ;
+                 sh:focusNode                  ex:validPerson1 ;
+                 sh:resultMessage              "Value does not have shape ex:node" ;
+                 sh:resultPath                 ex:knows ;
+                 sh:resultSeverity             sh:Violation ;
+                 sh:sourceConstraintComponent  sh:NodeConstraintComponent ;
+                 sh:sourceShape                []  ;
+                 sh:value                      ex:p2
+               ]
 ] .
