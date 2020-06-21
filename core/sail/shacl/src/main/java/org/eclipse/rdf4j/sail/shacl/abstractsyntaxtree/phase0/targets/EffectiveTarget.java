@@ -67,7 +67,7 @@ public class EffectiveTarget {
 				return ((Target) last.target).getAdded(connectionsGroup);
 			} else {
 				throw new UnsupportedOperationException(
-						"Unknown target in chain is typo: " + last.getClass().getSimpleName());
+						"Unknown target in chain is type: " + last.getClass().getSimpleName());
 			}
 
 		} else {
@@ -88,4 +88,9 @@ public class EffectiveTarget {
 		}
 
 	}
+
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		throw new UnsupportedOperationException();
+	}
+
 }

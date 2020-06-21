@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlaneNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNodeWrapper;
 
 public class AlternativePath extends Path {
 
@@ -36,7 +36,7 @@ public class AlternativePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
 		throw new UnsupportedOperationException();
 	}
 

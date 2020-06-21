@@ -10,6 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import java.util.function.Function;
 
-public interface PlaneNodeWrapper extends Function<PlanNode, PlanNode> {
+public interface PlanNodeWrapper extends Function<PlanNode, PlanNode> {
 
 }

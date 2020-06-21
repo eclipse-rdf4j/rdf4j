@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths;
 
-import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -11,7 +10,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlaneNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
@@ -31,11 +30,11 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlaneNodeWrapper planeNodeWrapper) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
 				s -> new ValidationTuple(s.getSubject(), this, s.getObject()));
-		if (planeNodeWrapper != null) {
-			unorderedSelect = planeNodeWrapper.apply(unorderedSelect);
+		if (planNodeWrapper != null) {
+			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
 		}
 
 		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));

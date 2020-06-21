@@ -6,7 +6,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.TargetChainInterface;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNodeProvider;
 
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
