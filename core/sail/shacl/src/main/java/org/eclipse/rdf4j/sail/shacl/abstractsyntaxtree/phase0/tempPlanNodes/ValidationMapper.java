@@ -8,32 +8,45 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
 
+import java.util.Deque;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationExecutionLogger;
 
-public class ValidationReportNode implements TupleValidationPlanNode {
 
-	private final Function<ValidationTuple, ValidationResult> validationResultFunction;
-	TupleValidationPlanNode parent;
+public class ValidationMapper implements PlanNode {
+
+	private final PlanNode parent;
+	private final Function<Tuple, Deque<Value>> targetMapper;
+	private final Supplier<Path> pathSupplier;
+	private final Function<Tuple, Value> valueMapper;
 	private boolean printed = false;
 
-	public ValidationReportNode(TupleValidationPlanNode parent,
-			Function<ValidationTuple, ValidationResult> validationResultFunction) {
-		this.parent = parent;
-		this.validationResultFunction = validationResultFunction;
+	public ValidationMapper(PlanNode planNode, Function<Tuple, Deque<Value>> targetMapper,
+							Supplier<Path> pathSupplier,
+							Function<Tuple, Value> valueMapper) {
+
+		this.parent = planNode;
+		this.targetMapper = targetMapper;
+		this.pathSupplier = pathSupplier;
+		this.valueMapper = valueMapper;
+
 	}
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
-
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			private final CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> iterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -47,9 +60,23 @@ public class ValidationReportNode implements TupleValidationPlanNode {
 
 			@Override
 			public ValidationTuple next() throws SailException {
-				ValidationTuple next = iterator.next();
-				next.addValidationResult(validationResultFunction.apply(next));
-				return next;
+				Tuple next = iterator.next();
+				Deque<Value> target = null;
+				Path path = null;
+				Value value = null;
+				if (targetMapper != null) {
+					target = targetMapper.apply(next);
+				}
+
+				if (pathSupplier != null) {
+					path = pathSupplier.get();
+				}
+
+				if (valueMapper != null) {
+					value = valueMapper.apply(next);
+				}
+
+				return new ValidationTuple(target, path, value);
 			}
 
 			@Override
@@ -61,7 +88,7 @@ public class ValidationReportNode implements TupleValidationPlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth();
+		return 0;
 	}
 
 	@Override
@@ -84,7 +111,7 @@ public class ValidationReportNode implements TupleValidationPlanNode {
 
 	@Override
 	public String toString() {
-		return "ValidationReportNode";
+		return "Empty";
 	}
 
 	@Override

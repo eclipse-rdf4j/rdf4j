@@ -13,8 +13,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Identifiable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Targetable;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 
 public abstract class Path implements Identifiable, Exportable, Targetable {
 
@@ -69,6 +68,6 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 
 	}
 
-	public abstract TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper);
+	public abstract PlanNode getAdded(ConnectionsGroup connectionsGroup,
+												PlaneNodeWrapper planeNodeWrapper);
 }

@@ -12,10 +12,11 @@ import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationEmptyNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationReportNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationUnionNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
@@ -91,28 +92,28 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public TupleValidationPlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
+														   boolean logValidationPlans) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public TupleValidationPlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+																  boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
 
-		TupleValidationPlanNode union = new ValidationEmptyNode();
+		PlanNode union = new ValidationEmptyNode();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
-			TupleValidationPlanNode tupleValidationPlanNode = constraintComponent
-					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans);
+			PlanNode validationPlanNode = constraintComponent
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false);
 			if (!(constraintComponent instanceof PropertyShape)) {
-				tupleValidationPlanNode = new ValidationReportNode(tupleValidationPlanNode, t -> {
+				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getValue(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
 			union = new ValidationUnionNode(union,
-					tupleValidationPlanNode);
+				validationPlanNode);
 		}
 
 		return union;

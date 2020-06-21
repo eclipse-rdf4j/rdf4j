@@ -1,22 +1,18 @@
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract class LoggingCloseableValidationIteration implements CloseableIteration<ValidationTuple, SailException> {
+abstract class LoggingCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
 
 	private final ValidationExecutionLogger validationExecutionLogger;
-	private TupleValidationPlanNode planNode;
+	private final PlanNode planNode;
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
-	public LoggingCloseableValidationIteration(TupleValidationPlanNode planNode,
-			ValidationExecutionLogger validationExecutionLogger) {
+	public LoggingCloseableIteration(PlanNode planNode, ValidationExecutionLogger validationExecutionLogger) {
 		this.planNode = planNode;
 		this.validationExecutionLogger = validationExecutionLogger;
 	}
@@ -37,9 +33,10 @@ abstract class LoggingCloseableValidationIteration implements CloseableIteration
 	public final ValidationTuple next() throws SailException {
 
 		ValidationTuple tuple = loggingNext();
+
 		if (GlobalValidationExecutionLogging.loggingEnabled) {
 			validationExecutionLogger.log(planNode.depth(), planNode.getClass().getSimpleName() + ".next()", tuple,
-					planNode, planNode.getId());
+				planNode, planNode.getId());
 		}
 		return tuple;
 	}
@@ -52,5 +49,9 @@ abstract class LoggingCloseableValidationIteration implements CloseableIteration
 	abstract ValidationTuple loggingNext() throws SailException;
 
 	abstract boolean localHasNext() throws SailException;
+
+	private String leadingSpace() {
+		return leadingSpace(planNode);
+	}
 
 }

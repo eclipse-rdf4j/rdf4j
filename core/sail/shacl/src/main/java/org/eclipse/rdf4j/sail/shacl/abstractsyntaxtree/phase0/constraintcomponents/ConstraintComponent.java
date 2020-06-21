@@ -5,14 +5,15 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.TargetChainInterface;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.ValidationApproach;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
-	TupleValidationPlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans);
+	PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans);
 
-	TupleValidationPlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans);
+	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+														   boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren);
 
 	ValidationApproach getPreferedValidationApproach();
 

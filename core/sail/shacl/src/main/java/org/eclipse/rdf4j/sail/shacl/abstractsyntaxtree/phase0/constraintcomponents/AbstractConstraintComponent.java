@@ -1,14 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationEmptyNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,15 +41,15 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	@Override
-	public TupleValidationPlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
+														   boolean logValidationPlans) {
 		logger.warn("SPARQL based calidation for {} has not been implemented", getConstraintComponent());
 		return new ValidationEmptyNode();
 	}
 
 	@Override
-	public TupleValidationPlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+																  boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
 		logger.warn("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return new ValidationEmptyNode();
 	}

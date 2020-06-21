@@ -6,18 +6,17 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
 /**
  * @author Håvard Mikkelsen Ottestad
  */
-public interface TupleValidationPlanNode {
+public interface GenericPlanNode<T> {
 
-	CloseableIteration<ValidationTuple, SailException> iterator();
+	CloseableIteration<T, SailException> iterator();
 
 	int depth();
 

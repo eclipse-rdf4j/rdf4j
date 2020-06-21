@@ -6,48 +6,34 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
-import java.util.Deque;
-import java.util.List;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
-public class ValidationTupleMapper implements TupleValidationPlanNode {
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
-	private final PlanNode parent;
-	private final Function<Tuple, Deque<Value>> targetMapper;
-	private final Supplier<Path> pathSupplier;
-	private final Function<Tuple, Value> valueMapper;
+public class ValidationReportNode implements PlanNode {
+
+	private final Function<ValidationTuple, ValidationResult> validationResultFunction;
+	PlanNode parent;
 	private boolean printed = false;
 
-	public ValidationTupleMapper(PlanNode planNode, Function<Tuple, Deque<Value>> targetMapper,
-			Supplier<Path> pathSupplier,
-			Function<Tuple, Value> valueMapper) {
-
-		this.parent = planNode;
-		this.targetMapper = targetMapper;
-		this.pathSupplier = pathSupplier;
-		this.valueMapper = valueMapper;
-
+	public ValidationReportNode(PlanNode parent,
+								Function<ValidationTuple, ValidationResult> validationResultFunction) {
+		this.parent = parent;
+		this.validationResultFunction = validationResultFunction;
 	}
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
+
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			final CloseableIteration<Tuple, SailException> iterator = parent.iterator();
+			private final CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -61,23 +47,9 @@ public class ValidationTupleMapper implements TupleValidationPlanNode {
 
 			@Override
 			public ValidationTuple next() throws SailException {
-				Tuple next = iterator.next();
-				Deque<Value> target = null;
-				Path path = null;
-				Value value = null;
-				if (targetMapper != null) {
-					target = targetMapper.apply(next);
-				}
-
-				if (pathSupplier != null) {
-					path = pathSupplier.get();
-				}
-
-				if (valueMapper != null) {
-					value = valueMapper.apply(next);
-				}
-
-				return new ValidationTuple(target, path, value);
+				ValidationTuple next = iterator.next();
+				next.addValidationResult(validationResultFunction.apply(next));
+				return next;
 			}
 
 			@Override
@@ -89,7 +61,7 @@ public class ValidationTupleMapper implements TupleValidationPlanNode {
 
 	@Override
 	public int depth() {
-		return 0;
+		return parent.depth();
 	}
 
 	@Override
@@ -112,7 +84,7 @@ public class ValidationTupleMapper implements TupleValidationPlanNode {
 
 	@Override
 	public String toString() {
-		return "Empty";
+		return "ValidationReportNode";
 	}
 
 	@Override

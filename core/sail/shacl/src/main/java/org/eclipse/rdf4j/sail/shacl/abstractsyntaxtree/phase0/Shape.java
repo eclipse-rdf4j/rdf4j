@@ -51,7 +51,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClas
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 	Resource id;
@@ -268,8 +268,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		constraintComponents.forEach(c -> c.setTargetChain(targetChain));
 	}
 
-	public TupleValidationPlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean validateEntireBaseSail) {
+	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+											boolean validateEntireBaseSail) {
 		assert constraintComponents.size() == 1;
 
 		ValidationApproach validationApproach = ValidationApproach.SPARQL;
@@ -284,7 +284,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans);
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
-			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans);
+			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false);
 		} else {
 			throw new UnsupportedOperationException("Unkown validation approach: " + validationApproach);
 		}

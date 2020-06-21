@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
@@ -64,7 +65,7 @@ public class MockInputPlanNode implements PlanNode {
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			public ValidationTuple next() throws SailException {
 				return iterator.next();
 			}
 

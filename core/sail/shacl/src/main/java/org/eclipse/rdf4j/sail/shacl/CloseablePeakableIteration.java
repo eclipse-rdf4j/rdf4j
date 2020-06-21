@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 
 /**
  *
@@ -43,7 +44,7 @@ public class CloseablePeakableIteration<E, X extends Exception> implements Close
 	}
 
 	@Override
-	public E next() throws X {
+	public ValidationTuple next() throws X {
 		E next = null;
 		if (peek != null) {
 			next = peek;

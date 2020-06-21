@@ -12,6 +12,7 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -140,7 +141,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			public ValidationTuple next() throws SailException {
 				Tuple temp = next;
 				next = null;
 				return temp;

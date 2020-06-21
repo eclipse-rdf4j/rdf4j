@@ -6,27 +6,23 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 
-public class ValidationEmptyNode implements TupleValidationPlanNode {
+public class EmptyNode implements PlanNode {
 
 	private boolean printed = false;
 
-	public ValidationEmptyNode() {
+	public EmptyNode() {
 
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<Tuple, SailException> iterator() {
 		return new EmptyIteration<>();
 	}
 
@@ -56,6 +52,11 @@ public class ValidationEmptyNode implements TupleValidationPlanNode {
 	@Override
 	public String toString() {
 		return "Empty";
+	}
+
+	@Override
+	public IteratorData getIteratorDataType() {
+		return IteratorData.tripleBased;
 	}
 
 	@Override

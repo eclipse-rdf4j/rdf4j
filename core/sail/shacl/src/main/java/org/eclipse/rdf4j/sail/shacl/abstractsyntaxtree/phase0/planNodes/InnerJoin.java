@@ -5,17 +5,17 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.List;
-
-import org.apache.commons.lang3.StringUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
@@ -23,33 +23,75 @@ import org.slf4j.LoggerFactory;
  *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
  *         value at index 0. The right iterator is allowed to contain duplicates.
  */
-public class ValidationInnerJoin implements TupleValidationPlanNode {
+public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
-	static private final Logger logger = LoggerFactory.getLogger(ValidationInnerJoin.class);
-	private final boolean printed = false;
+	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
+	private boolean printed = false;
 
-	private final TupleValidationPlanNode left;
-	private final TupleValidationPlanNode right;
+	private PlanNode left;
+	private PlanNode right;
 	private CloseableIteration<ValidationTuple, SailException> iterator;
+	private PushablePlanNode joined;
+	private PushablePlanNode discardedLeft;
+	private PushablePlanNode discardedRight;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValidationInnerJoin(TupleValidationPlanNode left, TupleValidationPlanNode right) {
+	public InnerJoin(PlanNode left, PlanNode right) {
 		this.left = left;
 		this.right = right;
 	}
 
-	public List<TupleValidationPlanNode> parent() {
+	public List<PlanNode> parent() {
 		return Arrays.asList(left, right);
+	}
+
+	public PlanNode getJoined(Class<? extends PushablePlanNode> type) {
+		if (joined != null) {
+			throw new IllegalStateException();
+		}
+		if (type == BufferedPlanNode.class) {
+			joined = new BufferedPlanNode<>(this, "Joined");
+		} else {
+			joined = new UnBufferedPlanNode<>(this, "Joined");
+
+		}
+
+		return joined;
+	}
+
+	public PlanNode getDiscardedLeft(Class<? extends PushablePlanNode> type) {
+		if (discardedLeft != null) {
+			throw new IllegalStateException();
+		}
+		if (type == BufferedPlanNode.class) {
+			discardedLeft = new BufferedPlanNode<>(this, "DiscardedLeft");
+		} else {
+			discardedLeft = new UnBufferedPlanNode<>(this, "DiscaredLeft");
+
+		}
+		return discardedLeft;
+	}
+
+	public PlanNode getDiscardedRight(Class<? extends PushablePlanNode> type) {
+		if (discardedRight != null) {
+			throw new IllegalStateException();
+		}
+		if (type == BufferedPlanNode.class) {
+			discardedRight = new BufferedPlanNode<>(this, "DiscardedRight");
+		} else {
+			discardedRight = new UnBufferedPlanNode<>(this, "DiscardedRight");
+
+		}
+		return discardedRight;
 	}
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
-		return internalIterator();
+		throw new IllegalStateException();
 	}
 
 	public CloseableIteration<ValidationTuple, SailException> internalIterator() {
 
-		ValidationInnerJoin that = this;
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
 			final CloseableIteration<ValidationTuple, SailException> leftIterator = left.iterator();
@@ -75,12 +117,24 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 				}
 
 				if (nextRight == null && prevLeft == null && nextLeft != null) {
+					if (discardedLeft != null) {
+						discardedLeft.push(nextLeft);
+					}
 
 					return;
 				}
 
 				if (nextLeft == null) {
-
+					if (discardedRight != null) {
+						while (nextRight != null) {
+							discardedRight.push(nextRight);
+							if (rightIterator.hasNext()) {
+								nextRight = rightIterator.next();
+							} else {
+								nextRight = null;
+							}
+						}
+					}
 					return;
 				}
 
@@ -96,7 +150,9 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 							int compareTo = nextLeft.compareTarget(nextRight);
 
 							if (compareTo < 0) {
-
+								if (joinedLeft != nextLeft && discardedLeft != null) {
+									discardedLeft.push(nextLeft);
+								}
 								if (leftIterator.hasNext()) {
 									nextLeft = leftIterator.next();
 								} else {
@@ -104,7 +160,9 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 									break;
 								}
 							} else {
-
+								if (discardedRight != null) {
+									discardedRight.push(nextRight);
+								}
 								if (rightIterator.hasNext()) {
 									nextRight = rightIterator.next();
 								} else {
@@ -115,6 +173,11 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 
 						}
 					} else {
+						if (discardedLeft != null) {
+							while (leftIterator.hasNext()) {
+								discardedLeft.push(leftIterator.next());
+							}
+						}
 
 						return;
 					}
@@ -159,13 +222,36 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 		if (printed) {
 			return;
 		}
+		printed = true;
+		left.getPlanAsGraphvizDot(stringBuilder);
 
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
+		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
+		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
+		right.getPlanAsGraphvizDot(stringBuilder);
+
+		if (discardedRight != null) {
+			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];")
+					.append("\n");
+
+		}
+		if (discardedLeft != null) {
+			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];")
+					.append("\n");
+		}
+
+		if (joined != null) {
+			stringBuilder.append(getId() + " -> " + (joined).getId() + " [label=\"joined\"];").append("\n");
+		}
 	}
 
 	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
+
+
 
 	@Override
 	public String toString() {
@@ -177,12 +263,44 @@ public class ValidationInnerJoin implements TupleValidationPlanNode {
 	}
 
 	@Override
+	public void init() {
+		if (iterator == null) {
+			iterator = internalIterator();
+		}
+	}
+
+	@Override
+	public void close() {
+
+		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed())
+				&& (joined == null || joined.isClosed())) {
+			iterator.close();
+			iterator = null;
+		}
+
+	}
+
+	@Override
+	public boolean incrementIterator() {
+
+		if (iterator.hasNext()) {
+			ValidationTuple next = iterator.next();
+			if (joined != null) {
+				joined.push(next);
+			}
+			return true;
+		}
+
+		return false;
+	}
+
+	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 
-		TupleValidationPlanNode[] planNodes = { left, right };
+		PlanNode[] planNodes = { joined, discardedLeft, discardedRight, left, right };
 
-		for (TupleValidationPlanNode planNode : planNodes) {
+		for (PlanNode planNode : planNodes) {
 			if (planNode != null) {
 				planNode.receiveLogger(validationExecutionLogger);
 			}

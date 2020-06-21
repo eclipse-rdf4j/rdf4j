@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import java.util.ArrayDeque;
 import java.util.Deque;

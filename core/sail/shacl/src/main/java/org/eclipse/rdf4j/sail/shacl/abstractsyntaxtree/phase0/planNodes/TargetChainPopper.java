@@ -6,35 +6,31 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
+
 
 /**
  * @author Håvard Ottestad
  */
-public class TargetChainPopper implements TupleValidationPlanNode {
+public class TargetChainPopper implements PlanNode {
 
-	private final TupleValidationPlanNode parent;
+	private final PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public TargetChainPopper(TupleValidationPlanNode parent) {
+	public TargetChainPopper(PlanNode parent) {
 		this.parent = parent;
 	}
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
 
-		return new LoggingCloseableValidationIteration(this, validationExecutionLogger) {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final private CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator();
 

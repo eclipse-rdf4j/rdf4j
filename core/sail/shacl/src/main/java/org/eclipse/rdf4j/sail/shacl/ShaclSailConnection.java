@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -38,16 +37,10 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationSingleCloseablePlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.SingleCloseablePlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationSingleCloseablePlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
@@ -360,7 +353,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							validateEntireBaseSail))
 					.filter(Objects::nonNull)
 					.map(temp -> () -> {
-						TupleValidationPlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
+						ValidationPlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
 
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);

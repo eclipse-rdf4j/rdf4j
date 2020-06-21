@@ -17,9 +17,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTupleMapper;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
@@ -41,7 +40,7 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
@@ -55,7 +54,7 @@ public class TargetClass extends Target {
 
 		Unique targets = new Unique(new TrimTuple(planNode, 0, 1));
 
-		return new ValidationTupleMapper(targets, (t) -> {
+		return new ValidationMapper(targets, (t) -> {
 			List<Value> line = t.getLine();
 			return new ArrayDeque<>(line);
 		}, null, null);

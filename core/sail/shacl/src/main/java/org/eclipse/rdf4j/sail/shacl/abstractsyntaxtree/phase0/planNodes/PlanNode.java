@@ -6,22 +6,24 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
-import java.util.ArrayList;
-
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
- * @author Håvard Ottestad
+ * @author Håvard Mikkelsen Ottestad
  */
-public class ValidationTupleHelper {
-	public static ValidationTuple join(ValidationTuple left, ValidationTuple right) {
+public interface PlanNode {
 
-		ValidationTuple tuple = new ValidationTuple(left.getTargetChain(), right.getPath(), right.getValue());
+	CloseableIteration<ValidationTuple, SailException> iterator();
 
-		return tuple;
+	int depth();
 
-	}
+	void getPlanAsGraphvizDot(StringBuilder stringBuilder);
+
+	String getId();
+
+	void receiveLogger(ValidationExecutionLogger validationExecutionLogger);
+
 }

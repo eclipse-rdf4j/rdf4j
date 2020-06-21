@@ -6,39 +6,38 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes;
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
-
 /**
  * @author Håvard Ottestad
  */
-public class ValidationUnionNode implements TupleValidationPlanNode {
+public class UnionNode implements PlanNode {
 
-	private final TupleValidationPlanNode[] nodes;
+	private PlanNode[] nodes;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValidationUnionNode(TupleValidationPlanNode... nodes) {
+	public UnionNode(PlanNode... nodes) {
 		this.nodes = nodes;
 	}
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
-		return new LoggingCloseableValidationIteration(this, validationExecutionLogger) {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final List<CloseableIteration<ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
-					.map(TupleValidationPlanNode::iterator)
+			List<CloseableIteration<ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
+					.map(PlanNode::iterator)
 					.collect(Collectors.toList());
 
-			final ValidationTuple[] peekList = new ValidationTuple[nodes.length];
+			ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 
 			ValidationTuple next;
 
@@ -113,7 +112,7 @@ public class ValidationUnionNode implements TupleValidationPlanNode {
 
 	@Override
 	public int depth() {
-		return Arrays.stream(nodes).mapToInt(TupleValidationPlanNode::depth).max().orElse(0) + 1;
+		return Arrays.stream(nodes).mapToInt(PlanNode::depth).max().orElse(0) + 1;
 
 	}
 
@@ -125,7 +124,7 @@ public class ValidationUnionNode implements TupleValidationPlanNode {
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
-		for (TupleValidationPlanNode node : nodes) {
+		for (PlanNode node : nodes) {
 			stringBuilder.append(node.getId() + " -> " + getId()).append("\n");
 			node.getPlanAsGraphvizDot(stringBuilder);
 
@@ -145,7 +144,7 @@ public class ValidationUnionNode implements TupleValidationPlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
-		for (TupleValidationPlanNode node : nodes) {
+		for (PlanNode node : nodes) {
 			node.receiveLogger(validationExecutionLogger);
 		}
 	}

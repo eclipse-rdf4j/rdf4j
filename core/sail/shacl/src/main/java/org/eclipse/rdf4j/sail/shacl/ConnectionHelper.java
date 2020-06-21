@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 
 class ConnectionHelper {
 
@@ -30,7 +31,7 @@ class ConnectionHelper {
 			}
 
 			@Override
-			public Statement next() throws SailException {
+			public ValidationTuple next() throws SailException {
 				return repositoryResults.next();
 			}
 

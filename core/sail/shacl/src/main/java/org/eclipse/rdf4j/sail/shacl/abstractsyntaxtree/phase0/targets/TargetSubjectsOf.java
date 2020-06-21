@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 
 public class TargetSubjectsOf extends Target {
 
@@ -29,7 +29,7 @@ public class TargetSubjectsOf extends Target {
 	}
 
 	@Override
-	public TupleValidationPlanNode getAdded(ConnectionsGroup connectionsGroup) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
 		throw new UnsupportedOperationException();
 	}
 
