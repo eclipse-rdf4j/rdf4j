@@ -28,7 +28,6 @@ public class ExternalFilterByPredicate implements PlanNode {
 	private final SailConnection connection;
 	private final Set<IRI> filterOnPredicates;
 	final PlanNode parent;
-	final int index;
 	private final On on;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -38,34 +37,32 @@ public class ExternalFilterByPredicate implements PlanNode {
 		Object
 	}
 
-	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, int index,
+	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
 									 On on) {
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
-		this.index = index;
 		this.on = on;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			Tuple next = null;
+			ValidationTuple next = null;
 
-			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
-					Tuple temp = parentIterator.next();
+					ValidationTuple temp = parentIterator.next();
 
-					Value subject = temp.getLine().get(index);
+					Value subject = temp.getActiveTarget();
 
 					IRI matchedPredicate = matchesFilter(subject);
 
 					if (matchedPredicate != null) {
 						next = temp;
-						next.addHistory(new Tuple(Arrays.asList(subject, matchedPredicate)));
 					}
 
 				}
@@ -103,10 +100,10 @@ public class ExternalFilterByPredicate implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 
 				return temp;
@@ -157,10 +154,6 @@ public class ExternalFilterByPredicate implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

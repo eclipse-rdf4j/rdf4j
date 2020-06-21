@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
@@ -21,6 +22,22 @@ public class ValidationTuple {
 		this.targetChain = targetChain;
 		this.path = path;
 		this.value = value;
+	}
+
+	public ValidationTuple(ValidationTuple validationTuple) {
+		this.targetChain = new ArrayDeque<>(validationTuple.targetChain);
+		this.path = validationTuple.path;
+		this.value = validationTuple.value;
+		this.validationResults =new ArrayDeque<>(validationTuple.validationResults);
+	}
+
+	public ValidationTuple(BindingSet next, String[] variables) {
+		targetChain = new ArrayDeque<>();
+		for (String variable : variables) {
+			targetChain.addLast(next.getValue(variable));
+		}
+		path = null;
+		value = null;
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
@@ -67,5 +84,13 @@ public class ValidationTuple {
 
 	public void setValue(Value value) {
 		this.value = value;
+	}
+
+	public Value getActiveTarget() {
+		return targetChain.getLast();
+	}
+
+	public boolean hasValue() {
+		return value != null;
 	}
 }

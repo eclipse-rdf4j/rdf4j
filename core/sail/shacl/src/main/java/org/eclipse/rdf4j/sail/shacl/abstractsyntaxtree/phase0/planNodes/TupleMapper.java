@@ -13,22 +13,24 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.function.Function;
+
 public class TupleMapper implements PlanNode {
 	PlanNode parent;
-	ModifyTupleInterface function;
+	Function<ValidationTuple, ValidationTuple> function;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public TupleMapper(PlanNode parent, ModifyTupleInterface function) {
+	public TupleMapper(PlanNode parent, Function<ValidationTuple, ValidationTuple> function) {
 		this.parent = parent;
 		this.function = function;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -41,8 +43,8 @@ public class TupleMapper implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
-				return function.modify(parentIterator.next());
+			ValidationTuple loggingNext() throws SailException {
+				return function.apply(parentIterator.next());
 			}
 
 			@Override
@@ -76,17 +78,9 @@ public class TupleMapper implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ModifyTuple";
+		return "ModifyValidationTuple";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
-
-	public interface ModifyTupleInterface {
-		Tuple modify(Tuple t);
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

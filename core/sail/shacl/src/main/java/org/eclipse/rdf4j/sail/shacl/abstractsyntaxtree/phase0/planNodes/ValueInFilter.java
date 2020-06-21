@@ -26,8 +26,8 @@ public class ValueInFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
-		return valueSet.contains(t.getLine().get(1));
+	boolean checkTuple(ValidationTuple t) {
+		return valueSet.contains(t.getValue());
 	}
 
 	@Override

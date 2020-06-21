@@ -33,11 +33,11 @@ public class Unique implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<ValidationTuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			Set<ValidationTuple> multiCardinalityDedupeSet;
 

@@ -12,9 +12,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class EqualsJoin implements PlanNode {
-	private PlanNode left;
-	private PlanNode right;
-	private boolean useAsFilter;
+	private final PlanNode left;
+	private final PlanNode right;
+	private final boolean useAsFilter;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -25,15 +25,15 @@ public class EqualsJoin implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
-			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
 
-			Tuple next;
-			Tuple nextLeft;
-			Tuple nextRight;
+			ValidationTuple next;
+			ValidationTuple nextLeft;
+			ValidationTuple nextRight;
 
 			void calculateNext() {
 				if (next != null) {
@@ -55,19 +55,16 @@ public class EqualsJoin implements PlanNode {
 				while (next == null) {
 					if (nextRight != null) {
 
-						if (nextLeft.getLine() == nextRight.getLine()
-								|| nextLeft.getLine().equals(nextRight.getLine())) {
+						if (nextLeft.sameTargetAs(nextRight)) {
 							if (useAsFilter) {
 								next = nextLeft;
-								next.addAllCausedByPropertyShape(nextRight.getCausedByPropertyShapes());
-								next.addHistory(nextRight);
 							} else {
-								next = TupleHelper.join(nextLeft, nextRight);
+								next = ValidationTupleHelper.join(nextLeft, nextRight);
 							}
 							nextRight = null;
 						} else {
 
-							int compareTo = nextLeft.compareTo(nextRight);
+							int compareTo = nextLeft.compareTarget(nextRight);
 
 							if (compareTo < 0) {
 								if (leftIterator.hasNext()) {
@@ -106,9 +103,9 @@ public class EqualsJoin implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 				return temp;
 			}
@@ -144,16 +141,6 @@ public class EqualsJoin implements PlanNode {
 	@Override
 	public String getId() {
 		return null;
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		if (left.getIteratorDataType() == right.getIteratorDataType()) {
-			return left.getIteratorDataType();
-		}
-
-		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
-
 	}
 
 	@Override

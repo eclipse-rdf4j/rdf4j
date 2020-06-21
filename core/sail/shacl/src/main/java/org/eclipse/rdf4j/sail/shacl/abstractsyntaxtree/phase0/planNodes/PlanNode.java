@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public interface PlanNode {
 
-	CloseableIteration<ValidationTuple, SailException> iterator();
+	CloseableIteration<? extends ValidationTuple, SailException> iterator();
 
 	int depth();
 

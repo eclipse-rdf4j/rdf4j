@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * @author Håvard Ottestad
@@ -34,15 +35,15 @@ public class Select implements PlanNode {
 	private static final Logger logger = LoggerFactory.getLogger(Select.class);
 
 	private final SailConnection connection;
+	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
-	private final String[] variables;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Select(SailConnection connection, String query, String... variables) {
-		assert variables.length > 0;
+	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper, String orderBy) {
 		this.connection = connection;
+		this.mapper = mapper;
 		if (query.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
@@ -52,12 +53,12 @@ public class Select implements PlanNode {
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 
-		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
-		this.variables = variables;
+
+		this.query = "select * where { " + query + "} "+orderBy != null ? "order by "+orderBy : "";
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
@@ -89,8 +90,8 @@ public class Select implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
-				return new Tuple(bindingSet.next(), variables);
+			ValidationTuple loggingNext() throws SailException {
+				return mapper.apply(bindingSet.next());
 			}
 
 			@Override
@@ -129,10 +130,6 @@ public class Select implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
 
 	@Override
 	public String toString() {

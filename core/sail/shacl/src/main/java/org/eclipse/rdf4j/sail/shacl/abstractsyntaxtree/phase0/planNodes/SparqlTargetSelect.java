@@ -48,7 +48,7 @@ public class SparqlTargetSelect implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
@@ -80,8 +80,8 @@ public class SparqlTargetSelect implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
-				return new Tuple(bindingSet.next(), variables);
+			ValidationTuple loggingNext() throws SailException {
+				return new ValidationTuple(bindingSet.next(), variables);
 			}
 
 			@Override
@@ -120,10 +120,6 @@ public class SparqlTargetSelect implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
 
 	@Override
 	public String toString() {

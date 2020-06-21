@@ -28,10 +28,10 @@ public class SingleCloseablePlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 			final AtomicBoolean closed = new AtomicBoolean(false);
 
 			@Override
@@ -81,10 +81,6 @@ public class SingleCloseablePlanNode implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * @author Håvard Ottestad
@@ -34,26 +35,26 @@ public class UnorderedSelect implements PlanNode {
 	private final Resource subject;
 	private final IRI predicate;
 	private final Value object;
+	private final Function<Statement, ValidationTuple> mapper;
 
-	private final OutputPattern outputPattern;
 
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
-			OutputPattern outputPattern) {
+						   Function<Statement, ValidationTuple> mapper) {
 		this.connection = connection;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
-		this.outputPattern = outputPattern;
+		this.mapper = mapper;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
+			final CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
 					predicate, object, true);
 
 			@Override
@@ -67,23 +68,9 @@ public class UnorderedSelect implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 
-				Statement next = statements.next();
-				if (outputPattern == OutputPattern.SubjectObject) {
-					return new Tuple(next.getSubject(), next.getObject());
-				}
-				if (outputPattern == OutputPattern.ObjectSubject) {
-					return new Tuple(next.getObject(), next.getSubject());
-				}
-				if (outputPattern == OutputPattern.SubjectPredicateObject) {
-					return new Tuple(next.getSubject(), next.getPredicate(), next.getObject());
-				}
-				if (outputPattern == OutputPattern.ObjectPredicateSubject) {
-					return new Tuple(next.getObject(), next.getPredicate(), next.getSubject());
-				}
-
-				throw new IllegalStateException("Unkown output pattern: " + outputPattern);
+				return mapper.apply(statements.next());
 			}
 
 			@Override
@@ -122,10 +109,6 @@ public class UnorderedSelect implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
 
 	@Override
 	public String toString() {
@@ -133,7 +116,6 @@ public class UnorderedSelect implements PlanNode {
 				"subject=" + Formatter.prefix(subject) +
 				", predicate=" + Formatter.prefix(predicate) +
 				", object=" + Formatter.prefix(object) +
-				", outputPattern=" + outputPattern +
 				'}';
 	}
 
@@ -172,13 +154,6 @@ public class UnorderedSelect implements PlanNode {
 		}
 
 		return Objects.hash(connection, subject, predicate, object);
-	}
-
-	public enum OutputPattern {
-		SubjectObject,
-		ObjectSubject,
-		ObjectPredicateSubject,
-		SubjectPredicateObject
 	}
 
 	@Override

@@ -27,10 +27,10 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	private PushablePlanNode trueNode;
 	private PushablePlanNode falseNode;
 
-	private CloseableIteration<Tuple, SailException> iterator;
+	private CloseableIteration<ValidationTuple, SailException> iterator;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	abstract boolean checkTuple(Tuple t);
+	abstract boolean checkTuple(ValidationTuple t);
 
 	public FilterPlanNode(PlanNode parent) {
 		this.parent = parent;
@@ -65,18 +65,18 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		throw new IllegalStateException("Must specify if filter should return false or true nodes!");
 	}
 
-	private CloseableIteration<Tuple, SailException> iteratorInternal() {
+	private CloseableIteration<ValidationTuple, SailException> iteratorInternal() {
 
-		return new CloseableIteration<Tuple, SailException>() {
+		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			CloseableIteration<Tuple, SailException> parentIterator;
+			CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
-			Tuple next;
+			ValidationTuple next;
 
 			private void calculateNext() {
 				if (parentIterator == null) {
@@ -88,7 +88,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 				}
 
 				while (parentIterator.hasNext() && next == null) {
-					Tuple temp = parentIterator.next();
+					ValidationTuple temp = parentIterator.next();
 
 					if (checkTuple(temp)) {
 						if (trueNode != null) {
@@ -141,7 +141,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 			@Override
 			public ValidationTuple next() throws SailException {
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 				return temp;
 			}
@@ -215,11 +215,6 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public int depth() {
 		return parent.depth() + 1;
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
 	}
 
 	@Override

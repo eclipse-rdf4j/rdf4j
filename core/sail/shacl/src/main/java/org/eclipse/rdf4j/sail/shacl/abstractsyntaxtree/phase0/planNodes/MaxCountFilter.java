@@ -23,8 +23,8 @@ public class MaxCountFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
-		Literal literal = (Literal) t.getLine().get(1);
+	boolean checkTuple(ValidationTuple t) {
+		Literal literal = (Literal) t.getValue();
 		return literal.longValue() <= maxCount;
 	}
 

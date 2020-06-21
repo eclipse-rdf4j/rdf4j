@@ -31,7 +31,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	PlanNode parent;
-	private List<Tuple> tuplesBuffer;
+	private List<ValidationTuple> tuplesBuffer;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
@@ -40,10 +40,10 @@ public class BufferedSplitter implements PlanNodeProvider {
 	synchronized private void init() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
-			try (CloseableIteration<Tuple, SailException> iterator = parent.iterator()) {
+			try (CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator()) {
 
 				while (iterator.hasNext()) {
-					Tuple next = iterator.next();
+					ValidationTuple next = iterator.next();
 					tuplesBuffer.add(next);
 				}
 			}
@@ -60,12 +60,12 @@ public class BufferedSplitter implements PlanNodeProvider {
 			private ValidationExecutionLogger validationExecutionLogger;
 
 			@Override
-			public CloseableIteration<Tuple, SailException> iterator() {
+			public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 				init();
-				Iterator<Tuple> iterator = tuplesBuffer.iterator();
+				Iterator<ValidationTuple> iterator = tuplesBuffer.iterator();
 
-				return new CloseableIteration<Tuple, SailException>() {
+				return new CloseableIteration<ValidationTuple, SailException>() {
 
 					@Override
 					public void close() throws SailException {
@@ -79,7 +79,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 					@Override
 					public ValidationTuple next() throws SailException {
-						Tuple tuple = new Tuple(iterator.next());
+						ValidationTuple tuple = new ValidationTuple(iterator.next());
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
 									parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
@@ -115,11 +115,6 @@ public class BufferedSplitter implements PlanNodeProvider {
 			@Override
 			public String getId() {
 				return System.identityHashCode(BufferedSplitter.this) + "";
-			}
-
-			@Override
-			public IteratorData getIteratorDataType() {
-				return parent.getIteratorDataType();
 			}
 
 			@Override

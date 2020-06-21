@@ -27,11 +27,11 @@ public class DebugPlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-		return new CloseableIteration<Tuple, SailException>() {
+		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			final CloseableIteration<Tuple, SailException> iterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
 			@Override
 			public boolean hasNext() throws SailException {
@@ -40,7 +40,7 @@ public class DebugPlanNode implements PlanNode {
 
 			@Override
 			public ValidationTuple next() throws SailException {
-				Tuple next = iterator.next();
+				ValidationTuple next = iterator.next();
 				validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
 				return next;
 			}
@@ -83,11 +83,6 @@ public class DebugPlanNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "DebugPlanNode";
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
 	}
 
 	@Override

@@ -15,7 +15,9 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.Iterator;
 
 /**
@@ -25,18 +27,18 @@ public class ValuesBackedNode implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValuesBackedNode.class);
 	private final Collection<Value> collection;
-	private ValidationExecutionLogger validationExecutionLogger;
 	boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ValuesBackedNode(Collection<Value> collection) {
 		this.collection = collection;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			Iterator<Value> iterator = collection.iterator();
+			final Iterator<Value> iterator = collection.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -48,8 +50,10 @@ public class ValuesBackedNode implements PlanNode {
 			}
 
 			@Override
-			public Tuple loggingNext() throws SailException {
-				return new Tuple(iterator.next());
+			public ValidationTuple loggingNext() throws SailException {
+				Deque<Value> targets = new ArrayDeque<>();
+				targets.addLast(iterator.next());
+				return new ValidationTuple(targets, null, null);
 			}
 
 			@Override
@@ -71,7 +75,7 @@ public class ValuesBackedNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 
 	}
 
@@ -80,15 +84,11 @@ public class ValuesBackedNode implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
 
 	@Override
 	public String toString() {
 		return "ValuesBackedNode{" +
-				"collection=" + collection + '}';
+			"collection=" + collection + '}';
 	}
 
 	@Override

@@ -24,22 +24,22 @@ public class Sort implements PlanNode {
 	private final PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
+	final static ValueComparator valueComparator = new ValueComparator();
 
 	public Sort(PlanNode parent) {
 		this.parent = parent;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> iterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
-			List<Tuple> sortedTuples;
+			List<ValidationTuple> sortedTuples;
 
-			Iterator<Tuple> sortedTuplesIterator;
+			Iterator<ValidationTuple> sortedTuplesIterator;
 
-			ValueComparator valueComparator = new ValueComparator();
 
 			@Override
 			public void close() throws SailException {
@@ -56,11 +56,11 @@ public class Sort implements PlanNode {
 				if (sortedTuples == null) {
 					sortedTuples = new ArrayList<>();
 					boolean alreadySorted = true;
-					Tuple prev = null;
+					ValidationTuple prev = null;
 					while (iterator.hasNext()) {
-						Tuple next = iterator.next();
+						ValidationTuple next = iterator.next();
 						sortedTuples.add(next);
-						if (prev != null && valueComparator.compare(prev.getLine().get(0), next.getLine().get(0)) > 0) {
+						if (prev != null && valueComparator.compare(prev.getActiveTarget(), next.getActiveTarget()) > 0) {
 							alreadySorted = false;
 						}
 						prev = next;
@@ -68,13 +68,13 @@ public class Sort implements PlanNode {
 
 					if (!alreadySorted && sortedTuples.size() > 1) {
 						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
-							Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
+							ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
 							Arrays.parallelSort(objects,
-									(a, b) -> valueComparator.compare(a.getLine().get(0), b.getLine().get(0)));
+									(a, b) -> valueComparator.compare(a.getActiveTarget(), b.getActiveTarget()));
 							sortedTuples = Arrays.asList(objects);
 						} else {
 							sortedTuples
-									.sort((a, b) -> valueComparator.compare(a.getLine().get(0), b.getLine().get(0)));
+									.sort((a, b) -> valueComparator.compare(a.getActiveTarget(), b.getActiveTarget()));
 						}
 					}
 					sortedTuplesIterator = sortedTuples.iterator();
@@ -83,7 +83,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				sortTuples();
 
 				return sortedTuplesIterator.next();
@@ -124,10 +124,6 @@ public class Sort implements PlanNode {
 		return "Sort";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public boolean equals(Object o) {

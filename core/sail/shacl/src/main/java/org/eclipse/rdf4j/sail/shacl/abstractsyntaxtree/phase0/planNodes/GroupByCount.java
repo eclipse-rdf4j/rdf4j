@@ -10,13 +10,8 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 
 /**
  * @author Håvard Ottestad
@@ -32,14 +27,14 @@ public class GroupByCount implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
-			Tuple tempNext;
+			ValidationTuple tempNext;
 
-			Tuple next;
+			AggregatedValidationTuple next;
 
 			private void calculateNext() {
 				if (next != null) {
@@ -56,16 +51,16 @@ public class GroupByCount implements PlanNode {
 
 				long count = 0;
 
-				next = new Tuple();
 
-				Value subject = tempNext.getLine().get(0);
 
-				while (tempNext != null
-						&& (tempNext.getLine().get(0) == subject || tempNext.getLine().get(0).equals(subject))) {
+				next = new AggregatedValidationTuple(tempNext.getTargetChain(), tempNext.getPath(), null);
 
-					next.addHistory(tempNext);
-					if (tempNext.getLine().size() > 1) {
+
+				while (tempNext != null && tempNext.sameTargetAs(next)) {
+
+					if (tempNext.hasValue()) {
 						count++;
+						next.addAggregate(tempNext.getValue());
 					}
 
 					if (parentIterator.hasNext()) {
@@ -76,11 +71,7 @@ public class GroupByCount implements PlanNode {
 
 				}
 
-				// Arrays.asList(...) is immutable, wrap in ArrayList to make it mutable
-				List<Value> line = new ArrayList<>(
-						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
-
-				next.setLine(line);
+				next.setValue(SimpleValueFactory.getInstance().createLiteral(count));
 
 			}
 
@@ -97,11 +88,11 @@ public class GroupByCount implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			AggregatedValidationTuple loggingNext() throws SailException {
 
 				calculateNext();
 
-				Tuple temp = next;
+				AggregatedValidationTuple temp = next;
 				next = null;
 
 				return temp;
@@ -139,11 +130,6 @@ public class GroupByCount implements PlanNode {
 	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.aggregated;
 	}
 
 	@Override

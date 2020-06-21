@@ -52,7 +52,7 @@ public class TargetChainRetriever implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
 			final Iterator<StatementPattern> statementPatternIterator = statementPatterns.iterator();

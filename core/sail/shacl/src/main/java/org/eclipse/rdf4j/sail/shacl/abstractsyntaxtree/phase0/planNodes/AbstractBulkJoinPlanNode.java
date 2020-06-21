@@ -42,7 +42,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		return queryParserFactory.getParser().parseQuery(completeQuery, null);
 	}
 
-	void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,
+	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
 				  ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 				  String[] variables) {
 		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
@@ -54,7 +54,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		}
 	}
 
-	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery,
+	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection, ParsedQuery parsedQuery,
 									 String[] variables) {
 
 //		Explanation explain = connection.explain(Explanation.Level.Timed, parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true, 10000);
@@ -91,7 +91,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		}
 	}
 
-	private List<BindingSet> buildBindingSets(ArrayDeque<Tuple> left, SailConnection connection,
+	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection,
 											  boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
 		return left.stream()
 
@@ -102,12 +102,12 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					boolean hasStatement;
 
-					if (!(tuple.getLine().get(0) instanceof Resource)) {
-						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getLine().get(0), true);
+					if (!(tuple.getActiveTarget() instanceof Resource)) {
+						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true);
 					} else {
 						hasStatement = previousStateConnection
-								.hasStatement(((Resource) tuple.getLine().get(0)), null, null, true) ||
-								previousStateConnection.hasStatement(null, null, tuple.getLine().get(0), true);
+								.hasStatement(((Resource) tuple.getActiveTarget()), null, null, true) ||
+								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true);
 					}
 
 					if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
@@ -118,7 +118,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					return hasStatement;
 
 				})
-				.map(tuple -> tuple.getLine().get(0))
+				.map(ValidationTuple::getActiveTarget)
 				.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
 				.collect(Collectors.toList());
 	}

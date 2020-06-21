@@ -45,7 +45,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			ArrayDeque<Tuple> left = new ArrayDeque<>();

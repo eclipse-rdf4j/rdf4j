@@ -23,8 +23,8 @@ public class MinLengthFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
-		Value literal = t.getLine().get(1);
+	boolean checkTuple(ValidationTuple t) {
+		Value literal = t.getValue();
 
 		return literal.stringValue().length() >= minLength;
 	}

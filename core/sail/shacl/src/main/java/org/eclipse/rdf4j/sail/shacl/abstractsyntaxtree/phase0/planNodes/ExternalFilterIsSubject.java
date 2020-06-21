@@ -18,18 +18,16 @@ import org.eclipse.rdf4j.sail.SailConnection;
 public class ExternalFilterIsSubject extends FilterPlanNode {
 
 	private final SailConnection connection;
-	private final int index;
 
-	public ExternalFilterIsSubject(SailConnection connection, PlanNode parent, int index) {
+	public ExternalFilterIsSubject(SailConnection connection, PlanNode parent) {
 		super(parent);
 		this.connection = connection;
-		this.index = index;
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
+	boolean checkTuple(ValidationTuple t) {
 
-		Value value = t.getLine().get(index);
+		Value value = t.getValue();
 
 		if (value instanceof Resource) {
 			return connection.hasStatement((Resource) value, null, null, true);
@@ -41,7 +39,6 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterIsSubject{" +
-				"index=" + index +
 				'}';
 	}
 }

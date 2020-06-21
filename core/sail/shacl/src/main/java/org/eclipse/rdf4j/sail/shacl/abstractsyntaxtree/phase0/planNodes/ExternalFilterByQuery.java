@@ -61,9 +61,9 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
+	boolean checkTuple(ValidationTuple t) {
 
-		Value value = t.getLine().get(index);
+		Value value = t.getValue();
 
 		MapBindingSet bindings = new MapBindingSet();
 

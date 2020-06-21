@@ -15,25 +15,21 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * @author Håvard Ottestad
  */
-public class TrimTuple implements PlanNode {
+public class TrimToTarget implements PlanNode {
 
 	PlanNode parent;
-	private int newLength;
-	private int startIndex;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public TrimTuple(PlanNode parent, int startIndex, int newLength) {
+	public TrimToTarget(PlanNode parent) {
 		this.parent = parent;
-		this.newLength = newLength;
-		this.startIndex = startIndex;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -46,21 +42,12 @@ public class TrimTuple implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 
-				Tuple next = parentIterator.next();
+				ValidationTuple next = parentIterator.next();
 
-				Tuple tuple = new Tuple();
-
-				int tempLength = newLength >= 0 ? newLength : next.getLine().size();
-				for (int i = startIndex; i < tempLength && i < next.getLine().size(); i++) {
-					tuple.getLine().add(next.getLine().get(i));
-				}
-
-				tuple.addHistory(next);
-				tuple.addAllCausedByPropertyShape(next.getCausedByPropertyShapes());
-
-				return tuple;
+				next.setValue(null);
+				return next;
 			}
 
 			@Override
@@ -90,7 +77,7 @@ public class TrimTuple implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "TrimTuple{" + "newLength=" + newLength + ", startIndex=" + startIndex + '}';
+		return "TrimToTarget";
 	}
 
 	@Override
@@ -98,13 +85,6 @@ public class TrimTuple implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		if (newLength == 1) {
-			return IteratorData.tripleBased;
-		}
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

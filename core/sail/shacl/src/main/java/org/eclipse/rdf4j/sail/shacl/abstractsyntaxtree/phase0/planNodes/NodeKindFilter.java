@@ -27,9 +27,9 @@ public class NodeKindFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
+	boolean checkTuple(ValidationTuple t) {
 
-		Value value = t.getLine().get(1);
+		Value value = t.getValue();
 		/*
 		 * BlankNode(SHACL.BLANK_NODE), IRI(SHACL.IRI), Literal(SHACL.LITERAL), BlankNodeOrIRI(SHACL.BLANK_NODE_OR_IRI),
 		 * BlankNodeOrLiteral(SHACL.BLANK_NODE_OR_LITERAL), IRIOrLiteral(SHACL.IRI_OR_LITERAL),

@@ -29,11 +29,11 @@ public class ValidationReportNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			private final CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator();
+			private final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {

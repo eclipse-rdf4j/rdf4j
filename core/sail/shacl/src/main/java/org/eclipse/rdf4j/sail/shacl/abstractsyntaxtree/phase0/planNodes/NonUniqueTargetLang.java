@@ -38,7 +38,7 @@ public class NonUniqueTargetLang implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		return new OnlyNonUnique(parent, validationExecutionLogger);
 
@@ -71,10 +71,6 @@ public class NonUniqueTargetLang implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
@@ -86,12 +82,12 @@ public class NonUniqueTargetLang implements PlanNode {
 
 class OnlyNonUnique extends LoggingCloseableIteration {
 
-	private Tuple next;
-	private Tuple previous;
+	private ValidationTuple next;
+	private ValidationTuple previous;
 
 	private Set<String> seenLanguages = new HashSet<>();
 
-	private CloseableIteration<Tuple, SailException> parentIterator;
+	private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
 		super(parent, validationExecutionLogger);
@@ -107,14 +103,14 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 			next = parentIterator.next();
 
 			if ((previous != null)) {
-				if (!previous.getLine().get(0).equals(next.getLine().get(0))) {
+				if (!previous.sameTargetAs(next)) {
 					seenLanguages = new HashSet<>();
 				}
 			}
 
 			previous = next;
 
-			Value value = next.getLine().get(1);
+			Value value = next.getValue();
 
 			if (value instanceof Literal) {
 				Optional<String> lang = ((Literal) value).getLanguage();
@@ -146,10 +142,10 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 	}
 
 	@Override
-	Tuple loggingNext() throws SailException {
+	ValidationTuple loggingNext() throws SailException {
 		calculateNext();
 
-		Tuple temp = next;
+		ValidationTuple temp = next;
 		next = null;
 		return temp;
 	}

@@ -28,11 +28,11 @@ public class TargetChainPopper implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final private CloseableIteration<ValidationTuple, SailException> iterator = parent.iterator();
+			final private CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {

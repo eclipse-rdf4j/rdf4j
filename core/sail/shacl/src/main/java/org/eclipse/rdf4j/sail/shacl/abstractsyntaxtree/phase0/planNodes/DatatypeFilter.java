@@ -24,12 +24,12 @@ public class DatatypeFilter extends FilterPlanNode {
 	}
 
 	@Override
-	boolean checkTuple(Tuple t) {
-		if (!(t.getLine().get(1) instanceof Literal)) {
+	boolean checkTuple(ValidationTuple t) {
+		if (!(t.getValue() instanceof Literal)) {
 			return false;
 		}
 
-		Literal literal = (Literal) t.getLine().get(1);
+		Literal literal = (Literal) t.getValue();
 		return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
 	}
 

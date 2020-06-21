@@ -22,7 +22,7 @@ public class EmptyNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new EmptyIteration<>();
 	}
 
@@ -54,10 +54,6 @@ public class EmptyNode implements PlanNode {
 		return "Empty";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

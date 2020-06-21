@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class LeftOuterJoin implements PlanNode {
 
-	private PlanNode left;
-	private PlanNode right;
+	private final PlanNode left;
+	private final PlanNode right;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -28,16 +28,16 @@ public class LeftOuterJoin implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> leftIterator = left.iterator();
-			CloseableIteration<Tuple, SailException> rightIterator = right.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> leftIterator = left.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> rightIterator = right.iterator();
 
-			Tuple next;
-			Tuple nextLeft;
-			Tuple nextRight;
-			Tuple prevLeft;
+			ValidationTuple next;
+			ValidationTuple nextLeft;
+			ValidationTuple nextRight;
+			ValidationTuple prevLeft;
 
 			void calculateNext() {
 				if (next != null) {
@@ -60,14 +60,13 @@ public class LeftOuterJoin implements PlanNode {
 
 					if (nextRight != null) {
 
-						if (nextLeft.getLine().get(0) == nextRight.getLine().get(0)
-								|| nextLeft.getLine().get(0).equals(nextRight.getLine().get(0))) {
-							next = TupleHelper.join(nextLeft, nextRight);
+						if (nextLeft.sameTargetAs(nextRight)) {
+							next = ValidationTupleHelper.join(nextLeft, nextRight);
 							prevLeft = nextLeft;
 							nextRight = null;
 						} else {
 
-							int compareTo = nextLeft.compareTo(nextRight);
+							int compareTo = nextLeft.compareTarget(nextRight);
 
 							if (compareTo < 0) {
 								if (prevLeft != nextLeft) {
@@ -119,9 +118,9 @@ public class LeftOuterJoin implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 				return temp;
 			}
@@ -147,7 +146,7 @@ public class LeftOuterJoin implements PlanNode {
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
@@ -157,16 +156,6 @@ public class LeftOuterJoin implements PlanNode {
 	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		if (left.getIteratorDataType() == right.getIteratorDataType()) {
-			return left.getIteratorDataType();
-		}
-
-		throw new IllegalStateException("Not implemented support for when left and right have different types of data");
-
 	}
 
 	@Override

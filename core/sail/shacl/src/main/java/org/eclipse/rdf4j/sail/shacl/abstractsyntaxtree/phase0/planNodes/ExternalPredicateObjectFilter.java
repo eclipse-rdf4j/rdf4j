@@ -30,43 +30,40 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	private final Set<Resource> filterOnObject;
 	private final IRI filterOnPredicate;
 	PlanNode parent;
-	int index = 0;
 	private final boolean returnMatching;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ExternalPredicateObjectFilter(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
-										 PlanNode parent, int index,
+										 PlanNode parent,
 										 boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnPredicate = filterOnPredicate;
 		this.filterOnObject = filterOnObject;
 		this.parent = parent;
-		this.index = index;
 		this.returnMatching = returnMatching;
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			Tuple next = null;
+			ValidationTuple next = null;
 
-			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
-					Tuple temp = parentIterator.next();
+					ValidationTuple temp = parentIterator.next();
 
-					Value subject = temp.getLine().get(index);
+					Value subject = temp.getActiveTarget();
 
 					Resource matchedType = isType(subject);
 
 					if (returnMatching) {
 						if (matchedType != null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject, filterOnPredicate, matchedType)));
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
@@ -79,7 +76,6 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 					} else {
 						if (matchedType == null) {
 							next = temp;
-							next.addHistory(new Tuple(Arrays.asList(subject)));
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
@@ -116,10 +112,10 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 
 				return temp;
@@ -163,7 +159,6 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		return "ExternalPredicateObjectFilter{" +
 				", filterOnPredicate=" + filterOnPredicate +
 				"filterOnObject=" + Arrays.toString(filterOnObject.stream().map(Formatter::prefix).toArray()) +
-				", index=" + index +
 				'}';
 	}
 
@@ -172,10 +167,6 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

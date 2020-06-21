@@ -33,17 +33,17 @@ public class SetFilterNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> iterator = parent.iterator();
+			CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
-			Tuple next;
+			ValidationTuple next;
 
 			private void calulateNext() {
 				while (next == null && iterator.hasNext()) {
-					Tuple temp = iterator.next();
-					boolean contains = targetNodeList.contains(temp.getLine().get(index));
+					ValidationTuple temp = iterator.next();
+					boolean contains = targetNodeList.contains(temp.getActiveTarget());
 					if (returnValid && contains) {
 						next = temp;
 					} else if (!returnValid && !contains) {
@@ -64,10 +64,10 @@ public class SetFilterNode implements PlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calulateNext();
 
-				Tuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 
 				return temp;
@@ -102,10 +102,6 @@ public class SetFilterNode implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-	@Override
-	public IteratorData getIteratorDataType() {
-		return parent.getIteratorDataType();
-	}
 
 	@Override
 	public String toString() {

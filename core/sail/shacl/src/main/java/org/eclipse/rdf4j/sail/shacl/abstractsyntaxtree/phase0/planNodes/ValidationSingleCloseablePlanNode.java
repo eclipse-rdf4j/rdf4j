@@ -29,10 +29,10 @@ public class ValidationSingleCloseablePlanNode implements PlanNode {
 	}
 
 	@Override
-	public CloseableIteration<ValidationTuple, SailException> iterator() {
+	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			final CloseableIteration<ValidationTuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 			final AtomicBoolean closed = new AtomicBoolean(false);
 
 			@Override
