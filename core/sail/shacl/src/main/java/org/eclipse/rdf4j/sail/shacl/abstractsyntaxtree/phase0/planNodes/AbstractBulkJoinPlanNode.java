@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -20,16 +28,9 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
-import java.util.ArrayDeque;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
-	protected String[] variables;
+	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;
 
 	ParsedQuery parseQuery(String query) {
@@ -43,19 +44,20 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	}
 
 	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
-				  ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
-				  String[] variables) {
+			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			Function<BindingSet, ValidationTuple> mapper) {
 		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
 				previousStateConnection);
 
 		if (!newBindindingset.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingset);
-			executeQuery(right, connection, parsedQuery, variables);
+			executeQuery(right, connection, parsedQuery, mapper);
 		}
 	}
 
-	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection, ParsedQuery parsedQuery,
-									 String[] variables) {
+	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection,
+			ParsedQuery parsedQuery,
+			Function<BindingSet, ValidationTuple> mapper) {
 
 //		Explanation explain = connection.explain(Explanation.Level.Timed, parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true, 10000);
 //		System.out.println(explain);
@@ -64,7 +66,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 				.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)
 				.stream()) {
 			stream
-					.map(t -> new Tuple(t, variables))
+					.map(mapper)
 					.forEachOrdered(right::addFirst);
 		}
 
@@ -92,7 +94,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	}
 
 	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection,
-											  boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
 		return left.stream()
 
 				.filter(tuple -> {

@@ -16,8 +16,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.BufferedSplitter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 
 /**
  *
@@ -106,6 +106,11 @@ public class ConnectionsGroup implements Closeable {
 
 	public Stats getStats() {
 		return stats;
+	}
+
+	public org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode getCachedNodeFor(
+			org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode select) {
+		return select;
 	}
 
 	interface RdfsSubClassOfReasonerProvider {

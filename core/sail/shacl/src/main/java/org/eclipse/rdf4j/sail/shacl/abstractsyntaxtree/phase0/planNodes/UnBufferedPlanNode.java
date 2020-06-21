@@ -108,7 +108,6 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 		return System.identityHashCode(this) + "";
 	}
 
-
 	@Override
 	public void push(ValidationTuple next) {
 		this.next = next;

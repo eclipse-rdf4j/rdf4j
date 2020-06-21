@@ -45,13 +45,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponen
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.PatternConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.XoneConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetSubjectsOf;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 	Resource id;
@@ -269,7 +269,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-											boolean validateEntireBaseSail) {
+			boolean validateEntireBaseSail) {
 		assert constraintComponents.size() == 1;
 
 		ValidationApproach validationApproach = ValidationApproach.SPARQL;
@@ -284,7 +284,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans);
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
-			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false);
+			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, false,
+					false);
 		} else {
 			throw new UnsupportedOperationException("Unkown validation approach: " + validationApproach);
 		}

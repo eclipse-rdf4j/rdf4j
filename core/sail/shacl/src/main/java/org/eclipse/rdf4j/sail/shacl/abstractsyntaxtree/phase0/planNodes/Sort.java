@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.SailException;
 
 public class Sort implements PlanNode {
 
@@ -40,7 +40,6 @@ public class Sort implements PlanNode {
 
 			Iterator<ValidationTuple> sortedTuplesIterator;
 
-
 			@Override
 			public void close() throws SailException {
 				iterator.close();
@@ -60,7 +59,8 @@ public class Sort implements PlanNode {
 					while (iterator.hasNext()) {
 						ValidationTuple next = iterator.next();
 						sortedTuples.add(next);
-						if (prev != null && valueComparator.compare(prev.getActiveTarget(), next.getActiveTarget()) > 0) {
+						if (prev != null
+								&& valueComparator.compare(prev.getActiveTarget(), next.getActiveTarget()) > 0) {
 							alreadySorted = false;
 						}
 						prev = next;
@@ -123,7 +123,6 @@ public class Sort implements PlanNode {
 	public String toString() {
 		return "Sort";
 	}
-
 
 	@Override
 	public boolean equals(Object o) {

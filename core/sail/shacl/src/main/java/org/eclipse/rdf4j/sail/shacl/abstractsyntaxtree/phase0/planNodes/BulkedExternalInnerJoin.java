@@ -8,15 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.ArrayDeque;
 
 /**
  * @author Håvard Ottestad
@@ -38,14 +40,15 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
-								   boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			Function<BindingSet, ValidationTuple> mapper) {
 		this.leftNode = leftNode;
 
 		parsedQuery = parseQuery(query);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
-		this.variables = variables;
+		this.mapper = mapper;
 		this.previousStateConnection = previousStateConnection;
 
 	}
@@ -54,13 +57,13 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final ArrayDeque<Tuple> left = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>();
 
-			final ArrayDeque<Tuple> right = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>();
 
-			final ArrayDeque<Tuple> joined = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> joined = new ArrayDeque<>();
 
-			final CloseableIteration<Tuple, SailException> leftNodeIterator = leftNode.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 
@@ -75,36 +78,34 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 					}
 
 					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection,
-							previousStateConnection, variables);
+							previousStateConnection, mapper);
 
 					while (!right.isEmpty()) {
 
-						Tuple leftPeek = left.peekLast();
+						ValidationTuple leftPeek = left.peekLast();
 
-						Tuple rightPeek = right.peekLast();
+						ValidationTuple rightPeek = right.peekLast();
 
 						assert leftPeek != null;
 						assert rightPeek != null;
 
-						assert leftPeek.getLine() != null;
-						assert rightPeek.getLine() != null;
+						assert leftPeek.getActiveTarget() != null;
+						assert rightPeek.getActiveTarget() != null;
 
-						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
-								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {
+						if (rightPeek.sameTargetAs(rightPeek)) {
 							// we have a join !
-							joined.addLast(TupleHelper.join(leftPeek, rightPeek));
+							joined.addLast(ValidationTupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();
 
-							Tuple rightPeek2 = right.peekLast();
+							ValidationTuple rightPeek2 = right.peekLast();
 
-							if (rightPeek2 == null || !rightPeek2.getLine().get(0).equals(leftPeek.getLine().get(0))) {
+							if (rightPeek2 == null || !rightPeek2.sameTargetAs(leftPeek)) {
 								// no more to join from right, pop left so we don't print it again.
 
 								left.removeLast();
 							}
 						} else {
-							int compare = VALUE_COMPARATOR.compare(rightPeek.getLine().get(0),
-									leftPeek.getLine().get(0));
+							int compare = rightPeek.compareTarget(leftPeek);
 
 							if (compare < 0) {
 								if (right.isEmpty()) {
@@ -141,7 +142,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			Tuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 				return joined.removeFirst();
 
@@ -197,11 +198,6 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
-	}
-
-	@Override
-	public IteratorData getIteratorDataType() {
-		return leftNode.getIteratorDataType();
 	}
 
 	@Override

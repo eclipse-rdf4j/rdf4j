@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.Arrays;
+import java.util.Set;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -16,9 +19,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.Arrays;
-import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -38,7 +38,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 	}
 
 	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
-									 On on) {
+			On on) {
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
@@ -153,7 +153,6 @@ public class ExternalFilterByPredicate implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
-
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

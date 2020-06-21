@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.Objects;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,9 +27,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Objects;
-import java.util.function.Function;
-
 /**
  * @author Håvard Ottestad
  */
@@ -41,7 +41,8 @@ public class Select implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper, String orderBy) {
+	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper,
+			String orderBy) {
 		this.connection = connection;
 		this.mapper = mapper;
 		if (query.trim().equals("")) {
@@ -53,8 +54,7 @@ public class Select implements PlanNode {
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 
-
-		this.query = "select * where { " + query + "} "+orderBy != null ? "order by "+orderBy : "";
+		this.query = "select * where { " + query + "} " + orderBy != null ? "order by " + orderBy : "";
 	}
 
 	@Override
@@ -129,7 +129,6 @@ public class Select implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
-
 
 	@Override
 	public String toString() {

@@ -85,7 +85,6 @@ public class TrimToTarget implements PlanNode {
 		return System.identityHashCode(this) + "";
 	}
 
-
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;

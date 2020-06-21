@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author Håvard Ottestad
@@ -80,7 +80,6 @@ public class SingleCloseablePlanNode implements PlanNode {
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
-
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

@@ -31,7 +31,7 @@ class ConnectionHelper {
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public Statement next() throws SailException {
 				return repositoryResults.next();
 			}
 

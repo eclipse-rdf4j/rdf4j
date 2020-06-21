@@ -13,7 +13,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-														   boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren);
+			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
+			boolean negateChildren);
 
 	ValidationApproach getPreferedValidationApproach();
 

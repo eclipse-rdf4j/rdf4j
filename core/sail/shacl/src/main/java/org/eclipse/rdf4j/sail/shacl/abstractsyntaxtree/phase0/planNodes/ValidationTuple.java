@@ -28,7 +28,9 @@ public class ValidationTuple {
 		this.targetChain = new ArrayDeque<>(validationTuple.targetChain);
 		this.path = validationTuple.path;
 		this.value = validationTuple.value;
-		this.validationResults =new ArrayDeque<>(validationTuple.validationResults);
+		if (validationTuple.validationResults != null) {
+			this.validationResults = new ArrayDeque<>(validationTuple.validationResults);
+		}
 	}
 
 	public ValidationTuple(BindingSet next, String[] variables) {
@@ -38,6 +40,13 @@ public class ValidationTuple {
 		}
 		path = null;
 		value = null;
+	}
+
+	public ValidationTuple(Value target, Path path, Value value) {
+		targetChain = new ArrayDeque<>();
+		targetChain.addLast(target);
+		this.path = path;
+		this.value = value;
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {

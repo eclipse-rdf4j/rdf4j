@@ -8,8 +8,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationPlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,9 +51,6 @@ public class ValidationExecutionLogger {
 		}
 	}
 
-	public void log(int depth, String name, ValidationTuple tuple, ValidationPlanNode planNode, String id) {
-		// TODO
-	}
 }
 
 class LogStatement {

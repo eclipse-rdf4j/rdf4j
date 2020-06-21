@@ -13,7 +13,6 @@ import java.util.function.Function;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ValidationReportNode implements PlanNode {
@@ -23,7 +22,7 @@ public class ValidationReportNode implements PlanNode {
 	private boolean printed = false;
 
 	public ValidationReportNode(PlanNode parent,
-								Function<ValidationTuple, ValidationResult> validationResultFunction) {
+			Function<ValidationTuple, ValidationResult> validationResultFunction) {
 		this.parent = parent;
 		this.validationResultFunction = validationResultFunction;
 	}

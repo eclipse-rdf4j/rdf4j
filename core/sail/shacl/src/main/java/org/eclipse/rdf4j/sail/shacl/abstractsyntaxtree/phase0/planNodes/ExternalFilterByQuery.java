@@ -36,7 +36,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final String bindingVariable;
 
 	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, int index, String queryFragment,
-								 String queryVariable) {
+			String queryVariable) {
 		super(parent);
 		this.connection = connection;
 		this.index = index;

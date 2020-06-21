@@ -14,7 +14,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -200,7 +199,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public Tuple next() throws SailException {
 				calculateNext();
 				Tuple temp = next;
 				next = null;

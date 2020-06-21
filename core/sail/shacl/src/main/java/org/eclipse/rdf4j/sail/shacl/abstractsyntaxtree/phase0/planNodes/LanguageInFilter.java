@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
-import org.eclipse.rdf4j.model.Literal;
-
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
+
+import org.eclipse.rdf4j.model.Literal;
 
 /**
  * @author Håvard Ottestad

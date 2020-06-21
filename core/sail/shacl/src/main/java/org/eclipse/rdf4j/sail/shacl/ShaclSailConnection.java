@@ -38,10 +38,10 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.Shape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationSingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -353,12 +353,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							validateEntireBaseSail))
 					.filter(Objects::nonNull)
 					.map(temp -> () -> {
-						ValidationPlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
+						PlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
 
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);
 
-						try (Stream<ValidationTuple> stream = planNode.iterator().stream()) {
+						try (Stream<? extends ValidationTuple> stream = planNode.iterator().stream()) {
 //							if (GlobalValidationExecutionLogging.loggingEnabled) {
 //								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 //								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "

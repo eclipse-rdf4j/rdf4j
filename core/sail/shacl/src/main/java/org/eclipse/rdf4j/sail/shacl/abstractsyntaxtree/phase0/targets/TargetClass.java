@@ -1,8 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets;
 
-import java.util.ArrayDeque;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -10,7 +8,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -18,12 +15,11 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationMapper;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
-import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
-import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.UnorderedSelect;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 
 public class TargetClass extends Target {
 	private final Set<Resource> targetClass;
@@ -46,18 +42,14 @@ public class TargetClass extends Target {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
 					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), null, null))));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
-					new Select(connectionsGroup.getAddedStatements(), getQueryFragment("?a", "?c", null), "?a", "?c"));
+					new Select(connectionsGroup.getAddedStatements(), getQueryFragment("?a", "?c", null),
+							b -> new ValidationTuple(b.getValue("a"), null, null), "?a"));
 		}
 
-		Unique targets = new Unique(new TrimTuple(planNode, 0, 1));
-
-		return new ValidationMapper(targets, (t) -> {
-			List<Value> line = t.getLine();
-			return new ArrayDeque<>(line);
-		}, null, null);
+		return new Unique(planNode);
 	}
 
 	@Override

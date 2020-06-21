@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 
 /**
  * @author Håvard Ottestad
@@ -48,7 +47,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public Tuple next() throws SailException {
 				return parentIterator.next();
 			}
 

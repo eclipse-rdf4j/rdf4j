@@ -53,7 +53,7 @@ public class MockInputPlanNode implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new CloseableIteration<Tuple, SailException>() {
 
-			Iterator<Tuple> iterator = initialData.iterator();
+			final Iterator<Tuple> iterator = initialData.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -65,7 +65,7 @@ public class MockInputPlanNode implements PlanNode {
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public Tuple next() throws SailException {
 				return iterator.next();
 			}
 

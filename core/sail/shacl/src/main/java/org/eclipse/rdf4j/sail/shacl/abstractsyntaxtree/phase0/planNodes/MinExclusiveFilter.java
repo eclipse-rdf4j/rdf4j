@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.math.BigDecimal;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-
-import java.math.BigDecimal;
 
 /**
  * @author Håvard Ottestad

@@ -44,7 +44,7 @@ public class CloseablePeakableIteration<E, X extends Exception> implements Close
 	}
 
 	@Override
-	public ValidationTuple next() throws X {
+	public E next() throws X {
 		E next = null;
 		if (peek != null) {
 			next = peek;

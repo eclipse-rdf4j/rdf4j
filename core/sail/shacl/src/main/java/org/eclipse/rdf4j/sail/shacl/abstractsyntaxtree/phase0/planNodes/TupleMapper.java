@@ -8,12 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes;
 
+import java.util.function.Function;
+
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.function.Function;
 
 public class TupleMapper implements PlanNode {
 	PlanNode parent;
@@ -80,7 +80,6 @@ public class TupleMapper implements PlanNode {
 	public String toString() {
 		return "ModifyValidationTuple";
 	}
-
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {

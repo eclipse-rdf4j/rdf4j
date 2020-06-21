@@ -54,7 +54,6 @@ public class EmptyNode implements PlanNode {
 		return "Empty";
 	}
 
-
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 	}

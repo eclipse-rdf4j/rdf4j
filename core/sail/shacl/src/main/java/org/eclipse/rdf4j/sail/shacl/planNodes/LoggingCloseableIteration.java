@@ -3,7 +3,6 @@ package org.eclipse.rdf4j.sail.shacl.planNodes;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +30,7 @@ abstract class LoggingCloseableIteration implements CloseableIteration<Tuple, Sa
 	}
 
 	@Override
-	public final ValidationTuple next() throws SailException {
+	public final Tuple next() throws SailException {
 
 		Tuple tuple = loggingNext();
 
