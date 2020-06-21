@@ -1,6 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets;
 
+import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -8,6 +10,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -20,7 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
@@ -53,7 +55,10 @@ public class TargetClass extends Target {
 
 		Unique targets = new Unique(new TrimTuple(planNode, 0, 1));
 
-		return new ValidationTupleMapper(targets, Tuple::getLine, null, null);
+		return new ValidationTupleMapper(targets, (t) -> {
+			List<Value> line = t.getLine();
+			return new ArrayDeque<>(line);
+		}, null, null);
 	}
 
 	@Override
@@ -80,7 +85,7 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		targetClass.forEach(t -> {
 			model.add(subject, getPredicate(), t);
 		});

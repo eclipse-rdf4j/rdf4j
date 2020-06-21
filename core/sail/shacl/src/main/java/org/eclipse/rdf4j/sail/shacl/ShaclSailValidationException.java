@@ -8,23 +8,22 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 
 import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
-	private List<Tuple> invalidTuples;
+	private List<ValidationTuple> invalidTuples;
 
-	ShaclSailValidationException(List<Tuple> invalidTuples) {
+	ShaclSailValidationException(List<ValidationTuple> invalidTuples) {
 		super("Failed SHACL validation");
 		this.invalidTuples = invalidTuples;
 	}
@@ -54,19 +53,20 @@ public class ShaclSailValidationException extends SailException implements Valid
 	public ValidationReport getValidationReport() {
 		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
 
-		for (Tuple invalidTuple : invalidTuples) {
-			ValidationResult parent = null;
-			ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
+		for (ValidationTuple invalidTuple : invalidTuples) {
 
-			while (!propertyShapes.isEmpty()) {
-				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
-						invalidTuple.getLine().get(0));
-				if (parent == null) {
-					validationReport.addValidationResult(validationResult);
+			Deque<ValidationResult> validationResults = invalidTuple.toValidationResult();
+
+			ValidationResult mainValidationResult = null;
+
+			for (ValidationResult validationResult : validationResults) {
+				if (mainValidationResult == null) {
+					mainValidationResult = validationResult;
+					validationReport.addValidationResult(mainValidationResult);
 				} else {
-					parent.setDetail(validationResult);
+					mainValidationResult.setDetail(validationResult);
+					mainValidationResult = validationResult;
 				}
-				parent = validationResult;
 			}
 
 		}

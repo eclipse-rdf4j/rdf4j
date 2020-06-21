@@ -1,18 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.RDFCollections;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
@@ -45,7 +40,7 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.XONE, getId());
 		HelperTool.listToRdf(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
@@ -53,7 +48,7 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 			return;
 		}
 		exported.add(getId());
-		xone.forEach(o -> o.toModel(null, model, exported));
+		xone.forEach(o -> o.toModel(null, null, model, exported));
 
 	}
 

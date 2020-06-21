@@ -451,7 +451,6 @@ abstract public class AbstractShaclTest {
 						throw sailException;
 					}
 
-
 					exception = true;
 					logger.debug(sailException.getMessage());
 					validationReportActual = ((ShaclSailValidationException) sailException.getCause())
@@ -545,7 +544,7 @@ abstract public class AbstractShaclTest {
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+//		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(model, stringWriter, RDFFormat.TURTLE, writerConfig);
 
 		return stringWriter.toString();

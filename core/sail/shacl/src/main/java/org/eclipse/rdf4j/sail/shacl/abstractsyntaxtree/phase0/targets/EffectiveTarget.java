@@ -74,19 +74,14 @@ public class EffectiveTarget {
 		} else {
 			// complex chain
 
-			System.out.println("HERE");
-
 			List<StatementPattern> collect = chain.stream()
 					.flatMap(EffectiveTargetObject::getStatementPatterns)
 					.collect(Collectors.toList());
-			System.out.println(collect);
 
 			String query = chain.stream()
 					.map(EffectiveTargetObject::getQueryFragment)
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
-
-			System.out.println(query);
 
 			return new TargetChainRetriever(connectionsGroup.getAddedStatements(), connectionsGroup.getBaseConnection(),
 					collect, query);

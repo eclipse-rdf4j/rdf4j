@@ -1,32 +1,33 @@
-@base          <http://example.org/random> .
-@prefix ex:    <http://example.com/ns#> .
-@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix sh:    <http://www.w3.org/ns/shacl#> .
-@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-_:b0    a                             sh:ValidationResult ;
-        sh:focusNode                  ex:p2 ;
-        sh:resultMessage              "Value must be a valid literal of type integer" ;
-        sh:resultPath                 ex:age ;
-        sh:resultSeverity             sh:Violation ;
-        sh:sourceConstraintComponent  sh:DatatypeConstraintComponent ;
-        sh:sourceShape                []  ;
-        sh:value                      "123" .
+ex:node a sh:NodeShape;
+  sh:property _:node1ebbi4nvjx2 .
 
-[ a          sh:ValidationReport ;
-  sh:result  _:b0
-] .
+_:node1ebbi4nvjx2 a sh:PropertyShape;
+  sh:datatype xsd:integer;
+  sh:path ex:age .
 
-[ a            sh:ValidationReport ;
-  sh:conforms  false ;
-  sh:result    [ a                             sh:ValidationResult ;
-                 sh:detail                     _:b0 ;
-                 sh:focusNode                  ex:validPerson1 ;
-                 sh:resultMessage              "Value does not have shape ex:node" ;
-                 sh:resultPath                 ex:knows ;
-                 sh:resultSeverity             sh:Violation ;
-                 sh:sourceConstraintComponent  sh:NodeConstraintComponent ;
-                 sh:sourceShape                []  ;
-                 sh:value                      ex:p2
-               ]
-] .
+[] a sh:ValidationReport;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:detail [ a sh:ValidationResult;
+          sh:focusNode ex:p2;
+          sh:resultPath ex:age;
+          sh:resultSeverity sh:Violation;
+          sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+          sh:sourceShape _:node1ebbi4nvjx2;
+          sh:value "123"
+        ];
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:node ex:node;
+          sh:path ex:knows
+        ];
+      sh:value ex:p2
+    ] .

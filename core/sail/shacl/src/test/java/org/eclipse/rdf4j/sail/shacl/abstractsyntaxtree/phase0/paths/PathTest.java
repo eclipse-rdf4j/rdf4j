@@ -162,7 +162,7 @@ public class PathTest {
 			actual = connection.getStatements(null, SHACL.PATH, null).stream().map(s -> {
 				Path path = Path.buildPath(connection, (Resource) s.getObject());
 				DynamicModel model = new DynamicModelFactory().createEmptyModel();
-				path.toModel((Resource) s.getObject(), model, new HashSet<>());
+				path.toModel((Resource) s.getObject(), null, model, new HashSet<>());
 
 				model.add(s.getSubject(), SHACL.PATH, s.getObject());
 

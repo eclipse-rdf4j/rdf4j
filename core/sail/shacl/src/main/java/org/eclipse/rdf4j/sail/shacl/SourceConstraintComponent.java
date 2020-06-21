@@ -32,7 +32,8 @@ public enum SourceConstraintComponent {
 	ValueInConstraintComponent(DASH.ValueInConstraintComponent),
 	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT),
 	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT),
-	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT);
+	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT),
+	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT);
 
 	private final IRI iri;
 

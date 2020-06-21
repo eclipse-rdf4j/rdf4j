@@ -1,17 +1,19 @@
-@base          <http://example.org/random> .
-@prefix ex:    <http://example.com/ns#> .
-@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix sh:    <http://www.w3.org/ns/shacl#> .
-@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-[ a            sh:ValidationReport ;
-  sh:conforms  false ;
-  sh:result    [ a                             sh:ValidationResult ;
-                 sh:focusNode                  ex:validPerson1 ;
-                 sh:resultPath                 ex:age ;
-                 sh:resultSeverity             sh:Violation ;
-                 sh:sourceConstraintComponent  sh:DatatypeConstraintComponent ;
-                 sh:sourceShape                []  ;
-                 sh:value                      "123"
-               ]
-] .
+ex:PersonPropertyShape a sh:PropertyShape;
+  sh:datatype xsd:integer;
+  sh:path ex:age .
+
+[] a sh:ValidationReport;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape ex:PersonPropertyShape;
+      sh:value "123"
+    ] .

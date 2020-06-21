@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -9,13 +10,13 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationEmptyNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationUnionNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
@@ -67,12 +68,17 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		super.toModel(subject, model, exported);
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		super.toModel(subject, predicate, model, exported);
 		model.add(getId(), RDF.TYPE, SHACL.NODE_SHAPE);
 
 		if (subject != null) {
-			model.add(subject, SHACL.NODE, getId());
+			if (predicate == null) {
+				model.add(subject, SHACL.NODE, getId());
+			} else {
+				model.add(subject, predicate, getId());
+			}
+
 		}
 
 		if (exported.contains(getId())) {
@@ -80,7 +86,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		}
 		exported.add(getId());
 
-		constraintComponents.forEach(c -> c.toModel(getId(), model, exported));
+		constraintComponents.forEach(c -> c.toModel(getId(), null, model, exported));
 
 	}
 
@@ -97,8 +103,16 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		TupleValidationPlanNode union = new ValidationEmptyNode();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
+			TupleValidationPlanNode tupleValidationPlanNode = constraintComponent
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans);
+			if (!(constraintComponent instanceof PropertyShape)) {
+				tupleValidationPlanNode = new ValidationReportNode(tupleValidationPlanNode, t -> {
+					return new ValidationResult(t.getValue(), t.getValue(), this,
+							constraintComponent.getConstraintComponent(), getSeverity());
+				});
+			}
 			union = new ValidationUnionNode(union,
-					constraintComponent.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans));
+					tupleValidationPlanNode);
 		}
 
 		return union;
@@ -110,5 +124,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				.map(ConstraintComponent::getPreferedValidationApproach)
 				.reduce(ValidationApproach::reduce)
 				.orElse(ValidationApproach.Transactional);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.NodeConstraintComponent;
 	}
 }

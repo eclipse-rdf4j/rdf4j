@@ -1,0 +1,38 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:node a sh:NodeShape;
+  sh:property _:node1ebbl9tggx2 .
+
+_:node1ebbl9tggx2 a sh:PropertyShape;
+  sh:datatype xsd:integer;
+  sh:path ex:age .
+
+_:node1ebbl9rtbx103 a sh:ValidationReport;
+  sh:conforms false;
+  sh:result _:b2bbb373-ea50-406b-88f6-6335efd1be5e .
+
+_:b2bbb373-ea50-406b-88f6-6335efd1be5e a sh:ValidationResult;
+  sh:detail _:c3bd39dd-4f83-4c36-9940-9f27c0ff03cf .
+
+_:c3bd39dd-4f83-4c36-9940-9f27c0ff03cf a sh:ValidationResult;
+  sh:focusNode _:node1ebbl9tggx4;
+  sh:resultPath ex:age;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+  sh:sourceShape _:node1ebbl9tggx2;
+  sh:value "123" .
+
+_:b2bbb373-ea50-406b-88f6-6335efd1be5e sh:focusNode ex:validPerson1;
+  sh:resultPath ex:knows;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:NodeConstraintComponent;
+  sh:sourceShape _:node1ebbl9tggx1 .
+
+_:node1ebbl9tggx1 a sh:PropertyShape;
+  sh:node ex:node;
+  sh:path ex:knows .
+
+_:b2bbb373-ea50-406b-88f6-6335efd1be5e sh:value _:node1ebbl9tggx4 .

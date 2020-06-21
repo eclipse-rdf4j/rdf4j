@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcompone
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -18,7 +19,7 @@ public class PatternConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.PATTERN, SimpleValueFactory.getInstance().createLiteral(pattern));
 		if (flags != null) {
 			model.add(subject, SHACL.FLAGS, SimpleValueFactory.getInstance().createLiteral(flags));

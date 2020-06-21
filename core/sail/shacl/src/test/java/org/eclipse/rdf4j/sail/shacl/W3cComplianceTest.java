@@ -37,7 +37,7 @@ import org.junit.runners.Parameterized;
 @RunWith(Parameterized.class)
 public class W3cComplianceTest {
 
-	private URL testCasePath;
+	private final URL testCasePath;
 
 	public W3cComplianceTest(URL testCasePath) {
 		this.testCasePath = testCasePath;

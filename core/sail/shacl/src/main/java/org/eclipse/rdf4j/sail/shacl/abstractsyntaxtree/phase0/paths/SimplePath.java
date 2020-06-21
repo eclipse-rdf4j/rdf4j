@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths;
 
+import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -14,7 +15,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.Tupl
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.ValidationTupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 public class SimplePath extends Path {
@@ -40,7 +40,7 @@ public class SimplePath extends Path {
 		}
 		PlanNode cachedNodeFor = connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 
-		return new ValidationTupleMapper(cachedNodeFor, t -> t.getLine().subList(0, 1), () -> this,
+		return new ValidationTupleMapper(cachedNodeFor, t -> new ArrayDeque<>(t.getLine().subList(0, 1)), () -> this,
 				t -> t.getLine().get(1));
 
 	}
@@ -51,7 +51,7 @@ public class SimplePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 	}
 
 	@Override

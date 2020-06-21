@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -17,6 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClassConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcomponents.ClosedConstraintComponent;
@@ -59,7 +61,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	boolean deactivated;
 	List<Literal> message;
-	Severity severity;
+	Severity severity = Severity.Violation;
 
 	List<ConstraintComponent> constraintComponents = new ArrayList<>();
 
@@ -103,11 +105,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	protected abstract Shape shallowClone();
 
 	public Model toModel(Model model) {
-		toModel(null, model, new HashSet<>());
+		toModel(null, null, model, new HashSet<>());
 		return model;
 	}
 
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		ModelBuilder modelBuilder = new ModelBuilder();
 
 		modelBuilder.subject(getId());
@@ -117,7 +119,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		target.forEach(t -> {
-			t.toModel(getId(), model, exported);
+			t.toModel(getId(), null, model, exported);
 		});
 
 		model.addAll(modelBuilder.build());
@@ -390,4 +392,12 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 	}
 
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		throw new UnsupportedOperationException();
+	}
+
+	public Severity getSeverity() {
+		return severity;
+	}
 }

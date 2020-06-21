@@ -16,7 +16,7 @@ public class LessThanConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.LESS_THAN, predicate);
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		model.add(subject, SHACL.LESS_THAN, this.predicate);
 	}
 }

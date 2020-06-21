@@ -306,7 +306,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> validate(List<Shape> shapes, boolean validateEntireBaseSail) {
+	private List<ValidationTuple> validate(List<Shape> shapes, boolean validateEntireBaseSail) {
 
 		try {
 			if (!sail.isValidationEnabled()) {
@@ -343,7 +343,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				this::getRdfsSubClassOfReasoner);
 	}
 
-	private static List<Tuple> performValidation(List<Shape> shapes, boolean validateEntireBaseSail,
+	private static List<ValidationTuple> performValidation(List<Shape> shapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) {
 		long beforeValidation = 0;
 
@@ -354,7 +354,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			Stream<Callable<List<Tuple>>> callableStream = shapes
+			Stream<Callable<List<ValidationTuple>>> callableStream = shapes
 					.stream()
 					.map(shape -> shape.generatePlans(connectionsGroup, sail.isLogValidationPlans(),
 							validateEntireBaseSail))
@@ -377,14 +377,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							List<Tuple> collect = new ArrayList<>(stream.map(p -> {
-								Tuple tuple = new Tuple();
+							List<ValidationTuple> collect = stream.collect(Collectors.toList());
 
-								tuple.setLine(p.getTargetChain());
-								tuple.getLine().add(p.getValue());
-
-								return tuple;
-							}).collect(Collectors.toList()));
 							validationExecutionLogger.flush();
 
 //							if (sail.isPerformanceLogging()) {
@@ -617,7 +611,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			prepareValidation();
 
-			List<Tuple> invalidTuples = null;
+			List<ValidationTuple> invalidTuples = null;
 			if (useSerializableValidation) {
 				synchronized (sail) {
 
@@ -664,8 +658,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> serializableValidation(List<Shape> shapesAfterRefresh) {
-		List<Tuple> invalidTuples;
+	private List<ValidationTuple> serializableValidation(List<Shape> shapesAfterRefresh) {
+		List<ValidationTuple> invalidTuples;
 		try {
 			try {
 				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(sail,
@@ -780,7 +774,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		loadCachedNodeShapes();
 		prepareValidation();
-		List<Tuple> validate = validate(this.shapes, true);
+		List<ValidationTuple> validate = validate(this.shapes, true);
 
 		return new ShaclSailValidationException(validate).getValidationReport();
 	}

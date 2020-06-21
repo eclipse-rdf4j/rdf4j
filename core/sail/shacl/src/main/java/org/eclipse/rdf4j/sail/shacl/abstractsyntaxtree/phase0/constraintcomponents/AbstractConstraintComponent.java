@@ -4,6 +4,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
@@ -54,13 +55,14 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		return new ValidationEmptyNode();
 	}
 
-	protected IRI getConstraintComponent() {
-		return SimpleValueFactory.getInstance().createIRI("http://TODO/" + this.getClass().getSimpleName());
-	}
-
 	@Override
 	public ValidationApproach getPreferedValidationApproach() {
 		return ValidationApproach.Transactional;
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		throw new UnsupportedOperationException();
 	}
 
 }

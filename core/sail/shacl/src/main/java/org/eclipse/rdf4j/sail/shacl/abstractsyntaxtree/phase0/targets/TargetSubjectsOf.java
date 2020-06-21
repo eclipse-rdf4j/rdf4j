@@ -40,7 +40,7 @@ public class TargetSubjectsOf extends Target {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		targetSubjectsOf.forEach(t -> {
 			model.add(subject, getPredicate(), t);
 		});

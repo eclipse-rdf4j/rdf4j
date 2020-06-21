@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets;
 
+import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -148,11 +149,11 @@ public class TargetChainRetriever implements TupleValidationPlanNode {
 				if (results.hasNext()) {
 					BindingSet nextBinding = results.next();
 
-					List<Value> collect = nextBinding.getBindingNames()
+					ArrayDeque<Value> collect = nextBinding.getBindingNames()
 							.stream()
 							.sorted()
 							.map(nextBinding::getValue)
-							.collect(Collectors.toList());
+							.collect(Collectors.toCollection(ArrayDeque::new));
 
 					next = new ValidationTuple(collect, null, null);
 

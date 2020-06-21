@@ -3,10 +3,12 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.constraintcompone
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.tempPlanNodes.TupleValidationPlanNode;
@@ -23,7 +25,7 @@ public class DatatypeConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.DATATYPE, datatype);
 	}
 
@@ -54,5 +56,10 @@ public class DatatypeConstraintComponent extends AbstractConstraintComponent {
 			throw new UnsupportedOperationException();
 		}
 
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.DatatypeConstraintComponent;
 	}
 }
