@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.Sort;
@@ -72,6 +73,13 @@ public class TargetClass extends Target {
 						+ " ?b1 " + objectVariable + ". } \n")
 				.reduce((l, r) -> l + " UNION " + r)
 				.get();
+
+	}
+
+	@Override
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), RDF.TYPE, targetClass, parent,
+				true);
 
 	}
 

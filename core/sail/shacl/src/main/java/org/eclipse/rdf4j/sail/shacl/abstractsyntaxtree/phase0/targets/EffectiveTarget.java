@@ -90,6 +90,19 @@ public class EffectiveTarget {
 	}
 
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		if (chain.size() == 1) {
+			// simple chain
+
+			EffectiveTargetObject last = chain.getLast();
+			if (last.target instanceof Target) {
+				return ((Target) last.target).getTargetFilter(connectionsGroup, parent);
+			} else {
+				throw new UnsupportedOperationException(
+						"Unknown target in chain is type: " + last.getClass().getSimpleName());
+			}
+
+		}
+
 		throw new UnsupportedOperationException();
 	}
 

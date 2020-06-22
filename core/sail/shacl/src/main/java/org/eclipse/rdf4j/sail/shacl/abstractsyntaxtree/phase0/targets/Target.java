@@ -15,4 +15,6 @@ public abstract class Target implements Exportable, Targetable {
 
 	public abstract String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner);
+
+	public abstract PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent);
 }

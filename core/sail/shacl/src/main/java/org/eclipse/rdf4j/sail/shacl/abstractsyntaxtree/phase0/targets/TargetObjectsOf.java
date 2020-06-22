@@ -40,6 +40,11 @@ public class TargetObjectsOf extends Target {
 	}
 
 	@Override
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		targetObjectsOf.forEach(t -> {
 			model.add(subject, getPredicate(), t);
