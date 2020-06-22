@@ -190,6 +190,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
+	private int validationResultTruncationTotalSize = -1;
+	private int validationResultTruncationPerConstraintSize = -1;
+
 	static {
 		try {
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
@@ -862,5 +865,21 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Experimental
 	public boolean isDashDataShapes() {
 		return dashDataShapes;
+	}
+
+	public int getValidationResultTruncationPerConstraintSize() {
+		return validationResultTruncationPerConstraintSize;
+	}
+
+	public void setValidationResultTruncationPerConstraintSize(int validationResultTruncationPerConstraintSize) {
+		this.validationResultTruncationPerConstraintSize = validationResultTruncationPerConstraintSize;
+	}
+
+	public int getValidationResultTruncationTotalSize() {
+		return validationResultTruncationTotalSize;
+	}
+
+	public void setValidationResultTruncationTotalSize(int validationResultTruncationTotalSize) {
+		this.validationResultTruncationTotalSize = validationResultTruncationTotalSize;
 	}
 }

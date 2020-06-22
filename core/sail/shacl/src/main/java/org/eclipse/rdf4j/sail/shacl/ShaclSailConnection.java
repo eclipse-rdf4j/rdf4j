@@ -64,8 +64,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	Sail addedStatements;
 	Sail removedStatements;
 
-	private HashSet<Statement> addedStatementsSet = new HashSet<>();
-	private HashSet<Statement> removedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> addedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> removedStatementsSet = new HashSet<>();
 
 	private boolean isShapeRefreshNeeded = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
@@ -78,7 +78,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private boolean preparedHasRun = false;
 
-	private SailRepositoryConnection shapesRepoConnection;
+	private final SailRepositoryConnection shapesRepoConnection;
+
+	private boolean validationReportTruncated;
 
 	// write lock
 	private Lock writeLock;
@@ -133,6 +135,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} else {
 			setupConnectionListener();
 		}
+
+		validationReportTruncated = false;
 
 	}
 
@@ -337,7 +341,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				this::getRdfsSubClassOfReasoner);
 	}
 
-	private static List<Tuple> performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
+	private List<Tuple> performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) {
 		long beforeValidation = 0;
 
@@ -370,7 +374,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							List<Tuple> collect = handleTruncation(stream,
+									sail.getValidationResultTruncationPerConstraintSize());
+
 							validationExecutionLogger.flush();
 
 							if (sail.isPerformanceLogging()) {
@@ -404,9 +410,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						}
 					});
 
+			Stream<Tuple> stream;
+
 			if (sail.isParallelValidation()) {
 
-				return callableStream
+				stream = callableStream
 						.map(sail::submitRunnableToExecutorService)
 						// Creating a list is needed to actually make things run multi-threaded, without this the
 						// laziness of java streams will make this run serially
@@ -418,18 +426,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							} catch (InterruptedException | ExecutionException e) {
 								throw new RuntimeException(e);
 							}
-						})
-						.collect(Collectors.toList());
+						});
 
 			} else {
-				return callableStream.flatMap(c -> {
+				stream = callableStream.flatMap(c -> {
 					try {
 						return c.call().stream();
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
-				}).collect(Collectors.toList());
+				});
+
 			}
+
+			return handleTruncation(stream, sail.getValidationResultTruncationTotalSize());
 
 		} finally {
 			if (sail.isPerformanceLogging()) {
@@ -437,6 +447,21 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						System.currentTimeMillis() - beforeValidation);
 			}
 		}
+	}
+
+	private List<Tuple> handleTruncation(Stream<Tuple> tupleStream, int limit) {
+		List<Tuple> collect;
+		if (limit >= 0) {
+			collect = tupleStream.limit(limit + 1).collect(Collectors.toList());
+			if (collect.size() > limit) {
+				validationReportTruncated = true;
+				collect = collect.stream().limit(limit).collect(Collectors.toList());
+			}
+		} else {
+			collect = tupleStream.collect(Collectors.toList());
+		}
+
+		return collect;
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
