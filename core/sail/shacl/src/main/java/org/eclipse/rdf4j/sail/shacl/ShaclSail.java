@@ -881,5 +881,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public void setValidationResultTruncationTotalSize(int validationResultTruncationTotalSize) {
 		this.validationResultTruncationTotalSize = validationResultTruncationTotalSize;
+		validationResultTruncationPerConstraintSize = Math.max(validationResultTruncationPerConstraintSize,
+				validationResultTruncationTotalSize);
 	}
 }

@@ -49,26 +49,6 @@ public class TruncatedValidationReportTest {
 
 	}
 
-	private ValidationReport getValidationReport(SailRepository shaclRepository) {
-		ValidationReport validationReport = null;
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-			connection.begin();
-			for (int i = 0; i < 1000; i++) {
-				ValueFactory vf = connection.getValueFactory();
-
-				BNode bNode = vf.createBNode();
-				connection.add(bNode, RDF.TYPE, FOAF.PERSON);
-				connection.add(bNode, FOAF.AGE, vf.createLiteral("three"));
-			}
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				validationReport = ((ShaclSailValidationException) e.getCause()).getValidationReport();
-			}
-		}
-		return validationReport;
-	}
-
 	@Test
 	public void testPerConstraint() throws IOException {
 
@@ -85,6 +65,8 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertEquals(10, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
+		assertEquals(10, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(20, total);
 
 	}
@@ -106,6 +88,8 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertEquals(5, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
+		assertEquals(5, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(10, total);
 
 	}
@@ -132,8 +116,74 @@ public class TruncatedValidationReportTest {
 	}
 
 	@Test
-	public void testRevalidate() {
+	public void testNoLimit() throws IOException {
 
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
+
+		ValidationReport validationReport = getValidationReport(shaclRepository);
+		shaclRepository.shutDown();
+
+		Map<SourceConstraintComponent, Long> collect = validationReport.getValidationResult()
+				.stream()
+				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
+		long total = collect.values().stream().mapToLong(l -> l).sum();
+
+		assertEquals(5000, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
+		assertEquals(5000, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
+		assertEquals(10000, total);
+
+	}
+
+	@Test
+	public void testRevalidate() throws IOException {
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
+
+		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
+		sail.setValidationResultTruncationPerConstraintSize(15);
+		sail.setValidationResultTruncationTotalSize(-1);
+
+		sail.disableValidation();
+		getValidationReport(shaclRepository);
+		sail.enableValidation();
+
+		ValidationReport validationReport;
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+			connection.begin();
+			validationReport = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+			connection.commit();
+		}
+
+		shaclRepository.shutDown();
+
+		Map<SourceConstraintComponent, Long> collect = validationReport.getValidationResult()
+				.stream()
+				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
+		long total = collect.values().stream().mapToLong(l -> l).sum();
+
+		assertEquals(15, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
+		assertEquals(15, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
+
+		assertEquals(30, total);
+	}
+
+	private ValidationReport getValidationReport(SailRepository shaclRepository) {
+		ValidationReport validationReport = null;
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < 5000; i++) {
+				ValueFactory vf = connection.getValueFactory();
+
+				BNode bNode = vf.createBNode();
+				connection.add(bNode, RDF.TYPE, FOAF.PERSON);
+				connection.add(bNode, FOAF.AGE, vf.createLiteral("three"));
+			}
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				validationReport = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+			}
+		}
+		return validationReport;
 	}
 
 }
