@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import junit.framework.TestResult;
 import junit.framework.TestSuite;
 
+@Deprecated
 public class SPARQL10ManifestTest {
 
 	static final Logger logger = LoggerFactory.getLogger(SPARQL10ManifestTest.class);
