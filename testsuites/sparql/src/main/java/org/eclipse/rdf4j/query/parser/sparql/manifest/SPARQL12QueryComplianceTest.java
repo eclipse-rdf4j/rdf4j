@@ -21,27 +21,18 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 /**
- * A test suite that runs the W3C Approved SPARQL 1.1 query tests.
+ * A test suite that runs the SPARQL 1.2 community group's query tests.
  *
  * @author Jeen Broekstra
  *
- * @see https://www.w3.org/2009/sparql/docs/tests/
+ * @see https://github.com/w3c/sparql-12/
  */
 @RunWith(Parameterized.class)
-public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceTest {
+public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceTest {
 
-	private static final String[] defaultIgnoredTests = {
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRDT() TypeErrors",
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRLANG() TypeErrors",
-			// known issue: SES-937
-			"sq03 - Subquery within graph pattern, graph variable is not bound"
-	};
+	private static final String[] defaultIgnoredTests = {};
 
-	private static final List<String> excludedSubdirs = Arrays.asList("service");
+	private static final List<String> excludedSubdirs = Arrays.asList();
 
 	@Parameterized.Parameters(name = "{0}")
 	public static Collection<Object[]> data() {
@@ -55,7 +46,7 @@ public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceT
 		manifests.add(getManifestURL().toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
-			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs);
+			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs, false);
 			tests.addAll(manifest.getTests());
 			manifests.addAll(manifest.getSubManifests());
 		}
@@ -67,11 +58,10 @@ public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceT
 	}
 
 	protected static URL getManifestURL() {
-		return SPARQL11QueryComplianceTest.class.getClassLoader()
-				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl");
+		return SPARQL12QueryComplianceTest.class.getClassLoader().getResource("testcases-sparql-1.2/manifest-all.ttl");
 	}
 
-	public SPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
+	public SPARQL12QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
 			String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
