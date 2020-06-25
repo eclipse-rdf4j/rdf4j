@@ -262,9 +262,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
 				FileUtils.writeStringToFile(versionFile, VERSION);
 			}
-			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
+			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
-			this.store = new SnapshotSailStore(master, () -> new MemoryOverflowModel() {
+			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
 
 				@Override
 				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
@@ -277,7 +277,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				public SailSource getExplicitSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use NativeSailStore directly
-						return master.getExplicitSailSource();
+						return mainStore.getExplicitSailSource();
 					} else {
 						return super.getExplicitSailSource();
 					}
@@ -287,7 +287,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				public SailSource getInferredSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use NativeSailStore directly
-						return master.getInferredSailSource();
+						return mainStore.getInferredSailSource();
 					} else {
 						return super.getInferredSailSource();
 					}
