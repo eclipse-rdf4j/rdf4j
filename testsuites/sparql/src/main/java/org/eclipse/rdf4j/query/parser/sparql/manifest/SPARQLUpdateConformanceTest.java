@@ -51,7 +51,10 @@ import junit.framework.TestSuite;
  * A SPARQL 1.1 Update test, created by reading in a W3C working-group style manifest.
  *
  * @author Jeen Broekstra
+ *
+ * @deprecated since 3.3.0. Use {@link SPARQL11UpdateComplianceTest} instead.
  */
+@Deprecated
 public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 	/*-----------*
