@@ -14,9 +14,11 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 /**
@@ -33,6 +35,7 @@ public class ValidationReport {
 	private boolean conforms;
 
 	private List<ValidationResult> validationResult = new ArrayList<>();
+	private boolean truncated;
 
 	public ValidationReport(boolean conforms) {
 		this.conforms = conforms;
@@ -48,6 +51,7 @@ public class ValidationReport {
 
 		model.add(getId(), SHACL.CONFORMS, vf.createLiteral(conforms));
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
+		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
 		for (ValidationResult result : validationResult) {
 			model.add(getId(), SHACL.RESULT, result.getId());
@@ -85,5 +89,13 @@ public class ValidationReport {
 				"conforms=" + conforms +
 				", validationResult=" + Arrays.toString(validationResult.toArray()) +
 				'}';
+	}
+
+	public boolean isTruncated() {
+		return truncated;
+	}
+
+	public void setTruncated(boolean truncated) {
+		this.truncated = truncated;
 	}
 }

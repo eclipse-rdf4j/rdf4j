@@ -9,6 +9,8 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertTrue;
 
 import java.io.IOException;
 import java.util.Map;
@@ -16,8 +18,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -35,7 +40,7 @@ public class TruncatedValidationReportTest {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
-		sail.setValidationResultTruncationTotalSize(10);
+		sail.setValidationResultsLimitTotal(10);
 
 		ValidationReport validationReport = getValidationReport(shaclRepository);
 		shaclRepository.shutDown();
@@ -45,6 +50,7 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertTrue(validationReport.isTruncated());
 		assertEquals(10, total);
 
 	}
@@ -55,7 +61,7 @@ public class TruncatedValidationReportTest {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
-		sail.setValidationResultTruncationPerConstraintSize(10);
+		sail.setValidationResultsLimitPerConstraint(10);
 
 		ValidationReport validationReport = getValidationReport(shaclRepository);
 		shaclRepository.shutDown();
@@ -65,6 +71,7 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertTrue(validationReport.isTruncated());
 		assertEquals(10, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
 		assertEquals(10, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(20, total);
@@ -77,8 +84,8 @@ public class TruncatedValidationReportTest {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
-		sail.setValidationResultTruncationTotalSize(20);
-		sail.setValidationResultTruncationPerConstraintSize(5);
+		sail.setValidationResultsLimitTotal(20);
+		sail.setValidationResultsLimitPerConstraint(5);
 
 		ValidationReport validationReport = getValidationReport(shaclRepository);
 		shaclRepository.shutDown();
@@ -88,6 +95,7 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertTrue(validationReport.isTruncated());
 		assertEquals(5, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
 		assertEquals(5, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(10, total);
@@ -100,8 +108,8 @@ public class TruncatedValidationReportTest {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
-		sail.setValidationResultTruncationTotalSize(20);
-		sail.setValidationResultTruncationPerConstraintSize(15);
+		sail.setValidationResultsLimitTotal(20);
+		sail.setValidationResultsLimitPerConstraint(15);
 
 		ValidationReport validationReport = getValidationReport(shaclRepository);
 		shaclRepository.shutDown();
@@ -111,8 +119,10 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertTrue(validationReport.isTruncated());
 		assertEquals(20, total);
 
+		assertTrue(validationReport.asModel().contains(null, RDF4J.TRUNCATED, BooleanLiteral.TRUE));
 	}
 
 	@Test
@@ -128,6 +138,7 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertFalse(validationReport.isTruncated());
 		assertEquals(5000, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
 		assertEquals(5000, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(10000, total);
@@ -139,8 +150,8 @@ public class TruncatedValidationReportTest {
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
-		sail.setValidationResultTruncationPerConstraintSize(15);
-		sail.setValidationResultTruncationTotalSize(-1);
+		sail.setValidationResultsLimitPerConstraint(15);
+		sail.setValidationResultsLimitTotal(-1);
 
 		sail.disableValidation();
 		getValidationReport(shaclRepository);
@@ -160,9 +171,9 @@ public class TruncatedValidationReportTest {
 				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
 		long total = collect.values().stream().mapToLong(l -> l).sum();
 
+		assertTrue(validationReport.isTruncated());
 		assertEquals(15, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
 		assertEquals(15, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
-
 		assertEquals(30, total);
 	}
 

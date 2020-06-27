@@ -190,8 +190,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
-	private int validationResultTruncationTotalSize = -1;
-	private int validationResultTruncationPerConstraintSize = -1;
+	private long validationResultsLimitTotal = -1;
+	private long validationResultsLimitPerConstraint = -1;
 
 	static {
 		try {
@@ -867,21 +867,21 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return dashDataShapes;
 	}
 
-	public int getValidationResultTruncationPerConstraintSize() {
-		return validationResultTruncationPerConstraintSize;
+	public long getValidationResultsLimitPerConstraint() {
+		return validationResultsLimitPerConstraint;
 	}
 
-	public void setValidationResultTruncationPerConstraintSize(int validationResultTruncationPerConstraintSize) {
-		this.validationResultTruncationPerConstraintSize = validationResultTruncationPerConstraintSize;
+	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
 	}
 
-	public int getValidationResultTruncationTotalSize() {
-		return validationResultTruncationTotalSize;
+	public long getValidationResultsLimitTotal() {
+		return validationResultsLimitTotal;
 	}
 
-	public void setValidationResultTruncationTotalSize(int validationResultTruncationTotalSize) {
-		this.validationResultTruncationTotalSize = validationResultTruncationTotalSize;
-		validationResultTruncationPerConstraintSize = Math.max(validationResultTruncationPerConstraintSize,
-				validationResultTruncationTotalSize);
+	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+		this.validationResultsLimitTotal = validationResultsLimitTotal;
+		validationResultsLimitPerConstraint = Math.max(validationResultsLimitPerConstraint,
+				validationResultsLimitTotal);
 	}
 }

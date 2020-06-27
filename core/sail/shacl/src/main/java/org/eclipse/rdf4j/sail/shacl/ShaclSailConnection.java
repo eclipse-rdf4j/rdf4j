@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -375,7 +374,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							List<Tuple> collect = handleTruncation(stream,
-									sail.getValidationResultTruncationPerConstraintSize());
+									sail.getValidationResultsLimitPerConstraint());
 
 							validationExecutionLogger.flush();
 
@@ -439,7 +438,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			}
 
-			return handleTruncation(stream, sail.getValidationResultTruncationTotalSize());
+			return handleTruncation(stream, sail.getValidationResultsLimitTotal());
 
 		} finally {
 			if (sail.isPerformanceLogging()) {
@@ -449,7 +448,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	private List<Tuple> handleTruncation(Stream<Tuple> tupleStream, int limit) {
+	private List<Tuple> handleTruncation(Stream<Tuple> tupleStream, long limit) {
 		List<Tuple> collect;
 		if (limit >= 0) {
 			collect = tupleStream.limit(limit + 1).collect(Collectors.toList());
@@ -658,7 +657,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (!valid) {
-				throw new ShaclSailValidationException(invalidTuples);
+				throw new ShaclSailValidationException(invalidTuples, validationReportTruncated);
 			}
 		} finally {
 
@@ -793,7 +792,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		prepareValidation();
 		List<Tuple> validate = validate(this.nodeShapes, true);
 
-		return new ShaclSailValidationException(validate).getValidationReport();
+		return new ShaclSailValidationException(validate, validationReportTruncated).getValidationReport();
 	}
 
 }

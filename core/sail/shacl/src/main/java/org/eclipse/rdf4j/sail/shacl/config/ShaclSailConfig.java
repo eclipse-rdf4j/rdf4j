@@ -24,6 +24,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.IntegerLiteral;
+import org.eclipse.rdf4j.model.impl.NumericLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -50,6 +53,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
 	public static final boolean SHACL_ADVANCED_FEATURES_DEFAULT = false;
 	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
+	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = -1;
+	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = -1;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -64,6 +69,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean shaclAdvancedFeatures = SHACL_ADVANCED_FEATURES_DEFAULT;
 	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;
+	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
+	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
+
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -185,6 +194,22 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.dashDataShapes = dashDataShapes;
 	}
 
+	public long getValidationResultsLimitTotal() {
+		return validationResultsLimitTotal;
+	}
+
+	public long getValidationResultsLimitPerConstraint() {
+		return validationResultsLimitPerConstraint;
+	}
+
+	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+		this.validationResultsLimitTotal = validationResultsLimitTotal;
+	}
+
+	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -204,6 +229,11 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
 		m.add(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
 		m.add(implNode, ShaclSailSchema.DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
+
+		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL,
+				vf.createLiteral(getValidationResultsLimitTotal()));
+		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT,
+				vf.createLiteral(getValidationResultsLimitPerConstraint()));
 		return implNode;
 	}
 
@@ -250,6 +280,13 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.DASH_DATA_SHAPES, null))
 					.ifPresent(l -> setDashDataShapes(l.booleanValue()));
+
+			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL, null))
+					.ifPresent(l -> setValidationResultsLimitTotal(l.longValue()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null))
+					.ifPresent(l -> setValidationResultsLimitPerConstraint(l.longValue()));
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

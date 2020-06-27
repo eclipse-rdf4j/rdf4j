@@ -61,6 +61,9 @@ public class ShaclSailFactoryTest {
 		config.setShaclAdvancedFeatures(!config.isShaclAdvancedFeatures());
 		config.setDashDataShapes(!config.isDashDataShapes());
 
+		config.setValidationResultsLimitTotal(100);
+		config.setValidationResultsLimitPerConstraint(3);
+
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
@@ -80,6 +83,10 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
 		assertThat(sail.isShaclAdvancedFeatures()).isEqualTo(config.isShaclAdvancedFeatures());
 		assertThat(sail.isDashDataShapes()).isEqualTo(config.isDashDataShapes());
+		assertThat(sail.getValidationResultsLimitTotal()).isEqualTo(config.getValidationResultsLimitTotal());
+		assertThat(sail.getValidationResultsLimitPerConstraint())
+				.isEqualTo(config.getValidationResultsLimitPerConstraint());
+
 	}
 
 }

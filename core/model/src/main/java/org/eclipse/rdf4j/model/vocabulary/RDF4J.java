@@ -39,6 +39,10 @@ public class RDF4J {
 	 * Context identifier for persisting SHACL shape data in the {@link org.eclipse.rdf4j.sail.shacl.ShaclSail} .
 	 * <tt>http://rdf4j.org/schema/rdf4j#SHACLShapeGraph</tt>
 	 */
-	public final static IRI SHACL_SHAPE_GRAPH = SimpleValueFactory.getInstance()
-			.createIRI(NAMESPACE, "SHACLShapeGraph");
+	public final static IRI SHACL_SHAPE_GRAPH = create("SHACLShapeGraph");
+	public final static IRI TRUNCATED = create("truncated");
+
+	private static IRI create(String localName) {
+		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
+	}
 }

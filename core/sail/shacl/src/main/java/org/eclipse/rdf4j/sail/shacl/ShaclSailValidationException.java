@@ -22,11 +22,13 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
+	private final boolean truncated;
 	private List<Tuple> invalidTuples;
 
-	ShaclSailValidationException(List<Tuple> invalidTuples) {
+	ShaclSailValidationException(List<Tuple> invalidTuples, boolean truncated) {
 		super("Failed SHACL validation");
 		this.invalidTuples = invalidTuples;
+		this.truncated = truncated;
 	}
 
 	/**
@@ -53,6 +55,8 @@ public class ShaclSailValidationException extends SailException implements Valid
 	@Deprecated
 	public ValidationReport getValidationReport() {
 		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
+
+		validationReport.setTruncated(truncated);
 
 		for (Tuple invalidTuple : invalidTuples) {
 			ValidationResult parent = null;

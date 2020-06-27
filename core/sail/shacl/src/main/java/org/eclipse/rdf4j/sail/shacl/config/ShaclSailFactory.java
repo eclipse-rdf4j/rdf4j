@@ -66,6 +66,8 @@ public class ShaclSailFactory implements SailFactory {
 			sail.setRdfsSubClassReasoning(shaclSailConfig.isRdfsSubClassReasoning());
 			sail.setShaclAdvancedFeatures(shaclSailConfig.isShaclAdvancedFeatures());
 			sail.setDashDataShapes(shaclSailConfig.isDashDataShapes());
+			sail.setValidationResultsLimitTotal(shaclSailConfig.getValidationResultsLimitTotal());
+			sail.setValidationResultsLimitPerConstraint(shaclSailConfig.getValidationResultsLimitPerConstraint());
 		}
 
 		return sail;
