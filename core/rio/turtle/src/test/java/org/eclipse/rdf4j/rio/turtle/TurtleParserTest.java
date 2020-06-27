@@ -482,4 +482,17 @@ public class TurtleParserTest {
 		}
 	}
 
+	@Test
+	public void testLegalUnicodeInTripleSubject() throws IOException {
+		String data = "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n<r:\uD804\uDC9D> a xsd:string .";
+		Reader r = new StringReader(data);
+
+		try {
+			parser.parse(r, baseURI);
+			assertTrue(statementCollector.getStatements().size() == 1);
+		} catch (RDFParseException e) {
+			fail("Complex unicode characters should be parsed correctly (" + e.getMessage() + ")");
+		}
+	}
+
 }

@@ -41,6 +41,7 @@ import junit.framework.TestSuite;
  *
  * @author Jeen Broekstra
  */
+@Deprecated
 public class SPARQL11ManifestTest {
 
 	static final Logger logger = LoggerFactory.getLogger(SPARQL11ManifestTest.class);
