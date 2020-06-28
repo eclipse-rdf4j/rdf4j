@@ -59,8 +59,9 @@ public class ShaclSailValidationException extends SailException implements Valid
 			ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
 
 			while (!propertyShapes.isEmpty()) {
+
 				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
-						invalidTuple.getLine().get(0));
+						invalidTuple.getLine().get(0), invalidTuple.getLine().get(invalidTuple.getLine().size() - 1));
 				if (parent == null) {
 					validationReport.addValidationResult(validationResult);
 				} else {

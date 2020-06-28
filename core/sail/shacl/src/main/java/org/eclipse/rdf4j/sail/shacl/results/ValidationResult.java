@@ -9,7 +9,11 @@
 package org.eclipse.rdf4j.sail.shacl.results;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -33,20 +37,33 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 @Deprecated
 public class ValidationResult {
 
-	private Resource id = SimpleValueFactory.getInstance().createBNode();
+	private final Resource id = SimpleValueFactory.getInstance().createBNode();
 
-	private SourceConstraintComponent sourceConstraintComponent;
-	private PropertyShape sourceShape;
+	private final SourceConstraintComponent sourceConstraintComponent;
+	private final PropertyShape sourceShape;
 	private Path path;
 	private ValidationResult detail;
-	private Value focusNode;
+	private final Value focusNode;
+	private final Optional<Value> value;
 
-	public ValidationResult(PropertyShape sourceShape, Value focusNode) {
+	static Set<SourceConstraintComponent.ConstraintType> constraintTypesThatSupportValue = Arrays
+			.stream(SourceConstraintComponent.ConstraintType.values())
+			.filter(t -> t != SourceConstraintComponent.ConstraintType.Cardinality)
+			.filter(t -> t != SourceConstraintComponent.ConstraintType.Logical)
+			.collect(Collectors.toSet());
+
+	public ValidationResult(PropertyShape sourceShape, Value focusNode, Value value) {
 		this.sourceShape = sourceShape;
 		this.focusNode = focusNode;
 		this.sourceConstraintComponent = sourceShape.getSourceConstraintComponent();
 		if (sourceShape instanceof PathPropertyShape) {
 			this.path = ((PathPropertyShape) sourceShape).getPath();
+		}
+
+		if (constraintTypesThatSupportValue.contains(sourceConstraintComponent.getConstraintType())) {
+			this.value = Optional.of(value);
+		} else {
+			this.value = Optional.empty();
 		}
 
 	}
@@ -97,6 +114,8 @@ public class ValidationResult {
 			}
 		}
 
+		value.ifPresent(v -> model.add(getId(), SHACL.VALUE, v));
+
 		if (detail != null) {
 			model.add(getId(), SHACL.DETAIL, detail.getId());
 			detail.asModel(model);
@@ -146,5 +165,9 @@ public class ValidationResult {
 				", detail=" + detail +
 				", focusNode=" + focusNode +
 				'}';
+	}
+
+	public Optional<Value> getValue() {
+		return value;
 	}
 }
