@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-
 import java.util.function.Function;
+
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 public interface PlaneNodeWrapper extends Function<PlanNode, PlanNode> {
 

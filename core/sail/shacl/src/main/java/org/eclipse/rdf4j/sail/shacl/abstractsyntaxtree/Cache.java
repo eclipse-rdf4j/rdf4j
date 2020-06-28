@@ -1,10 +1,10 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
-import org.eclipse.rdf4j.model.Resource;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+
+import org.eclipse.rdf4j.model.Resource;
 
 public class Cache {
 

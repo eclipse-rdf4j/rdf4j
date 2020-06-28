@@ -8,6 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.results;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.UUID;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -19,11 +24,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Severity;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.UUID;
 
 /**
  * The ValidationResult represents the results from a SHACL validation in an easy-to-use Java API.

@@ -42,7 +42,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
 		logger.warn("SPARQL based calidation for {} has not been implemented", getConstraintComponent());
 		return new EmptyNode();
 	}

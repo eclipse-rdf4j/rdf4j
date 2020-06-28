@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -21,8 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
-
-import java.util.function.Function;
 
 /**
  * @author Håvard Ottestad

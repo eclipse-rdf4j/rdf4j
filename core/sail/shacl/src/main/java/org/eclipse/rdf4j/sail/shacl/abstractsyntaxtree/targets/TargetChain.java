@@ -1,12 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
-
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
+
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 
 public class TargetChain {
 
@@ -59,12 +59,12 @@ public class TargetChain {
 		return Optional.empty();
 	}
 
-	public EffectiveTarget getEffectiveTarget() {
+	public EffectiveTarget getEffectiveTarget(String targetVarPrefix) {
 
 		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
 		newChain.removeLast();
 
-		return new EffectiveTarget(newChain);
+		return new EffectiveTarget(newChain, targetVarPrefix);
 	}
 
 }

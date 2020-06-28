@@ -1,5 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -20,9 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.Set;
 
 public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
@@ -113,8 +113,26 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
-		throw new UnsupportedOperationException();
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+		PlanNode union = new EmptyNode();
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			PlanNode validationPlanNode = constraintComponent
+					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false);
+
+			if (!(constraintComponent instanceof PropertyShape)) {
+				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
+					return new ValidationResult(t.getTargetChain().getLast(), t.getAnyValue(), this,
+							constraintComponent.getConstraintComponent(), getSeverity());
+				});
+			}
+
+			validationPlanNode = new TargetChainPopper(validationPlanNode);
+
+			union = new UnionNode(union, validationPlanNode);
+		}
+
+		return union;
 	}
 
 	@Override

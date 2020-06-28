@@ -1,5 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -10,10 +14,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
-
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Stream;
 
 public class TargetNode extends Target {
 	private final TreeSet<Value> targetNode;

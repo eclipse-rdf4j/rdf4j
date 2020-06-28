@@ -1,5 +1,10 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.ArrayDeque;
+import java.util.Iterator;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -22,11 +27,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecu
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayDeque;
-import java.util.Iterator;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class TargetChainRetriever implements PlanNode {
 

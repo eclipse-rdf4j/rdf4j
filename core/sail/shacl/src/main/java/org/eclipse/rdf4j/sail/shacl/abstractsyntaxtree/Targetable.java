@@ -1,9 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-
-import java.util.stream.Stream;
 
 public interface Targetable {
 

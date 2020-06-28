@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.SailException;
 
 public class Sort implements PlanNode {
 

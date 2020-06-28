@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-
-import java.util.stream.Stream;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no

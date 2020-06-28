@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.Objects;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -23,8 +25,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Objects;
 
 /**
  * @author Håvard Ottestad

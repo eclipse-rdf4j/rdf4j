@@ -1,19 +1,21 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-
 public class ValidationTuple {
 
 	static ValueComparator valueComparator = new ValueComparator();
 	private final Deque<Value> targetChain;
-	private final Path path;
+	private Path path;
 	private Value value;
 
 	Deque<ValidationResult> validationResults;
@@ -33,13 +35,8 @@ public class ValidationTuple {
 		}
 	}
 
-	public ValidationTuple(BindingSet next, String[] variables) {
-		targetChain = new ArrayDeque<>();
-		for (String variable : variables) {
-			targetChain.addLast(next.getValue(variable));
-		}
-		path = null;
-		value = null;
+	public ValidationTuple(BindingSet bindingSet, String[] variables) {
+		this(bindingSet, Arrays.asList(variables));
 	}
 
 	public ValidationTuple(Value target, Path path, Value value) {
@@ -47,6 +44,13 @@ public class ValidationTuple {
 		targetChain.addLast(target);
 		this.path = path;
 		this.value = value;
+	}
+
+	public ValidationTuple(BindingSet bindingSet, List<String> variables) {
+		targetChain = new ArrayDeque<>();
+		for (String variable : variables) {
+			targetChain.addLast(bindingSet.getValue(variable));
+		}
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
@@ -101,5 +105,11 @@ public class ValidationTuple {
 
 	public boolean hasValue() {
 		return value != null;
+	}
+
+	public void setPath(Path path) {
+		if (this.path != null)
+			throw new IllegalStateException();
+		this.path = path;
 	}
 }

@@ -1,5 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -45,13 +52,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetSubjectsOf;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 	Resource id;
@@ -281,7 +281,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (validationApproach == ValidationApproach.SPARQL) {
-			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans);
+			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, false, false);
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
 			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, false,

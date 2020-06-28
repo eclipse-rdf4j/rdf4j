@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,8 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-
-import java.util.Set;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
@@ -93,8 +93,24 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans) {
-		throw new UnsupportedOperationException();
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+		PlanNode union = new EmptyNode();
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			PlanNode validationPlanNode = constraintComponent
+					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false);
+			if (!(constraintComponent instanceof PropertyShape)) {
+				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
+					return new ValidationResult(t.getValue(), t.getValue(), this,
+							constraintComponent.getConstraintComponent(), getSeverity());
+				});
+			}
+			union = new UnionNode(union,
+					validationPlanNode);
+		}
+
+		return union;
+
 	}
 
 	@Override

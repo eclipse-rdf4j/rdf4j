@@ -10,7 +10,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
-	PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans);
+	PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,

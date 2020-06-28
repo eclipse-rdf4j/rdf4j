@@ -1,12 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.io.IOException;
+import java.util.List;
+
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.OrConstraintComponent;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.util.List;
 
 public class TargetChainTest {
 

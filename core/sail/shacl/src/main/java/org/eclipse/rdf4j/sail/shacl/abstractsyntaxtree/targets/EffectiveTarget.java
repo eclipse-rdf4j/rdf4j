@@ -1,17 +1,21 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.ArrayDeque;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 
-import java.util.ArrayDeque;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 public class EffectiveTarget {
+
+	public Var getTargetVar() {
+		return chain.getLast().var;
+	}
 
 	static class EffectiveTargetObject {
 
@@ -44,13 +48,14 @@ public class EffectiveTarget {
 
 	private final ArrayDeque<EffectiveTargetObject> chain;
 
-	public EffectiveTarget(ArrayDeque<Targetable> chain) {
+	public EffectiveTarget(ArrayDeque<Targetable> chain, String targetVarPrefix) {
 		int index = 0;
 
 		this.chain = new ArrayDeque<>();
 		EffectiveTargetObject prev = null;
 		for (Targetable o : chain) {
-			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(new Var("target" + index++), o,
+			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
+					new Var(targetVarPrefix + String.format("%010d", index++)), o,
 					prev);
 			prev = effectiveTargetObject;
 			this.chain.addLast(effectiveTargetObject);
@@ -104,6 +109,17 @@ public class EffectiveTarget {
 		}
 
 		throw new UnsupportedOperationException();
+	}
+
+	public String getQuery() {
+
+		String query = chain.stream()
+				.map(EffectiveTargetObject::getQueryFragment)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+
+		return query;
+
 	}
 
 }

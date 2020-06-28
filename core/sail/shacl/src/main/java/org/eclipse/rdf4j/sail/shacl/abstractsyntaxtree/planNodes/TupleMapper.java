@@ -8,12 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.function.Function;
+
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.function.Function;
 
 public class TupleMapper implements PlanNode {
 	PlanNode parent;

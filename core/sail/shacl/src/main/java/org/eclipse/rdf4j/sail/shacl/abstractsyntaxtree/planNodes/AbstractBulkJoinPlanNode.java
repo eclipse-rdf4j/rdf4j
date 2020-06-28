@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -19,14 +27,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-
-import java.util.ArrayDeque;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
