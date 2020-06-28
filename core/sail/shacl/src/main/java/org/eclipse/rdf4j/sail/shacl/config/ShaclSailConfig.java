@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.DASH_DATA_SHAPES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
@@ -17,6 +18,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALID
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SHACL_ADVANCED_FEATURES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
@@ -202,8 +204,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
 		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
 		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
-		m.add(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
-		m.add(implNode, ShaclSailSchema.DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
+		m.add(implNode, SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
+		m.add(implNode, DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
 		return implNode;
 	}
 
@@ -245,10 +247,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
 
-			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, null))
+			Models.objectLiteral(m.getStatements(implNode, SHACL_ADVANCED_FEATURES, null))
 					.ifPresent(l -> setShaclAdvancedFeatures(l.booleanValue()));
 
-			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.DASH_DATA_SHAPES, null))
+			Models.objectLiteral(m.getStatements(implNode, DASH_DATA_SHAPES, null))
 					.ifPresent(l -> setDashDataShapes(l.booleanValue()));
 
 		} catch (IllegalArgumentException e) {

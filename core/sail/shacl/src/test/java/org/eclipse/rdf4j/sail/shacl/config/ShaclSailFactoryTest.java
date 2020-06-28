@@ -21,8 +21,8 @@ public class ShaclSailFactoryTest {
 
 	@Test
 	public void getSailTypeReturnsCorrectValue() {
-		ShaclSailFactory subject = new ShaclSailFactory();
-		assertThat(subject.getSailType()).isEqualTo(ShaclSailFactory.SAIL_TYPE);
+		ShaclSailFactory factory = new ShaclSailFactory();
+		assertThat(factory.getSailType()).isEqualTo(ShaclSailFactory.SAIL_TYPE);
 	}
 
 	/**
@@ -30,10 +30,10 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithDefaultConfigSetsConfigurationCorrectly() {
-		ShaclSailFactory subject = new ShaclSailFactory();
+		ShaclSailFactory factory = new ShaclSailFactory();
 
 		ShaclSailConfig config = new ShaclSailConfig();
-		ShaclSail sail = (ShaclSail) subject.getSail(config);
+		ShaclSail sail = (ShaclSail) factory.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 
@@ -42,7 +42,7 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithCustomConfigSetsConfigurationCorrectly() {
-		ShaclSailFactory subject = new ShaclSailFactory();
+		ShaclSailFactory factory = new ShaclSailFactory();
 
 		ShaclSailConfig config = new ShaclSailConfig();
 
@@ -61,7 +61,7 @@ public class ShaclSailFactoryTest {
 		config.setShaclAdvancedFeatures(!config.isShaclAdvancedFeatures());
 		config.setDashDataShapes(!config.isDashDataShapes());
 
-		ShaclSail sail = (ShaclSail) subject.getSail(config);
+		ShaclSail sail = (ShaclSail) factory.getSail(config);
 		assertMatchesConfig(sail, config);
 	}
 

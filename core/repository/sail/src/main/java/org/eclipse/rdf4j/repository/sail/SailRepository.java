@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.repository.RepositoryLockedException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
+import org.eclipse.rdf4j.repository.config.RepositorySettings;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailLockedException;
@@ -217,5 +218,15 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 		} else {
 			return null;
 		}
+	}
+
+	@Override
+	public RepositorySettings getSettings() {
+		return new RepositorySettings(sail.getSettings());
+	}
+
+	@Override
+	public void setSettings(RepositorySettings settings) {
+		sail.setSettings(settings.allSettings());
 	}
 }

@@ -8,6 +8,20 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.DASH_DATA_SHAPES;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SHACL_ADVANCED_FEATURES;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.ref.PhantomReference;
@@ -17,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -31,7 +46,11 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
@@ -45,8 +64,10 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema;
 import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
+import org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -862,5 +883,80 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Experimental
 	public boolean isDashDataShapes() {
 		return dashDataShapes;
+	}
+
+	@Override
+	public Map<IRI, Literal> getSettings() {
+		Map<IRI, Literal> settings = super.getSettings();
+
+		settings.put(PARALLEL_VALIDATION, BooleanLiteral.valueOf(isParallelValidation()));
+		settings.put(UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS,
+				BooleanLiteral.valueOf(isUndefinedTargetValidatesAllSubjects()));
+		settings.put(LOG_VALIDATION_PLANS, BooleanLiteral.valueOf(isLogValidationPlans()));
+		settings.put(LOG_VALIDATION_VIOLATIONS, BooleanLiteral.valueOf(isLogValidationViolations()));
+		settings.put(IGNORE_NO_SHAPES_LOADED_EXCEPTION, BooleanLiteral.valueOf(isIgnoreNoShapesLoadedException()));
+		settings.put(VALIDATION_ENABLED, BooleanLiteral.valueOf(isValidationEnabled()));
+		settings.put(CACHE_SELECT_NODES, BooleanLiteral.valueOf(isCacheSelectNodes()));
+		settings.put(GLOBAL_LOG_VALIDATION_EXECUTION, BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
+		settings.put(RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
+		settings.put(PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
+		settings.put(SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
+		settings.put(SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
+		settings.put(DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
+
+		return settings;
+	}
+
+	@Override
+	public void setSettings(Map<IRI, Literal> settings) {
+		super.setSettings(settings);
+
+		settings.forEach((key, value) -> {
+
+			if (key.equals(PARALLEL_VALIDATION)) {
+				setParallelValidation(value.booleanValue());
+			}
+			if (key.equals(UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS)) {
+				setUndefinedTargetValidatesAllSubjects(value.booleanValue());
+			}
+			if (key.equals(LOG_VALIDATION_PLANS)) {
+				setLogValidationPlans(value.booleanValue());
+			}
+			if (key.equals(LOG_VALIDATION_VIOLATIONS)) {
+				setLogValidationViolations(value.booleanValue());
+			}
+			if (key.equals(IGNORE_NO_SHAPES_LOADED_EXCEPTION)) {
+				setIgnoreNoShapesLoadedException(value.booleanValue());
+			}
+			if (key.equals(VALIDATION_ENABLED)) {
+				if (value.booleanValue()) {
+					enableValidation();
+				} else {
+					disableValidation();
+				}
+			}
+			if (key.equals(CACHE_SELECT_NODES)) {
+				setCacheSelectNodes(value.booleanValue());
+			}
+			if (key.equals(GLOBAL_LOG_VALIDATION_EXECUTION)) {
+				setGlobalLogValidationExecution(value.booleanValue());
+			}
+			if (key.equals(RDFS_SUB_CLASS_REASONING)) {
+				setRdfsSubClassReasoning(value.booleanValue());
+			}
+			if (key.equals(PERFORMANCE_LOGGING)) {
+				setPerformanceLogging(value.booleanValue());
+			}
+			if (key.equals(SERIALIZABLE_VALIDATION)) {
+				setSerializableValidation(value.booleanValue());
+			}
+			if (key.equals(SHACL_ADVANCED_FEATURES)) {
+				setShaclAdvancedFeatures(value.booleanValue());
+			}
+			if (key.equals(DASH_DATA_SHAPES)) {
+				setDashDataShapes(value.booleanValue());
+			}
+
+		});
 	}
 }

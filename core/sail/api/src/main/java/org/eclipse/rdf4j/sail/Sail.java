@@ -8,9 +8,13 @@
 package org.eclipse.rdf4j.sail;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
@@ -105,4 +109,12 @@ public interface Sail {
 	 *         returned by {@link #getConnection()}.
 	 */
 	IsolationLevel getDefaultIsolationLevel();
+
+	default Map<IRI, Literal> getSettings() {
+		return new HashMap<>();
+	}
+
+	default void setSettings(Map<IRI, Literal> settings) {
+		// no-op for backwards compatibility
+	}
 }

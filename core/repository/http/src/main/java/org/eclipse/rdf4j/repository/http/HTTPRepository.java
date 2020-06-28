@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.repository.http;
 import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
+import org.eclipse.rdf4j.repository.config.RepositorySettings;
 import org.eclipse.rdf4j.rio.RDFFormat;
 
 /**
@@ -88,13 +90,13 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		super();
 	}
 
-	public HTTPRepository(final String serverURL, final String repositoryID) {
+	public HTTPRepository(String serverURL, String repositoryID) {
 		this();
 		this.serverURL = serverURL;
 		this.repositoryURL = Protocol.getRepositoryLocation(serverURL, repositoryID);
 	}
 
-	public HTTPRepository(final String repositoryURL) {
+	public HTTPRepository(String repositoryURL) {
 		this();
 		// Try to parse the server URL from the repository URL
 		Pattern urlPattern = Pattern.compile("(.*)/" + Protocol.REPOSITORIES + "/[^/]*/?");
@@ -373,5 +375,17 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			}
 		}
 		return result;
+	}
+
+	@Override
+	public RepositorySettings getSettings() {
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+		}
+		return new RepositorySettings(new HashMap<>());
+	}
+
+	@Override
+	public void setSettings(RepositorySettings settings) {
+		super.setSettings(settings);
 	}
 }

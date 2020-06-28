@@ -14,7 +14,7 @@ rm -rf ../../../../target/
 
 # go to root of project and do clean, format, install and assembly
 cd ../../../../..
-MVN_VERSION=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)
+MVN_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 mvn clean
 mvn formatter:format
 mvn -Passembly install -DskipTests

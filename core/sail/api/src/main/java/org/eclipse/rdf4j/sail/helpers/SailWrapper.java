@@ -9,8 +9,11 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -130,5 +133,15 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	public IsolationLevel getDefaultIsolationLevel() {
 		verifyBaseSailSet();
 		return baseSail.getDefaultIsolationLevel();
+	}
+
+	@Override
+	public Map<IRI, Literal> getSettings() {
+		return baseSail.getSettings();
+	}
+
+	@Override
+	public void setSettings(Map<IRI, Literal> settings) {
+		baseSail.setSettings(settings);
 	}
 }

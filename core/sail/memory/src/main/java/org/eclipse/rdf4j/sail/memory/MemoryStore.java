@@ -9,12 +9,18 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -29,6 +35,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -364,6 +371,25 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 
 		return store.getValueFactory();
+	}
+
+	@Override
+	public Map<IRI, Literal> getSettings() {
+		HashMap<IRI, Literal> settings = new HashMap<>();
+		settings.put(MemoryStoreSchema.SYNC_DELAY, SimpleValueFactory.getInstance().createLiteral(syncDelay));
+		return settings;
+	}
+
+	@Override
+	public void setSettings(Map<IRI, Literal> settings) {
+		settings.forEach((key, value) -> {
+
+			if (key.equals(MemoryStoreSchema.SYNC_DELAY)) {
+				setSyncDelay(value.longValue());
+			}
+
+		});
+
 	}
 
 	@Override

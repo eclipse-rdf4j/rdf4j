@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositorySettings;
 
 /**
  * A {@link DelegatingRepository} implementation that, by default, forwards all method calls to its delegate.
@@ -82,6 +83,16 @@ public class RepositoryWrapper implements DelegatingRepository {
 	@Override
 	public ValueFactory getValueFactory() {
 		return getDelegate().getValueFactory();
+	}
+
+	@Override
+	public RepositorySettings getSettings() {
+		return delegate.getSettings();
+	}
+
+	@Override
+	public void setSettings(RepositorySettings settings) {
+		delegate.setSettings(settings);
 	}
 
 	@Override

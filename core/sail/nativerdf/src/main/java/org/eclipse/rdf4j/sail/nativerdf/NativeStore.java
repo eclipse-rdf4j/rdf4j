@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.io.FileUtils;
@@ -17,6 +19,8 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -339,6 +343,16 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	@Override
 	public ValueFactory getValueFactory() {
 		return store.getValueFactory();
+	}
+
+	@Override
+	public Map<IRI, Literal> getSettings() {
+		return new HashMap<>();
+	}
+
+	@Override
+	public void setSettings(Map<IRI, Literal> settings) {
+
 	}
 
 	/**
