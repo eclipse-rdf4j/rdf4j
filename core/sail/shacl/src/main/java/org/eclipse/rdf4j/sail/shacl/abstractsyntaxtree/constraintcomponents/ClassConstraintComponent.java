@@ -1,0 +1,28 @@
+package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+
+import java.util.Set;
+
+public class ClassConstraintComponent extends AbstractConstraintComponent {
+
+	Resource clazz;
+
+	public ClassConstraintComponent(Resource clazz) {
+		this.clazz = clazz;
+	}
+
+	@Override
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		model.add(subject, SHACL.CLASS, clazz);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.ClassConstraintComponent;
+	}
+}

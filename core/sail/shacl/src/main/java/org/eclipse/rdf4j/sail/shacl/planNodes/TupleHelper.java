@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import java.util.ArrayList;
-
 import org.eclipse.rdf4j.model.Value;
+
+import java.util.ArrayList;
 
 /**
  * @author Håvard Ottestad

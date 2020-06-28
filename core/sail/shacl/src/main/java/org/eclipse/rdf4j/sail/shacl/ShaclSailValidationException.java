@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Deque;
-import java.util.List;
-
 import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.phase0.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+
+import java.util.Deque;
+import java.util.List;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 

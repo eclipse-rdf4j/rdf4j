@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import java.util.function.Function;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -17,6 +15,8 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+
+import java.util.function.Function;
 
 /**
  * @author Håvard Ottestad
