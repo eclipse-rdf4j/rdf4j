@@ -7,16 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.n3;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -63,12 +62,8 @@ public class N3ParserTest {
 		assertTrue(errorCollector.getErrors().isEmpty());
 		assertTrue(errorCollector.getFatalErrors().isEmpty());
 
-		assertFalse(statementCollector.getStatements().isEmpty());
-		assertEquals(1, statementCollector.getStatements().size());
-
-		for (Statement st : statementCollector.getStatements()) {
-			System.out.println(st);
-		}
+		assertThat(statementCollector.getStatements()).containsExactly(vf.createStatement(
+				vf.createIRI("http://example.org/ex/foo"), OWL.SAMEAS, vf.createIRI("http://example.org/ex/bar")));
 	}
 
 }
