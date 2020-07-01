@@ -19,7 +19,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -75,6 +74,50 @@ public class TruncatedValidationReportTest {
 		assertEquals(10, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
 		assertEquals(10, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
 		assertEquals(20, total);
+
+	}
+
+	@Test
+	public void testZeroTotal() throws IOException {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
+
+		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
+		sail.setValidationResultsLimitTotal(0);
+
+		ValidationReport validationReport = getValidationReport(shaclRepository);
+		shaclRepository.shutDown();
+
+		Map<SourceConstraintComponent, Long> collect = validationReport.getValidationResult()
+				.stream()
+				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
+		long total = collect.values().stream().mapToLong(l -> l).sum();
+
+		assertTrue(validationReport.isTruncated());
+		assertFalse(validationReport.conforms());
+		assertEquals(0, total);
+
+	}
+
+	@Test
+	public void testZeroPerConstraint() throws IOException {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
+
+		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
+		sail.setValidationResultsLimitPerConstraint(0);
+
+		ValidationReport validationReport = getValidationReport(shaclRepository);
+		shaclRepository.shutDown();
+
+		Map<SourceConstraintComponent, Long> collect = validationReport.getValidationResult()
+				.stream()
+				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
+		long total = collect.values().stream().mapToLong(l -> l).sum();
+
+		assertTrue(validationReport.isTruncated());
+		assertFalse(validationReport.conforms());
+		assertEquals(0, total);
 
 	}
 
