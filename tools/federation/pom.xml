@@ -8,7 +8,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-tools</artifactId>
-		<version>3.2.3</version>
+		<version>3.2.4-SNAPSHOT</version>
 	</parent>
 	<properties>
 		<jetty.version>9.4.19.v20190610</jetty.version>
