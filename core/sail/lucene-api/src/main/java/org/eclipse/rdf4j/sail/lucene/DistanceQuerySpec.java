@@ -73,7 +73,7 @@ public class DistanceQuerySpec extends AbstractSearchQueryEvaluator {
 	}
 
 	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty, String geoVar,
-			String subjectVar, Var contextVar) {
+		String subjectVar, Var contextVar) {
 		this.from = from;
 		this.units = units;
 		this.distance = dist;

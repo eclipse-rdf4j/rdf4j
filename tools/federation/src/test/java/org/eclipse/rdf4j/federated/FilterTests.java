@@ -70,19 +70,19 @@ public class FilterTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl"));
 
 		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
-				"PREFIX ns1: <http://namespace1.org/> "
-				+ "SELECT * WHERE { "
-				+ "?person a foaf:Person ."
-				+ "?person foaf:name \"Person1\" .\n"
-				+ "?person foaf:age 20 . "
-				+ "FILTER (?person=ns1:Person_1)"
-				+ "}";
+			"PREFIX ns1: <http://namespace1.org/> "
+			+ "SELECT * WHERE { "
+			+ "?person a foaf:Person ."
+			+ "?person foaf:name \"Person1\" .\n"
+			+ "?person foaf:age 20 . "
+			+ "FILTER (?person=ns1:Person_1)"
+			+ "}";
 
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "person",
-					Sets.newHashSet(iri("http://namespace1.org/", "Person_1")));
+				Sets.newHashSet(iri("http://namespace1.org/", "Person_1")));
 		}
 	}
 }

@@ -77,7 +77,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * @throws UnsupportedQueryResultFormatException
 	 */
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
-			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+		QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		return QueryResultIO.parseTuple(in, format);
 	}
 
@@ -135,7 +135,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution10.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
 
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4, solution5,
-				solution6, solution7, solution8, solution9, solution10);
+			solution6, solution7, solution8, solution9, solution10);
 
 		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);
 
@@ -175,7 +175,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution6.addBinding("c", vf.createBNode("bnode1"));
 
 		List<? extends BindingSet> bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4,
-				solution5);
+			solution5);
 
 		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);
 
@@ -214,8 +214,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected,
-			List<String> links) throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, IOException {
+		List<String> links) throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
@@ -232,8 +232,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleLinksAndStylesheet(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
-			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
+		QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
@@ -251,9 +251,9 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleLinksAndStylesheetAndNamespaces(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl, Map<String, String> namespaces)
-			throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl, Map<String, String> namespaces)
+		throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		for (String nextPrefix : namespaces.keySet()) {
@@ -277,9 +277,9 @@ public abstract class AbstractQueryResultIOTest {
 	 * Test specifically for QName support.
 	 */
 	protected void doTupleLinksAndStylesheetAndNamespacesQName(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl, Map<String, String> namespaces)
-			throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl, Map<String, String> namespaces)
+		throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		if (writer.getSupportedSettings().contains(BasicQueryWriterSettings.ADD_SESAME_QNAME)) {
@@ -319,8 +319,8 @@ public abstract class AbstractQueryResultIOTest {
 	 * Test specifically for JSONP callback support.
 	 */
 	protected void doTupleJSONPCallback(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected) throws QueryResultHandlerException, QueryEvaluationException,
-			QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected) throws QueryResultHandlerException, QueryEvaluationException,
+		QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 
@@ -353,8 +353,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleNoLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
-			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException,
-			QueryEvaluationException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException,
+		QueryEvaluationException, QueryResultHandlerException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		QueryResultIO.writeTuple(input, format, out);
 		input.close();
@@ -368,8 +368,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleStylesheet(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected,
-			String stylesheetUrl) throws QueryResultHandlerException, QueryEvaluationException,
-			QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		String stylesheetUrl) throws QueryResultHandlerException, QueryEvaluationException,
+		QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.handleStylesheet(stylesheetUrl);
@@ -384,8 +384,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleLinksAndStylesheetNoStarts(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
-			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
+		QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		// Test for handling when startDocument and startHeader are not called
@@ -402,8 +402,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doTupleLinksAndStylesheetMultipleEndHeaders(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
-			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
+		QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		// Test for handling when startDocument and startHeader are not called
@@ -431,14 +431,14 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
-			throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
-			UnsupportedEncodingException {
+		throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
+		UnsupportedEncodingException {
 		assertTrue(QueryResults.equals(expected, output));
 	}
 
 	protected void doTupleMissingStartQueryResult(TupleQueryResultFormat format, TupleQueryResult input,
-			TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
-			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+		TupleQueryResult expected, List<String> links, String stylesheetUrl) throws QueryResultHandlerException,
+		QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		// Test for handling when startDocument and startHeader are not called
@@ -474,8 +474,8 @@ public abstract class AbstractQueryResultIOTest {
 	 * @throws UnsupportedQueryResultFormatException
 	 */
 	protected void doTupleNoHandler(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
-			throws QueryResultParseException, IOException, TupleQueryResultHandlerException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		throws QueryResultParseException, IOException, TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		QueryResultIO.writeTuple(input, format, out);
 		out.flush();
@@ -501,8 +501,8 @@ public abstract class AbstractQueryResultIOTest {
 	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1860">SES-1860</a>
 	 */
 	protected void doTupleParseNoHandlerOnBooleanResults(TupleQueryResultFormat format, boolean input,
-			BooleanQueryResultFormat matchingBooleanFormat)
-			throws UnsupportedQueryResultFormatException, QueryResultHandlerException, IOException {
+		BooleanQueryResultFormat matchingBooleanFormat)
+		throws UnsupportedQueryResultFormatException, QueryResultHandlerException, IOException {
 		if (matchingBooleanFormat == null) {
 			// This test is not supported for this boolean format
 			return;
@@ -527,8 +527,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanNoLinks(BooleanQueryResultFormat format, boolean input)
-			throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		QueryResultIO.writeBoolean(input, format, out);
 		out.flush();
@@ -539,8 +539,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanLinksOnly(BooleanQueryResultFormat format, boolean input, List<String> links)
-			throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		writer.handleLinks(links);
@@ -555,8 +555,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doInvalidBooleanAfterStartQueryResult(BooleanQueryResultFormat format, boolean input,
-			List<String> links) throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		List<String> links) throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		writer.handleLinks(links);
@@ -583,8 +583,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanLinks(BooleanQueryResultFormat format, boolean input, List<String> links)
-			throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		writer.startDocument();
@@ -601,8 +601,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanLinksAndStylesheet(BooleanQueryResultFormat format, boolean input, List<String> links,
-			String stylesheetUrl) throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		String stylesheetUrl) throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		writer.startDocument();
@@ -620,9 +620,9 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanLinksAndStylesheetAndNamespaces(BooleanQueryResultFormat format, boolean input,
-			List<String> links, String stylesheetUrl, Map<String, String> namespaces)
-			throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		List<String> links, String stylesheetUrl, Map<String, String> namespaces)
+		throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		for (String nextPrefix : namespaces.keySet()) {
@@ -643,8 +643,8 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected void doBooleanStylesheet(BooleanQueryResultFormat format, boolean input, String stylesheetUrl)
-			throws IOException, QueryResultHandlerException, QueryResultParseException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException {
+		throws IOException, QueryResultHandlerException, QueryResultParseException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);
 		writer.handleStylesheet(stylesheetUrl);
@@ -668,7 +668,7 @@ public abstract class AbstractQueryResultIOTest {
 	 * @throws IOException
 	 */
 	protected void doBooleanNoHandler(BooleanQueryResultFormat format, boolean input)
-			throws QueryResultParseException, IOException {
+		throws QueryResultParseException, IOException {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
 		QueryResultIO.writeBoolean(input, format, out);
 		out.flush();
@@ -692,8 +692,8 @@ public abstract class AbstractQueryResultIOTest {
 	 * @see <a href="https://openrdf.atlassian.net/browse/SES-1860">SES-1860</a>
 	 */
 	protected void doBooleanParseNoHandlerOnTupleResults(BooleanQueryResultFormat format, TupleQueryResult tqr,
-			TupleQueryResultFormat matchingTupleFormat) throws TupleQueryResultHandlerException,
-			UnsupportedQueryResultFormatException, QueryEvaluationException, IOException {
+		TupleQueryResultFormat matchingTupleFormat) throws TupleQueryResultHandlerException,
+		UnsupportedQueryResultFormatException, QueryEvaluationException, IOException {
 		if (matchingTupleFormat == null) {
 			// This test is not supported for this boolean format
 			return;

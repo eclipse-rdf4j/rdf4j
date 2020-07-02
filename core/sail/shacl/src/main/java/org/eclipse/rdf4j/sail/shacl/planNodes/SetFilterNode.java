@@ -92,7 +92,7 @@ public class SetFilterNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -110,8 +110,8 @@ public class SetFilterNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "SetFilterNode{" + "targetNodeList="
-				+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
-				+ ", returnValid=" + returnValid + '}';
+			+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
+			+ ", returnValid=" + returnValid + '}';
 	}
 
 	@Override

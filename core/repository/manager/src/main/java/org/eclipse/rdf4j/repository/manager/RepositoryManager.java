@@ -255,7 +255,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	}
 
 	public RepositoryConfig getRepositoryConfig(String repositoryID)
-			throws RepositoryConfigException, RepositoryException {
+		throws RepositoryConfigException, RepositoryException {
 		Repository systemRepository = getSystemRepository();
 		if (systemRepository == null) {
 			return null;
@@ -319,7 +319,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					cleanUpRepository(repositoryID);
 				} catch (IOException e) {
 					throw new RepositoryException("Unable to clean up resources for removed repository " + repositoryID,
-							e);
+						e);
 				}
 			}
 		}
@@ -383,7 +383,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					cleanUpRepository(repositoryID);
 				} catch (IOException e) {
 					throw new RepositoryException("Unable to clean up resources for removed repository " + repositoryID,
-							e);
+						e);
 				}
 			}
 		}
@@ -631,7 +631,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 			logger.error("Failed to process repository configuration changes", e);
 		} catch (RepositoryConfigException e) {
 			logger.warn("Unable to determine if configuration for {} is still present in the system repository",
-					repositoryID);
+				repositoryID);
 		} catch (IOException e) {
 			logger.warn("Unable to remove data dir for removed repository {} ", repositoryID);
 		}

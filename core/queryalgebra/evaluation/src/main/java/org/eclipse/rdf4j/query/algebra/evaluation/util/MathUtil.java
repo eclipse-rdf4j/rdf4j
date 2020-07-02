@@ -140,7 +140,7 @@ public class MathUtil {
 						// non-terminating decimal expansion in quotient, using
 						// scaling and rounding.
 						result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)
-								.divide(right, RoundingMode.HALF_UP);
+							.divide(right, RoundingMode.HALF_UP);
 					}
 
 					return vf.createLiteral(result);

@@ -68,8 +68,8 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 				Tuple tuple = buffer.remove();
 				if (GlobalValidationExecutionLogging.loggingEnabled) {
 					validationExecutionLogger.log(depth(),
-							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
-							getId());
+						parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
+						getId());
 				}
 				return tuple;
 			}
@@ -96,7 +96,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 	}
 
 	@Override

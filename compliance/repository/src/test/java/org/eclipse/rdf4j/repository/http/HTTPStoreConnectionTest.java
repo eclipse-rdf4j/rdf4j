@@ -97,7 +97,7 @@ public class HTTPStoreConnectionTest extends RepositoryConnectionTest {
 	public void testAddMalformedLiteralsDefaultConfig() throws Exception {
 		try {
 			testCon.add(RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "malformed-literals.ttl"),
-					"", RDFFormat.TURTLE);
+				"", RDFFormat.TURTLE);
 		} catch (RDF4JException e) {
 			fail("upload of malformed literals should not fail with error in default configuration for HTTPRepository");
 		}

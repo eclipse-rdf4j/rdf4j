@@ -161,7 +161,7 @@ abstract public class AbstractShaclTest {
 	final IsolationLevel isolationLevel;
 
 	public AbstractShaclTest(String testCasePath, String path, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+		IsolationLevel isolationLevel) {
 		this.testCasePath = testCasePath;
 		this.path = path;
 		this.expectedResult = expectedResult;
@@ -229,7 +229,7 @@ abstract public class AbstractShaclTest {
 			for (ExpectedResult baseCase : ExpectedResult.values()) {
 				findTestCases(testCasePath, baseCase.name()).forEach(path -> {
 					for (IsolationLevel isolationLevel : Arrays.asList(IsolationLevels.NONE, IsolationLevels.SNAPSHOT,
-							IsolationLevels.SERIALIZABLE)) {
+						IsolationLevels.SERIALIZABLE)) {
 						Object[] temp = { testCasePath, path, baseCase, isolationLevel };
 						ret.add(temp);
 					}
@@ -242,7 +242,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel, boolean preloadWithDummyData) {
+		IsolationLevel isolationLevel, boolean preloadWithDummyData) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -274,7 +274,7 @@ abstract public class AbstractShaclTest {
 				connection.begin(isolationLevel);
 				ValueFactory vf = connection.getValueFactory();
 				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
-						vf.createLiteral("auto-generated!"), vf.createBNode());
+					vf.createLiteral("auto-generated!"), vf.createBNode());
 				try {
 					connection.commit();
 				} catch (RepositoryException sailException) {
@@ -292,9 +292,9 @@ abstract public class AbstractShaclTest {
 
 		URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 		List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-				.stream()
-				.sorted()
-				.collect(Collectors.toList());
+			.stream()
+			.sorted()
+			.collect(Collectors.toList());
 
 		for (File queryFile : queries) {
 			try {
@@ -378,14 +378,14 @@ abstract public class AbstractShaclTest {
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
-					"utf-8");
+				"utf-8");
 			s = Arrays
-					.stream(s.split("\n"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@prefix"))
-					.filter(a -> !a.trim().toLowerCase().startsWith("@base"))
-					.filter(a -> !a.trim().toUpperCase().startsWith("PREFIX "))
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
+				.stream(s.split("\n"))
+				.filter(a -> !a.trim().toLowerCase().startsWith("@prefix"))
+				.filter(a -> !a.trim().toLowerCase().startsWith("@base"))
+				.filter(a -> !a.trim().toUpperCase().startsWith("PREFIX "))
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
 			System.out.println(s);
 			System.out.println("################################################\n");
 		} catch (IOException e) {
@@ -394,7 +394,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+		IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -420,9 +420,9 @@ abstract public class AbstractShaclTest {
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-					.stream()
-					.sorted()
-					.collect(Collectors.toList());
+				.stream()
+				.sorted()
+				.collect(Collectors.toList());
 
 			for (File queryFile : queries) {
 				try {
@@ -465,7 +465,7 @@ abstract public class AbstractShaclTest {
 	}
 
 	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
+		IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
@@ -491,9 +491,9 @@ abstract public class AbstractShaclTest {
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-					.stream()
-					.sorted()
-					.collect(Collectors.toList());
+				.stream()
+				.sorted()
+				.collect(Collectors.toList());
 
 			for (File queryFile : queries) {
 				try {
@@ -545,7 +545,7 @@ abstract public class AbstractShaclTest {
 
 	private static void printResults(RepositoryException sailException) {
 		ValidationReport validationReport = ((ShaclSailValidationException) sailException.getCause())
-				.getValidationReport();
+			.getValidationReport();
 		printResults(validationReport);
 	}
 

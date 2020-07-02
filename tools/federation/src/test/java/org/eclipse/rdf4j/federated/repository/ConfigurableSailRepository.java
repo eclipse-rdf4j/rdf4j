@@ -65,7 +65,7 @@ public class ConfigurableSailRepository extends SailRepository implements Reposi
 
 	@Override
 	public SailRepositoryConnection getConnection()
-			throws RepositoryException {
+		throws RepositoryException {
 		try {
 			return new ConfigurableSailRepositoryConnection(this, getSail().getConnection());
 		} catch (SailException e) {

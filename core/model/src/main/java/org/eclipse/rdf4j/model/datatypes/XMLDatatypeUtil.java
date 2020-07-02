@@ -50,9 +50,9 @@ public class XMLDatatypeUtil {
 	}
 
 	private final static Pattern P_DURATION = Pattern.compile(
-			"-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
+		"-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
 	private final static Pattern P_DAYTIMEDURATION = Pattern.compile(
-			"-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
+		"-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
 	private final static Pattern P_YEARMONTHDURATION = Pattern.compile("-?P((\\d)+Y)?((\\d)+M)?");
 	private final static Pattern P_TIMEZONE = Pattern.compile(".*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$");
 	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
@@ -75,15 +75,15 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isPrimitiveDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DATETIME)
-				|| datatype.equals(XMLSchema.TIME) || datatype.equals(XMLSchema.DATE)
-				|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GYEAR)
-				|| datatype.equals(XMLSchema.GMONTHDAY) || datatype.equals(XMLSchema.GDAY)
-				|| datatype.equals(XMLSchema.GMONTH) || datatype.equals(XMLSchema.STRING)
-				|| datatype.equals(XMLSchema.BOOLEAN) || datatype.equals(XMLSchema.BASE64BINARY)
-				|| datatype.equals(XMLSchema.HEXBINARY) || datatype.equals(XMLSchema.FLOAT)
-				|| datatype.equals(XMLSchema.DECIMAL) || datatype.equals(XMLSchema.DOUBLE)
-				|| datatype.equals(XMLSchema.ANYURI) || datatype.equals(XMLSchema.QNAME)
-				|| datatype.equals(XMLSchema.NOTATION);
+			|| datatype.equals(XMLSchema.TIME) || datatype.equals(XMLSchema.DATE)
+			|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GYEAR)
+			|| datatype.equals(XMLSchema.GMONTHDAY) || datatype.equals(XMLSchema.GDAY)
+			|| datatype.equals(XMLSchema.GMONTH) || datatype.equals(XMLSchema.STRING)
+			|| datatype.equals(XMLSchema.BOOLEAN) || datatype.equals(XMLSchema.BASE64BINARY)
+			|| datatype.equals(XMLSchema.HEXBINARY) || datatype.equals(XMLSchema.FLOAT)
+			|| datatype.equals(XMLSchema.DECIMAL) || datatype.equals(XMLSchema.DOUBLE)
+			|| datatype.equals(XMLSchema.ANYURI) || datatype.equals(XMLSchema.QNAME)
+			|| datatype.equals(XMLSchema.NOTATION);
 	}
 
 	/**
@@ -94,19 +94,19 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isDerivedDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.NORMALIZEDSTRING) || datatype.equals(XMLSchema.TOKEN)
-				|| datatype.equals(XMLSchema.LANGUAGE) || datatype.equals(XMLSchema.NMTOKEN)
-				|| datatype.equals(XMLSchema.NMTOKENS) || datatype.equals(XMLSchema.NAME)
-				|| datatype.equals(XMLSchema.NCNAME) || datatype.equals(XMLSchema.ID)
-				|| datatype.equals(XMLSchema.IDREF) || datatype.equals(XMLSchema.IDREFS)
-				|| datatype.equals(XMLSchema.ENTITY) || datatype.equals(XMLSchema.ENTITIES)
-				|| datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG)
-				|| datatype.equals(XMLSchema.INT) || datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
-				|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
-				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
-				|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
-				|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE)
-				|| datatype.equals(XMLSchema.DAYTIMEDURATION) || datatype.equals(XMLSchema.YEARMONTHDURATION)
-				|| datatype.equals(XMLSchema.DATETIMESTAMP);
+			|| datatype.equals(XMLSchema.LANGUAGE) || datatype.equals(XMLSchema.NMTOKEN)
+			|| datatype.equals(XMLSchema.NMTOKENS) || datatype.equals(XMLSchema.NAME)
+			|| datatype.equals(XMLSchema.NCNAME) || datatype.equals(XMLSchema.ID)
+			|| datatype.equals(XMLSchema.IDREF) || datatype.equals(XMLSchema.IDREFS)
+			|| datatype.equals(XMLSchema.ENTITY) || datatype.equals(XMLSchema.ENTITIES)
+			|| datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG)
+			|| datatype.equals(XMLSchema.INT) || datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
+			|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
+			|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
+			|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
+			|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE)
+			|| datatype.equals(XMLSchema.DAYTIMEDURATION) || datatype.equals(XMLSchema.YEARMONTHDURATION)
+			|| datatype.equals(XMLSchema.DATETIMESTAMP);
 	}
 
 	/**
@@ -150,11 +150,11 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isIntegerDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.INTEGER) || datatype.equals(XMLSchema.LONG) || datatype.equals(XMLSchema.INT)
-				|| datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
-				|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
-				|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
-				|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
-				|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE);
+			|| datatype.equals(XMLSchema.SHORT) || datatype.equals(XMLSchema.BYTE)
+			|| datatype.equals(XMLSchema.NON_POSITIVE_INTEGER) || datatype.equals(XMLSchema.NEGATIVE_INTEGER)
+			|| datatype.equals(XMLSchema.NON_NEGATIVE_INTEGER) || datatype.equals(XMLSchema.POSITIVE_INTEGER)
+			|| datatype.equals(XMLSchema.UNSIGNED_LONG) || datatype.equals(XMLSchema.UNSIGNED_INT)
+			|| datatype.equals(XMLSchema.UNSIGNED_SHORT) || datatype.equals(XMLSchema.UNSIGNED_BYTE);
 	}
 
 	/**
@@ -177,9 +177,9 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATE) || datatype.equals(XMLSchema.TIME)
-				|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GMONTHDAY)
-				|| datatype.equals(XMLSchema.GYEAR) || datatype.equals(XMLSchema.GMONTH)
-				|| datatype.equals(XMLSchema.GDAY) || datatype.equals(XMLSchema.DATETIMESTAMP);
+			|| datatype.equals(XMLSchema.GYEARMONTH) || datatype.equals(XMLSchema.GMONTHDAY)
+			|| datatype.equals(XMLSchema.GYEAR) || datatype.equals(XMLSchema.GMONTH)
+			|| datatype.equals(XMLSchema.GDAY) || datatype.equals(XMLSchema.DATETIMESTAMP);
 
 	}
 
@@ -193,7 +193,7 @@ public class XMLDatatypeUtil {
 	 */
 	public static boolean isDurationDatatype(IRI datatype) {
 		return datatype.equals(XMLSchema.DURATION) || datatype.equals(XMLSchema.DAYTIMEDURATION)
-				|| datatype.equals(XMLSchema.YEARMONTHDURATION);
+			|| datatype.equals(XMLSchema.YEARMONTHDURATION);
 	}
 
 	/**
@@ -746,10 +746,10 @@ public class XMLDatatypeUtil {
 
 	private static boolean isPrefixStartChar(int c) {
 		return ASCIIUtil.isLetter(c) || c >= 0x00C0 && c <= 0x00D6 || c >= 0x00D8 && c <= 0x00F6
-				|| c >= 0x00F8 && c <= 0x02FF || c >= 0x0370 && c <= 0x037D || c >= 0x037F && c <= 0x1FFF
-				|| c >= 0x200C && c <= 0x200D || c >= 0x2070 && c <= 0x218F || c >= 0x2C00 && c <= 0x2FEF
-				|| c >= 0x3001 && c <= 0xD7FF || c >= 0xF900 && c <= 0xFDCF || c >= 0xFDF0 && c <= 0xFFFD
-				|| c >= 0x10000 && c <= 0xEFFFF;
+			|| c >= 0x00F8 && c <= 0x02FF || c >= 0x0370 && c <= 0x037D || c >= 0x037F && c <= 0x1FFF
+			|| c >= 0x200C && c <= 0x200D || c >= 0x2070 && c <= 0x218F || c >= 0x2C00 && c <= 0x2FEF
+			|| c >= 0x3001 && c <= 0xD7FF || c >= 0xF900 && c <= 0xFDCF || c >= 0xFDF0 && c <= 0xFFFD
+			|| c >= 0x10000 && c <= 0xEFFFF;
 	}
 
 	private static boolean isNameStartChar(int c) {
@@ -758,7 +758,7 @@ public class XMLDatatypeUtil {
 
 	private static boolean isNameChar(int c) {
 		return isNameStartChar(c) || ASCIIUtil.isNumber(c) || c == '-' || c == 0x00B7 || c >= 0x0300 && c <= 0x036F
-				|| c >= 0x203F && c <= 0x2040;
+			|| c >= 0x203F && c <= 0x2040;
 	}
 
 	/**
@@ -1167,7 +1167,7 @@ public class XMLDatatypeUtil {
 	 * @throws IllegalArgumentException If the supplied value is not a legal floating point lexical value.
 	 */
 	private static String normalizeFPNumber(String value, String minMantissa, String maxMantissa, String minExponent,
-			String maxExponent) {
+		String maxExponent) {
 		value = collapseWhiteSpace(value);
 
 		if (value.contains(" ")) {

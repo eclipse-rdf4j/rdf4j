@@ -19,25 +19,25 @@ import org.junit.Test;
 
 public class QuerySpecTest extends SearchQueryEvaluatorTest {
 	private static final String QUERY = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>\n" +
-			"SELECT * {" +
-			"   ?searchR search:matches [" +
-			"       search:query \"test\" ;" +
-			"       search:score ?score" +
-			"   ] ." +
-			"   ?searchR rdfs:label ?label ." +
-			"}";
+		"SELECT * {" +
+		"   ?searchR search:matches [" +
+		"       search:query \"test\" ;" +
+		"       search:score ?score" +
+		"   ] ." +
+		"   ?searchR rdfs:label ?label ." +
+		"}";
 
 	@Test
 	public void testReplaceQueryPatternsWithNonEmptyResults() {
 		final String expectedQueryPlan = "Join\n" +
-				"   Join\n" +
-				"      SingletonSet\n" +
-				"      SingletonSet\n" +
-				"   BindingSetAssignment ([[searchR=urn:1]])\n";
+			"   Join\n" +
+			"      SingletonSet\n" +
+			"      SingletonSet\n" +
+			"   BindingSetAssignment ([[searchR=urn:1]])\n";
 		final ParsedQuery query = parseQuery(QUERY);
 		final List<SearchQueryEvaluator> queries = new ArrayList<>();
 		new QuerySpecBuilder(true)
-				.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
+			.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
 		assertEquals(1, queries.size());
 		QuerySpec querySpec = (QuerySpec) queries.get(0);
 		BindingSetAssignment bsa = new BindingSetAssignment();
@@ -50,14 +50,14 @@ public class QuerySpecTest extends SearchQueryEvaluatorTest {
 	@Test
 	public void testReplaceQueryPatternsWithEmptyResults() {
 		final String expectedQueryPlan = "Join\n" +
-				"   Join\n" +
-				"      SingletonSet\n" +
-				"      SingletonSet\n" +
-				"   EmptySet\n";
+			"   Join\n" +
+			"      SingletonSet\n" +
+			"      SingletonSet\n" +
+			"   EmptySet\n";
 		final ParsedQuery query = parseQuery(QUERY);
 		final List<SearchQueryEvaluator> queries = new ArrayList<>();
 		new QuerySpecBuilder(true)
-				.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
+			.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
 		assertEquals(1, queries.size());
 		QuerySpec querySpec = (QuerySpec) queries.get(0);
 		BindingSetAssignment bsa = new BindingSetAssignment();

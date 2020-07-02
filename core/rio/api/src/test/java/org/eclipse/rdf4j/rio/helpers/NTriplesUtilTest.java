@@ -57,16 +57,16 @@ public class NTriplesUtilTest {
 	@Test
 	public void testSerializeTriple() throws IOException {
 		Object[] triples = new Object[] {
-				f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c")),
-				"<<<urn:a> <urn:b> <urn:c>>>",
-				//
-				f.createTriple(f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c")),
-						DC.SOURCE, f.createLiteral("news")),
-				"<<<<<urn:a> <urn:b> <urn:c>>> <http://purl.org/dc/elements/1.1/source> \"news\">>",
-				//
-				f.createTriple(f.createBNode("bnode1"), f.createIRI("urn:x"),
-						f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c"))),
-				"<<_:bnode1 <urn:x> <<<urn:a> <urn:b> <urn:c>>>>>"
+			f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c")),
+			"<<<urn:a> <urn:b> <urn:c>>>",
+			//
+			f.createTriple(f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c")),
+				DC.SOURCE, f.createLiteral("news")),
+			"<<<<<urn:a> <urn:b> <urn:c>>> <http://purl.org/dc/elements/1.1/source> \"news\">>",
+			//
+			f.createTriple(f.createBNode("bnode1"), f.createIRI("urn:x"),
+				f.createTriple(f.createIRI("urn:a"), f.createIRI("urn:b"), f.createIRI("urn:c"))),
+			"<<_:bnode1 <urn:x> <<<urn:a> <urn:b> <urn:c>>>>>"
 		};
 
 		for (int i = 0; i < triples.length; i += 2) {
@@ -88,35 +88,35 @@ public class NTriplesUtilTest {
 	@Test
 	public void testParseTriple() {
 		String[] triples = new String[] {
-				"<<<http://foo.com/bar#baz%20><http://example.com/test><<<urn:foo><urn:\\u0440>\"täst\"@de-DE>>>>",
-				"<<http://foo.com/bar#baz%20 http://example.com/test <<urn:foo urn:р \"täst\"@de-DE>>>>",
-				//
-				"<< <http://foo.com/bar#baz%20>  <http://example.com/test>  <<  <urn:foo>  <urn:\\u0440> \"täst\"@de-DE  >>  >>",
-				"<<http://foo.com/bar#baz%20 http://example.com/test <<urn:foo urn:р \"täst\"@de-DE>>>>",
-				//
-				"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444>>><http://test/baz>\"test\\\\\\\"lit\">>",
-				"<<<<_:bnode1foobar urn:täst \"literál за проба\"^^<urn:testфф>>> http://test/baz \"test\\\"lit\">>",
-				//
-				"<<  <<_:bnode1foobar<urn:täst> \"literál за проба\"^^<urn:test\\u0444\\U00000444>  >>  <http://test/baz> \"test\\\\\\\"lit\" >>",
-				"<<<<_:bnode1foobar urn:täst \"literál за проба\"^^<urn:testфф>>> http://test/baz \"test\\\"lit\">>",
-				// test surrogate pair range in bnode
-				"<<_:test_\uD800\uDC00_\uD840\uDC00_bnode <urn:x> <urn:y>>>",
-				"<<_:test_\uD800\uDC00_\uD840\uDC00_bnode urn:x urn:y>>",
-				// invalid: missing closing >> for inner triple
-				"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444><http://test/baz>\"test\\\\\\\"lit\">>",
-				null,
-				// invalid: missing closing >> for outer triple
-				"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444>>><http://test/baz>\"test\\\\\\\"lit\"",
-				null,
-				// invalid: literal subject
-				"<<\"test\" <urn:test> \"test\">>",
-				null,
-				// invalid: bnode predicate
-				"<<<urn:test> _:test \"test\">>",
-				null,
-				// invalid: triple predicate
-				"<<<urn:a> <<<urn:1> <urn:2> <urn:3>>> <urn:b>>>",
-				null
+			"<<<http://foo.com/bar#baz%20><http://example.com/test><<<urn:foo><urn:\\u0440>\"täst\"@de-DE>>>>",
+			"<<http://foo.com/bar#baz%20 http://example.com/test <<urn:foo urn:р \"täst\"@de-DE>>>>",
+			//
+			"<< <http://foo.com/bar#baz%20>  <http://example.com/test>  <<  <urn:foo>  <urn:\\u0440> \"täst\"@de-DE  >>  >>",
+			"<<http://foo.com/bar#baz%20 http://example.com/test <<urn:foo urn:р \"täst\"@de-DE>>>>",
+			//
+			"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444>>><http://test/baz>\"test\\\\\\\"lit\">>",
+			"<<<<_:bnode1foobar urn:täst \"literál за проба\"^^<urn:testфф>>> http://test/baz \"test\\\"lit\">>",
+			//
+			"<<  <<_:bnode1foobar<urn:täst> \"literál за проба\"^^<urn:test\\u0444\\U00000444>  >>  <http://test/baz> \"test\\\\\\\"lit\" >>",
+			"<<<<_:bnode1foobar urn:täst \"literál за проба\"^^<urn:testфф>>> http://test/baz \"test\\\"lit\">>",
+			// test surrogate pair range in bnode
+			"<<_:test_\uD800\uDC00_\uD840\uDC00_bnode <urn:x> <urn:y>>>",
+			"<<_:test_\uD800\uDC00_\uD840\uDC00_bnode urn:x urn:y>>",
+			// invalid: missing closing >> for inner triple
+			"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444><http://test/baz>\"test\\\\\\\"lit\">>",
+			null,
+			// invalid: missing closing >> for outer triple
+			"<<<<_:bnode1foobar<urn:täst>\"literál за проба\"^^<urn:test\\u0444\\U00000444>>><http://test/baz>\"test\\\\\\\"lit\"",
+			null,
+			// invalid: literal subject
+			"<<\"test\" <urn:test> \"test\">>",
+			null,
+			// invalid: bnode predicate
+			"<<<urn:test> _:test \"test\">>",
+			null,
+			// invalid: triple predicate
+			"<<<urn:a> <<<urn:1> <urn:2> <urn:3>>> <urn:b>>>",
+			null
 		};
 
 		for (int i = 0; i < triples.length; i += 2) {

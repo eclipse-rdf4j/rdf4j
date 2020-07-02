@@ -33,7 +33,7 @@ public class DecimalFormat extends BinaryFunction {
 		java.text.DecimalFormat formatter = new java.text.DecimalFormat(format.getLabel());
 		String value;
 		if (XMLSchema.INT.equals(number.getDatatype()) || XMLSchema.LONG.equals(number.getDatatype())
-				|| XMLSchema.SHORT.equals(number.getDatatype()) || XMLSchema.BYTE.equals(number.getDatatype())) {
+			|| XMLSchema.SHORT.equals(number.getDatatype()) || XMLSchema.BYTE.equals(number.getDatatype())) {
 			value = formatter.format(number.longValue());
 		} else if (XMLSchema.DECIMAL.equals(number.getDatatype())) {
 			value = formatter.format(number.decimalValue());

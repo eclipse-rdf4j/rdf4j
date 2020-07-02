@@ -102,7 +102,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	@Override
 	public synchronized void parse(InputStream in)
-			throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
@@ -310,7 +310,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 		if (encodedString.length != stringLength) {
 			throw new EOFException("Attempted to read " + stringLength + " bytes but no more than "
-					+ encodedString.length + " were available");
+				+ encodedString.length + " were available");
 		}
 
 		ByteBuffer byteBuf = ByteBuffer.wrap(encodedString);

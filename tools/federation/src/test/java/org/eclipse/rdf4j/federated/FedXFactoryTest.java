@@ -38,10 +38,10 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		RepositoryResolver repositoryResolver = ((SPARQLEmbeddedServer) server).getRepositoryResolver();
 
 		FedXRepository repo = FedXFactory.newFederation()
-				.withRepositoryResolver(repositoryResolver)
-				.withResolvableEndpoint("endpoint1")
-				.withResolvableEndpoint("endpoint2")
-				.create();
+			.withRepositoryResolver(repositoryResolver)
+			.withResolvableEndpoint("endpoint1")
+			.withResolvableEndpoint("endpoint2")
+			.create();
 
 		repo.init();
 		federationContext = repo.getFederationContext();
@@ -63,10 +63,10 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		RepositoryResolver repositoryResolver = ((SPARQLEmbeddedServer) server).getRepositoryResolver();
 
 		FedXRepository repo = FedXFactory.newFederation()
-				.withRepositoryResolver(repositoryResolver)
-				.withResolvableEndpoint("endpoint1", true)
-				.withResolvableEndpoint("endpoint2")
-				.create();
+			.withRepositoryResolver(repositoryResolver)
+			.withResolvableEndpoint("endpoint1", true)
+			.withResolvableEndpoint("endpoint2")
+			.create();
 
 		repo.init();
 
@@ -95,9 +95,9 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		File dataConfig = toFile("/tests/dataconfig/resolvableRepositories.ttl");
 
 		FedXRepository repo = FedXFactory.newFederation()
-				.withRepositoryResolver(repositoryResolver)
-				.withMembers(dataConfig)
-				.create();
+			.withRepositoryResolver(repositoryResolver)
+			.withMembers(dataConfig)
+			.create();
 
 		repo.init();
 		federationContext = repo.getFederationContext();

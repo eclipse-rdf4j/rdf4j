@@ -59,11 +59,11 @@ public class AddBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
-						false));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+				false));
 
 		System.gc();
 

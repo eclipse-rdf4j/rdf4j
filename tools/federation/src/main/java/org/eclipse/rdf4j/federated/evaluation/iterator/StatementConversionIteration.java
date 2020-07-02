@@ -36,7 +36,7 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 	protected boolean updateContext = false;
 
 	public StatementConversionIteration(RepositoryResult<Statement> repoResult,
-			BindingSet bindings, StatementPattern stmt) {
+		BindingSet bindings, StatementPattern stmt) {
 		super();
 		this.repoResult = repoResult;
 		this.bindings = bindings;

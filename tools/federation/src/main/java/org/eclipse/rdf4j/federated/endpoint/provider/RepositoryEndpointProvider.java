@@ -40,7 +40,7 @@ public class RepositoryEndpointProvider implements EndpointProvider<RepositoryIn
 
 	@Override
 	public Endpoint loadEndpoint(RepositoryInformation repoInfo)
-			throws FedXException {
+		throws FedXException {
 
 		try {
 			boolean didInitialize = false;
@@ -59,17 +59,17 @@ public class RepositoryEndpointProvider implements EndpointProvider<RepositoryIn
 
 			if (repository.isInitialized()) {
 				res = new RepositoryEndpoint(repoInfo, repoInfo.getLocation(), EndpointClassification.Remote,
-						repository);
+					repository);
 			} else {
 				res = new ManagedRepositoryEndpoint(repoInfo, repoInfo.getLocation(), EndpointClassification.Remote,
-						repository);
+					repository);
 			}
 			res.setEndpointConfiguration(repoInfo.getEndpointConfiguration());
 
 			return res;
 		} catch (RepositoryException e) {
 			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
-					e);
+				e);
 		}
 	}
 }

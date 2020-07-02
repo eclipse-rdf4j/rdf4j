@@ -58,7 +58,7 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 
 				if (dateDatatype && XMLSchema.DATETIME.equals(datatype)) {
 					literal = SimpleValueFactory.getInstance()
-							.createLiteral(literal.stringValue().split("T")[0], XMLSchema.DATE);
+						.createLiteral(literal.stringValue().split("T")[0], XMLSchema.DATE);
 				}
 
 				int compare = new ValueComparator().compare(compareTo, literal);
@@ -73,10 +73,10 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 
 	private boolean datatypesMatch(IRI datatype) {
 		return (numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype))
-				|| (calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
-						&& (timeDatatype || !XMLSchema.TIME.equals(datatype)))
-				|| (durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype))
-				|| (booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
+			|| (calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
+				&& (timeDatatype || !XMLSchema.TIME.equals(datatype)))
+			|| (durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype))
+			|| (booleanDatatype && XMLSchema.BOOLEAN.equals(datatype));
 
 	}
 

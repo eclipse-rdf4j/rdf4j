@@ -41,7 +41,7 @@ public class SPARQLGraphQueryResultTest extends GraphQueryResultTest {
 	@Override
 	protected Repository newRepository() throws Exception {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
-				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
+			Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 
 	}
 

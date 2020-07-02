@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
  * Base class for {@link TupleQueryResultParser}s offering common functionality for query result parsers.
  */
 public abstract class AbstractTupleQueryResultParser extends AbstractQueryResultParser
-		implements TupleQueryResultParser {
+	implements TupleQueryResultParser {
 
 	/**
 	 * Creates a new parser base that, by default, will use an instance of {@link SimpleValueFactory} to create Value
@@ -44,7 +44,7 @@ public abstract class AbstractTupleQueryResultParser extends AbstractQueryResult
 
 	@Override
 	public void parseQueryResult(InputStream in)
-			throws IOException, QueryResultParseException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parse(in);
 	}
 

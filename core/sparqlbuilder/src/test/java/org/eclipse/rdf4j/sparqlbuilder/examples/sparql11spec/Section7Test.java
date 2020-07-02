@@ -42,12 +42,12 @@ public class Section7Test extends BaseExamples {
 
 		resetQuery();
 		GraphPattern dc10Author = book.has(dc10.iri("creator"), author),
-				dc11Author = book.has(dc11.iri("creator"), author);
+			dc11Author = book.has(dc11.iri("creator"), author);
 		dc10Title = book.has(dc10TitleIri, title);
 		dc11Title = book.has(dc11TitleIri, title);
 		query.prefix(dc10, dc11)
-				.select(title, author)
-				.where(GraphPatterns.and(dc10Title, dc10Author).union(GraphPatterns.and(dc11Title, dc11Author)));
+			.select(title, author)
+			.where(GraphPatterns.and(dc10Title, dc10Author).union(GraphPatterns.and(dc11Title, dc11Author)));
 		p();
 	}
 }

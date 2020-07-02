@@ -106,7 +106,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(1)
-				.overridingErrorMessage("only syntactically legal triples should have been reported");
+			.overridingErrorMessage("only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -120,7 +120,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(3)
-				.overridingErrorMessage("all triples should have been reported");
+			.overridingErrorMessage("all triples should have been reported");
 	}
 
 	@Test
@@ -157,7 +157,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(2)
-				.overridingErrorMessage("only syntactically legal triples should have been reported");
+			.overridingErrorMessage("only syntactically legal triples should have been reported");
 	}
 
 	@Test
@@ -184,7 +184,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(3)
-				.overridingErrorMessage("all triples should have been reported");
+			.overridingErrorMessage("all triples should have been reported");
 	}
 
 	@Test
@@ -224,7 +224,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(1)
-				.overridingErrorMessage("only syntactically legal triples should have been reported");
+			.overridingErrorMessage("only syntactically legal triples should have been reported");
 
 	}
 
@@ -239,7 +239,7 @@ public class TurtleParserTest {
 		assertThat(errorCollector.getFatalErrors()).isEmpty();
 		assertThat(statementCollector.getStatements()).isNotEmpty();
 		assertThat(statementCollector.getStatements()).hasSize(2)
-				.overridingErrorMessage("all triples should have been reported");
+			.overridingErrorMessage("all triples should have been reported");
 
 	}
 

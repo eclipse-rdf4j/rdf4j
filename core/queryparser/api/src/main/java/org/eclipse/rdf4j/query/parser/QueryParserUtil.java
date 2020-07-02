@@ -19,9 +19,9 @@ public class QueryParserUtil {
 
 	public static QueryParser createParser(QueryLanguage ql) throws UnsupportedQueryLanguageException {
 		QueryParserFactory factory = QueryParserRegistry.getInstance()
-				.get(ql)
-				.orElseThrow(
-						() -> new UnsupportedQueryLanguageException("No factory available for query language " + ql));
+			.get(ql)
+			.orElseThrow(
+				() -> new UnsupportedQueryLanguageException("No factory available for query language " + ql));
 		return factory.getParser();
 	}
 
@@ -37,7 +37,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedOperation parseOperation(QueryLanguage ql, String operation, String baseURI)
-			throws MalformedQueryException {
+		throws MalformedQueryException {
 		ParsedOperation parsedOperation = null;
 		QueryParser parser = createParser(ql);
 
@@ -45,7 +45,7 @@ public class QueryParserUtil {
 			String strippedOperation = removeSPARQLQueryProlog(operation).toUpperCase();
 
 			if (strippedOperation.startsWith("SELECT") || strippedOperation.startsWith("CONSTRUCT")
-					|| strippedOperation.startsWith("DESCRIBE") || strippedOperation.startsWith("ASK")) {
+				|| strippedOperation.startsWith("DESCRIBE") || strippedOperation.startsWith("ASK")) {
 				parsedOperation = parser.parseQuery(operation, baseURI);
 			} else {
 				parsedOperation = parser.parseUpdate(operation, baseURI);
@@ -71,7 +71,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedUpdate parseUpdate(QueryLanguage ql, String update, String baseURI)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		QueryParser parser = createParser(ql);
 		return parser.parseUpdate(update, baseURI);
 	}
@@ -88,7 +88,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedQuery parseQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		QueryParser parser = createParser(ql);
 		return parser.parseQuery(query, baseURI);
 	}
@@ -104,7 +104,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedTupleQuery parseTupleQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedOperation q = parseQuery(ql, query, baseURI);
 
 		if (q instanceof ParsedTupleQuery) {
@@ -125,7 +125,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedGraphQuery parseGraphQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedOperation q = parseQuery(ql, query, baseURI);
 
 		if (q instanceof ParsedGraphQuery) {
@@ -146,7 +146,7 @@ public class QueryParserUtil {
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
 	 */
 	public static ParsedBooleanQuery parseBooleanQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedOperation q = parseQuery(ql, query, baseURI);
 
 		if (q instanceof ParsedBooleanQuery) {

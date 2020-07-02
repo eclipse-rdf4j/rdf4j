@@ -67,8 +67,8 @@ public class ElasticsearchStoreConfigTest {
 	@Test
 	public void parseFromPartialModelSetValuesCorrectly() {
 		mb
-				.add(ElasticsearchStoreSchema.hostname, "host1")
-				.add(ElasticsearchStoreSchema.port, 9300);
+			.add(ElasticsearchStoreSchema.hostname, "host1")
+			.add(ElasticsearchStoreSchema.port, 9300);
 
 		subject.parse(mb.build(), implNode);
 
@@ -80,7 +80,7 @@ public class ElasticsearchStoreConfigTest {
 	public void parseInvalidModelGivesCorrectException() {
 
 		mb
-				.add(ElasticsearchStoreSchema.port, "port1");
+			.add(ElasticsearchStoreSchema.port, "port1");
 
 		subject.parse(mb.build(), implNode);
 
@@ -90,10 +90,10 @@ public class ElasticsearchStoreConfigTest {
 	public void exportAddsAllConfigData() {
 
 		mb
-				.add(ElasticsearchStoreSchema.hostname, "host1")
-				.add(ElasticsearchStoreSchema.clusterName, "cluster1")
-				.add(ElasticsearchStoreSchema.index, "index1")
-				.add(ElasticsearchStoreSchema.port, 9300);
+			.add(ElasticsearchStoreSchema.hostname, "host1")
+			.add(ElasticsearchStoreSchema.clusterName, "cluster1")
+			.add(ElasticsearchStoreSchema.index, "index1")
+			.add(ElasticsearchStoreSchema.port, 9300);
 		// @formatter:on
 
 		subject.parse(mb.build(), implNode);

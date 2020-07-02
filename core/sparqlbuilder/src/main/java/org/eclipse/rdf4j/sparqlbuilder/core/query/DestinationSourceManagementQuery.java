@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
  * @param <T> the type of the query; used to support fluency
  */
 public abstract class DestinationSourceManagementQuery<T extends DestinationSourceManagementQuery<T>>
-		extends GraphManagementQuery<DestinationSourceManagementQuery<T>> {
+	extends GraphManagementQuery<DestinationSourceManagementQuery<T>> {
 	private static String DEFAULT = "DEFAULT";
 	private static String TO = "TO";
 

@@ -37,7 +37,7 @@ public class NJoin extends NTuple implements TupleExpr {
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		visitor.meetOther(this);
 	}
 

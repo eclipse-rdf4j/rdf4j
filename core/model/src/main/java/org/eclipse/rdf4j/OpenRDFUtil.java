@@ -32,7 +32,7 @@ public class OpenRDFUtil {
 	public static void verifyContextNotNull(Resource... contexts) {
 		if (contexts == null) {
 			throw new IllegalArgumentException(
-					"Illegal value null array for contexts argument; either the value should be cast to Resource or an empty array should be supplied");
+				"Illegal value null array for contexts argument; either the value should be cast to Resource or an empty array should be supplied");
 		}
 	}
 }

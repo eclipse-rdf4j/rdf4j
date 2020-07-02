@@ -116,7 +116,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	public NativeStore() {
 		super();
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
-				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+			IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 	}
 
@@ -263,7 +263,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				FileUtils.writeStringToFile(versionFile, VERSION);
 			}
 			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
-					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
+				valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
 			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
 
 				@Override
@@ -400,8 +400,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				// "foo"^^xsd:string). Log an error and indicate upgrade should
 				// not be executed.
 				logger.error(
-						"VALUE INCONSISTENCY: could not automatically upgrade native store to RDF 1.1-compatibility: {}. Failure to upgrade may result in inconsistent query results when comparing literal values.",
-						e.getMessage());
+					"VALUE INCONSISTENCY: could not automatically upgrade native store to RDF 1.1-compatibility: {}. Failure to upgrade may result in inconsistent query results when comparing literal values.",
+					e.getMessage());
 				return false;
 			} finally {
 				valueStore.close();

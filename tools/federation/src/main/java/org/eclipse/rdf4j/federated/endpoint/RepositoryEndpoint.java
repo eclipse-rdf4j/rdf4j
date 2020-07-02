@@ -26,7 +26,7 @@ public class RepositoryEndpoint extends EndpointBase {
 	protected final Repository repository;
 
 	public RepositoryEndpoint(RepositoryInformation repoInfo, String endpoint,
-			EndpointClassification endpointClassification, Repository repository) {
+		EndpointClassification endpointClassification, Repository repository) {
 		super(repoInfo, endpoint, endpointClassification);
 		this.repository = repository;
 	}

@@ -28,7 +28,7 @@ public class ParallelJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final ParallelExecutor<BindingSet> joinControl;
 
 	public ParallelJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy, TupleExpr expr,
-			BindingSet bindings) {
+		BindingSet bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;

@@ -86,12 +86,12 @@ public class QueryEvaluationUtil {
 	}
 
 	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator)
-			throws ValueExprEvaluationException {
+		throws ValueExprEvaluationException {
 		return compare(leftVal, rightVal, operator, true);
 	}
 
 	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
-			throws ValueExprEvaluationException {
+		throws ValueExprEvaluationException {
 		if (leftVal instanceof Literal && rightVal instanceof Literal) {
 			// Both left and right argument is a Literal
 			return compareLiterals((Literal) leftVal, (Literal) rightVal, operator, strict);
@@ -104,7 +104,7 @@ public class QueryEvaluationUtil {
 				return !valuesEqual(leftVal, rightVal);
 			default:
 				throw new ValueExprEvaluationException(
-						"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+					"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
 			}
 		}
 	}
@@ -125,7 +125,7 @@ public class QueryEvaluationUtil {
 	 * @throws ValueExprEvaluationException if a type error occurred.
 	 */
 	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator)
-			throws ValueExprEvaluationException {
+		throws ValueExprEvaluationException {
 		return compareLiterals(leftLit, rightLit, operator, true);
 	}
 
@@ -142,7 +142,7 @@ public class QueryEvaluationUtil {
 	 * @throws ValueExprEvaluationException if a type error occurred.
 	 */
 	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict)
-			throws ValueExprEvaluationException {
+		throws ValueExprEvaluationException {
 		// type precendence:
 		// - simple literal
 		// - numeric
@@ -173,7 +173,7 @@ public class QueryEvaluationUtil {
 				if (leftDatatype.equals(rightDatatype)) {
 					commonDatatype = leftDatatype;
 				} else if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 					// left and right arguments have different datatypes, try to find
 					// a
 					// more general, shared datatype
@@ -187,11 +187,11 @@ public class QueryEvaluationUtil {
 						commonDatatype = XMLSchema.INTEGER;
 					}
 				} else if (!strict && XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 					// We're not running in strict eval mode so we use extended datatype comparsion.
 					commonDatatype = XMLSchema.DATETIME;
 				} else if (!strict && XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
 					commonDatatype = XMLSchema.DURATION;
 				}
 			}
@@ -285,7 +285,7 @@ public class QueryEvaluationUtil {
 
 			if (!literalsEqual) {
 				if (!leftLangLit && !rightLangLit && isSupportedDatatype(leftDatatype)
-						&& isSupportedDatatype(rightDatatype)) {
+					&& isSupportedDatatype(rightDatatype)) {
 					// left and right arguments have incompatible but supported
 					// datatypes
 
@@ -310,11 +310,11 @@ public class QueryEvaluationUtil {
 					}
 					if (leftNumeric != rightNumeric) {
 						throw new ValueExprEvaluationException(
-								"Unable to compare numeric types with other supported types");
+							"Unable to compare numeric types with other supported types");
 					}
 					if (leftDate != rightDate) {
 						throw new ValueExprEvaluationException(
-								"Unable to compare date types with other supported types");
+							"Unable to compare date types with other supported types");
 					}
 				} else if (!leftLangLit && !rightLangLit) {
 					// For literals with unsupported datatypes we don't know if their
@@ -333,7 +333,7 @@ public class QueryEvaluationUtil {
 			case GE:
 			case GT:
 				throw new ValueExprEvaluationException(
-						"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+					"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + operator);
 			}
@@ -414,9 +414,9 @@ public class QueryEvaluationUtil {
 
 		boolean compatible =
 
-				(arg1Simple && arg2Simple)
-						|| (arg1Language && arg2Language && arg1.getLanguage().equals(arg2.getLanguage()))
-						|| (arg1Language && arg2Simple);
+			(arg1Simple && arg2Simple)
+				|| (arg1Language && arg2Language && arg1.getLanguage().equals(arg2.getLanguage()))
+				|| (arg1Language && arg2Simple);
 
 		return compatible;
 	}
@@ -434,6 +434,6 @@ public class QueryEvaluationUtil {
 
 	private static boolean isSupportedDatatype(IRI datatype) {
 		return (XMLSchema.STRING.equals(datatype) || XMLDatatypeUtil.isNumericDatatype(datatype)
-				|| XMLDatatypeUtil.isCalendarDatatype(datatype));
+			|| XMLDatatypeUtil.isCalendarDatatype(datatype));
 	}
 }

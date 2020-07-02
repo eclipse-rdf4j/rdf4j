@@ -43,7 +43,7 @@ public abstract class RioSettingTest<T> {
 	@Test
 	public void testConvertIllegal() throws Exception {
 		assertThatThrownBy(() -> subject.convert(getIllegalStringValue()))
-				.isInstanceOf(RioConfigurationException.class);
+			.isInstanceOf(RioConfigurationException.class);
 	}
 
 	/**

@@ -34,7 +34,7 @@ public class FedXTupleQuery extends SailTupleQuery {
 	protected final SailTupleQuery delegate;
 
 	public FedXTupleQuery(
-			SailTupleQuery delegate) {
+		SailTupleQuery delegate) {
 		super(delegate.getParsedQuery(), null);
 		this.delegate = delegate;
 	}
@@ -47,7 +47,7 @@ public class FedXTupleQuery extends SailTupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+		throws QueryEvaluationException, TupleQueryResultHandlerException {
 		FedXUtil.applyQueryBindings(this);
 		delegate.evaluate(handler);
 	}

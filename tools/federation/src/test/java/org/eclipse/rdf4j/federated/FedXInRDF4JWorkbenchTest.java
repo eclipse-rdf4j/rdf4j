@@ -144,20 +144,20 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 		repo.init();
 
 		String query = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
-				"PREFIX ns1: <http://namespace1.org/> "
-				+ "SELECT * WHERE { "
-				+ "?person a foaf:Person ."
-				+ "?person foaf:name ?name .\n"
-				+ "FILTER (?name IN ('Person1', 'Person2')) "
-				+ "}";
+			"PREFIX ns1: <http://namespace1.org/> "
+			+ "SELECT * WHERE { "
+			+ "?person a foaf:Person ."
+			+ "?person foaf:name ?name .\n"
+			+ "FILTER (?name IN ('Person1', 'Person2')) "
+			+ "}";
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			try (TupleQueryResult tqr = conn.prepareTupleQuery(query).evaluate()) {
 
 				List<BindingSet> res = Iterations.asList(tqr);
 				assertContainsAll(res, "person",
-						Sets.newHashSet(iri("http://namespace1.org/", "Person_1"),
-								iri("http://namespace1.org/", "Person_2")));
+					Sets.newHashSet(iri("http://namespace1.org/", "Person_1"),
+						iri("http://namespace1.org/", "Person_2")));
 			}
 		}
 
@@ -182,7 +182,7 @@ public class FedXInRDF4JWorkbenchTest extends SPARQLServerBaseTest {
 
 	protected FedXRepository getFedXRepository(String repositoryId) {
 		RepositoryWrapper wrapper = (RepositoryWrapper) ((SPARQLEmbeddedServer) server).getRepositoryResolver()
-				.getRepository(repositoryId);
+			.getRepository(repositoryId);
 		return (FedXRepository) wrapper.getDelegate();
 	}
 }

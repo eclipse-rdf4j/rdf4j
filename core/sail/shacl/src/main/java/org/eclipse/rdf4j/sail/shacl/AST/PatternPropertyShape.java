@@ -30,8 +30,8 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(PatternPropertyShape.class);
 
 	PatternPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			String pattern, String flags) {
+		PathPropertyShape parent, Resource path,
+		String pattern, String flags) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.pattern = pattern;
@@ -41,7 +41,7 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -49,7 +49,7 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode, negateThisPlan);
+			(parent) -> new PatternFilter(parent, pattern, flags), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -78,7 +78,7 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 		}
 		PatternPropertyShape that = (PatternPropertyShape) o;
 		return pattern.equals(that.pattern) &&
-				Objects.equals(flags, that.flags);
+			Objects.equals(flags, that.flags);
 	}
 
 	@Override
@@ -89,10 +89,10 @@ public class PatternPropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "PatternPropertyShape{" +
-				"pattern='" + pattern + '\'' +
-				", flags='" + flags + '\'' +
-				", path=" + getPath() +
-				", id=" + id +
-				'}';
+			"pattern='" + pattern + '\'' +
+			", flags='" + flags + '\'' +
+			", path=" + getPath() +
+			", id=" + id +
+			'}';
 	}
 }

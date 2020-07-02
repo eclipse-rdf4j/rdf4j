@@ -109,7 +109,7 @@ public class SimpleStatement implements Statement {
 			 * identical), so these are checked last.
 			 */
 			return object.equals(that.getObject()) && subject.equals(that.getSubject())
-					&& predicate.equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
+				&& predicate.equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
 		}
 
 		return false;

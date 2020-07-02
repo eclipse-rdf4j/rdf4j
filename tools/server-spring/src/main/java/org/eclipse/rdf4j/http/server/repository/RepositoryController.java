@@ -101,7 +101,7 @@ public class RepositoryController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+		throws Exception {
 		String reqMethod = request.getMethod();
 		String queryStr = request.getParameter(QUERY_PARAM_NAME);
 
@@ -130,7 +130,7 @@ public class RepositoryController extends AbstractController {
 			if (queryStr != null) {
 				logger.warn("query supplied on repository delete request, aborting delete");
 				throw new HTTPException(HttpStatus.SC_BAD_REQUEST,
-						"Repository delete error: query supplied with request");
+					"Repository delete error: query supplied with request");
 			}
 
 			if (SystemRepository.ID.equals(repId)) {
@@ -146,7 +146,7 @@ public class RepositoryController extends AbstractController {
 				} else {
 					logger.error("error while attempting to delete repository '" + repId + "'");
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST,
-							"could not locate repository configuration for repository '" + repId + "'.");
+						"could not locate repository configuration for repository '" + repId + "'.");
 				}
 			} catch (RDF4JException e) {
 				logger.error("error while attempting to delete repository '" + repId + "'", e);
@@ -159,13 +159,13 @@ public class RepositoryController extends AbstractController {
 			try {
 				if (repositoryManager.hasRepositoryConfig(repId)) {
 					ErrorInfo errorInfo = new ErrorInfo(ErrorType.REPOSITORY_EXISTS,
-							"repository already exists: " + repId);
+						"repository already exists: " + repId);
 					throw new ClientHTTPException(HttpStatus.SC_CONFLICT, errorInfo.toString());
 				}
 				Model model = Rio.parse(request.getInputStream(), "",
-						Rio.getParserFormatForMIMEType(request.getContentType())
-								.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
-										"unrecognized content type " + request.getContentType())));
+					Rio.getParserFormatForMIMEType(request.getContentType())
+						.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
+							"unrecognized content type " + request.getContentType())));
 				RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, repId);
 				repositoryManager.addRepositoryConfig(config);
 				return new ModelAndView(EmptySuccessView.getInstance());
@@ -210,10 +210,10 @@ public class RepositoryController extends AbstractController {
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
 							boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
-									false);
+								false);
 
 							final TupleQueryResult tqr = distinct ? QueryResults.distinctResults(tQuery.evaluate())
-									: tQuery.evaluate();
+								: tQuery.evaluate();
 							queryResult = QueryResults.limitResults(tqr, limit, offset);
 						}
 						registry = TupleQueryResultWriterRegistry.getInstance();
@@ -224,10 +224,10 @@ public class RepositoryController extends AbstractController {
 							long limit = ProtocolUtil.parseLongParam(request, Protocol.LIMIT_PARAM_NAME, 0);
 							long offset = ProtocolUtil.parseLongParam(request, Protocol.OFFSET_PARAM_NAME, 0);
 							boolean distinct = ProtocolUtil.parseBooleanParam(request, Protocol.DISTINCT_PARAM_NAME,
-									false);
+								false);
 
 							final GraphQueryResult qqr = distinct ? QueryResults.distinctResults(gQuery.evaluate())
-									: gQuery.evaluate();
+								: gQuery.evaluate();
 							queryResult = QueryResults.limitResults(qqr, limit, offset);
 						}
 						registry = RDFWriterRegistry.getInstance();
@@ -240,7 +240,7 @@ public class RepositoryController extends AbstractController {
 						view = BooleanQueryResultView.getInstance();
 					} else {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
-								"Unsupported query type: " + query.getClass().getName());
+							"Unsupported query type: " + query.getClass().getName());
 					}
 				} catch (QueryInterruptedException e) {
 					logger.info("Query interrupted", e);
@@ -278,7 +278,7 @@ public class RepositoryController extends AbstractController {
 	}
 
 	private Query getQuery(Repository repository, RepositoryConnection repositoryCon, String queryStr,
-			HttpServletRequest request, HttpServletResponse response) throws IOException, ClientHTTPException {
+		HttpServletRequest request, HttpServletResponse response) throws IOException, ClientHTTPException {
 		Query result = null;
 
 		// default query language is SPARQL
@@ -317,7 +317,7 @@ public class RepositoryController extends AbstractController {
 						dataset.addDefaultGraph(uri);
 					} catch (IllegalArgumentException e) {
 						throw new ClientHTTPException(SC_BAD_REQUEST,
-								"Illegal URI for default graph: " + defaultGraphURI);
+							"Illegal URI for default graph: " + defaultGraphURI);
 					}
 				}
 			}
@@ -357,7 +357,7 @@ public class RepositoryController extends AbstractController {
 				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
-							repository.getValueFactory());
+						repository.getValueFactory());
 					result.setBinding(bindingName, bindingValue);
 				}
 			}

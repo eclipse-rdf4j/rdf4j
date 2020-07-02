@@ -92,8 +92,8 @@ public class Rio {
 	 */
 	public static RDFParser createParser(RDFFormat format) throws UnsupportedRDFormatException {
 		RDFParserFactory factory = RDFParserRegistry.getInstance()
-				.get(format)
-				.orElseThrow(Rio.unsupportedFormat(format));
+			.get(format)
+			.orElseThrow(Rio.unsupportedFormat(format));
 
 		return factory.getParser();
 	}
@@ -110,7 +110,7 @@ public class Rio {
 	 * @see RDFParser#setValueFactory(ValueFactory)
 	 */
 	public static RDFParser createParser(RDFFormat format, ValueFactory valueFactory)
-			throws UnsupportedRDFormatException {
+		throws UnsupportedRDFormatException {
 		RDFParser rdfParser = createParser(format);
 		rdfParser.setValueFactory(valueFactory);
 		return rdfParser;
@@ -128,8 +128,8 @@ public class Rio {
 	 */
 	public static RDFWriter createWriter(RDFFormat format, OutputStream out) throws UnsupportedRDFormatException {
 		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
-				.get(format)
-				.orElseThrow(Rio.unsupportedFormat(format));
+			.get(format)
+			.orElseThrow(Rio.unsupportedFormat(format));
 
 		return factory.getWriter(out);
 	}
@@ -147,10 +147,10 @@ public class Rio {
 	 * @throws URISyntaxException           If the baseURI is invalid
 	 */
 	public static RDFWriter createWriter(RDFFormat format, OutputStream out, String baseURI)
-			throws UnsupportedRDFormatException, URISyntaxException {
+		throws UnsupportedRDFormatException, URISyntaxException {
 		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
-				.get(format)
-				.orElseThrow(Rio.unsupportedFormat(format));
+			.get(format)
+			.orElseThrow(Rio.unsupportedFormat(format));
 
 		return factory.getWriter(out, baseURI);
 	}
@@ -167,8 +167,8 @@ public class Rio {
 	 */
 	public static RDFWriter createWriter(RDFFormat format, Writer writer) throws UnsupportedRDFormatException {
 		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
-				.get(format)
-				.orElseThrow(Rio.unsupportedFormat(format));
+			.get(format)
+			.orElseThrow(Rio.unsupportedFormat(format));
 
 		return factory.getWriter(writer);
 	}
@@ -186,10 +186,10 @@ public class Rio {
 	 * @throws URISyntaxException           If the baseURI is invalid
 	 */
 	public static RDFWriter createWriter(RDFFormat format, Writer writer, String baseURI)
-			throws UnsupportedRDFormatException, URISyntaxException {
+		throws UnsupportedRDFormatException, URISyntaxException {
 		RDFWriterFactory factory = RDFWriterRegistry.getInstance()
-				.get(format)
-				.orElseThrow(Rio.unsupportedFormat(format));
+			.get(format)
+			.orElseThrow(Rio.unsupportedFormat(format));
 
 		return factory.getWriter(writer, baseURI);
 	}
@@ -210,9 +210,9 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 		return parse(in, baseURI, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),
-				new ParseErrorLogger(), contexts);
+			new ParseErrorLogger(), contexts);
 	}
 
 	/**
@@ -232,9 +232,9 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 		return parse(reader, baseURI, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),
-				new ParseErrorLogger(), contexts);
+			new ParseErrorLogger(), contexts);
 	}
 
 	/**
@@ -257,8 +257,8 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
-			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 
 		return parse(in, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);
 	}
@@ -284,8 +284,8 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
-			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 		Model result = modelFactory.createEmptyModel();
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
@@ -318,8 +318,8 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
-			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 
 		return parse(reader, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);
 	}
@@ -346,8 +346,8 @@ public class Rio {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 */
 	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
-			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
-			throws IOException, RDFParseException, UnsupportedRDFormatException {
+		ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+		throws IOException, RDFParseException, UnsupportedRDFormatException {
 		Model result = modelFactory.createEmptyModel();
 		RDFParser parser = createParser(dataFormat, valueFactory);
 		parser.setParserConfig(settings);
@@ -371,7 +371,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, RDFFormat dataFormat)
-			throws RDFHandlerException {
+		throws RDFHandlerException {
 		write(model, output, dataFormat, new WriterConfig());
 	}
 
@@ -389,7 +389,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, String baseURI, RDFFormat dataFormat)
-			throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
 		write(model, output, baseURI, dataFormat, new WriterConfig());
 	}
 
@@ -405,7 +405,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, Writer output, RDFFormat dataFormat)
-			throws RDFHandlerException {
+		throws RDFHandlerException {
 		write(model, output, dataFormat, new WriterConfig());
 	}
 
@@ -423,7 +423,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, Writer output, String baseURI, RDFFormat dataFormat)
-			throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+		throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
 		write(model, output, baseURI, dataFormat, new WriterConfig());
 	}
 
@@ -440,7 +440,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, RDFFormat dataFormat,
-			WriterConfig settings) throws RDFHandlerException {
+		WriterConfig settings) throws RDFHandlerException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output);
 		writer.setWriterConfig(settings);
 		write(model, writer);
@@ -461,7 +461,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, OutputStream output, String baseURI, RDFFormat dataFormat,
-			WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+		WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);
 		writer.setWriterConfig(settings);
 		write(model, writer);
@@ -480,7 +480,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, Writer output, RDFFormat dataFormat, WriterConfig settings)
-			throws RDFHandlerException {
+		throws RDFHandlerException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output);
 		writer.setWriterConfig(settings);
 		write(model, writer);
@@ -501,7 +501,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Iterable<Statement> model, Writer output, String baseURI, RDFFormat dataFormat,
-			WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+		WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);
 		writer.setWriterConfig(settings);
 		write(model, writer);
@@ -556,7 +556,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Statement st, OutputStream output, RDFFormat dataFormat, WriterConfig settings)
-			throws RDFHandlerException {
+		throws RDFHandlerException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output);
 		writer.setWriterConfig(settings);
 		write(st, writer);
@@ -588,7 +588,7 @@ public class Rio {
 	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
 	 */
 	public static void write(Statement statement, Writer output, RDFFormat dataFormat, WriterConfig settings)
-			throws RDFHandlerException {
+		throws RDFHandlerException {
 		final RDFWriter writer = Rio.createWriter(dataFormat, output);
 		writer.setWriterConfig(settings);
 		write(statement, writer);
@@ -609,7 +609,7 @@ public class Rio {
 	}
 
 	public static void main(String[] args)
-			throws IOException, RDFParseException, RDFHandlerException, UnsupportedRDFormatException {
+		throws IOException, RDFParseException, RDFHandlerException, UnsupportedRDFormatException {
 		if (args.length < 2) {
 			System.out.println("Usage: java org.eclipse.rdf4j.rio.Rio <inputFile> <outputFile>");
 			System.exit(1);
@@ -620,11 +620,11 @@ public class Rio {
 		String outputFile = args[1];
 
 		try (FileOutputStream outStream = new FileOutputStream(outputFile);
-				FileInputStream inStream = new FileInputStream(inputFile);) {
+			FileInputStream inStream = new FileInputStream(inputFile);) {
 			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML))
-					.setRDFHandler(
-							createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream))
-					.parse(inStream, "file:" + inputFile);
+				.setRDFHandler(
+					createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream))
+				.parse(inStream, "file:" + inputFile);
 		}
 	}
 

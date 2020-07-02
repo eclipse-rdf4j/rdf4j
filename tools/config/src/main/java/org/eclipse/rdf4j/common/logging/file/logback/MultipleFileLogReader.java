@@ -289,7 +289,7 @@ public class MultipleFileLogReader extends AbstractLogReader implements LogReade
 			Calendar cal = Calendar.getInstance();
 			cal.setTime(d);
 			return (((startCal == null) || (cal.compareTo(startCal) >= 0))
-					&& ((endCal == null) || (cal.compareTo(endCal) <= 0)));
+				&& ((endCal == null) || (cal.compareTo(endCal) <= 0)));
 		}
 
 	}

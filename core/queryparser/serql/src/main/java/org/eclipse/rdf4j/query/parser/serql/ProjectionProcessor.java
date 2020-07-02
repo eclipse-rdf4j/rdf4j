@@ -47,7 +47,7 @@ class ProjectionProcessor extends AbstractASTVisitor {
 			// Make wildcard projection explicit
 			for (String varName : bodyVars) {
 				ASTProjectionElem projElemNode = new ASTProjectionElem(
-						SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
+					SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
 				selectNode.jjtAppendChild(projElemNode);
 				projElemNode.jjtSetParent(selectNode);
 

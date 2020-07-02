@@ -164,7 +164,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 				Literal blurb = (Literal) b.getValue("blurb");
 				assertEquals("<p xmlns=\"http://www.w3.org/1999/xhtml\">My name is <b>alice</b></p>",
-						blurb.stringValue());
+					blurb.stringValue());
 				assertFalse(blurb.getLanguage().isPresent());
 				assertEquals(RDF.XMLLITERAL, blurb.getDatatype());
 			} else if (value.getID().equals("r2")) {
@@ -187,7 +187,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 
 		assertEquals(1, handler.getLinks().size());
 		assertEquals("http://www.w3.org/TR/2013/REC-sparql11-results-json-20130321/#example",
-				handler.getLinks().get(0));
+			handler.getLinks().get(0));
 
 	}
 

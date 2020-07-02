@@ -21,15 +21,15 @@ public class TestServiceUpdateExprBuilder {
 	public void testServiceWithMultipleUpdateExpr() {
 		SPARQLParser parser = new SPARQLParser();
 		String updateStr = "PREFIX family: <http://examples.ontotext.com/family#>\n" +
-				"DROP ALL ;\n" +
-				"INSERT {\n" +
-				"    family:Alice family:knows family:Bob .\n" +
-				"}\n" +
-				"WHERE {\n" +
-				"    SERVICE <repository:1> {\n" +
-				"        family:Alice family:knows family:Bob .\n" +
-				"    }\n" +
-				"}";
+			"DROP ALL ;\n" +
+			"INSERT {\n" +
+			"    family:Alice family:knows family:Bob .\n" +
+			"}\n" +
+			"WHERE {\n" +
+			"    SERVICE <repository:1> {\n" +
+			"        family:Alice family:knows family:Bob .\n" +
+			"    }\n" +
+			"}";
 		// should not throw NPE, but prior to 3.1.3 it does
 		parser.parseUpdate(updateStr, null);
 	}

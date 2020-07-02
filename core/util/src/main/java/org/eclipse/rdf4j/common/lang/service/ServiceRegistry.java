@@ -45,7 +45,7 @@ public abstract class ServiceRegistry<K, S> {
 
 					if (oldService.isPresent()) {
 						logger.warn("New service {} replaces existing service {}", service.getClass(),
-								oldService.get().getClass());
+							oldService.get().getClass());
 					}
 
 					logger.debug("Registered service class {}", service.getClass().getName());

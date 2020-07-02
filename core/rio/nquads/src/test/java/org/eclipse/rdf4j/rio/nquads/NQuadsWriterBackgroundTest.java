@@ -23,9 +23,9 @@ public class NQuadsWriterBackgroundTest extends AbstractNQuadsWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+		throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+			.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
 
 }

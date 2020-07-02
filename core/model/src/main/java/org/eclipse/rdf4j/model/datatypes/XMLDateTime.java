@@ -120,7 +120,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	private void parseDateTimeString() {
 		if (dateTimeString.length() < 19) {
 			throw new IllegalArgumentException(
-					"String value too short to be a valid xsd:dateTime value: " + dateTimeString);
+				"String value too short to be a valid xsd:dateTime value: " + dateTimeString);
 		}
 
 		String errMsg = "Invalid xsd:dateTime value: " + dateTimeString;
@@ -231,7 +231,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 
 		if (year.length() > 4 && year.charAt(0) == '0') {
 			throw new IllegalArgumentException(
-					"Leading zeros in years with more than 4 digits are prohibited: " + dateTimeString);
+				"Leading zeros in years with more than 4 digits are prohibited: " + dateTimeString);
 		}
 		if (iYear == 0) {
 			throw new IllegalArgumentException("0000 is not a valid year: " + dateTimeString);

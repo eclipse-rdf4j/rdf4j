@@ -42,7 +42,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 
 	@Override
 	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
-			Value obj, Resource... contexts) throws QueryEvaluationException {
+		Value obj, Resource... contexts) throws QueryEvaluationException {
 		try {
 			return new Eval(dataset.getStatements(subj, pred, obj, contexts));
 		} catch (SailException e) {
@@ -83,7 +83,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 
 	@Override
 	public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
-			Value obj) throws QueryEvaluationException {
+		Value obj) throws QueryEvaluationException {
 		try {
 			return new TriplesIteration(dataset.getTriples(subj, pred, obj));
 		} catch (SailException e) { // TODO is this necessary?

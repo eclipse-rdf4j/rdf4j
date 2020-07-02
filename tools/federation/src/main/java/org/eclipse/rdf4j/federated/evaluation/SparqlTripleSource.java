@@ -66,17 +66,17 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		throw new RuntimeException("NOT YET IMPLEMENTED.");
 	}
 
 	@Override
 	public boolean hasStatements(Resource subj,
-			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
-			throws RepositoryException {
+		IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+		throws RepositoryException {
 
 		if (!useASKQueries) {
 			StatementPattern st = new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj));
@@ -92,8 +92,8 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public boolean hasStatements(StatementPattern stmt,
-			BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
-			MalformedQueryException, QueryEvaluationException {
+		BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
+		MalformedQueryException, QueryEvaluationException {
 
 		// decide whether to use ASK queries or a SELECT query
 		if (useASKQueries) {
@@ -137,16 +137,16 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public boolean hasStatements(ExclusiveTupleExpr expr,
-			BindingSet bindings)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		BindingSet bindings)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		if (!useASKQueries) {
 
 			/* remote select limit 1 query */
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
-						expr.getQueryInfo().getDataset());
+					expr.getQueryInfo().getDataset());
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, expr.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
@@ -174,23 +174,23 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		throw new RuntimeException("NOT YET IMPLEMENTED.");
 	}
 
 	@Override
 	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
-			Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
-			Resource... contexts) throws RepositoryException,
-			MalformedQueryException, QueryEvaluationException {
+		Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
+		Resource... contexts) throws RepositoryException,
+		MalformedQueryException, QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
 			monitorRemoteRequest();
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
-					queryInfo.getIncludeInferred(), contexts);
+				queryInfo.getIncludeInferred(), contexts);
 
 			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
 				@Override

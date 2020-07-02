@@ -108,7 +108,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testIncompleteParsingWithoutPeriod() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://s> <http://p> <http://o> <http://g>".getBytes());
+			"<http://s> <http://p> <http://o> <http://g>".getBytes());
 		try {
 			parser.parse(bais, "http://test.base.uri");
 			Assert.fail("Expected exception when not inserting a trailing period at the end of a statement.");
@@ -131,8 +131,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testNonWhitespaceAfterPeriodNoContext() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://www.wrong.com> <http://wrong.com/1.1/tt> \"x\"^^<http://xxx.net/int> . <http://path.to.graph> "
-						.getBytes());
+			"<http://www.wrong.com> <http://wrong.com/1.1/tt> \"x\"^^<http://xxx.net/int> . <http://path.to.graph> "
+				.getBytes());
 		try {
 			parser.parse(bais, "http://base-uri");
 			Assert.fail("Expected exception when there is non-whitespace characters after a period.");
@@ -153,8 +153,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testNonWhitespaceAfterPeriodWithContext() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://www.wrong.com> <http://wrong.com/1.1/tt> \"x\"^^<http://xxx.net/int> <http://path.to.graph> . <thisisnotlegal> "
-						.getBytes());
+			"<http://www.wrong.com> <http://wrong.com/1.1/tt> \"x\"^^<http://xxx.net/int> <http://path.to.graph> . <thisisnotlegal> "
+				.getBytes());
 		try {
 			parser.parse(bais, "http://base-uri");
 			Assert.fail("Expected exception when there is non-whitespace characters after a period.");
@@ -180,7 +180,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseEmptyLinesAndComments() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"  \n\n\n# This is a comment\n\n#this is another comment.".getBytes());
+			"  \n\n\n# This is a comment\n\n#this is another comment.".getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -193,8 +193,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseBasic() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://www.v/dat/4b> <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/> ."
-						.getBytes());
+			"<http://www.v/dat/4b> <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/> ."
+				.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -213,8 +213,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseBasicBNode() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"_:a123456768 <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/>."
-						.getBytes());
+			"_:a123456768 <http://www.w3.org/20/ica#dtend> <http://sin/value/2> <http://sin.siteserv.org/def/>."
+				.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -233,8 +233,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseBasicLiteral() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"_:a123456768 <http://www.w3.org/20/ica#dtend> \"2010-05-02\" <http://sin.siteserv.org/def/>."
-						.getBytes());
+			"_:a123456768 <http://www.w3.org/20/ica#dtend> \"2010-05-02\" <http://sin.siteserv.org/def/>."
+				.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -253,8 +253,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseBasicLiteralLang() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://www.v/dat/4b2-21> <http://www.w3.org/20/ica#dtend> \"2010-05-02\"@en <http://sin.siteserv.org/def/>."
-						.getBytes());
+			"<http://www.v/dat/4b2-21> <http://www.w3.org/20/ica#dtend> \"2010-05-02\"@en <http://sin.siteserv.org/def/>."
+				.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -275,9 +275,9 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testParseBasicLiteralDatatype() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> "
-						+ "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> " + "<http://sin.siteserv.org/def/>.")
-								.getBytes());
+			("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> "
+				+ "\"2010\"^^<http://www.w3.org/2001/XMLSchema#integer> " + "<http://sin.siteserv.org/def/>.")
+					.getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.parse(bais, "http://test.base.uri");
@@ -300,8 +300,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 	public void testParseBasicLiteralDatatypePrefix() throws RDFHandlerException, IOException {
 
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> " + "\"2010\"^^xsd:integer "
-						+ "<http://sin.siteserv.org/def/>.").getBytes());
+			("<http://www.v/dat/4b2-21> " + "<http://www.w3.org/20/ica#dtend> " + "\"2010\"^^xsd:integer "
+				+ "<http://sin.siteserv.org/def/>.").getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		try {
@@ -325,7 +325,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.setRDFHandler(rdfHandler);
 
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://a> <http://b> \"\\\\\" <http://c> .".getBytes());
+			"<http://a> <http://b> \"\\\\\" <http://c> .".getBytes());
 		parser.parse(bais, "http://base-uri");
 
 		rdfHandler.assertHandler(1);
@@ -345,7 +345,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.setRDFHandler(rdfHandler);
 
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://a> <http://b> \"Line text 1\\nLine text 2\" <http://c> .".getBytes());
+			"<http://a> <http://b> \"Line text 1\\nLine text 2\" <http://c> .".getBytes());
 		parser.parse(bais, "http://base-uri");
 
 		rdfHandler.assertHandler(1);
@@ -366,8 +366,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.setRDFHandler(rdfHandler);
 
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://s/\\u306F\\u3080> <http://p/\\u306F\\u3080> <http://o/\\u306F\\u3080> <http://g/\\u306F\\u3080> ."
-						.getBytes());
+			"<http://s/\\u306F\\u3080> <http://p/\\u306F\\u3080> <http://o/\\u306F\\u3080> <http://g/\\u306F\\u3080> ."
+				.getBytes());
 		parser.parse(bais, "http://base-uri");
 
 		rdfHandler.assertHandler(1);
@@ -412,7 +412,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testWrongUnicodeEncodedCharFail() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://s> <http://p> \"\\u123X\" <http://g> .".getBytes());
+			"<http://s> <http://p> \"\\u123X\" <http://g> .".getBytes());
 		try {
 			parser.parse(bais, "http://test.base.uri");
 			Assert.fail("Expected exception when an incorrect unicode character is included");
@@ -429,7 +429,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testEndOfStreamReached() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				"<http://a> <http://b> \"\\\" <http://c> .".getBytes());
+			"<http://a> <http://b> \"\\\" <http://c> .".getBytes());
 		try {
 			parser.parse(bais, "http://test.base.uri");
 			Assert.fail("Expected exception when a literal is not closed");
@@ -453,7 +453,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.setRDFHandler(rdfHandler);
 
 		BufferedReader br = new BufferedReader(new InputStreamReader(
-				AbstractNQuadsParserUnitTest.class.getResourceAsStream("/testcases/nquads/test1.nq")));
+			AbstractNQuadsParserUnitTest.class.getResourceAsStream("/testcases/nquads/test1.nq")));
 		parser.parse(br, "http://test.base.uri");
 
 		rdfHandler.assertHandler(6);
@@ -471,7 +471,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.setRDFHandler(rdfHandler);
 
 		parser.parse(AbstractNQuadsParserUnitTest.class.getResourceAsStream("/testcases/nquads/test2.nq"),
-				"http://test.base.uri");
+			"http://test.base.uri");
 
 		rdfHandler.assertHandler(400);
 		parseLocationListener.assertListener(401, 1);
@@ -479,14 +479,14 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	@Test
 	public void testStatementWithInvalidLiteralContentAndIgnoreValidation()
-			throws RDFHandlerException, IOException, RDFParseException {
+		throws RDFHandlerException, IOException, RDFParseException {
 		// Note: Float declare as int.
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
-						+ "<http://dbpedia.org/property/mandatofine> "
-						+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
-						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+			("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
+				+ "<http://dbpedia.org/property/mandatofine> "
+				+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
+				+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
+					.getBytes());
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, false);
 		parser.parse(bais, "http://base-uri");
@@ -494,14 +494,14 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	@Test
 	public void testStatementWithInvalidLiteralContentAndStrictValidation()
-			throws RDFHandlerException, IOException, RDFParseException {
+		throws RDFHandlerException, IOException, RDFParseException {
 		// Note: Float declare as int.
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
-						+ "<http://dbpedia.org/property/mandatofine> "
-						+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
-						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+			("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
+				+ "<http://dbpedia.org/property/mandatofine> "
+				+ "\"1380.0\"^^<http://www.w3.org/2001/XMLSchema#int> "
+				+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
+					.getBytes());
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		parser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		try {
@@ -517,13 +517,13 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	@Test
 	public void testStatementWithInvalidDatatypeAndIgnoreValidation()
-			throws RDFHandlerException, IOException, RDFParseException {
+		throws RDFHandlerException, IOException, RDFParseException {
 		verifyStatementWithInvalidDatatype(false);
 	}
 
 	@Test
 	public void testStatementWithInvalidDatatypeAndVerifyValidation()
-			throws RDFHandlerException, IOException, RDFParseException {
+		throws RDFHandlerException, IOException, RDFParseException {
 		try {
 			verifyStatementWithInvalidDatatype(true);
 			fail("Did not find expected exception");
@@ -536,11 +536,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testStopAtFirstErrorStrictParsing() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
-						+ "<http://sX>                                     .\n" + // Line
-						// with
-						// error.
-						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
+			("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
+				+ "<http://sX>                                     .\n" + // Line
+				// with
+				// error.
+				"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
 
 		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, false);
 
@@ -556,11 +556,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 	@Test
 	public void testStopAtFirstErrorTolerantParsing() throws RDFHandlerException, IOException, RDFParseException {
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
-						+ "<http://sX>                                     .\n" + // Line
-						// with
-						// error.
-						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
+			("<http://s0> <http://p0> <http://o0> <http://g0> .\n"
+				+ "<http://sX>                                     .\n" + // Line
+				// with
+				// error.
+				"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 
@@ -581,7 +581,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 	}
 
 	private void verifyStatementWithInvalidDatatype(boolean useDatatypeVerification)
-			throws RDFHandlerException, IOException, RDFParseException {
+		throws RDFHandlerException, IOException, RDFParseException {
 		TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 		parser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, useDatatypeVerification);
@@ -592,11 +592,11 @@ public abstract class AbstractNQuadsParserUnitTest {
 		}
 
 		final ByteArrayInputStream bais = new ByteArrayInputStream(
-				("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
-						+ "<http://dbpedia.org/property/mandatofine> "
-						+ "\"1380.0\"^^<http://dbpedia.org/invalid/datatype/second> "
-						+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
-								.getBytes());
+			("<http://dbpedia.org/resource/Camillo_Benso,_conte_di_Cavour> "
+				+ "<http://dbpedia.org/property/mandatofine> "
+				+ "\"1380.0\"^^<http://dbpedia.org/invalid/datatype/second> "
+				+ "<http://it.wikipedia.org/wiki/Camillo_Benso,_conte_di_Cavour#absolute-line=20> .")
+					.getBytes());
 		parser.parse(bais, "http://base-uri");
 		rdfHandler.assertHandler(1);
 	}

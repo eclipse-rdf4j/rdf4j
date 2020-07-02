@@ -33,9 +33,9 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 	private static final Logger log = LoggerFactory.getLogger(SynchronousBoundJoin.class);
 
 	public SynchronousBoundJoin(FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
-			throws QueryEvaluationException {
+		CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+		TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
+		throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 	}
 
@@ -45,8 +45,8 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 		// XXX use something else as second check, e.g. an empty interface
 		if (!((rightArg instanceof StatementPattern))) {
 			log.warn(
-					"Right argument is not a StatementPattern. Fallback on SynchronousJoin implementation: "
-							+ rightArg.getClass().getCanonicalName());
+				"Right argument is not a StatementPattern. Fallback on SynchronousJoin implementation: "
+					+ rightArg.getClass().getCanonicalName());
 			super.handleBindings(); // fallback
 			return;
 		}

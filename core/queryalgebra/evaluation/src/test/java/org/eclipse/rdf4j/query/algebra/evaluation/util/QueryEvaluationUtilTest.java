@@ -410,7 +410,7 @@ public class QueryEvaluationUtilTest {
 		try {
 			boolean returnValue = QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict);
 			fail("Did not receive expected ValueExprEvaluationException (return value was " + returnValue + ") for "
-					+ lit1.toString() + op.getSymbol() + lit2.toString());
+				+ lit1.toString() + op.getSymbol() + lit2.toString());
 		} catch (ValueExprEvaluationException e) {
 			// Expected exception
 		}
@@ -430,7 +430,7 @@ public class QueryEvaluationUtilTest {
 	 */
 	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op, boolean strict) throws Exception {
 		assertFalse("Compare did not return false for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
+			QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
 	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op) throws Exception {
@@ -448,7 +448,7 @@ public class QueryEvaluationUtilTest {
 	 */
 	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op, boolean strict) throws Exception {
 		assertTrue("Compare did not return true for " + lit1.toString() + op.getSymbol() + lit2.toString(),
-				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
+			QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
 }

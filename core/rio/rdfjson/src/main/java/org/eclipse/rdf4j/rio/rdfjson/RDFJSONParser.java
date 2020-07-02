@@ -69,7 +69,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final InputStream inputStream, final String baseUri)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		JsonParser jp = null;
 
 		clear();
@@ -115,17 +115,17 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	 * @throws RDFParseException
 	 */
 	protected Literal createLiteral(String label, String language, IRI datatype, JsonLocation currentLocation)
-			throws RDFParseException {
+		throws RDFParseException {
 		return createLiteral(label, language, datatype, currentLocation.getLineNr(), currentLocation.getColumnNr());
 	}
 
 	protected void reportError(String msg, Exception e, JsonLocation location, RioSetting<Boolean> setting)
-			throws RDFParseException {
+		throws RDFParseException {
 		reportError(msg, e, location.getLineNr(), location.getColumnNr(), setting);
 	}
 
 	protected void reportError(String msg, JsonLocation location, RioSetting<Boolean> setting)
-			throws RDFParseException {
+		throws RDFParseException {
 		reportError(msg, location.getLineNr(), location.getColumnNr(), setting);
 	}
 
@@ -139,7 +139,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final Reader reader, final String baseUri)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		JsonParser jp = null;
 
 		clear();
@@ -173,7 +173,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 	}
 
 	private void rdfJsonToHandlerInternal(final RDFHandler handler, final ValueFactory vf, final JsonParser jp)
-			throws IOException, JsonParseException, RDFParseException, RDFHandlerException {
+		throws IOException, JsonParseException, RDFParseException, RDFHandlerException {
 		if (jp.nextToken() != JsonToken.START_OBJECT) {
 			reportFatalError("Expected RDF/JSON document to start with an Object", jp.getCurrentLocation());
 		}
@@ -203,7 +203,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 				while (jp.nextToken() != JsonToken.END_ARRAY) {
 					if (jp.getCurrentToken() != JsonToken.START_OBJECT) {
 						reportFatalError("Expected object value to start with an Object: subject=<" + subjStr
-								+ "> predicate=<" + predStr + ">", jp.getCurrentLocation());
+							+ "> predicate=<" + predStr + ">", jp.getCurrentLocation());
 					}
 
 					String nextValue = null;
@@ -217,9 +217,9 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 						if (RDFJSONUtility.VALUE.equals(fieldName)) {
 							if (nextValue != null) {
 								reportError(
-										"Multiple values found for a single object: subject=" + subjStr + " predicate="
-												+ predStr,
-										jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_VALUES);
+									"Multiple values found for a single object: subject=" + subjStr + " predicate="
+										+ predStr,
+									jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_VALUES);
 							}
 
 							jp.nextToken();
@@ -228,9 +228,9 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 						} else if (RDFJSONUtility.TYPE.equals(fieldName)) {
 							if (nextType != null) {
 								reportError(
-										"Multiple types found for a single object: subject=" + subjStr + " predicate="
-												+ predStr,
-										jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_TYPES);
+									"Multiple types found for a single object: subject=" + subjStr + " predicate="
+										+ predStr,
+									jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_TYPES);
 							}
 
 							jp.nextToken();
@@ -239,10 +239,10 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 						} else if (RDFJSONUtility.LANG.equals(fieldName)) {
 							if (nextLanguage != null) {
 								reportError(
-										"Multiple languages found for a single object: subject=" + subjStr
-												+ " predicate=" + predStr,
-										jp.getCurrentLocation(),
-										RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);
+									"Multiple languages found for a single object: subject=" + subjStr
+										+ " predicate=" + predStr,
+									jp.getCurrentLocation(),
+									RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);
 							}
 
 							jp.nextToken();
@@ -251,10 +251,10 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 						} else if (RDFJSONUtility.DATATYPE.equals(fieldName)) {
 							if (nextDatatype != null) {
 								reportError(
-										"Multiple datatypes found for a single object: subject=" + subjStr
-												+ " predicate=" + predStr,
-										jp.getCurrentLocation(),
-										RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);
+									"Multiple datatypes found for a single object: subject=" + subjStr
+										+ " predicate=" + predStr,
+									jp.getCurrentLocation(),
+									RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);
 							}
 
 							jp.nextToken();
@@ -263,7 +263,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 						} else if (RDFJSONUtility.GRAPHS.equals(fieldName)) {
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								reportError("Expected graphs to start with an array", jp.getCurrentLocation(),
-										RDFJSONParserSettings.SUPPORT_GRAPHS_EXTENSION);
+									RDFJSONParserSettings.SUPPORT_GRAPHS_EXTENSION);
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -272,9 +272,9 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 							}
 						} else {
 							reportError(
-									"Unrecognised JSON field name for object: subject=" + subjStr + " predicate="
-											+ predStr + " fieldname=" + fieldName,
-									jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_UNKNOWN_PROPERTY);
+								"Unrecognised JSON field name for object: subject=" + subjStr + " predicate="
+									+ predStr + " fieldname=" + fieldName,
+								jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_UNKNOWN_PROPERTY);
 						}
 					}
 
@@ -282,12 +282,12 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 					if (nextType == null) {
 						reportFatalError("No type for object: subject=" + subjStr + " predicate=" + predStr,
-								jp.getCurrentLocation());
+							jp.getCurrentLocation());
 					}
 
 					if (nextValue == null) {
 						reportFatalError("No value for object: subject=" + subjStr + " predicate=" + predStr,
-								jp.getCurrentLocation());
+							jp.getCurrentLocation());
 					}
 
 					if (RDFJSONUtility.LITERAL.equals(nextType)) {
@@ -295,28 +295,28 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 							object = this.createLiteral(nextValue, nextLanguage, null, jp.getCurrentLocation());
 						} else if (nextDatatype != null) {
 							object = this.createLiteral(nextValue, null, this.createURI(nextDatatype),
-									jp.getCurrentLocation());
+								jp.getCurrentLocation());
 						} else {
 							object = this.createLiteral(nextValue, null, null, jp.getCurrentLocation());
 						}
 					} else if (RDFJSONUtility.BNODE.equals(nextType)) {
 						if (nextLanguage != null) {
 							reportFatalError("Language was attached to a blank node object: subject=" + subjStr
-									+ " predicate=" + predStr, jp.getCurrentLocation());
+								+ " predicate=" + predStr, jp.getCurrentLocation());
 						}
 						if (nextDatatype != null) {
 							reportFatalError("Datatype was attached to a blank node object: subject=" + subjStr
-									+ " predicate=" + predStr, jp.getCurrentLocation());
+								+ " predicate=" + predStr, jp.getCurrentLocation());
 						}
 						object = createNode(nextValue.substring(2));
 					} else if (RDFJSONUtility.URI.equals(nextType)) {
 						if (nextLanguage != null) {
 							reportFatalError("Language was attached to a uri object: subject=" + subjStr + " predicate="
-									+ predStr, jp.getCurrentLocation());
+								+ predStr, jp.getCurrentLocation());
 						}
 						if (nextDatatype != null) {
 							reportFatalError("Datatype was attached to a uri object: subject=" + subjStr + " predicate="
-									+ predStr, jp.getCurrentLocation());
+								+ predStr, jp.getCurrentLocation());
 						}
 						object = vf.createIRI(nextValue);
 					}
@@ -348,7 +348,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 				}
 				if (!foundObject) {
 					reportFatalError("No object for predicate: subject=" + subjStr + " predicate=" + predStr,
-							jp.getCurrentLocation());
+						jp.getCurrentLocation());
 				}
 			}
 
@@ -401,47 +401,47 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
-					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
+				getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
+				getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
-					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
+				getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
-					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
+				getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
-					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
+				getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
+				getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
+				getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
+				getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
-					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
+				getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
 		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
 			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
-					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
+				getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
 		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
-					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
+				getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
 		return nextJsonFactory;
 	}

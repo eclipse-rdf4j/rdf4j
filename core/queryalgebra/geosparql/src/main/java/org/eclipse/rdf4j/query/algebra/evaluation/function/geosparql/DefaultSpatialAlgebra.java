@@ -26,7 +26,7 @@ final class DefaultSpatialAlgebra implements SpatialAlgebra {
 
 	private <T> T notSupported() {
 		throw new UnsupportedOperationException(
-				"Not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS.");
+			"Not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS.");
 	}
 
 	private Shape createEmptyPoint() {

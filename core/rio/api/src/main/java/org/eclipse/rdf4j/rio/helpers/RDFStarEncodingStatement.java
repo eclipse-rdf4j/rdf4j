@@ -57,7 +57,7 @@ class RDFStarEncodingStatement implements Statement {
 			Statement that = (Statement) other;
 
 			return getObject().equals(that.getObject()) && getSubject().equals(that.getSubject())
-					&& getPredicate().equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
+				&& getPredicate().equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
 		}
 
 		return false;

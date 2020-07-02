@@ -21,7 +21,7 @@ public class PrefixTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons (2 endpoints) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-				"/tests/data/data4.ttl"));
+			"/tests/data/data4.ttl"));
 
 		QueryManager qm = federationContext().getQueryManager();
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");
@@ -40,7 +40,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		/* test select query retrieving all persons, missing prefix, malformed query exception */
 		try {
 			prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-					"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 			execute("/tests/prefix/query.rq", "/tests/prefix/query.srx", false);
 		} catch (MalformedQueryException m) {
 			// this exception is expected
@@ -53,7 +53,7 @@ public class PrefixTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons - duplicated prefix definition (in the query + qm) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-				"/tests/data/data4.ttl"));
+			"/tests/data/data4.ttl"));
 
 		QueryManager qm = federationContext().getQueryManager();
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");

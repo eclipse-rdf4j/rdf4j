@@ -100,16 +100,16 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 			connection.begin();
 			connection.add(SUBJECT_1, RDFSLABEL, vf.createLiteral("the first resource"));
 			connection.add(SUBJECT_1, RDFSCOMMENT, vf.createLiteral(
-					"Groucho Marx is going to cut away the first part of the first party of the contract."));
+				"Groucho Marx is going to cut away the first part of the first party of the contract."));
 			connection.add(SUBJECT_1, FOAFNAME, vf.createLiteral("groucho and harpo"));
 
 			connection.add(SUBJECT_2, FOAFNAME, vf.createLiteral("the second resource"));
 			connection.add(SUBJECT_2, RDFSCOMMENT,
-					vf.createLiteral("in the night at the opera, groucho is in a cabin on a ship."));
+				vf.createLiteral("in the night at the opera, groucho is in a cabin on a ship."));
 
 			connection.add(SUBJECT_3, RDFSLABEL, vf.createLiteral("the third resource"));
 			connection.add(SUBJECT_3, RDFSCOMMENT,
-					vf.createLiteral("a not well known fact, groucho marx was not a smoker"));
+				vf.createLiteral("a not well known fact, groucho marx was not a smoker"));
 			// this should not be indexed
 			connection.add(SUBJECT_3, FOAFPLAN, vf.createLiteral("groucho did not smoke cigars nor cigarillos"));
 			connection.commit();
@@ -129,21 +129,21 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertTrue(connection.hasStatement(SUBJECT_1, RDFSLABEL, vf.createLiteral("the first resource"), false));
 			assertTrue(connection.hasStatement(SUBJECT_1, RDFSCOMMENT,
-					vf.createLiteral(
-							"Groucho Marx is going to cut away the first part of the first party of the contract."),
-					false));
+				vf.createLiteral(
+					"Groucho Marx is going to cut away the first part of the first party of the contract."),
+				false));
 			assertTrue(connection.hasStatement(SUBJECT_1, FOAFNAME, vf.createLiteral("groucho and harpo"), false));
 
 			assertTrue(connection.hasStatement(SUBJECT_2, FOAFNAME, vf.createLiteral("the second resource"), false));
 			assertTrue(connection.hasStatement(SUBJECT_2, RDFSCOMMENT,
-					vf.createLiteral("in the night at the opera, groucho is in a cabin on a ship."), false));
+				vf.createLiteral("in the night at the opera, groucho is in a cabin on a ship."), false));
 
 			assertTrue(connection.hasStatement(SUBJECT_3, RDFSLABEL, vf.createLiteral("the third resource"), false));
 			assertTrue(connection.hasStatement(SUBJECT_3, RDFSCOMMENT,
-					vf.createLiteral("a not well known fact, groucho marx was not a smoker"), false));
+				vf.createLiteral("a not well known fact, groucho marx was not a smoker"), false));
 			// this should not be indexed
 			assertTrue(connection.hasStatement(SUBJECT_3, FOAFPLAN,
-					vf.createLiteral("groucho did not smoke cigars nor cigarillos"), false));
+				vf.createLiteral("groucho did not smoke cigars nor cigarillos"), false));
 		}
 	}
 
@@ -152,7 +152,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
 			String queryString = "SELECT Subject, Score " + "FROM {Subject} <" + MATCHES + "> {} " + " <" + QUERY
-					+ "> {Query}; " + " <" + PROPERTY + "> {Property}; " + " <" + SCORE + "> {Score} ";
+				+ "> {Query}; " + " <" + PROPERTY + "> {Property}; " + " <" + SCORE + "> {Score} ";
 			{
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
 				query.setBinding("Query", vf.createLiteral("resource"));

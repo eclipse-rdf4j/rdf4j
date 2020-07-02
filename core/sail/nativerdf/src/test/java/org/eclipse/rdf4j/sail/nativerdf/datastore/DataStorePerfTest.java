@@ -43,7 +43,7 @@ public class DataStorePerfTest {
 		System.out.println("#str\tstore\tgetID\tgetData");
 		for (long[] timeData : timeDataList) {
 			System.out.printf("%d\t%d\t%d\t%d", timeData[0], timeData[1] / 1000, timeData[2] / 1000,
-					timeData[3] / 1000);
+				timeData[3] / 1000);
 			System.out.println();
 		}
 	}

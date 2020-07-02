@@ -52,7 +52,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(1024);
 
 	protected JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings) throws QueryEvaluationException {
+		BindingSet bindings) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightArg = rightArg;
 		this.bindings = bindings;

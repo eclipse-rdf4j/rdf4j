@@ -114,7 +114,7 @@ public class XMLReaderFactory {
 	}
 
 	protected static XMLReader _createXMLReader(String name)
-			throws ClassNotFoundException, ClassCastException, InstantiationException, IllegalAccessException {
+		throws ClassNotFoundException, ClassCastException, InstantiationException, IllegalAccessException {
 		return (XMLReader) Class.forName(name).newInstance();
 	}
 }

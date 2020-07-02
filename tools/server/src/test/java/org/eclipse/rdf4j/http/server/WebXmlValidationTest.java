@@ -30,6 +30,6 @@ public class WebXmlValidationTest {
 		File webXml = new File("src/main/webapp/WEB-INF/web.xml");
 
 		DocumentUtil.getDocument(webXml.toURL(),
-				SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI).newSchema());
+			SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI).newSchema());
 	}
 }

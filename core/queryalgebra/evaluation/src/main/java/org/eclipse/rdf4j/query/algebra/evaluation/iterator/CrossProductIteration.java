@@ -34,7 +34,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	protected BindingSet currentInputBinding = null;
 
 	public CrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
-			List<BindingSet> inputBindings) {
+		List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;
 		this.inputBindings = inputBindings;

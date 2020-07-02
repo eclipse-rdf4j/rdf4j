@@ -37,8 +37,8 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 	protected CloseableIteration<T, QueryEvaluationException> leftIter;
 
 	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T, QueryEvaluationException> leftIter,
-			TupleExpr rightArg,
-			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
+		TupleExpr rightArg,
+		BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
 		super(strategy, queryInfo);
 		this.leftIter = leftIter;
 		this.rightArg = rightArg;

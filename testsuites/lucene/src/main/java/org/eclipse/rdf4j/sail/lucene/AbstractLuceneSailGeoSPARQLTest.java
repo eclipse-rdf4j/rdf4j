@@ -66,15 +66,15 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	public static final Literal NOTRE_DAME = vf.createLiteral("POINT (2.3465 48.8547)", GEO.WKT_LITERAL);
 
 	public static final Literal POLY1 = vf.createLiteral(
-			"POLYGON ((2.3294 48.8726, 2.2719 48.8643, 2.3370 48.8398, 2.3294 48.8726))", GEO.WKT_LITERAL);
+		"POLYGON ((2.3294 48.8726, 2.2719 48.8643, 2.3370 48.8398, 2.3294 48.8726))", GEO.WKT_LITERAL);
 
 	public static final Literal POLY2 = vf.createLiteral(
-			"POLYGON ((2.3509 48.8429, 2.3785 48.8385, 2.3576 48.8487, 2.3509 48.8429))", GEO.WKT_LITERAL);
+		"POLYGON ((2.3509 48.8429, 2.3785 48.8385, 2.3576 48.8487, 2.3509 48.8429))", GEO.WKT_LITERAL);
 
 	public static final Literal TEST_POINT = vf.createLiteral("POINT (2.2871 48.8630)", GEO.WKT_LITERAL);
 
 	public static final Literal TEST_POLY = vf
-			.createLiteral("POLYGON ((2.315 48.855, 2.360 48.835, 2.370 48.850, 2.315 48.855))", GEO.WKT_LITERAL);
+		.createLiteral("POLYGON ((2.315 48.855, 2.360 48.835, 2.370 48.850, 2.315 48.855))", GEO.WKT_LITERAL);
 
 	private static final double ERROR = 2.0;
 
@@ -151,7 +151,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	public void testDistanceQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-					+ "select ?toUri ?to where { ?toUri geo:asWKT ?to. filter(geof:distance(?from, ?to, ?units) < ?range) }";
+				+ "select ?toUri ?to where { ?toUri geo:asWKT ?to. filter(geof:distance(?from, ?to, ?units) < ?range) }";
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("from", TEST_POINT);
 			query.setBinding("units", GEOF.UOM_METRE);
@@ -182,11 +182,11 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	@Test
 	public void testComplexDistanceQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-					+ "select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}"
-					+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
+				+ "select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}"
+				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("from", TEST_POINT);
 			query.setBinding("units", GEOF.UOM_METRE);
@@ -218,11 +218,11 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 
 	@Test
 	public void testComplexDistanceQueryMathExpr()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-					+ "select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}"
-					+ " bind((geof:distance(?from, ?to, ?units) / 1000) as ?dist)" + " filter(?dist < ?range)" + " }";
+				+ "select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}"
+				+ " bind((geof:distance(?from, ?to, ?units) / 1000) as ?dist)" + " filter(?dist < ?range)" + " }";
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("from", TEST_POINT);
 			query.setBinding("units", GEOF.UOM_METRE);
@@ -255,7 +255,7 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-					+ "select ?matchUri ?match where { ?matchUri geo:asWKT ?match. filter(geof:sfIntersects(?pattern, ?match)) }";
+				+ "select ?matchUri ?match where { ?matchUri geo:asWKT ?match. filter(geof:sfIntersects(?pattern, ?match)) }";
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("pattern", TEST_POLY);
 
@@ -280,12 +280,12 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	public void testComplexIntersectionQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 
 			String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-					+ "select ?matchUri ?intersects ?g where { graph ?g {?matchUri geo:asWKT ?match.}"
-					+ " bind(geof:sfIntersects(?pattern, ?match) as ?intersects)" + " filter(?intersects)" + " }";
+				+ "select ?matchUri ?intersects ?g where { graph ?g {?matchUri geo:asWKT ?match.}"
+				+ " bind(geof:sfIntersects(?pattern, ?match) as ?intersects)" + " filter(?intersects)" + " }";
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("pattern", TEST_POLY);
 

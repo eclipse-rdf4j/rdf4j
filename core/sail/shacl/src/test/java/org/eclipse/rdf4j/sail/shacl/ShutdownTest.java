@@ -70,7 +70,7 @@ public class ShutdownTest {
 
 	@Test
 	public void testThatGarbadgeCollectionWillShutdownTheThreadPool()
-			throws InterruptedException, NoSuchFieldException, IllegalAccessException {
+		throws InterruptedException, NoSuchFieldException, IllegalAccessException {
 
 		ExecutorService[] executorServices = startShaclSailAndTask();
 
@@ -89,7 +89,7 @@ public class ShutdownTest {
 	}
 
 	private ExecutorService[] startShaclSailAndTask()
-			throws InterruptedException, NoSuchFieldException, IllegalAccessException {
+		throws InterruptedException, NoSuchFieldException, IllegalAccessException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.initialize();
 

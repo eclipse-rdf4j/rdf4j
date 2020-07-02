@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
  * @see #isDelegatingRead()
  */
 public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
-		implements DelegatingRepositoryConnection {
+	implements DelegatingRepositoryConnection {
 
 	private volatile RepositoryConnection delegate;
 
@@ -135,7 +135,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(file, baseURI, dataFormat, contexts);
 		} else {
@@ -145,7 +145,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(in, baseURI, dataFormat, contexts);
 		} else {
@@ -164,7 +164,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+		throws RepositoryException, E {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statementIter, contexts);
 		} else {
@@ -174,7 +174,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(reader, baseURI, dataFormat, contexts);
 		} else {
@@ -202,7 +202,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isDelegatingAdd()) {
 			getDelegate().add(url, baseURI, dataFormat, contexts);
 		} else {
@@ -235,7 +235,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
-			Resource... contexts) throws RepositoryException, RDFHandlerException {
+		Resource... contexts) throws RepositoryException, RDFHandlerException {
 		if (isDelegatingRead()) {
 			getDelegate().exportStatements(subj, pred, obj, includeInferred, handler, contexts);
 		} else {
@@ -260,13 +260,13 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts) throws RepositoryException {
+		Resource... contexts) throws RepositoryException {
 		return getDelegate().getStatements(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (isDelegatingRead()) {
 			return getDelegate().hasStatement(subj, pred, obj, includeInferred, contexts);
 		}
@@ -275,7 +275,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (isDelegatingRead()) {
 			return getDelegate().hasStatement(st, includeInferred, contexts);
 		}
@@ -311,31 +311,31 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareGraphQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareTupleQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareBooleanQuery(ql, query, baseURI);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return getDelegate().prepareUpdate(ql, update, baseURI);
 	}
 
@@ -350,7 +350,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+		throws RepositoryException, E {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statementIter, contexts);
 		} else {
@@ -413,13 +413,13 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		getDelegate().add(subject, predicate, object, contexts);
 	}
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		getDelegate().remove(subject, predicate, object, contexts);
 	}
 
@@ -428,11 +428,11 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * supplied RDFHandler.
 	 */
 	protected void exportStatements(RepositoryResult<Statement> stIter, RDFHandler handler)
-			throws RepositoryException, RDFHandlerException {
+		throws RepositoryException, RDFHandlerException {
 		try {
 			handler.startRDF();
 			try ( // Export namespace information
-					RepositoryResult<Namespace> nsIter = getNamespaces()) {
+				RepositoryResult<Namespace> nsIter = getNamespaces()) {
 				while (nsIter.hasNext()) {
 					Namespace ns = nsIter.next();
 					handler.handleNamespace(ns.getPrefix(), ns.getName());

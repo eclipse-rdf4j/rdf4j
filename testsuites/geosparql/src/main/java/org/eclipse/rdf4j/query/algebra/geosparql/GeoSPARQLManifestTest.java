@@ -23,7 +23,7 @@ import org.junit.runners.Parameterized;
 public abstract class GeoSPARQLManifestTest extends SPARQLQueryComplianceTest {
 
 	public GeoSPARQLManifestTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+		String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 
@@ -38,9 +38,9 @@ public abstract class GeoSPARQLManifestTest extends SPARQLQueryComplianceTest {
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(
-				GeoSPARQLManifestTest.class.getClassLoader()
-						.getResource("testcases-geosparql/functions/manifest.ttl")
-						.toExternalForm());
+			GeoSPARQLManifestTest.class.getClassLoader()
+				.getResource("testcases-geosparql/functions/manifest.ttl")
+				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, null, false);

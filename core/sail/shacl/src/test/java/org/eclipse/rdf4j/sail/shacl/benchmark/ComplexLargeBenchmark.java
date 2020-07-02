@@ -67,21 +67,21 @@ public class ComplexLargeBenchmark {
 	static {
 		try {
 			transaction1 = IOUtils.toString(
-					ComplexLargeBenchmark.class.getClassLoader()
-							.getResourceAsStream("complexBenchmark/transaction1.qr"),
-					"utf-8");
+				ComplexLargeBenchmark.class.getClassLoader()
+					.getResourceAsStream("complexBenchmark/transaction1.qr"),
+				"utf-8");
 			transaction2 = IOUtils.toString(
-					ComplexLargeBenchmark.class.getClassLoader()
-							.getResourceAsStream("complexBenchmark/transaction2.qr"),
-					"utf-8");
+				ComplexLargeBenchmark.class.getClassLoader()
+					.getResourceAsStream("complexBenchmark/transaction2.qr"),
+				"utf-8");
 			transaction3 = IOUtils.toString(
-					ComplexLargeBenchmark.class.getClassLoader()
-							.getResourceAsStream("complexBenchmark/transaction3.qr"),
-					"utf-8");
+				ComplexLargeBenchmark.class.getClassLoader()
+					.getResourceAsStream("complexBenchmark/transaction3.qr"),
+				"utf-8");
 			transaction4 = IOUtils.toString(
-					ComplexLargeBenchmark.class.getClassLoader()
-							.getResourceAsStream("complexBenchmark/transaction4.qr"),
-					"utf-8");
+				ComplexLargeBenchmark.class.getClassLoader()
+					.getResourceAsStream("complexBenchmark/transaction4.qr"),
+				"utf-8");
 
 		} catch (IOException e) {
 			throw new RuntimeException();
@@ -94,7 +94,7 @@ public class ComplexLargeBenchmark {
 	public void setUp() {
 
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-				.setLevel(ch.qos.logback.classic.Level.ERROR);
+			.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
 		try {
@@ -154,7 +154,7 @@ public class ComplexLargeBenchmark {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
-					connection.getValueFactory().createLiteral(""));
+				connection.getValueFactory().createLiteral(""));
 			connection.commit();
 
 		}
@@ -348,8 +348,8 @@ public class ComplexLargeBenchmark {
 		try {
 
 			SailRepository repository = new SailRepository(
-					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"),
-							"complexBenchmark/shacl.ttl"));
+				Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"),
+					"complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);

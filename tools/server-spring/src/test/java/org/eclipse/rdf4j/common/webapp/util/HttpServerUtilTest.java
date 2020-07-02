@@ -116,7 +116,7 @@ public class HttpServerUtilTest {
 	public void testSelectPreferredMIMEType4() {
 
 		ServletRequestStub testRequest = new ServletRequestStub("*/*", "application/sparql-result+xml;q=0.9",
-				"application/sparql-results+json");
+			"application/sparql-results+json");
 
 		String preferredType = HttpServerUtil.selectPreferredMIMEType(tupleQueryMimeTypes.iterator(), testRequest);
 
@@ -498,7 +498,7 @@ public class HttpServerUtilTest {
 		 */
 		@Override
 		public AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse)
-				throws IllegalStateException {
+			throws IllegalStateException {
 			// TODO Auto-generated method stub
 			return null;
 		}

@@ -38,13 +38,13 @@ public class MockInputPlanNode implements PlanNode {
 	public MockInputPlanNode(Collection<String>... list) {
 
 		initialData = Arrays.stream(list)
-				.map(strings -> strings.stream()
-						.map(SimpleValueFactory.getInstance()::createLiteral)
-						.map(l -> (Value) l)
-						.collect(Collectors.toList()))
-				.map(Tuple::new)
-				.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
-				.collect(Collectors.toList());
+			.map(strings -> strings.stream()
+				.map(SimpleValueFactory.getInstance()::createLiteral)
+				.map(l -> (Value) l)
+				.collect(Collectors.toList()))
+			.map(Tuple::new)
+			.sorted((a, b) -> new ValueComparator().compare(a.line.get(0), b.line.get(0)))
+			.collect(Collectors.toList());
 
 	}
 

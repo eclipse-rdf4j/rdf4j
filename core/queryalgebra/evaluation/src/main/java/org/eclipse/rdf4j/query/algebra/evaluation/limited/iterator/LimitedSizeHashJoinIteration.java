@@ -32,7 +32,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 	private final long maxSize;
 
 	public LimitedSizeHashJoinIteration(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
-			BindingSet bindings, AtomicLong used, long maxSize) throws QueryEvaluationException {
+		BindingSet bindings, AtomicLong used, long maxSize) throws QueryEvaluationException {
 		super(limitedSizeEvaluationStrategy, join, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -61,7 +61,7 @@ public class LimitedSizeHashJoinIteration extends HashJoinIteration {
 	}
 
 	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> hashTable, BindingSetHashKey hashKey,
-			List<BindingSet> hashValue) throws QueryEvaluationException {
+		List<BindingSet> hashValue) throws QueryEvaluationException {
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);

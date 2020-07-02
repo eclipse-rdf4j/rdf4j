@@ -79,9 +79,9 @@ public abstract class RDFXMLParserTestCase {
 
 		// Add all positive parser tests
 		String query = "select TESTCASE, INPUT, OUTPUT " + "from {TESTCASE} rdf:type {test:PositiveParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:outputDocument {OUTPUT}; "
-				+ "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
+			+ "                test:inputDocument {INPUT}; " + "                test:outputDocument {OUTPUT}; "
+			+ "                test:status {\"APPROVED\"} "
+			+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
 		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
@@ -95,8 +95,8 @@ public abstract class RDFXMLParserTestCase {
 
 		// Add all negative parser tests
 		query = "select TESTCASE, INPUT " + "from {TESTCASE} rdf:type {test:NegativeParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
+			+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
+			+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
 		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();

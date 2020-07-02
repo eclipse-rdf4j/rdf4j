@@ -57,7 +57,7 @@ public class GraphQueryResultView extends QueryResultView {
 	@SuppressWarnings("rawtypes")
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws IOException {
+		throws IOException {
 		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
 

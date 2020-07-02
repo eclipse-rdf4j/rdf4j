@@ -33,7 +33,7 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	 * @param queryInfo
 	 */
 	public SingleSourceQuery(TupleExpr parsedQuery, Endpoint source,
-			QueryInfo queryInfo) {
+		QueryInfo queryInfo) {
 		super();
 		this.parsedQuery = parsedQuery;
 		this.source = source;
@@ -55,13 +55,13 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		visitor.meetOther(this);
 	}
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		parsedQuery.visit(visitor);
 		super.visitChildren(visitor);
 	}

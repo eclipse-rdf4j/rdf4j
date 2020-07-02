@@ -49,9 +49,9 @@ public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-			throws RDFParseException, RDFHandlerException, IOException {
+		throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+			.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
 
 	/**
@@ -83,9 +83,9 @@ public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
@@ -105,9 +105,9 @@ public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_0"), vf.createIRI("http://example.com/#0")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_0"), vf.createIRI("http://example.com/#0")));
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());
@@ -127,13 +127,13 @@ public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
 		rdfWriter.handleStatement(vf.createStatement(res, RDF.TYPE, RDF.BAG));
 
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_1"), vf.createIRI("http://example.com/#1")));
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_3"), vf.createIRI("http://example.com/#3")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_3"), vf.createIRI("http://example.com/#3")));
 		rdfWriter.handleStatement(
-				vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
+			vf.createStatement(res, vf.createIRI(RDF.NAMESPACE + "_2"), vf.createIRI("http://example.com/#2")));
 		rdfWriter.endRDF();
 
 		List<String> rdfLines = rdfOpenTags(writer.toString());

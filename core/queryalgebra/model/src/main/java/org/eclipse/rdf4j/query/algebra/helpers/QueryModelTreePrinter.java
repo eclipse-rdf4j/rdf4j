@@ -138,13 +138,13 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 
 	private static void appendCostAnnotation(QueryModelNode node, StringBuilder sb) {
 		String costs = Stream.of(
-				"costEstimate=" + toHumanReadableNumber(node.getCostEstimate()),
-				"resultSizeEstimate=" + toHumanReadableNumber(node.getResultSizeEstimate()),
-				"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()),
-				"totalTimeActual=" + toHumanReadableTime(node.getTotalTimeNanosActual()))
-				.filter(s -> !s.endsWith("UNKNOWN"))
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
+			"costEstimate=" + toHumanReadableNumber(node.getCostEstimate()),
+			"resultSizeEstimate=" + toHumanReadableNumber(node.getResultSizeEstimate()),
+			"resultSizeActual=" + toHumanReadableNumber(node.getResultSizeActual()),
+			"totalTimeActual=" + toHumanReadableTime(node.getTotalTimeNanosActual()))
+			.filter(s -> !s.endsWith("UNKNOWN"))
+			.reduce((a, b) -> a + ", " + b)
+			.orElse("");
 
 		if (!costs.isEmpty()) {
 			sb.append(" (").append(costs).append(")");

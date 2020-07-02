@@ -58,7 +58,7 @@ public class InitBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 		System.gc();
@@ -75,8 +75,8 @@ public class InitBenchmark {
 	public void initWithElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
-						false));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+				false));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -92,7 +92,7 @@ public class InitBenchmark {
 	public void initWithoutElasticsearchClientCreation() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore(clientPool, "testindex", false));
+			new ElasticsearchStore(clientPool, "testindex", false));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

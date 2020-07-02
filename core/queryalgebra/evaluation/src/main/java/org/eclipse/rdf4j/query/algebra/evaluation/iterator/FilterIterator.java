@@ -41,7 +41,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 *--------------*/
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy) throws QueryEvaluationException {
+		EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filter = filter;
 		this.strategy = strategy;

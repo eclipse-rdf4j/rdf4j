@@ -23,7 +23,7 @@ public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEv
 	private BindingSet bindings;
 
 	public InsertBindingSetCursor(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
-			BindingSet bindings) {
+		BindingSet bindings) {
 		super(delegate);
 		this.bindings = bindings;
 	}

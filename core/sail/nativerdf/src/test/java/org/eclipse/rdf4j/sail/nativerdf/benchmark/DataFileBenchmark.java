@@ -55,7 +55,7 @@ public class DataFileBenchmark {
 	private DataFile dataFile;
 
 	final static private byte[] BYTES = "fewjf3u28hq98fhref8j2908rhfuhfjnjvfbv2u9r82ufh4908fhuheui2hjdfh9284ru9h34unfre892hf08r48nu2frfh9034"
-			.getBytes(StandardCharsets.UTF_8);
+		.getBytes(StandardCharsets.UTF_8);
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {

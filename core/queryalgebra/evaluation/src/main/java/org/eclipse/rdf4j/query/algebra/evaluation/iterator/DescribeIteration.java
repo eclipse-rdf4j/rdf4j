@@ -63,7 +63,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
 
 	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
-			Set<String> describeExprNames, BindingSet parentBindings) {
+		Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
 		this.describeExprNames = new ArrayList<>(describeExprNames);
@@ -203,7 +203,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();
 		}

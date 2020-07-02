@@ -45,7 +45,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), getBindingsArray());
+				getMaxExecutionTime(), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
@@ -53,12 +53,12 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+		throws QueryEvaluationException, TupleQueryResultHandlerException {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
-					handler, getBindingsArray());
+				handler, getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}

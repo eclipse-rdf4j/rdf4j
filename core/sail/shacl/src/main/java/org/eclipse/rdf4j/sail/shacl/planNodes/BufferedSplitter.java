@@ -84,8 +84,8 @@ public class BufferedSplitter implements PlanNodeProvider {
 						Tuple tuple = new Tuple(iterator.next());
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
-									parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
-									getId());
+								parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
+								getId());
 						}
 						return tuple;
 					}
@@ -109,7 +109,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 				}
 				printed = true;
 				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-						.append("\n");
+					.append("\n");
 				stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 				parent.getPlanAsGraphvizDot(stringBuilder);
 			}

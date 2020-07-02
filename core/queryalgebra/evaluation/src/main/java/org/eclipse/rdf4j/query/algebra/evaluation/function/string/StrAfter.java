@@ -72,7 +72,7 @@ public class StrAfter implements Function {
 				}
 			} else {
 				throw new ValueExprEvaluationException(
-						"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
+					"incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);
 			}
 		} else {
 			throw new ValueExprEvaluationException("incompatible operands for STRAFTER: " + leftArg + ", " + rightArg);

@@ -140,7 +140,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
 						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
-								boundVars);
+							boundVars);
 
 						joinArgs.remove(tupleExpr);
 						orderedJoinArgs.add(tupleExpr);
@@ -384,14 +384,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
 
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap,
-						boundVars);
+					boundVars);
 
 				if (cost < lowestCost || result == null) {
 					// More specific path expression found
@@ -407,12 +407,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Deprecated
 		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			return getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double cost = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);

@@ -141,7 +141,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 		((SpinSail) getBaseSail()).setEvaluationMode(TupleFunctionEvaluationMode.TRIPLE_SOURCE);
 		parameters.setProperty(LuceneSail.INDEX_CLASS_KEY,
-				getParameters().getProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS));
+			getParameters().getProperty(LuceneSail.INDEX_CLASS_KEY, LuceneSail.DEFAULT_INDEX_CLASS));
 		Path indexLocation = getAbsoluteLuceneIndexDir();
 		log.debug("index location: {}", indexLocation);
 		Properties newParameters = (Properties) this.parameters.clone();
@@ -195,7 +195,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 		if (predicateChanged) {
 			return getValueFactory().createStatement(statement.getSubject(), p, statement.getObject(),
-					statement.getContext());
+				statement.getContext());
 		} else {
 			return statement;
 		}

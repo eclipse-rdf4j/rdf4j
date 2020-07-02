@@ -168,12 +168,12 @@ public class ModificationTest {
 		assertFalse(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PAINTER));
 		assertTrue(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PICASSO));
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK {<" + PICASSO + "> a <" + PAINTER + ">}")
-				.evaluate());
+			.evaluate());
 		con.commit();
 		assertFalse(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PAINTER));
 		assertTrue(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PICASSO));
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK {<" + PICASSO + "> a <" + PAINTER + ">}")
-				.evaluate());
+			.evaluate());
 	}
 
 }

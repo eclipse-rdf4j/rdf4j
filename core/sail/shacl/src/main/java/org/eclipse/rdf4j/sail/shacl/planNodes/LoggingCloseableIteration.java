@@ -36,7 +36,7 @@ abstract class LoggingCloseableIteration implements CloseableIteration<Tuple, Sa
 
 		if (GlobalValidationExecutionLogging.loggingEnabled) {
 			validationExecutionLogger.log(planNode.depth(), planNode.getClass().getSimpleName() + ".next()", tuple,
-					planNode, planNode.getId());
+				planNode, planNode.getId());
 		}
 		return tuple;
 	}

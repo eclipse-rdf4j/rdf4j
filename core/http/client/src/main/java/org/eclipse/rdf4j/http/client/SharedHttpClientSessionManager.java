@@ -73,7 +73,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	}
 
 	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
-			ScheduledExecutorService dependentExecutorService) {
+		ScheduledExecutorService dependentExecutorService) {
 		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient, "HTTP client was null");
 		this.executor = Objects.requireNonNull(dependentExecutorService, "Executor service was null");
 	}
@@ -126,10 +126,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 			return nextHttpClientBuilder.build();
 		}
 		return HttpClientBuilder.create()
-				.useSystemProperties()
-				.disableAutomaticRetries()
-				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-				.build();
+			.useSystemProperties()
+			.disableAutomaticRetries()
+			.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+			.build();
 	}
 
 	@Override

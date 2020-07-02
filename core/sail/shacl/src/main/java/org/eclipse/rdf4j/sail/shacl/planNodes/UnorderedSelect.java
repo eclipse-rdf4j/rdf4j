@@ -41,7 +41,7 @@ public class UnorderedSelect implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
-			OutputPattern outputPattern) {
+		OutputPattern outputPattern) {
 		this.connection = connection;
 		this.subject = subject;
 		this.predicate = predicate;
@@ -54,7 +54,7 @@ public class UnorderedSelect implements PlanNode {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
-					predicate, object, true);
+				predicate, object, true);
 
 			@Override
 			public void close() throws SailException {
@@ -102,12 +102,12 @@ public class UnorderedSelect implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
-					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
-					.append("\n");
+				.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
+				.append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
@@ -127,10 +127,10 @@ public class UnorderedSelect implements PlanNode {
 	@Override
 	public String toString() {
 		return "UnorderedSelect{" +
-				"subject=" + Formatter.prefix(subject) +
-				", predicate=" + Formatter.prefix(predicate) +
-				", object=" + Formatter.prefix(object) +
-				'}';
+			"subject=" + Formatter.prefix(subject) +
+			", predicate=" + Formatter.prefix(predicate) +
+			", object=" + Formatter.prefix(object) +
+			'}';
 	}
 
 	@Override
@@ -154,9 +154,9 @@ public class UnorderedSelect implements PlanNode {
 		}
 
 		return connection.equals(thatConnection) &&
-				Objects.equals(subject, that.subject) &&
-				Objects.equals(predicate, that.predicate) &&
-				Objects.equals(object, that.object);
+			Objects.equals(subject, that.subject) &&
+			Objects.equals(predicate, that.predicate) &&
+			Objects.equals(object, that.object);
 	}
 
 	@Override

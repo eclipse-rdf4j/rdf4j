@@ -160,7 +160,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 		boolean quoted = false;
 
 		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)
-				|| XMLSchema.DOUBLE.equals(datatype)) {
+			|| XMLSchema.DOUBLE.equals(datatype)) {
 			try {
 				String normalized = XMLDatatypeUtil.normalize(label, datatype);
 				writer.write(normalized);

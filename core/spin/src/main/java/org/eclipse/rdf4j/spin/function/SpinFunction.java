@@ -82,7 +82,7 @@ public class SpinFunction extends AbstractSpinFunction implements TransientFunct
 						BindingSet bs = queryResult.next();
 						if (bs.size() != 1) {
 							throw new ValueExprEvaluationException(
-									"Only a single result variables is supported: " + bs);
+								"Only a single result variables is supported: " + bs);
 						}
 						result = bs.iterator().next().getValue();
 					} else {

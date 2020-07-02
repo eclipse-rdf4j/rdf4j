@@ -48,17 +48,17 @@ public abstract class PathPropertyShape extends PropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
 	private final static Set<IRI> complexPathPredicates = new HashSet<>(
-			Arrays.asList(
-					RDF.FIRST,
-					RDF.REST,
-					SHACL.ALTERNATIVE_PATH,
-					SHACL.INVERSE_PATH,
-					SHACL.ZERO_OR_MORE_PATH,
-					SHACL.ONE_OR_MORE_PATH,
-					SHACL.ZERO_OR_ONE_PATH));
+		Arrays.asList(
+			RDF.FIRST,
+			RDF.REST,
+			SHACL.ALTERNATIVE_PATH,
+			SHACL.INVERSE_PATH,
+			SHACL.ZERO_OR_MORE_PATH,
+			SHACL.ONE_OR_MORE_PATH,
+			SHACL.ZERO_OR_ONE_PATH));
 
 	PathPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path) {
+		PathPropertyShape parent, Resource path) {
 		super(id, nodeShape, deactivated ? deactivated : !validPath(path, connection), parent);
 
 		// Only simple path is supported. Use of complex paths will make the property shape deactivated and log a
@@ -68,9 +68,9 @@ public abstract class PathPropertyShape extends PropertyShape {
 				this.path = new SimplePath((IRI) path);
 			} else {
 				logger.warn(
-						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
-						id,
-						describe(connection, path));
+					"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
+					id,
+					describe(connection, path));
 			}
 
 		}
@@ -87,8 +87,8 @@ public abstract class PathPropertyShape extends PropertyShape {
 				try (Stream<Statement> stream = connection.getStatements(path, null, null).stream()) {
 
 					boolean complexPath = stream
-							.map(Statement::getPredicate)
-							.anyMatch(complexPathPredicates::contains);
+						.map(Statement::getPredicate)
+						.anyMatch(complexPathPredicates::contains);
 
 					if (complexPath) {
 						return false;
@@ -108,18 +108,18 @@ public abstract class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		return connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
-						(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
+			.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
+				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+			(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -128,9 +128,9 @@ public abstract class PathPropertyShape extends PropertyShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
+			(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
 		if (planeNodeWrapper != null) {
 			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
 		}
@@ -157,7 +157,7 @@ public abstract class PathPropertyShape extends PropertyShape {
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements, stats)
-				|| path.requiresEvaluation(addedStatements, removedStatements, stats);
+			|| path.requiresEvaluation(addedStatements, removedStatements, stats);
 	}
 
 	public Path getPath() {

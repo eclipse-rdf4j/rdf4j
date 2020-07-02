@@ -67,7 +67,7 @@ class NativeEvaluationStatistics extends EvaluationStatistics {
 				return cardinality((Resource) subj, (IRI) pred, obj, (Resource) context);
 			} catch (IOException e) {
 				log.error("Failed to estimate statement pattern cardinality, falling back to generic implementation",
-						e);
+					e);
 				return super.getCardinality(sp);
 			}
 		}

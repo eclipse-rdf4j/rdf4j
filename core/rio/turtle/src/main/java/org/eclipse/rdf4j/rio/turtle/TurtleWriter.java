@@ -252,7 +252,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *                               statement iff it is an instance of {@link BNode}.
 	 */
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubjectBNode,
-			boolean canShortenObjectBNode) {
+		boolean canShortenObjectBNode) {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		Value obj = st.getObject();
@@ -526,12 +526,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		if (prettyPrint) {
 			if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
-					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype)) {
+				|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype)) {
 				try {
 					String normalized = XMLDatatypeUtil.normalize(label, datatype);
 					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
-							&& !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)
-							&& !normalized.equals(XMLDatatypeUtil.NaN)) {
+						&& !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)
+						&& !normalized.equals(XMLDatatypeUtil.NaN)) {
 						writer.write(normalized);
 						return; // done
 					}

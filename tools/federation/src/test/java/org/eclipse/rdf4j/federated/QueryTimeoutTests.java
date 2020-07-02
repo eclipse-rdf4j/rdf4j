@@ -31,7 +31,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		assumeSparqlEndpoint();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		fedxRule.enableDebug();
 		fedxRule.setConfig(fedxConfig -> fedxConfig.withEnforceMaxQueryTime(10));
@@ -52,7 +52,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		assumeSparqlEndpoint();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		fedxRule.enableDebug();
 		repoSettings(1).setLatencySimulator(latencySimulator(2000));
@@ -75,7 +75,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		assumeSparqlEndpoint();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		fedxRule.enableDebug();
 		repoSettings(1).setLatencySimulator(latencySimulator(2000));
@@ -98,19 +98,19 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		assumeSparqlEndpoint();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		fedxRule.enableDebug();
 
 		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" +
-				"PREFIX ns1: <http://namespace1.org/>\n" +
-				"PREFIX ns2: <http://namespace2.org/>\n" +
-				"\n" +
-				"SELECT ?person ?name  WHERE {\n" +
-				" { ?person a ns1:Person . } \n" +
-				" UNION" +
-				" { ?person a ns2:Person . ?person foaf:name ?name . }\n" +
-				"}";
+			"PREFIX ns1: <http://namespace1.org/>\n" +
+			"PREFIX ns2: <http://namespace2.org/>\n" +
+			"\n" +
+			"SELECT ?person ?name  WHERE {\n" +
+			" { ?person a ns1:Person . } \n" +
+			" UNION" +
+			" { ?person a ns2:Person . ?person foaf:name ?name . }\n" +
+			"}";
 		// make sure that latency does not affect source selection
 		federationContext().getQueryManager().getQueryPlan(queryString);
 

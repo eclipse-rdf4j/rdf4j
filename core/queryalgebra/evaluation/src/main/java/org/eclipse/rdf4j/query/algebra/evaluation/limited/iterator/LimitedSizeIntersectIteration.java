@@ -34,14 +34,14 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 	 * @param maxSize Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeIntersectIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, AtomicLong used, long maxSize) {
+		Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, AtomicLong used, long maxSize) {
 		this(arg1, arg2, false, used, maxSize);
 
 	}
 
 	public LimitedSizeIntersectIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg1,
-			Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, boolean distinct, AtomicLong used,
-			long maxSize) {
+		Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2, boolean distinct, AtomicLong used,
+		long maxSize) {
 		super(arg1, arg2, distinct);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -49,7 +49,7 @@ public class LimitedSizeIntersectIteration extends IntersectIteration<BindingSet
 
 	@Override
 	public Set<BindingSet> addSecondSet(Iteration<? extends BindingSet, ? extends QueryEvaluationException> arg2,
-			Set<BindingSet> set) throws QueryEvaluationException {
+		Set<BindingSet> set) throws QueryEvaluationException {
 
 		LimitedSizeIteratorUtil.addAll(arg2, set, used, maxSize);
 		return set;

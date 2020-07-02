@@ -35,15 +35,15 @@ public abstract class SparqlOrderByTest {
 	}
 
 	private String query1 = "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
-			+ "WHERE { ?x foaf:name ?name }\n" + "ORDER BY ?name\n";
+		+ "WHERE { ?x foaf:name ?name }\n" + "ORDER BY ?name\n";
 
 	private String query2 = "PREFIX     :    <http://example.org/ns#>\n"
-			+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "PREFIX xsd:     <http://www.w3.org/2001/XMLSchema#>\n"
-			+ "SELECT ?name\n" + "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY DESC(?emp)\n";
+		+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "PREFIX xsd:     <http://www.w3.org/2001/XMLSchema#>\n"
+		+ "SELECT ?name\n" + "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY DESC(?emp)\n";
 
 	private String query3 = "PREFIX     :    <http://example.org/ns#>\n"
-			+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
-			+ "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY ?name DESC(?emp)\n";
+		+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
+		+ "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY ?name DESC(?emp)\n";
 
 	private Repository repository;
 
@@ -110,7 +110,7 @@ public abstract class SparqlOrderByTest {
 	}
 
 	private void assertResult(String queryStr, List<String> names)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 		TupleQueryResult result = query.evaluate();
 		for (String name : names) {

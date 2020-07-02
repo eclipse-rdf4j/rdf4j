@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
  * @author Herko ter Horst
  */
 public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
-		implements NotifyingRepositoryConnection {
+	implements NotifyingRepositoryConnection {
 
 	/*-----------*
 	 * Variables *
@@ -60,7 +60,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	}
 
 	public NotifyingRepositoryConnectionWrapper(Repository repository, RepositoryConnection connection,
-			boolean reportDeltas) {
+		boolean reportDeltas) {
 		this(repository, connection);
 		setReportDeltas(reportDeltas);
 	}
@@ -108,7 +108,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 	@Override
 	public void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		boolean reportEvent = activated;
 
 		if (reportEvent && reportDeltas()) {
@@ -277,7 +277,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 	@Override
 	public Update prepareUpdate(final QueryLanguage ql, final String update, final String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (activated) {
 			return new Update() {
 

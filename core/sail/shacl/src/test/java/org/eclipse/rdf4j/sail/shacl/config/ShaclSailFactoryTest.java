@@ -74,7 +74,7 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isLogValidationViolations()).isEqualTo(config.isLogValidationViolations());
 		assertThat(sail.isParallelValidation()).isEqualTo(config.isParallelValidation());
 		assertThat(sail.isUndefinedTargetValidatesAllSubjects())
-				.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
+			.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
 		assertThat(sail.isValidationEnabled()).isEqualTo(config.isValidationEnabled());
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());

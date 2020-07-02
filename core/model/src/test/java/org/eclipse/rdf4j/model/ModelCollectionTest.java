@@ -41,15 +41,15 @@ public class ModelCollectionTest {
 	public Test testModelImpl(String name, ModelFactory factory) {
 		try {
 			return SetTestSuiteBuilder.using(new TestModelGenerator(factory))
-					.named(name)
-					.withFeatures(CollectionSize.ANY, CollectionFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
-							CollectionFeature.SERIALIZABLE, CollectionFeature.SUPPORTS_ADD,
-							CollectionFeature.SUPPORTS_ITERATOR_REMOVE, CollectionFeature.SUPPORTS_REMOVE,
-							CollectionFeature.NON_STANDARD_TOSTRING)
-					// FIXME suppressing test on iterator element remove behavior
-					.suppressing(CollectionIteratorTester.class
-							.getDeclaredMethod("testIterator_unknownOrderRemoveSupported"))
-					.createTestSuite();
+				.named(name)
+				.withFeatures(CollectionSize.ANY, CollectionFeature.FAILS_FAST_ON_CONCURRENT_MODIFICATION,
+					CollectionFeature.SERIALIZABLE, CollectionFeature.SUPPORTS_ADD,
+					CollectionFeature.SUPPORTS_ITERATOR_REMOVE, CollectionFeature.SUPPORTS_REMOVE,
+					CollectionFeature.NON_STANDARD_TOSTRING)
+				// FIXME suppressing test on iterator element remove behavior
+				.suppressing(CollectionIteratorTester.class
+					.getDeclaredMethod("testIterator_unknownOrderRemoveSupported"))
+				.createTestSuite();
 		} catch (NoSuchMethodException | SecurityException e) {
 			throw new RuntimeException(e);
 		}

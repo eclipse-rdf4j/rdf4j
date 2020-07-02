@@ -114,7 +114,7 @@ public class QueryStringUtil {
 		// assumes that the path expr is a statement pattern
 		if (!(node.getPathExpression() instanceof StatementPattern)) {
 			throw new IllegalArgumentException("Can only handle path expressions of type StatementPattern, was "
-					+ node.getPathExpression().getClass());
+				+ node.getPathExpression().getClass());
 		}
 
 		StatementPattern stmt = (StatementPattern) node.getPathExpression();
@@ -168,7 +168,7 @@ public class QueryStringUtil {
 	 * @throws IllegalQueryException if the query does not have any free variables
 	 */
 	public static String selectQueryString(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+		AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructStatement(stmt, varNames, bindings);
@@ -225,8 +225,8 @@ public class QueryStringUtil {
 	 * @throws IllegalQueryException if the query does not have any free variables
 	 */
 	public static String selectQueryString(ExclusiveTupleExprRenderer expr, BindingSet bindings,
-			FilterValueExpr filterExpr,
-			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+		FilterValueExpr filterExpr,
+		AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
 		String s = constructJoinArg(expr, varNames, bindings);
@@ -283,7 +283,7 @@ public class QueryStringUtil {
 	 *
 	 */
 	public static String selectQueryString(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+		AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		StringBuilder sb = new StringBuilder();
 		Set<String> varNames = new HashSet<>();
@@ -363,7 +363,7 @@ public class QueryStringUtil {
 	 */
 	@Deprecated
 	public static String selectQueryStringBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
+		FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 		StringBuilder unions = new StringBuilder();
@@ -428,7 +428,7 @@ public class QueryStringUtil {
 	 * @since 3.0
 	 */
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset) {
+		FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset) {
 
 		Set<String> varNames = new LinkedHashSet<>();
 		StringBuilder res = new StringBuilder();
@@ -495,7 +495,7 @@ public class QueryStringUtil {
 	 * @return the SELECT query string
 	 */
 	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings,
-			Dataset dataset) {
+		Dataset dataset) {
 
 		Set<String> varNames = new HashSet<>();
 
@@ -526,7 +526,7 @@ public class QueryStringUtil {
 	}
 
 	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
-			List<BindingSet> bindings) {
+		List<BindingSet> bindings) {
 
 		StringBuilder innerUnion = new StringBuilder();
 
@@ -535,8 +535,8 @@ public class QueryStringUtil {
 				innerUnion.append("UNION ");
 			}
 			innerUnion.append("{")
-					.append(constructStatementId(stmt, outerID + "_" + idx, varNames, bindings.get(idx)))
-					.append("} ");
+				.append(constructStatementId(stmt, outerID + "_" + idx, varNames, bindings.get(idx)))
+				.append("} ");
 		}
 
 		return innerUnion.toString();
@@ -557,7 +557,7 @@ public class QueryStringUtil {
 	 * @return the query string with bindings inserted
 	 */
 	protected static String constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 
 		if (exclusiveExpr instanceof StatementPattern) {
 			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);
@@ -717,7 +717,7 @@ public class QueryStringUtil {
 	 * @return the constructed statement pattern
 	 */
 	protected static String constructStatementId(StatementPattern stmt, String varID, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 		StringBuilder sb = new StringBuilder();
 
 		sb = appendVarId(sb, stmt.getSubjectVar(), varID, varNames, bindings).append(" ");
@@ -738,7 +738,7 @@ public class QueryStringUtil {
 	 * @return the statement pattern string
 	 */
 	protected static String constructStatementCheckId(StatementPattern stmt, int varID, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 		StringBuilder sb = new StringBuilder();
 
 		String _varID = Integer.toString(varID);
@@ -802,7 +802,7 @@ public class QueryStringUtil {
 	 * @return the complemented string builder
 	 */
 	protected static StringBuilder appendVarId(StringBuilder sb, Var var, String varID, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
 				return appendValue(sb, bindings.getValue(var.getName()));
@@ -875,7 +875,7 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendBNode(StringBuilder sb, BNode bNode) {
 		log.debug("Cannot express BNodes in SPARQl: Bnode " + bNode.toString() + " is replaced with "
-				+ BNODE_URI.stringValue());
+			+ BNODE_URI.stringValue());
 		// TODO think how this can be done in queries, for now we just append a
 		// dummy URI which does not produce any results
 		return appendURI(sb, BNODE_URI);

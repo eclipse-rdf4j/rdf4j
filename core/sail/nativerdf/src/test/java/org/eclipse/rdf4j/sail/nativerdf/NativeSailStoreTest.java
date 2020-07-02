@@ -44,11 +44,11 @@ public class NativeSailStoreTest {
 	protected final IRI CTX_INV = F.createIRI("urn:invalid");
 
 	protected final Statement S0 = F.createStatement(F.createIRI("http://example.org/0"), RDFS.LABEL,
-			F.createLiteral("zero"));
+		F.createLiteral("zero"));
 	protected final Statement S1 = F.createStatement(F.createIRI("http://example.org/1"), RDFS.LABEL,
-			F.createLiteral("one"));
+		F.createLiteral("one"));
 	protected final Statement S2 = F.createStatement(F.createIRI("http://example.org/2"), RDFS.LABEL,
-			F.createLiteral("two"));
+		F.createLiteral("two"));
 
 	@Before
 	public void before() throws Exception {

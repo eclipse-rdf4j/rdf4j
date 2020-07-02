@@ -110,7 +110,7 @@ class FileIO {
 	 *---------*/
 
 	public synchronized void write(SailDataset explicit, SailDataset inferred, File syncFile, File dataFile)
-			throws IOException, SailException {
+		throws IOException, SailException {
 		write(explicit, inferred, syncFile);
 
 		// prefer atomic renameTo operations
@@ -148,7 +148,7 @@ class FileIO {
 	}
 
 	public synchronized void read(File dataFile, SailSink explicit, SailSink inferred)
-			throws IOException, SailException {
+		throws IOException, SailException {
 		try (InputStream in = Files.newInputStream(dataFile.toPath())) {
 			byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);
 			if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {
@@ -212,7 +212,7 @@ class FileIO {
 	}
 
 	private void writeStatements(final SailDataset explicit, SailDataset inferred, DataOutputStream dataOut)
-			throws IOException, SailException {
+		throws IOException, SailException {
 		// write explicit only statements
 		writeStatement(explicit.getStatements(null, null, null), EXPL_TRIPLE_MARKER, EXPL_QUAD_MARKER, dataOut);
 		// write inferred only statements
@@ -220,7 +220,7 @@ class FileIO {
 	}
 
 	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
-			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
+		int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
 		try {
 			while (stIter.hasNext()) {
 				Statement st = stIter.next();
@@ -243,7 +243,7 @@ class FileIO {
 	}
 
 	private void readStatement(boolean hasContext, boolean isExplicit, DataInputStream dataIn, SailSink explicit,
-			SailSink inferred) throws IOException, ClassCastException, SailException {
+		SailSink inferred) throws IOException, ClassCastException, SailException {
 		MemResource memSubj = (MemResource) readValue(dataIn);
 		MemIRI memPred = (MemIRI) readValue(dataIn);
 		MemValue memObj = (MemValue) readValue(dataIn);
@@ -342,7 +342,7 @@ class FileIO {
 
 		if (encodedString.length != stringLength) {
 			throw new EOFException("Attempted to read " + stringLength + " bytes but no more than "
-					+ encodedString.length + " were available");
+				+ encodedString.length + " were available");
 		}
 
 		ByteBuffer byteBuf = ByteBuffer.wrap(encodedString);

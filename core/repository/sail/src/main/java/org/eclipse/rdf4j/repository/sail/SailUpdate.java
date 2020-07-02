@@ -48,7 +48,7 @@ public class SailUpdate extends AbstractParserUpdate {
 		Map<UpdateExpr, Dataset> datasetMapping = parsedUpdate.getDatasetMapping();
 
 		SailUpdateExecutor executor = new SailUpdateExecutor(con.getSailConnection(), con.getValueFactory(),
-				con.getParserConfig());
+			con.getParserConfig());
 
 		boolean localTransaction = false;
 		try {
@@ -62,7 +62,7 @@ public class SailUpdate extends AbstractParserUpdate {
 
 				try {
 					executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
-							getMaxExecutionTime());
+						getMaxExecutionTime());
 				} catch (RDF4JException | IOException e) {
 					logger.warn("exception during update execution: ", e);
 					if (!updateExpr.isSilent()) {

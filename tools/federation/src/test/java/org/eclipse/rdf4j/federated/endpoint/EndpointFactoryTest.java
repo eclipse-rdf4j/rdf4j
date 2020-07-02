@@ -56,7 +56,7 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		File baseDir = new File("target/tmp/fedxTest");
 
 		File dataConfig = new File(
-				EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
+			EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest.ttl").toURI());
 
 		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig, baseDir);
 
@@ -79,7 +79,7 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		Assertions.assertEquals("dbmodel", nativeStore.getId());
 		Assertions.assertEquals("dbmodel", nativeStore.getEndpoint());
 		Assertions.assertEquals(new File("target/tmp/fedxTest", "repositories/dbmodel"),
-				((ManagedRepositoryEndpoint) nativeStore).repository.getDataDir());
+			((ManagedRepositoryEndpoint) nativeStore).repository.getDataDir());
 
 	}
 
@@ -89,7 +89,7 @@ public class EndpointFactoryTest extends SPARQLBaseTest {
 		File baseDir = new File("target/tmp/fedxTest");
 
 		File dataConfig = new File(
-				EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest_writable.ttl").toURI());
+			EndpointFactoryTest.class.getResource("/tests/dataconfig/endpointfactoryTest_writable.ttl").toURI());
 
 		List<Endpoint> endpoints = EndpointFactory.loadFederationMembers(dataConfig, baseDir);
 

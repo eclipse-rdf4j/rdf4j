@@ -114,10 +114,10 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection
-					.prepareTupleQuery(query1)
-					.evaluate()
-					.stream()
-					.count();
+				.prepareTupleQuery(query1)
+				.evaluate()
+				.stream()
+				.count();
 		}
 	}
 
@@ -126,10 +126,10 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection
-					.prepareTupleQuery(query4)
-					.evaluate()
-					.stream()
-					.count();
+				.prepareTupleQuery(query4)
+				.evaluate()
+				.stream()
+				.count();
 		}
 	}
 
@@ -138,10 +138,10 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection
-					.prepareTupleQuery(query5)
-					.evaluate()
-					.stream()
-					.count();
+				.prepareTupleQuery(query5)
+				.evaluate()
+				.stream()
+				.count();
 		}
 	}
 

@@ -64,7 +64,7 @@ public class ModifyTuple implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}

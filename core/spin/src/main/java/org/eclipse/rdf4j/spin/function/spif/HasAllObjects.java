@@ -32,7 +32,7 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 3) {
 			throw new ValueExprEvaluationException(
-					String.format("%s requires 3 argument, got %d", getURI(), args.length));
+				String.format("%s requires 3 argument, got %d", getURI(), args.length));
 		}
 		Resource subj = (Resource) args[0];
 		IRI pred = (IRI) args[1];

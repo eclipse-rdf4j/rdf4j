@@ -38,7 +38,7 @@ public class NamespacesServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-			throws RepositoryException, QueryResultHandlerException {
+		throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = new TupleResultBuilder(out);
 		builder.transform(xslPath, "namespaces.xsl");
 		try (RepositoryConnection con = repository.getConnection()) {

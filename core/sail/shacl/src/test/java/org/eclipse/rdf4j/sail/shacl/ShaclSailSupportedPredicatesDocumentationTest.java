@@ -36,7 +36,7 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 
 	public ShaclSailSupportedPredicatesDocumentationTest(String testCasePath, String path,
-			ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+		ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 
@@ -44,7 +44,7 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 	public static void afterClass() {
 
 		assertTrue("No test uses the following predicate that the ShaclSail announces as supported: "
-				+ Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
+			+ Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
 	}
 
 	@Test
@@ -55,13 +55,13 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 		Model parse = getShacl();
 
 		Set<IRI> predicatesInUseInTest = parse.predicates()
-				.stream()
-				.filter(p -> p.getNamespace().equals(SHACL.NAMESPACE))
-				.collect(Collectors.toSet());
+			.stream()
+			.filter(p -> p.getNamespace().equals(SHACL.NAMESPACE))
+			.collect(Collectors.toSet());
 
 		for (IRI predicate : predicatesInUseInTest) {
 			assertTrue("Predicate used in test but not listed in ShaclSail: " + predicate,
-					shaclPredicates.contains(predicate));
+				shaclPredicates.contains(predicate));
 			staticShaclPredicates.remove(predicate);
 		}
 
@@ -71,8 +71,8 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 		String shaclFile = getShaclPath();
 
 		return Rio.parse(
-				ShaclSailSupportedPredicatesDocumentationTest.class.getClassLoader().getResourceAsStream(shaclFile), "",
-				RDFFormat.TURTLE);
+			ShaclSailSupportedPredicatesDocumentationTest.class.getClassLoader().getResourceAsStream(shaclFile), "",
+			RDFFormat.TURTLE);
 	}
 
 }

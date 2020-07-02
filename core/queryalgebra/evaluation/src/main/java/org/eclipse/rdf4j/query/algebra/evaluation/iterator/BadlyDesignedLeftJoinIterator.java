@@ -34,7 +34,7 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 *--------------*/
 
 	public BadlyDesignedLeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet inputBindings,
-			Set<String> problemVars) throws QueryEvaluationException {
+		Set<String> problemVars) throws QueryEvaluationException {
 		super(strategy, join, getFilteredBindings(inputBindings, problemVars));
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;

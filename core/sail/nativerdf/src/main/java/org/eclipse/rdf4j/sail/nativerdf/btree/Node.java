@@ -309,7 +309,7 @@ class Node {
 		insertValueNodeIDPair(newValueIdx, newValue, newNodeID);
 
 		assert valueCount == tree.branchFactor : "Node contains " + valueCount + " values, expected "
-				+ tree.branchFactor;
+			+ tree.branchFactor;
 
 		// Node now contains exactly [branchFactor] values. The median
 		// value at index [branchFactor/2] is moved to the parent
@@ -342,8 +342,8 @@ class Node {
 
 	public void mergeWithRightSibling(byte[] medianValue, Node rightSibling) throws IOException {
 		assert valueCount + rightSibling.getValueCount()
-				+ 1 < tree.branchFactor : "Nodes contain too many values to be merged; left: " + valueCount
-						+ "; right: " + rightSibling.getValueCount();
+			+ 1 < tree.branchFactor : "Nodes contain too many values to be merged; left: " + valueCount
+				+ "; right: " + rightSibling.getValueCount();
 
 		// Append median value from parent node
 		insertValueNodeIDPair(valueCount, medianValue, 0);
@@ -352,7 +352,7 @@ class Node {
 
 		// Append all values and node references from right sibling
 		System.arraycopy(rightSibling.data, 4, data, nodeIdx2offset(rightIdx),
-				valueIdx2offset(rightSibling.valueCount) - 4);
+			valueIdx2offset(rightSibling.valueCount) - 4);
 
 		setValueCount(valueCount + rightSibling.valueCount);
 
@@ -365,14 +365,14 @@ class Node {
 
 	public void rotateLeft(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
 		leftChildNode.insertValueNodeIDPair(leftChildNode.getValueCount(), this.getValue(valueIdx),
-				rightChildNode.getChildNodeID(0));
+			rightChildNode.getChildNodeID(0));
 		setValue(valueIdx, rightChildNode.removeValueLeft(0));
 		notifyRotatedLeft(valueIdx, leftChildNode, rightChildNode);
 	}
 
 	public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
 		rightChildNode.insertNodeIDValuePair(0, leftChildNode.getChildNodeID(leftChildNode.getValueCount()),
-				this.getValue(valueIdx - 1));
+			this.getValue(valueIdx - 1));
 		setValue(valueIdx - 1, leftChildNode.removeValueRight(leftChildNode.getValueCount() - 1));
 		notifyRotatedRight(valueIdx, leftChildNode, rightChildNode);
 	}
@@ -452,7 +452,7 @@ class Node {
 
 		int bytesRead = tree.nioFile.read(buf, tree.nodeID2offset(id));
 		assert bytesRead == tree.nodeSize : "Read operation didn't read the entire node (" + bytesRead + " of "
-				+ tree.nodeSize + " bytes)";
+			+ tree.nodeSize + " bytes)";
 
 		valueCount = ByteArrayUtil.getInt(data, 0);
 	}
@@ -465,7 +465,7 @@ class Node {
 
 		int bytesWritten = tree.nioFile.write(buf, tree.nodeID2offset(id));
 		assert bytesWritten == tree.nodeSize : "Write operation didn't write the entire node (" + bytesWritten + " of "
-				+ tree.nodeSize + " bytes)";
+			+ tree.nodeSize + " bytes)";
 
 		dataChanged = false;
 	}

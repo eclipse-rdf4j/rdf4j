@@ -59,7 +59,7 @@ public class DateTimeCast extends CastFunction {
 					int timezoneOffset = calValue.getTimezone();
 
 					if (DatatypeConstants.FIELD_UNDEFINED != year && DatatypeConstants.FIELD_UNDEFINED != month
-							&& DatatypeConstants.FIELD_UNDEFINED != day) {
+						&& DatatypeConstants.FIELD_UNDEFINED != day) {
 						StringBuilder dtBuilder = new StringBuilder();
 						dtBuilder.append(year);
 						dtBuilder.append("-");

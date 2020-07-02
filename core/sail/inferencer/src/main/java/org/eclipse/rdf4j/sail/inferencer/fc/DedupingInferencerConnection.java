@@ -64,7 +64,7 @@ public class DedupingInferencerConnection extends InferencerConnectionWrapper {
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		Statement stmt = valueFactory.createStatement(subj, pred, obj);
 		addedStmts.remove(stmt);
 		return super.removeInferredStatement(subj, pred, obj, contexts);

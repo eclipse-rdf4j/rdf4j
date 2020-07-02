@@ -54,8 +54,8 @@ public class BackgroundGraphResultHangTest {
 		String data = "@not-rdf";
 
 		BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
-				new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
-				"http://base.org");
+			new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
+			"http://base.org");
 
 		thrown.expect(QueryEvaluationException.class);
 		gRes.run();

@@ -51,7 +51,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	static {
 		try {
 			MAPPING = IOUtils.toString(ElasticsearchNamespaceStore.class.getClassLoader()
-					.getResourceAsStream("elasticsearchStoreNamespaceMapping.json"), StandardCharsets.UTF_8);
+				.getResourceAsStream("elasticsearchStoreNamespaceMapping.json"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -98,11 +98,11 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	@Override
 	public void init() {
 		boolean indexExistsAlready = clientProvider.getClient()
-				.admin()
-				.indices()
-				.exists(new IndicesExistsRequest(index))
-				.actionGet()
-				.isExists();
+			.admin()
+			.indices()
+			.exists(new IndicesExistsRequest(index))
+			.actionGet()
+			.isExists();
 
 		if (!indexExistsAlready) {
 			CreateIndexRequest request = new CreateIndexRequest(index);
@@ -116,11 +116,11 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 	public Iterator<SimpleNamespace> iterator() {
 
 		SearchResponse searchResponse = clientProvider.getClient()
-				.prepareSearch(index)
-				.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
-				.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
-				.setSize(10000)
-				.get();
+			.prepareSearch(index)
+			.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
+			.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
+			.setSize(10000)
+			.get();
 
 		SearchHits hits = searchResponse.getHits();
 		if (hits.totalHits > 10000) {
@@ -128,9 +128,9 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 		}
 
 		return StreamSupport.stream(hits.spliterator(), false)
-				.map(SearchHit::getSourceAsMap)
-				.map(map -> new SimpleNamespace(map.get(PREFIX).toString(), map.get(NAMESPACE).toString()))
-				.iterator();
+			.map(SearchHit::getSourceAsMap)
+			.map(map -> new SimpleNamespace(map.get(PREFIX).toString(), map.get(NAMESPACE).toString()))
+			.iterator();
 
 	}
 }

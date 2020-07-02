@@ -145,10 +145,10 @@ public class IterationBenchmarks {
 		Stream<String> stream = Iterations.stream(getIterator(strings));
 
 		return stream
-				.mapToInt(String::length)
-				.filter(length -> length >= Integer.MAX_VALUE)
-				.findFirst()
-				.orElse(0);
+			.mapToInt(String::length)
+			.filter(length -> length >= Integer.MAX_VALUE)
+			.findFirst()
+			.orElse(0);
 	}
 
 	private Iteration<String, Exception> getIterator(List<String> list) throws Exception {

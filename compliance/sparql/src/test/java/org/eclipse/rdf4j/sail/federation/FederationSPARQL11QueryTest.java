@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class FederationSPARQL11QueryTest extends SPARQL11QueryComplianceTest {
 	public FederationSPARQL11QueryTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+		String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 

@@ -29,8 +29,8 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinLengthPropertyShape.class);
 
 	MinLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			Long minLength) {
+		PathPropertyShape parent, Resource path,
+		Long minLength) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minLength = minLength;
@@ -39,7 +39,7 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -47,7 +47,7 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode, negateThisPlan);
+			(parent) -> new MinLengthFilter(parent, minLength), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -86,9 +86,9 @@ public class MinLengthPropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "MinLengthPropertyShape{" +
-				"minLength=" + minLength +
-				", path=" + getPath() +
-				", id=" + id +
-				'}';
+			"minLength=" + minLength +
+			", path=" + getPath() +
+			", id=" + id +
+			'}';
 	}
 }

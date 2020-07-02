@@ -96,12 +96,12 @@ public class SpifSailTest {
 		loadRDF("/schema/owl.ttl");
 		loadRDF("/schema/spif.ttl");
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, "prefix spin: <http://spinrdf.org/spin#> "
-				+ "prefix spl: <http://spinrdf.org/spl#> "
-				+ "select ?testCase ?expected ?actual where {?testCase a spl:TestCase. ?testCase spl:testResult ?expected. ?testCase spl:testExpression ?expr. "
-				+ "BIND(spin:eval(?expr) as ?actual) " + "FILTER(?expected != ?actual) "
-				+ "FILTER(strstarts(str(?testCase), 'http://spinrdf.org/spif#'))}");
+			+ "prefix spl: <http://spinrdf.org/spl#> "
+			+ "select ?testCase ?expected ?actual where {?testCase a spl:TestCase. ?testCase spl:testResult ?expected. ?testCase spl:testExpression ?expr. "
+			+ "BIND(spin:eval(?expr) as ?actual) " + "FILTER(?expected != ?actual) "
+			+ "FILTER(strstarts(str(?testCase), 'http://spinrdf.org/spif#'))}");
 		try ( // returns failed tests
-				TupleQueryResult tqr = tq.evaluate()) {
+			TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");
@@ -122,56 +122,56 @@ public class SpifSailTest {
 	@Test
 	public void testCast() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:cast(3.14, xsd:integer) = 3)}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:cast(3.14, xsd:integer) = 3)}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testIndexOf() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:indexOf('test', 't', 2) = 3)}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:indexOf('test', 't', 2) = 3)}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testLastIndexOf() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:lastIndexOf('test', 't') = 3)}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "ask where {filter(spif:lastIndexOf('test', 't') = 3)}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testEncodeURL() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {filter(spif:encodeURL('Hello world') = 'Hello+world')}");
+			+ "ask where {filter(spif:encodeURL('Hello world') = 'Hello+world')}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testBuildString() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {filter(spif:buildString('{?1} {?2}', 'Hello', 'world') = 'Hello world')}");
+			+ "ask where {filter(spif:buildString('{?1} {?2}', 'Hello', 'world') = 'Hello world')}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testBuildURI() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {filter(spif:buildURI('<http://example.org/{?1}#{?2}>', 'schema', 'prop') = <http://example.org/schema#prop>)}");
+			+ "ask where {filter(spif:buildURI('<http://example.org/{?1}#{?2}>', 'schema', 'prop') = <http://example.org/schema#prop>)}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testName() throws Exception {
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {?s rdfs:label ?l. filter(spif:name(?s) = ?l)}");
+			+ "ask where {?s rdfs:label ?l. filter(spif:name(?s) = ?l)}");
 		assertTrue(bq.evaluate());
 	}
 
 	@Test
 	public void testForEach() throws Exception {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:foreach (1 2 3)}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:foreach (1 2 3)}");
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
@@ -183,7 +183,7 @@ public class SpifSailTest {
 	@Test
 	public void testFor() throws Exception {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:for (1 4)}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:for (1 4)}");
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 4; i++) {
 			BindingSet bs = tqr.next();
@@ -195,7 +195,7 @@ public class SpifSailTest {
 	@Test
 	public void testSplit() throws Exception {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:split ('1,2,3' ',')}");
+			"prefix spif: <http://spinrdf.org/spif#> " + "select ?x where {?x spif:split ('1,2,3' ',')}");
 		TupleQueryResult tqr = tq.evaluate();
 		for (int i = 1; i <= 3; i++) {
 			BindingSet bs = tqr.next();
@@ -208,7 +208,7 @@ public class SpifSailTest {
 	public void testCanInvoke() throws Exception {
 		loadRDF("/schema/spif.ttl");
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 'b'))}");
+			+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 'b'))}");
 		assertTrue(bq.evaluate());
 	}
 
@@ -216,15 +216,15 @@ public class SpifSailTest {
 	public void testCantInvoke() throws Exception {
 		loadRDF("/schema/spif.ttl");
 		BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "prefix spif: <http://spinrdf.org/spif#> "
-				+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+			+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 		assertFalse(bq.evaluate());
 	}
 
 	@Test
 	public void testConcat() throws Exception {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"prefix apf: <http://jena.hpl.hp.com/ARQ/property#>\n" + "\n" + "select ?text where {\n"
-						+ "   ?text apf:concat (\"very\" \"sour\" \"berry\") . }");
+			"prefix apf: <http://jena.hpl.hp.com/ARQ/property#>\n" + "\n" + "select ?text where {\n"
+				+ "   ?text apf:concat (\"very\" \"sour\" \"berry\") . }");
 		TupleQueryResult tqresult = tq.evaluate();
 
 		Assert.assertEquals("verysourberry", tqresult.next().getValue("text").stringValue());
@@ -233,13 +233,13 @@ public class SpifSailTest {
 	@Test
 	public void testStrSplit() throws Exception {
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"prefix apf: <http://jena.hpl.hp.com/ARQ/property#>\n" + "\n" + "select ?text where {\n"
-						+ "   ?text apf:strSplit (\"very:sour:berry\" \":\") . }");
+			"prefix apf: <http://jena.hpl.hp.com/ARQ/property#>\n" + "\n" + "select ?text where {\n"
+				+ "   ?text apf:strSplit (\"very:sour:berry\" \":\") . }");
 		TupleQueryResult tqr = tq.evaluate();
 
 		List<BindingSet> resultList = Iterations.asList(tqr);
 		List<String> resultStringList = Lists.transform(resultList,
-				(BindingSet input) -> input.getValue("text").stringValue());
+			(BindingSet input) -> input.getValue("text").stringValue());
 
 		Assert.assertArrayEquals(new String[] { "very", "sour", "berry" }, resultStringList.toArray(new String[] {}));
 

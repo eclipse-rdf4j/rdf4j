@@ -45,7 +45,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	public EmptyPatternOptimizer(Collection<? extends RepositoryConnection> members,
-			Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters) {
+		Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters) {
 		this.members = members;
 		this.bloomFilters = bloomFilters;
 	}
@@ -67,7 +67,7 @@ public class EmptyPatternOptimizer extends AbstractQueryModelVisitor<RepositoryE
 		Resource[] ctx = getContexts(node.getContextVar());
 		for (RepositoryConnection member : members) {
 			RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(bloomFilters.apply(member.getRepository()),
-					AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+				AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 			if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 				return;
 			}

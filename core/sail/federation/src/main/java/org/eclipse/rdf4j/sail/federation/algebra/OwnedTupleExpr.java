@@ -48,7 +48,7 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 	}
 
 	public void prepare(QueryLanguage queryLn, String qry, Map<String, String> bindings)
-			throws RepositoryException, MalformedQueryException {
+		throws RepositoryException, MalformedQueryException {
 		assert this.query == null;
 		this.query = owner.prepareTupleQuery(queryLn, qry);
 		this.variables = bindings;
@@ -59,7 +59,7 @@ public class OwnedTupleExpr extends UnaryTupleOperator {
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Dataset dataset, BindingSet bindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> rval = null;
 		if (query != null) {
 			try {

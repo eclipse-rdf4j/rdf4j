@@ -108,7 +108,7 @@ public class RepositoryConfigUtil {
 	 */
 	@Deprecated
 	public static boolean hasRepositoryConfig(Repository repository, String repositoryID)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			return getIDStatement(con, repositoryID) != null;
 		}
@@ -116,7 +116,7 @@ public class RepositoryConfigUtil {
 
 	@Deprecated
 	public static RepositoryConfig getRepositoryConfig(Repository repository, String repositoryID)
-			throws RepositoryConfigException, RepositoryException {
+		throws RepositoryConfigException, RepositoryException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			Statement idStatement = getIDStatement(con, repositoryID);
 			if (idStatement == null) {
@@ -151,7 +151,7 @@ public class RepositoryConfigUtil {
 	 */
 	@Deprecated
 	public static void updateRepositoryConfigs(Repository repository, RepositoryConfig... configs)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			updateRepositoryConfigs(con, configs);
 		}
@@ -171,7 +171,7 @@ public class RepositoryConfigUtil {
 	 */
 	@Deprecated
 	public static void updateRepositoryConfigs(RepositoryConnection con, RepositoryConfig... configs)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		ValueFactory vf = con.getRepository().getValueFactory();
 
 		con.begin();
@@ -207,7 +207,7 @@ public class RepositoryConfigUtil {
 	 */
 	@Deprecated
 	public static boolean removeRepositoryConfigs(Repository repository, String... repositoryIDs)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		boolean changed = false;
 
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -230,7 +230,7 @@ public class RepositoryConfigUtil {
 
 	@Deprecated
 	public static Resource getContext(RepositoryConnection con, String repositoryID)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		Resource context = null;
 
 		Statement idStatement = getIDStatement(con, repositoryID);
@@ -242,7 +242,7 @@ public class RepositoryConfigUtil {
 	}
 
 	private static Statement getIDStatement(RepositoryConnection con, String repositoryID)
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 		Literal idLiteral = con.getRepository().getValueFactory().createLiteral(repositoryID);
 		List<Statement> idStatementList = Iterations.asList(con.getStatements(null, REPOSITORYID, idLiteral, true));
 

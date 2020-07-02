@@ -20,9 +20,9 @@ import org.junit.Test;
 public class TestCreateServlet {
 
 	private static final String[] EXPECTED_TEMPLATES = new String[] { "memory-customrule", "memory-rdfs-dt",
-			"memory-rdfs", "memory",
-			"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql", "memory-shacl",
-			"native-shacl" };
+		"memory-rdfs", "memory",
+		"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql", "memory-shacl",
+		"native-shacl" };
 
 	/**
 	 * Regression test for SES-1907.

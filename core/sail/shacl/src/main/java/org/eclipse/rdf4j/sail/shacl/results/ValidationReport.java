@@ -81,8 +81,8 @@ public class ValidationReport {
 
 	public String toString() {
 		return "ValidationReport{" +
-				"conforms=" + conforms +
-				", validationResult=" + Arrays.toString(validationResult.toArray()) +
-				'}';
+			"conforms=" + conforms +
+			", validationResult=" + Arrays.toString(validationResult.toArray()) +
+			'}';
 	}
 }

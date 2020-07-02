@@ -117,13 +117,13 @@ public class ElasticsearchStoreTest {
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+				new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
 
 			return client.admin()
-					.indices()
-					.getIndex(new GetIndexRequest())
-					.actionGet()
-					.getIndices();
+				.indices()
+				.getIndex(new GetIndexRequest())
+				.actionGet()
+				.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
@@ -133,14 +133,14 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testInstantiate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+			embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetConneciton() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+			embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -150,14 +150,14 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testSailRepository() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetSailRepositoryConneciton() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -166,7 +166,7 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testShutdownAndRecreate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+			embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -174,7 +174,7 @@ public class ElasticsearchStoreTest {
 		}
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
-				"testindex");
+			"testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -187,7 +187,7 @@ public class ElasticsearchStoreTest {
 	@Test(expected = SailException.class)
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+			embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -207,7 +207,7 @@ public class ElasticsearchStoreTest {
 	@Test
 	public void testAddRemoveData() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+			embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -228,13 +228,13 @@ public class ElasticsearchStoreTest {
 	public void testAddLargeDataset() {
 		StopWatch stopWatch = StopWatch.createStarted();
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			stopWatch.stop();
 
 			ElasticsearchStoreTransactionsTest.logTime(stopWatch, "Creating repo and getting connection",
-					TimeUnit.SECONDS);
+				TimeUnit.SECONDS);
 
 			stopWatch = StopWatch.createStarted();
 			connection.begin(IsolationLevels.NONE);
@@ -274,7 +274,7 @@ public class ElasticsearchStoreTest {
 
 	private ClientProvider initElasticsearchStoreForGcTest() {
 		ElasticsearchStore sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
-				"testindex");
+			"testindex");
 
 		ClientProvider clientProvider = sail.clientProvider;
 		SailRepository elasticsearchStore = new SailRepository(sail);
@@ -289,7 +289,7 @@ public class ElasticsearchStoreTest {
 	public void testNamespacePersistenc() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
@@ -299,7 +299,7 @@ public class ElasticsearchStoreTest {
 
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			String namespace = connection.getNamespace(SHACL.PREFIX);

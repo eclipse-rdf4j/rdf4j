@@ -30,11 +30,11 @@ public abstract class SparqlSetBindingTest {
 	}
 
 	public String queryBinding = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n" + " } ";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n" + " } ";
 
 	public String queryBindingSubselect = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
-			+ "        { SELECT ?x WHERE { ?x a foaf:Person } } } ";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
+		+ "        { SELECT ?x WHERE { ?x a foaf:Person } } } ";
 
 	private Repository repository;
 

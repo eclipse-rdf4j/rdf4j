@@ -82,7 +82,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	public void put(E item) throws InterruptedException, T {
 		try {
 			while (!isClosed() && !done.get() && !Thread.currentThread().isInterrupted()
-					&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
+				&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
 				// No body, just iterating regularly through the loop conditions to respond to state changes without a
 				// full busy-wait loop
 			}

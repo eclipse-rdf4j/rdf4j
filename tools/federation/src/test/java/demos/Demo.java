@@ -25,10 +25,10 @@ public class Demo {
 		repo.init();
 
 		String q = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
-				+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
-				+ "SELECT ?President ?Party WHERE {\n"
-				+ "?President rdf:type dbpedia-owl:President .\n"
-				+ "?President dbpedia-owl:party ?Party . }";
+			+ "PREFIX dbpedia-owl: <http://dbpedia.org/ontology/>\n"
+			+ "SELECT ?President ?Party WHERE {\n"
+			+ "?President rdf:type dbpedia-owl:President .\n"
+			+ "?President dbpedia-owl:party ?Party . }";
 
 		TupleQuery query = repo.getConnection().prepareTupleQuery(QueryLanguage.SPARQL, q);
 

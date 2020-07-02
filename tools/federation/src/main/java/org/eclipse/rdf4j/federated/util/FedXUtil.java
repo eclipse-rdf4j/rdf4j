@@ -75,7 +75,7 @@ public class FedXUtil {
 	 */
 	public static void applyQueryBindings(SailQuery query) {
 		query.setBinding(FedXRepositoryConnection.BINDING_ORIGINAL_MAX_EXECUTION_TIME,
-				FedXUtil.valueFactory().createLiteral(query.getMaxExecutionTime()));
+			FedXUtil.valueFactory().createLiteral(query.getMaxExecutionTime()));
 	}
 
 	/**

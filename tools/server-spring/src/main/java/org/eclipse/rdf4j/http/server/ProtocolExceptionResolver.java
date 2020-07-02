@@ -35,7 +35,7 @@ public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 
 	@Override
 	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response, Object handler,
-			Exception exception) {
+		Exception exception) {
 		logger.debug("ProtocolExceptionResolver.resolveException() called");
 
 		Map<String, Object> model = new HashMap<>();

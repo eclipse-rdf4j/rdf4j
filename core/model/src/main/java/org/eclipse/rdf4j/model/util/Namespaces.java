@@ -94,7 +94,7 @@ public class Namespaces {
 				Set<java.util.Map.Entry<String, String>> result = new LinkedHashSet<>();
 				for (Namespace nextNamespace : namespaces) {
 					AbstractMap.SimpleImmutableEntry<String, String> nextEntry = new SimpleImmutableEntry<>(
-							nextNamespace.getPrefix(), nextNamespace.getName());
+						nextNamespace.getPrefix(), nextNamespace.getName());
 					result.add(nextEntry);
 				}
 				return Collections.unmodifiableSet(result);

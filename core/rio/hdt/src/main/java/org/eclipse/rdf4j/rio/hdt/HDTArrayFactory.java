@@ -21,7 +21,7 @@ class HDTArrayFactory {
 		int dtype = is.read();
 		if (dtype != HDTArray.Type.LOG64.getValue()) {
 			throw new UnsupportedOperationException("Array section: encoding " + Long.toHexString(dtype) +
-					", but only Log64 encoding is supported");
+				", but only Log64 encoding is supported");
 		}
 		return new HDTArrayLog64();
 	}

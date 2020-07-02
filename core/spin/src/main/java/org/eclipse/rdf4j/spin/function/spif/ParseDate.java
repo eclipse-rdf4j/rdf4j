@@ -104,13 +104,13 @@ public class ParseDate extends BinaryFunction {
 
 		boolean isDateSet() {
 			return fieldsSet.contains(Calendar.YEAR) || fieldsSet.contains(Calendar.MONTH)
-					|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)
-					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH) || fieldsSet.contains(Calendar.DAY_OF_YEAR);
+				|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)
+				|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH) || fieldsSet.contains(Calendar.DAY_OF_YEAR);
 		}
 
 		boolean isTimeSet() {
 			return fieldsSet.contains(Calendar.HOUR_OF_DAY) || fieldsSet.contains(Calendar.HOUR)
-					|| fieldsSet.contains(Calendar.MINUTE) || fieldsSet.contains(Calendar.SECOND);
+				|| fieldsSet.contains(Calendar.MINUTE) || fieldsSet.contains(Calendar.SECOND);
 		}
 
 		boolean isMillisecondSet() {

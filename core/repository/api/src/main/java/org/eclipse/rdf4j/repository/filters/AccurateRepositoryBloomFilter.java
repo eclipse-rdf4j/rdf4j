@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public class AccurateRepositoryBloomFilter implements RepositoryBloomFilter {
 
 	public static final AccurateRepositoryBloomFilter INCLUDE_INFERRED_INSTANCE = new AccurateRepositoryBloomFilter(
-			true);
+		true);
 
 	private final boolean includeInferred;
 
@@ -28,7 +28,7 @@ public class AccurateRepositoryBloomFilter implements RepositoryBloomFilter {
 
 	@Override
 	public boolean mayHaveStatement(RepositoryConnection conn, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+		Resource... contexts) {
 		return conn.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 

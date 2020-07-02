@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class MemoryGeoSPARQLQueryTest extends GeoSPARQLManifestTest {
 
 	public MemoryGeoSPARQLQueryTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+		String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 

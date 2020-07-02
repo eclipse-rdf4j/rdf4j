@@ -576,7 +576,7 @@ public class TestSparqlStarParser {
 		StatementPattern pattern = (StatementPattern) ext.getArg();
 		assertEquals("subject var name should match", pattern.getSubjectVar().getName(), ref.getSubjectVar().getName());
 		assertEquals("predicate var name should match", pattern.getPredicateVar().getName(),
-				ref.getPredicateVar().getName());
+			ref.getPredicateVar().getName());
 		assertEquals("object var name should match", pattern.getObjectVar().getName(), ref.getObjectVar().getName());
 
 	}
@@ -647,7 +647,7 @@ public class TestSparqlStarParser {
 		StatementPattern pattern = (StatementPattern) ext.getArg();
 		assertEquals("subject var name should match", pattern.getSubjectVar().getName(), ref.getSubjectVar().getName());
 		assertEquals("predicate var name should match", pattern.getPredicateVar().getName(),
-				ref.getPredicateVar().getName());
+			ref.getPredicateVar().getName());
 		assertEquals("object var name should match", pattern.getObjectVar().getName(), ref.getObjectVar().getName());
 
 	}
@@ -854,7 +854,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect Str in extention element", elem.getExpr() instanceof Str);
 
 		assertTrue("expect ValueExprTripleRef in extention element",
-				((Str) elem.getExpr()).getArg() instanceof ValueExprTripleRef);
+			((Str) elem.getExpr()).getArg() instanceof ValueExprTripleRef);
 		ValueExprTripleRef ref = (ValueExprTripleRef) ((Str) elem.getExpr()).getArg();
 		assertEquals("subject var value", "urn:a", ref.getSubjectVar().getValue().toString());
 		assertEquals("predicate var name", "urn:b", ref.getPredicateVar().getValue().toString());

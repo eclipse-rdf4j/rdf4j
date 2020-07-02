@@ -29,8 +29,8 @@ public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxLengthPropertyShape.class);
 
 	MaxLengthPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			Long maxLength) {
+		PathPropertyShape parent, Resource path,
+		Long maxLength) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxLength = maxLength;
@@ -39,7 +39,7 @@ public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -47,7 +47,7 @@ public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new MaxLengthFilter(parent, maxLength), this, overrideTargetNode, negateThisPlan);
+			(parent) -> new MaxLengthFilter(parent, maxLength), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -87,9 +87,9 @@ public class MaxLengthPropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "MaxLengthPropertyShape{" +
-				"maxLength=" + maxLength +
-				", path=" + getPath() +
-				", id=" + id +
-				'}';
+			"maxLength=" + maxLength +
+			", path=" + getPath() +
+			", id=" + id +
+			'}';
 	}
 }

@@ -34,7 +34,7 @@ public class ParallelPreparedAlgebraUnionTask extends ParallelTaskBase<BindingSe
 	protected final QueryInfo queryInfo;
 
 	public ParallelPreparedAlgebraUnionTask(ParallelExecutor<BindingSet> unionControl, TupleExpr preparedQuery,
-			Endpoint endpoint, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
+		Endpoint endpoint, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
 		this.endpoint = endpoint;
 		this.preparedQuery = preparedQuery;
 		this.bindings = bindings;

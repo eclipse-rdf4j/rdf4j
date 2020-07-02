@@ -127,22 +127,22 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 
 	@Override
 	public Statement createStatement(Resource subject,
-			IRI predicate, Value object) {
+		IRI predicate, Value object) {
 		return delegate.createStatement(RDFStarUtil.fromRDFEncodedValue(subject), predicate,
-				RDFStarUtil.fromRDFEncodedValue(object));
+			RDFStarUtil.fromRDFEncodedValue(object));
 	}
 
 	@Override
 	public Statement createStatement(Resource subject,
-			IRI predicate, Value object,
-			Resource context) {
+		IRI predicate, Value object,
+		Resource context) {
 		return delegate.createStatement(RDFStarUtil.fromRDFEncodedValue(subject), predicate,
-				RDFStarUtil.fromRDFEncodedValue(object), context);
+			RDFStarUtil.fromRDFEncodedValue(object), context);
 	}
 
 	@Override
 	public Triple createTriple(Resource subject,
-			IRI predicate, Value object) {
+		IRI predicate, Value object) {
 		return delegate.createTriple(subject, predicate, object);
 	}
 }

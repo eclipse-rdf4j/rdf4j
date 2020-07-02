@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 
 	private static final IRI VIRTRDF_GEOMETRY = SimpleValueFactory.getInstance()
-			.createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry");
+		.createIRI("http://www.openlinksw.com/schemas/virtrdf#", "Geometry");
 
 	private static final String POINT_START = "POINT(";
 
@@ -56,7 +56,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 
 	@Override
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-			throws LiteralUtilException {
+		throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri) && verifyDatatypeInternal(literalValue, datatypeUri)) {
 			// TODO: Implement normalization
 			return valueFactory.createLiteral(literalValue, datatypeUri);
@@ -84,7 +84,7 @@ public class VirtuosoGeometryDatatypeHandler implements DatatypeHandler {
 			}
 
 			String valueString = literalValue.substring(POINT_START.length(),
-					literalValue.length() - POINT_END.length());
+				literalValue.length() - POINT_END.length());
 
 			String[] split = valueString.split(POINT_SEPERATOR);
 

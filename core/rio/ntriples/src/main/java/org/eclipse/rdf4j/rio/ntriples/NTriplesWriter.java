@@ -189,6 +189,6 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 */
 	private void writeLiteral(Literal lit) throws IOException {
 		NTriplesUtil.append(lit, writer, getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL),
-				escapeUnicode);
+			escapeUnicode);
 	}
 }

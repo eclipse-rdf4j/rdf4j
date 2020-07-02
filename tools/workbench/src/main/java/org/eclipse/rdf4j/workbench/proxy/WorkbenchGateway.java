@@ -93,7 +93,7 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
-			throws ServletException, IOException {
+		throws ServletException, IOException {
 		final String change = getChangeServerPath();
 		if (change != null && change.equals(req.getPathInfo())) {
 			try {
@@ -132,7 +132,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * @throws QueryResultHandlerException
 	 */
 	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
-			throws IOException, QueryResultHandlerException {
+		throws IOException, QueryResultHandlerException {
 		String server = req.getParameter(SERVER_COOKIE);
 		if (server == null) {
 			// Server parameter was not present, so present entry form.
@@ -220,7 +220,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	 * @throws ServletException if a problem occurs initializing a new servlet
 	 */
 	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req, final HttpServletResponse resp)
-			throws ServletException {
+		throws ServletException {
 		WorkbenchServlet servlet = null;
 		final String server = findServer(req, resp);
 		if (servlets.containsKey(server)) {

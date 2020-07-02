@@ -50,7 +50,7 @@ public class ElasticsearchStoreRepositoryTest extends RepositoryTest {
 	@Override
 	protected Repository createRepository() {
 		SailRepository sailRepository = new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
+			new ElasticsearchStore(clientPool, "index1"));
 		return sailRepository;
 	}
 

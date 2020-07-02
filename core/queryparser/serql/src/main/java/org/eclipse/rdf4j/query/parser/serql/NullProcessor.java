@@ -95,7 +95,7 @@ class NullProcessor {
 					break;
 				default:
 					throw new VisitorException(
-							"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
+						"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
 				}
 			} else if (leftIsNull || rightIsNull) {
 				ASTValueExpr valueOperand;
@@ -118,7 +118,7 @@ class NullProcessor {
 				}
 
 				throw new VisitorException(
-						"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
+					"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
 			}
 
 			return null;
@@ -127,7 +127,7 @@ class NullProcessor {
 		@Override
 		public Object visit(ASTNull nullNode, Object data) throws VisitorException {
 			throw new VisitorException(
-					"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
+				"Use of NULL values in SeRQL queries has been deprecated, use BOUND(...) instead");
 		}
 	}
 }

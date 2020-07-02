@@ -60,17 +60,17 @@ public class FedXWithInferenceTest extends FedXBaseTest {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		addData("repo1", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON),
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, vf.createIRI("http://ex.org/Manager")),
-				vf.createStatement(vf.createIRI("http://ex.org/Manager"), RDFS.SUBCLASSOF, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON),
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, vf.createIRI("http://ex.org/Manager")),
+			vf.createStatement(vf.createIRI("http://ex.org/Manager"), RDFS.SUBCLASSOF, FOAF.PERSON)));
 		addData("repo2", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p3"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p3"), RDF.TYPE, FOAF.PERSON)));
 
 		FedXRepository repo = FedXFactory.newFederation()
-				.withResolvableEndpoint("repo1")
-				.withResolvableEndpoint("repo2")
-				.withRepositoryResolver(repoManager)
-				.create();
+			.withResolvableEndpoint("repo1")
+			.withResolvableEndpoint("repo2")
+			.withRepositoryResolver(repoManager)
+			.create();
 
 		try {
 
@@ -108,7 +108,7 @@ public class FedXWithInferenceTest extends FedXBaseTest {
 
 				// 3. simple CONSTRUCT
 				GraphQuery gq = conn.prepareGraphQuery(
-						"CONSTRUCT { ?p a <http://xmlns.com/foaf/0.1/Person> } WHERE { ?p a <http://xmlns.com/foaf/0.1/Person> }");
+					"CONSTRUCT { ?p a <http://xmlns.com/foaf/0.1/Person> } WHERE { ?p a <http://xmlns.com/foaf/0.1/Person> }");
 				try (GraphQueryResult gqr = gq.evaluate()) {
 					List<Statement> res = Iterations.asList(gqr);
 					Assertions.assertEquals(3, res.size()); // three persons
@@ -143,7 +143,7 @@ public class FedXWithInferenceTest extends FedXBaseTest {
 	protected void addMemoryStoreWithRDFS(String repoId) throws Exception {
 
 		RepositoryImplConfig implConfig = new SailRepositoryConfig(
-				new SchemaCachingRDFSInferencerConfig(new MemoryStoreConfig()));
+			new SchemaCachingRDFSInferencerConfig(new MemoryStoreConfig()));
 		RepositoryConfig config = new RepositoryConfig(repoId, implConfig);
 		repoManager.addRepositoryConfig(config);
 	}

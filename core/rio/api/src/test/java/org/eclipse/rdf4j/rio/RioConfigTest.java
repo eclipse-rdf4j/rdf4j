@@ -86,7 +86,7 @@ public class RioConfigTest {
 	public void testGetWithUnsupportedConversionType() throws Exception {
 		// we deliberately do not use StringRioSetting as that supports conversion of system property values
 		AbstractRioSetting<String> nonConvertableSetting = new AbstractRioSetting<String>(key, "test setting",
-				"default value") {
+			"default value") {
 			private static final long serialVersionUID = 1L;
 		};
 

@@ -57,7 +57,7 @@ public class InferenceTest {
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 
 		singletonClientProvider = new SingletonClientProvider("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1");
+			embeddedElastic.getTransportTcpPort(), "cluster1");
 	}
 
 	@AfterClass
@@ -85,13 +85,13 @@ public class InferenceTest {
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+				new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
 
 			return client.admin()
-					.indices()
-					.getIndex(new GetIndexRequest())
-					.actionGet()
-					.getIndices();
+				.indices()
+				.getIndex(new GetIndexRequest())
+				.actionGet()
+				.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}

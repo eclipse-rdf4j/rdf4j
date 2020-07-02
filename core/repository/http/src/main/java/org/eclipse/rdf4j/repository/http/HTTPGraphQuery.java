@@ -46,7 +46,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), getBindingsArray());
+				getMaxExecutionTime(), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
@@ -67,7 +67,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
-					handler, getBindingsArray());
+				handler, getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}

@@ -63,7 +63,7 @@ public class LuceneQuery implements SearchQuery {
 	@Deprecated
 	public void highlight(IRI property) {
 		Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,
-				SearchFields.HIGHLIGHTER_POST_TAG);
+			SearchFields.HIGHLIGHTER_POST_TAG);
 		highlighter = new Highlighter(formatter, new QueryScorer(query));
 	}
 }

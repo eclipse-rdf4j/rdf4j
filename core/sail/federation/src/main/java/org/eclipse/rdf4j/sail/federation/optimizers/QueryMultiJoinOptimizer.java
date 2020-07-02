@@ -176,7 +176,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double lowestCost = Double.MAX_VALUE;
 			TupleExpr result = null;
 
@@ -195,7 +195,7 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+			Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
 			double cost = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);

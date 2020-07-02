@@ -62,7 +62,7 @@ abstract class AbstractEchoWriteConnection extends AbstractFederationConnection 
 
 	@Override
 	public void removeStatementsInternal(final Resource subj, final IRI pred, final Value obj,
-			final Resource... contexts) throws SailException {
+		final Resource... contexts) throws SailException {
 		excute((RepositoryConnection con) -> {
 			con.remove(subj, pred, obj, contexts);
 		});

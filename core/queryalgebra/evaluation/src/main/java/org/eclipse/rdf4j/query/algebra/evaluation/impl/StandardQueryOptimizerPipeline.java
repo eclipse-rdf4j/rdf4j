@@ -31,7 +31,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final EvaluationStrategy strategy;
 
 	public StandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics) {
+		EvaluationStatistics evaluationStatistics) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
@@ -45,18 +45,18 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		return Arrays.asList(
-				new BindingAssigner(),
-				new ConstantOptimizer(strategy),
-				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
-				new CompareOptimizer(),
-				new ConjunctiveConstraintSplitter(),
-				new DisjunctiveConstraintOptimizer(),
-				new SameTermFilterOptimizer(),
-				new QueryModelNormalizer(),
-				new QueryJoinOptimizer(evaluationStatistics),
-				new IterativeEvaluationOptimizer(),
-				new FilterOptimizer(),
-				new OrderLimitOptimizer());
+			new BindingAssigner(),
+			new ConstantOptimizer(strategy),
+			new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
+			new CompareOptimizer(),
+			new ConjunctiveConstraintSplitter(),
+			new DisjunctiveConstraintOptimizer(),
+			new SameTermFilterOptimizer(),
+			new QueryModelNormalizer(),
+			new QueryJoinOptimizer(evaluationStatistics),
+			new IterativeEvaluationOptimizer(),
+			new FilterOptimizer(),
+			new OrderLimitOptimizer());
 	}
 
 }

@@ -32,8 +32,8 @@ import org.junit.runners.Suite.SuiteClasses;
  */
 @RunWith(Suite.class)
 @SuiteClasses({ DeadLockTest.class, DeleteInsertTest.class, LinearTest.class, ModificationTest.class,
-		RemoveIsolationTest.class, IsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
-		SerializableTest.class })
+	RemoveIsolationTest.class, IsolationLevelTest.class, MonotonicTest.class, SnapshotTest.class,
+	SerializableTest.class })
 public abstract class OptimisticIsolationTest {
 
 	@BeforeClass

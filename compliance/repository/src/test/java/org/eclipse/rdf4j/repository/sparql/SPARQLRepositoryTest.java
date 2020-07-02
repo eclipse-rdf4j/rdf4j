@@ -55,7 +55,7 @@ public class SPARQLRepositoryTest extends RepositoryTest {
 	@Override
 	protected Repository createRepository() throws Exception {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
-				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
+			Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 
 	}
 

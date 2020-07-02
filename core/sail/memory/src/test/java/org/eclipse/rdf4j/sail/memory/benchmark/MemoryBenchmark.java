@@ -59,7 +59,7 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 		}
@@ -75,7 +75,7 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
@@ -94,14 +94,14 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
@@ -125,14 +125,14 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.flush();
 
@@ -158,14 +158,14 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -192,14 +192,14 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -207,7 +207,7 @@ public class MemoryBenchmark {
 			long counter = 0;
 			for (int i = 0; i < 10; i++) {
 				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
-						null, null, false)) {
+					null, null, false)) {
 					counter += statements.next().toString().length();
 				}
 			}
@@ -229,12 +229,12 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
 				try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
-						null, null, false)) {
+					null, null, false)) {
 					count += statements.next().toString().length();
 				}
 			}
@@ -256,14 +256,14 @@ public class MemoryBenchmark {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
 			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+				st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -271,7 +271,7 @@ public class MemoryBenchmark {
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
 				try (Stream<? extends Statement> stream = connection.getStatements(vf.createBNode(), null, null, false)
-						.stream()) {
+					.stream()) {
 					count += stream.count();
 				}
 			}
@@ -306,11 +306,11 @@ public class MemoryBenchmark {
 			statementList.add(vf.createStatement(subject, FOAF.AGE, vf.createLiteral(i % 80 + 1)));
 			statementList.add(vf.createStatement(subject, FOAF.NAME, vf.createLiteral("fjeiwojf kldsfjewif " + i)));
 			statementList
-					.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
+				.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
 			statementList
-					.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
+				.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
 			statementList
-					.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
+				.add(vf.createStatement(subject, FOAF.KNOWS, vf.createIRI("http://ex/" + random.nextInt(size))));
 		}
 		return statementList;
 	}

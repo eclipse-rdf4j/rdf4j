@@ -46,7 +46,7 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	@Override
 	public Shape union(Shape s1, Shape s2) {
 		return shapeFactory
-				.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
+			.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));
 	}
 
 	@Override
@@ -94,7 +94,7 @@ public class JtsSpatialAlgebra implements SpatialAlgebra {
 	@Override
 	public boolean sfIntersects(Shape s1, Shape s2) {
 		return relate(s1, s2, "T********") || relate(s1, s2, "*T*******") || relate(s1, s2, "***T*****")
-				|| relate(s1, s2, "****T****");
+			|| relate(s1, s2, "****T****");
 	}
 
 	@Override

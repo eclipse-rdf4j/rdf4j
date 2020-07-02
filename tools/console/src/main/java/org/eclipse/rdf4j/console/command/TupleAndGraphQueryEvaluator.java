@@ -103,8 +103,8 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws RepositoryException
 	 */
 	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
-			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-			RepositoryException {
+		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+		RepositoryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
@@ -112,7 +112,7 @@ public class TupleAndGraphQueryEvaluator {
 		long startTime = System.nanoTime();
 
 		try (RepositoryConnection con = repository.getConnection();
-				TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
+			TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {
 
 			List<String> bindingNames = res.getBindingNames();
 			if (bindingNames.isEmpty()) {
@@ -150,8 +150,8 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws RepositoryException
 	 */
 	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer,
-			Collection<Namespace> namespaces) throws UnsupportedQueryLanguageException, MalformedQueryException,
-			QueryEvaluationException, RepositoryException {
+		Collection<Namespace> namespaces) throws UnsupportedQueryLanguageException, MalformedQueryException,
+		QueryEvaluationException, RepositoryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
@@ -159,7 +159,7 @@ public class TupleAndGraphQueryEvaluator {
 		long startTime = System.nanoTime();
 
 		try (RepositoryConnection con = repository.getConnection();
-				GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
+			GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {
 
 			con.setParserConfig(nonVerifyingParserConfig);
 
@@ -189,8 +189,8 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws RepositoryException
 	 */
 	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
-			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
-			RepositoryException {
+		throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+		RepositoryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Evaluating " + queryLn.getName() + " query...");
@@ -217,7 +217,7 @@ public class TupleAndGraphQueryEvaluator {
 	 * @throws MalformedQueryException
 	 */
 	protected void executeUpdate(QueryLanguage queryLn, String queryString)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+		throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		Repository repository = state.getRepository();
 
 		consoleIO.writeln("Executing update...");

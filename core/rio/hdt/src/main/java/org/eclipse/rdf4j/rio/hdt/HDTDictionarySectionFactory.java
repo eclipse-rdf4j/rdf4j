@@ -29,7 +29,7 @@ class HDTDictionarySectionFactory {
 		int dtype = is.read();
 		if (dtype != HDTDictionarySection.Type.FRONT.getValue()) {
 			throw new UnsupportedOperationException("Dictionary " + name + ": encoding "
-					+ Long.toHexString(dtype) + ", but only front encoding is supported");
+				+ Long.toHexString(dtype) + ", but only front encoding is supported");
 		}
 		return new HDTDictionarySectionPFC(name, pos);
 	}

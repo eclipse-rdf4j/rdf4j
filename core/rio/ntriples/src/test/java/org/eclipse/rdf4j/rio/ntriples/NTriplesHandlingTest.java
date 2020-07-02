@@ -25,7 +25,7 @@ public class NTriplesHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-				"src/test/resources/testcases/ntriples/ntriples-RDF-langString-no-language-test.nt");
+			"src/test/resources/testcases/ntriples/ntriples-RDF-langString-no-language-test.nt");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

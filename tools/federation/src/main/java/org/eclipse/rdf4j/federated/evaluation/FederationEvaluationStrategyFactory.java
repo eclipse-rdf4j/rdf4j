@@ -28,7 +28,7 @@ public class FederationEvaluationStrategyFactory {
 	 * @return the {@link FederationEvalStrategy}
 	 */
 	public static FederationEvalStrategy getEvaluationStrategy(FederationType federationType,
-			FederationContext federationContext) {
+		FederationContext federationContext) {
 
 		switch (federationType) {
 		case LOCAL:
@@ -41,11 +41,11 @@ public class FederationEvaluationStrategyFactory {
 	}
 
 	private static FederationEvalStrategy instantiate(Class<? extends FederationEvalStrategy> evalStrategyClass,
-			FederationContext federationContext) {
+		FederationContext federationContext) {
 		try {
 			return (FederationEvalStrategy) evalStrategyClass
-					.getDeclaredConstructor(FederationContext.class)
-					.newInstance(federationContext);
+				.getDeclaredConstructor(FederationContext.class)
+				.newInstance(federationContext);
 		} catch (InstantiationException e) {
 			throw new IllegalStateException("Class " + evalStrategyClass + " could not be instantiated.", e);
 		} catch (Exception e) {

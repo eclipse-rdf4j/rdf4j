@@ -36,7 +36,7 @@ public class RepositoryTripleSource implements TripleSource {
 
 	@Override
 	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
-			Value obj, Resource... contexts) throws QueryEvaluationException {
+		Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement, RepositoryException> iter = null;
 		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
 

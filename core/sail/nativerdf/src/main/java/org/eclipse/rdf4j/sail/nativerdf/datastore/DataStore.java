@@ -201,7 +201,7 @@ public class DataStore implements Closeable {
 	public static void main(String[] args) throws Exception {
 		if (args.length < 2) {
 			System.err.println(
-					"Usage: java org.eclipse.rdf4j.sesame.sailimpl.nativerdf.datastore.DataStore <data-dir> <file-prefix>");
+				"Usage: java org.eclipse.rdf4j.sesame.sailimpl.nativerdf.datastore.DataStore <data-dir> <file-prefix>");
 			return;
 		}
 

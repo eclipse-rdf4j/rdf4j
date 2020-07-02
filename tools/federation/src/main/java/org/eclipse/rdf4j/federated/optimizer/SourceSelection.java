@@ -136,7 +136,7 @@ public class SourceSelection {
 			} else {
 				if (log.isDebugEnabled()) {
 					log.debug("Statement " + QueryStringUtil.toString(stmt)
-							+ " does not produce any results at the provided sources, replacing node with EmptyStatementPattern.");
+						+ " does not produce any results at the provided sources, replacing node with EmptyStatementPattern.");
 				}
 				stmt.replaceWith(new EmptyStatementPattern(stmt));
 			}
@@ -153,7 +153,7 @@ public class SourceSelection {
 		for (List<StatementSource> sourceList : stmtToSources.values()) {
 			for (StatementSource source : sourceList) {
 				endpoints
-						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
+					.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
 			}
 		}
 		return endpoints;
@@ -230,7 +230,7 @@ public class SourceSelection {
 			if (errors.size() > 0) {
 				StringBuilder sb = new StringBuilder();
 				sb.append(
-						errors.size() + " errors were reported while optimizing query " + getQueryInfo().getQueryID());
+					errors.size() + " errors were reported while optimizing query " + getQueryInfo().getQueryID());
 
 				for (Exception e : errors) {
 					sb.append("\n" + ExceptionUtil.getExceptionString("Error occured", e));
@@ -306,7 +306,7 @@ public class SourceSelection {
 		protected final QueryInfo queryInfo;
 
 		public ParallelCheckTask(Endpoint endpoint, StatementPattern stmt, QueryInfo queryInfo,
-				SourceSelectionExecutorWithLatch control) {
+			SourceSelectionExecutorWithLatch control) {
 			this.endpoint = endpoint;
 			this.stmt = stmt;
 			this.queryInfo = queryInfo;
@@ -322,7 +322,7 @@ public class SourceSelection {
 
 				SourceSelection sourceSelection = control.sourceSelection;
 				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,
-						hasResults);
+					hasResults);
 
 				if (hasResults) {
 					sourceSelection.addSource(stmt, new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));
@@ -331,7 +331,7 @@ public class SourceSelection {
 				return null;
 			} catch (Exception e) {
 				throw new OptimizationException(
-						"Error checking results for endpoint " + endpoint.getId() + ": " + e.getMessage(), e);
+					"Error checking results for endpoint " + endpoint.getId() + ": " + e.getMessage(), e);
 			}
 		}
 

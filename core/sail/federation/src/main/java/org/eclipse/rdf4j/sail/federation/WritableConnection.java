@@ -50,7 +50,7 @@ class WritableConnection extends AbstractEchoWriteConnection {
 	}
 
 	private void add(RepositoryConnection member, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		try {
 			member.add(subj, pred, obj, contexts);
 		} catch (RepositoryException e) {

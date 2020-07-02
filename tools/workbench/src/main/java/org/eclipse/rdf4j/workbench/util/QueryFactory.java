@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public class QueryFactory {
 
 	public static Query prepareQuery(final RepositoryConnection con, final QueryLanguage queryLn, final String query)
-			throws RDF4JException {
+		throws RDF4JException {
 		Query rval = null;
 		try {
 			rval = con.prepareQuery(queryLn, query);

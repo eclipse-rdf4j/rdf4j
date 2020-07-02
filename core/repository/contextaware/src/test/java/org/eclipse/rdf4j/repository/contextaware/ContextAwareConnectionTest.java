@@ -119,7 +119,7 @@ public class ContextAwareConnectionTest {
 
 			@Override
 			public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-					throws MalformedQueryException, RepositoryException {
+				throws MalformedQueryException, RepositoryException {
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new GraphQueryStub() {
@@ -146,7 +146,7 @@ public class ContextAwareConnectionTest {
 
 			@Override
 			public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-					throws MalformedQueryException, RepositoryException {
+				throws MalformedQueryException, RepositoryException {
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new QueryStub() {
@@ -173,7 +173,7 @@ public class ContextAwareConnectionTest {
 
 			@Override
 			public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-					throws MalformedQueryException, RepositoryException {
+				throws MalformedQueryException, RepositoryException {
 				assertEquals(SPARQL, ql);
 				assertEquals(queryString, query);
 				return new TupleQueryStub() {

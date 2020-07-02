@@ -98,8 +98,8 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	}
 
 	public SPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs) {
+		IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+		Map<String, IRI> resultNamedGraphs) {
 		super(displayName, testURI, name);
 		this.requestFile = requestFile;
 		this.inputDefaultGraphURI = defaultGraphURI;
@@ -135,15 +135,15 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			if (inputDefaultGraphURI != null) {
 				URL graphURL = new URL(inputDefaultGraphURI.stringValue());
 				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+					.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
 			}
 
 			for (String ng : inputNamedGraphs.keySet()) {
 				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
 				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString())
-								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
+					Rio.getParserFormatForFileName(graphURL.toString())
+						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+					dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 
@@ -155,15 +155,15 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			if (resultDefaultGraphURI != null) {
 				URL graphURL = new URL(resultDefaultGraphURI.stringValue());
 				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+					.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
 			}
 
 			for (String ng : resultNamedGraphs.keySet()) {
 				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
 				conn.add(graphURL, null,
-						Rio.getParserFormatForFileName(graphURL.toString())
-								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-						dataRep.getValueFactory().createIRI(ng));
+					Rio.getParserFormatForFileName(graphURL.toString())
+						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+					dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 	}
@@ -202,9 +202,9 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(
-				SPARQL11UpdateComplianceTest.class.getClassLoader()
-						.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
-						.toExternalForm());
+			SPARQL11UpdateComplianceTest.class.getClassLoader()
+				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLUpdateTestManifest manifest = new SPARQLUpdateTestManifest(pop);
@@ -233,13 +233,13 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-						+ "SELECT DISTINCT ?manifestFile "
-						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+					+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+					+ "SELECT DISTINCT ?manifestFile "
+					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
 				try (TupleQueryResult manifestResults = connection
-						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
-						.evaluate()) {
+					.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
+					.evaluate()) {
 					for (BindingSet bindingSet : manifestResults) {
 						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
 						if (includeSubManifest(subManifestFile, excludedSubdirs)) {
@@ -256,7 +256,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 				query.append("PREFIX sd: <http://www.w3.org/ns/sparql-service-description#>\n ");
 				query.append("PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 				query.append(
-						" SELECT DISTINCT ?testURI ?testName ?result ?action ?requestFile ?defaultGraph ?resultDefaultGraph ");
+					" SELECT DISTINCT ?testURI ?testName ?result ?action ?requestFile ?defaultGraph ?resultDefaultGraph ");
 				query.append(" wHERE { [] rdf:first ?testURI. ?testURI a mf:UpdateEvaluationTest .\n");
 				query.append("         ?testURI  dawgt:approval dawgt:Approved; \n");
 				query.append("                   mf:name ?testName; \n");
@@ -281,10 +281,10 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("testName").stringValue();
 						String displayName = filename.substring(
-								filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(),
-								filename.lastIndexOf("/"))
-								+ ": " + testName;
+							filename.lastIndexOf("testcases-sparql-1.1-w3c/")
+								+ "testcases-sparql-1.1-w3c/".length(),
+							filename.lastIndexOf("/"))
+							+ ": " + testName;
 
 						IRI testURI = (IRI) bs.getValue("testURI");
 						Value testResult = bs.getValue("result");
@@ -304,7 +304,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 								BindingSet graphBindings = inputNamedGraphsResult.next();
 								IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
 								String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
-										.getLabel();
+									.getLabel();
 								logger.debug(" adding named graph : {}", namedGraphLabel);
 								inputNamedGraphs.put(namedGraphLabel, namedGraphData);
 							}
@@ -321,21 +321,21 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 								BindingSet graphBindings = resultNamedGraphsResult.next();
 								IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
 								String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
-										.getLabel();
+									.getLabel();
 								logger.debug(" adding named graph : {}", namedGraphLabel);
 								resultNamedGraphs.put(namedGraphLabel, namedGraphData);
 							}
 						}
 
 						tests.add(new Object[] {
-								displayName,
-								testURI.stringValue(),
-								testName,
-								requestFile.stringValue(),
-								defaultGraphURI,
-								inputNamedGraphs,
-								resultDefaultGraphURI,
-								resultNamedGraphs
+							displayName,
+							testURI.stringValue(),
+							testName,
+							requestFile.stringValue(),
+							defaultGraphURI,
+							inputNamedGraphs,
+							resultDefaultGraphURI,
+							resultNamedGraphs
 						});
 					}
 				}
@@ -364,13 +364,13 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			// check default graph
 			logger.info("checking default graph");
 			compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
-					Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
+				Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
 
 			for (String namedGraph : inputNamedGraphs.keySet()) {
 				logger.info("checking named graph {}", namedGraph);
 				IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
 				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
-						Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
+					Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
 			}
 		} catch (Exception e) {
 			if (con.isActive()) {

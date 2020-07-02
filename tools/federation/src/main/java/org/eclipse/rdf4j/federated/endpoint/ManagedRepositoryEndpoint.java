@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public class ManagedRepositoryEndpoint extends RepositoryEndpoint {
 
 	public ManagedRepositoryEndpoint(RepositoryInformation repoInfo, String endpoint,
-			EndpointClassification endpointClassification, Repository repo) {
+		EndpointClassification endpointClassification, Repository repo) {
 		super(repoInfo, endpoint, endpointClassification, repo);
 	}
 

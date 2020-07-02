@@ -78,7 +78,7 @@ public class ConfigTemplate {
 				String before = template.substring(Math.max(start - 3, 0), start);
 				int end = matcher.end();
 				if (("'''".equals(before) || "\"\"\"".equals(before))
-						&& before.equals(template.substring(end, end + 3))) {
+					&& before.equals(template.substring(end, end + 3))) {
 					multilineMap.put(var, before);
 				}
 			}

@@ -82,7 +82,7 @@ public class RDFCollections {
 	 *      vocabulary</a>.
 	 */
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
-			Resource... contexts) {
+		Resource... contexts) {
 		Objects.requireNonNull(sink);
 		consumeCollection(values, head, st -> sink.add(st), contexts);
 		return sink;
@@ -117,7 +117,7 @@ public class RDFCollections {
 	 * @since 3.0
 	 */
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
-			ValueFactory valueFactory, Resource... contexts) {
+		ValueFactory valueFactory, Resource... contexts) {
 		Objects.requireNonNull(sink);
 		consumeCollection(values, head, st -> sink.add(st), valueFactory, contexts);
 		return sink;
@@ -142,7 +142,7 @@ public class RDFCollections {
 	 *      vocabulary</a>.
 	 */
 	public static <C extends Collection<Value>> C asValues(final Model m, Resource head, C collection,
-			Resource... contexts) throws ModelException {
+		Resource... contexts) throws ModelException {
 		Objects.requireNonNull(collection, "collection may not be null");
 
 		consumeValues(m, head, v -> collection.add(v), contexts);
@@ -172,7 +172,7 @@ public class RDFCollections {
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
-			Resource... contexts) {
+		Resource... contexts) {
 		consumeCollection(values, head, consumer, SimpleValueFactory.getInstance(), contexts);
 	}
 
@@ -201,8 +201,8 @@ public class RDFCollections {
 	 * @since 3.0
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
-			ValueFactory vf,
-			Resource... contexts) {
+		ValueFactory vf,
+		Resource... contexts) {
 		Objects.requireNonNull(values, "input collection may not be null");
 		Objects.requireNonNull(consumer, "consumer may not be null");
 		Objects.requireNonNull(vf, "injected value factory may not be null");
@@ -244,7 +244,7 @@ public class RDFCollections {
 	 *      vocabulary</a>.
 	 */
 	public static void consumeValues(final Model m, Resource head, Consumer<Value> consumer, Resource... contexts)
-			throws ModelException {
+		throws ModelException {
 		Objects.requireNonNull(consumer, "consumer may not be null");
 		Objects.requireNonNull(m, "input model may not be null");
 
@@ -276,7 +276,7 @@ public class RDFCollections {
 	 *         added.
 	 */
 	public static <C extends Collection<Statement>> C getCollection(Model sourceModel, Resource head, C sink,
-			Resource... contexts) {
+		Resource... contexts) {
 		Objects.requireNonNull(sourceModel, "input model may not be null");
 		extract(sourceModel, head, st -> sink.add(st), contexts);
 		return sink;
@@ -300,7 +300,7 @@ public class RDFCollections {
 	public static void extract(Model sourceModel, Resource head, Consumer<Statement> consumer, Resource... contexts) {
 		Objects.requireNonNull(sourceModel, "source model may not be null");
 		GetStatementOptional statementSupplier = (s, p, o,
-				c) -> ((Model) sourceModel).filter(s, p, o, c).stream().findAny();
+			c) -> ((Model) sourceModel).filter(s, p, o, c).stream().findAny();
 		extract(statementSupplier, head, consumer, Models::modelException, contexts);
 	}
 
@@ -322,8 +322,8 @@ public class RDFCollections {
 	 * @throws E if a problem occurs reading the RDF Collection, for example if it is not well-formed.
 	 */
 	public static <E extends RDF4JException> void extract(GetStatementOptional statementSupplier, Resource head,
-			Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
-			Resource... contexts) throws E {
+		Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
+		Resource... contexts) throws E {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		Objects.requireNonNull(head, "list head may not be null");
 		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
@@ -338,16 +338,16 @@ public class RDFCollections {
 			statementSupplier.get(current, RDF.TYPE, RDF.LIST, contexts).ifPresent(collectionConsumer);
 
 			collectionConsumer.accept(statementSupplier.get(current, RDF.FIRST, null, contexts)
-					.orElseThrow(exceptionSupplier.apply("list not wellformed: rdf:first statement missing.")));
+				.orElseThrow(exceptionSupplier.apply("list not wellformed: rdf:first statement missing.")));
 
 			Statement next = statementSupplier.get(current, RDF.REST, null, contexts)
-					.orElseThrow(exceptionSupplier.apply("list not well-formed: rdf:rest statement missing."));
+				.orElseThrow(exceptionSupplier.apply("list not well-formed: rdf:rest statement missing."));
 
 			collectionConsumer.accept(next);
 
 			if (!(next.getObject() instanceof Resource)) {
 				throw exceptionSupplier.apply("list not well-formed: value of rdf:rest should be one of (IRI, BNode).")
-						.get();
+					.get();
 			}
 			visited.add(current);
 			current = (Resource) next.getObject();

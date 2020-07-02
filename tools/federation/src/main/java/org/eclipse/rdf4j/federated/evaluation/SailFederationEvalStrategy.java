@@ -51,8 +51,8 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
-			StatementTupleExpr stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException {
+		StatementTupleExpr stmt, List<BindingSet> bindings)
+		throws QueryEvaluationException {
 
 		// we can omit the bound join handling
 		if (bindings.size() == 1) {
@@ -66,10 +66,10 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 		Boolean isEvaluated = false;
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryBoundUnion((StatementPattern) stmt, bindings, filterExpr,
-				isEvaluated);
+			isEvaluated);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-				stmt.getStatementSources(), stmt.getQueryInfo());
+			stmt.getStatementSources(), stmt.getQueryInfo());
 
 		// apply filter and/or convert to original bindings
 		if (filterExpr != null && !isEvaluated) {
@@ -87,8 +87,8 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
-			CheckStatementPattern stmt, List<BindingSet> bindings)
-			throws QueryEvaluationException {
+		CheckStatementPattern stmt, List<BindingSet> bindings)
+		throws QueryEvaluationException {
 
 		if (bindings.size() == 1) {
 			return stmt.evaluate(bindings.get(0));
@@ -97,20 +97,20 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-				stmt.getStatementSources(), stmt.getQueryInfo());
+			stmt.getStatementSources(), stmt.getQueryInfo());
 
 		return new GroupedCheckConversionIteration(result, bindings);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
-			ControlledWorkerScheduler<BindingSet> joinScheduler,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
-			throws QueryEvaluationException {
+		ControlledWorkerScheduler<BindingSet> joinScheduler,
+		CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+		TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
+		throws QueryEvaluationException {
 
 		ControlledWorkerJoin join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
-				queryInfo);
+			queryInfo);
 		join.setJoinVars(joinVars);
 		executor.execute(join);
 		return join;
@@ -118,16 +118,16 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
-			ExclusiveGroup group, BindingSet bindings)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		ExclusiveGroup group, BindingSet bindings)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		// simple thing: use a prepared query
 		TripleSource tripleSource = group.getOwnedEndpoint().getTripleSource();
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		TupleExpr preparedQuery = QueryAlgebraUtil.selectQuery(group, bindings, group.getFilterExpr(), isEvaluated);
 		return tripleSource.getStatements(preparedQuery, bindings,
-				(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
+			(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 
 		// other option (which might be faster for sesame native stores): join over the statements
 		// TODO implement this and evaluate if it is faster ..

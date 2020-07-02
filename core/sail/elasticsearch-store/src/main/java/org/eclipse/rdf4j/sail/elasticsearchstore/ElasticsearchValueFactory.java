@@ -48,17 +48,17 @@ class ElasticsearchValueFactory extends AbstractValueFactory implements Extensib
 	}
 
 	ExtensibleStatement createStatement(Resource subject, IRI predicate, Value object,
-			Resource context, boolean inferred) {
+		Resource context, boolean inferred) {
 		return new ExtensibleContextStatement(subject, predicate, object, context, inferred);
 	}
 
 	ElasticsearchStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
-			boolean inferred) {
+		boolean inferred) {
 		return new ElasticsearchStatement(elasticsearchID, subject, predicate, object, inferred);
 	}
 
 	ElasticsearchContextStatement createStatement(String elasticsearchID, Resource subject, IRI predicate, Value object,
-			Resource context, boolean inferred) {
+		Resource context, boolean inferred) {
 		return new ElasticsearchContextStatement(elasticsearchID, subject, predicate, object, context, inferred);
 	}
 

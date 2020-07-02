@@ -27,7 +27,7 @@ public class NTriplesParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines}
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_LINES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines", "Fail on N-Triples invalid lines", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.ntriples.fail_on_invalid_lines", "Fail on N-Triples invalid lines", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for parser to determine whether syntactically invalid lines in N-Triples and N-Quads documents

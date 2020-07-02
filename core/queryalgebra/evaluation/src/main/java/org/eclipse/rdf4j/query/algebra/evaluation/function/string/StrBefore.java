@@ -71,7 +71,7 @@ public class StrBefore implements Function {
 				}
 			} else {
 				throw new ValueExprEvaluationException(
-						"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
+					"incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);
 			}
 		} else {
 			throw new ValueExprEvaluationException("incompatible operands for STRBEFORE: " + leftArg + ", " + rightArg);

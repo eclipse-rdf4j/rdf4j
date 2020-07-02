@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public abstract class JoinExecutorBase<T> extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T> {
 
 	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
-			BindingSet bindings) throws QueryEvaluationException {
+		BindingSet bindings) throws QueryEvaluationException {
 		super(leftIter, rightArg, bindings);
 	}
 }

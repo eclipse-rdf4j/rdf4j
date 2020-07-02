@@ -32,8 +32,8 @@ public class FederationContext {
 	private final FedXConfig fedXConfig;
 
 	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
-			DelegateFederatedServiceResolver federatedServiceResolver,
-			Monitoring monitoring, FedXConfig fedXConfig) {
+		DelegateFederatedServiceResolver federatedServiceResolver,
+		Monitoring monitoring, FedXConfig fedXConfig) {
 		super();
 		this.manager = manager;
 		this.endpointManager = endpointManager;

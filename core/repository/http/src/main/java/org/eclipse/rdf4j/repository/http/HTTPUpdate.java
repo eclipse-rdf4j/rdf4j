@@ -44,9 +44,9 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 					SPARQLProtocolSession client = getHttpClient();
 					try {
 						client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
-								getMaxExecutionTime(), getBindingsArray());
+							getMaxExecutionTime(), getBindingsArray());
 					} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException
-							| IOException e) {
+						| IOException e) {
 						throw new HTTPUpdateExecutionException(e.getMessage(), e);
 					}
 				} else {
@@ -60,7 +60,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 			try {
 				httpCon.flushTransactionState(Action.UPDATE);
 				client.sendUpdate(getQueryLanguage(), getQueryString(), getBaseURI(), dataset, includeInferred,
-						getMaxExecutionTime(), getBindingsArray());
+					getMaxExecutionTime(), getBindingsArray());
 			} catch (UnauthorizedException | QueryInterruptedException | MalformedQueryException | IOException e) {
 				throw new HTTPUpdateExecutionException(e.getMessage(), e);
 			}

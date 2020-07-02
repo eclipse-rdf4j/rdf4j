@@ -74,15 +74,15 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		addData("repo1", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
 		addData("repo2", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
 
 		FedXRepository repo = FedXFactory.newFederation()
-				.withResolvableEndpoint("repo1")
-				.withResolvableEndpoint("repo2")
-				.withRepositoryResolver(repoManager)
-				.create();
+			.withResolvableEndpoint("repo1")
+			.withResolvableEndpoint("repo2")
+			.withRepositoryResolver(repoManager)
+			.create();
 		try {
 
 			repo.init();
@@ -106,13 +106,13 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		addData("repo1", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
 		addData("repo2", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
 
 		FedXRepositoryConfig fedXRepoConfig = FedXRepositoryConfigBuilder.create()
-				.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
-				.build();
+			.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
+			.build();
 		repoManager.addRepositoryConfig(new RepositoryConfig("federation", fedXRepoConfig));
 
 		Repository repo = repoManager.getRepository("federation");
@@ -147,17 +147,17 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		addData("repo1", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
 		addData("repo2", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
 
 		addData("serviceRepo", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), FOAF.NAME, vf.createLiteral("Person 1")),
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), FOAF.NAME, vf.createLiteral("Person 2"))));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), FOAF.NAME, vf.createLiteral("Person 1")),
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), FOAF.NAME, vf.createLiteral("Person 2"))));
 
 		FedXRepositoryConfig fedXRepoConfig = FedXRepositoryConfigBuilder.create()
-				.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
-				.build();
+			.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
+			.build();
 		repoManager.addRepositoryConfig(new RepositoryConfig("federation", fedXRepoConfig));
 
 		Repository repo = repoManager.getRepository("federation");
@@ -165,7 +165,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 		try (RepositoryConnection conn = repo.getConnection()) {
 
 			TupleQuery tq = conn.prepareTupleQuery(
-					"SELECT * WHERE { ?person a ?PERSON . { SERVICE <http://serviceRepo> { ?person ?NAME ?name} } }");
+				"SELECT * WHERE { ?person a ?PERSON . { SERVICE <http://serviceRepo> { ?person ?NAME ?name} } }");
 			tq.setBinding("PERSON", FOAF.PERSON);
 			tq.setBinding("NAME", FOAF.NAME);
 
@@ -196,20 +196,20 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		addData("repo1", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p1"), RDF.TYPE, FOAF.PERSON)));
 		addData("repo2", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p2"), RDF.TYPE, FOAF.PERSON)));
 		addData("repo3", Lists.newArrayList(
-				vf.createStatement(vf.createIRI("http://ex.org/p3"), RDF.TYPE, FOAF.PERSON)));
+			vf.createStatement(vf.createIRI("http://ex.org/p3"), RDF.TYPE, FOAF.PERSON)));
 
 		FedXRepositoryConfig fedXRepo1Config = FedXRepositoryConfigBuilder.create()
-				.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
-				.build();
+			.withResolvableEndpoint(Arrays.asList("repo1", "repo2"))
+			.build();
 		repoManager.addRepositoryConfig(new RepositoryConfig("federation1", fedXRepo1Config));
 
 		FedXRepositoryConfig fedXRepo2Config = FedXRepositoryConfigBuilder.create()
-				.withResolvableEndpoint(Arrays.asList("repo1", "repo3"))
-				.build();
+			.withResolvableEndpoint(Arrays.asList("repo1", "repo3"))
+			.build();
 		repoManager.addRepositoryConfig(new RepositoryConfig("federation2", fedXRepo2Config));
 
 		// query federation 1 (contains person1 and person2)
@@ -219,7 +219,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 			Model m = new TreeModel(Iterations.asList(conn.getStatements(null, RDF.TYPE, FOAF.PERSON)));
 			Assertions.assertEquals(2, m.size()); // two persons
 			Assertions.assertEquals(Sets.newHashSet(vf.createIRI("http://ex.org/p1"), vf.createIRI("http://ex.org/p2")),
-					m.subjects());
+				m.subjects());
 		}
 
 		// query federation 1 (contains person1 and person3)
@@ -229,7 +229,7 @@ public class FedXWithLocalRepositoryManagerTest extends FedXBaseTest {
 			Model m = new TreeModel(Iterations.asList(conn.getStatements(null, RDF.TYPE, FOAF.PERSON)));
 			Assertions.assertEquals(2, m.size()); // two persons
 			Assertions.assertEquals(Sets.newHashSet(vf.createIRI("http://ex.org/p1"), vf.createIRI("http://ex.org/p3")),
-					m.subjects());
+				m.subjects());
 		}
 	}
 

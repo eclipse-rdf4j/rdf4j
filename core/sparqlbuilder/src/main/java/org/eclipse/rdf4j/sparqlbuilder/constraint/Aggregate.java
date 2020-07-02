@@ -107,13 +107,13 @@ public class Aggregate extends Expression<Aggregate> {
 		// Yep, I still know...
 		if (operator == SparqlAggregate.GROUP_CONCAT && separator != null) {
 			params.append(" ")
-					.append(";")
-					.append(" ")
-					.append(SEPARATOR)
-					.append(" ")
-					.append("=")
-					.append(" ")
-					.append(separator);
+				.append(";")
+				.append(" ")
+				.append(SEPARATOR)
+				.append(" ")
+				.append("=")
+				.append(" ")
+				.append(separator);
 		}
 
 		return aggregate.append(SparqlBuilderUtils.getParenthesizedString(params.toString())).toString();

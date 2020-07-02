@@ -67,7 +67,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 	 */
 	public T prefix(Prefix... prefixes) {
 		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes,
-				p -> p.addPrefix(prefixes));
+			p -> p.addPrefix(prefixes));
 
 		return (T) this;
 	}
@@ -99,10 +99,10 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 	}
 
 	protected void appendNamedTriplesTemplates(StringBuilder queryString, Optional<GraphName> graphName,
-			TriplesTemplate triples) {
+		TriplesTemplate triples) {
 		queryString.append(graphName
-				.map(graph -> SparqlBuilderUtils
-						.getBracedString("GRAPH " + graph.getQueryString() + " " + triples.getQueryString()))
-				.orElseGet(triples::getQueryString));
+			.map(graph -> SparqlBuilderUtils
+				.getBracedString("GRAPH " + graph.getQueryString() + " " + triples.getQueryString()))
+			.orElseGet(triples::getQueryString));
 	}
 }

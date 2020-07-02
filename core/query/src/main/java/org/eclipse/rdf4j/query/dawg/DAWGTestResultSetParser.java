@@ -79,7 +79,7 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 	public void endRDF() throws RDFHandlerException {
 		try {
 			Resource resultSetNode = Models.subject(graph.filter(null, RDF.TYPE, RESULTSET))
-					.orElseThrow(() -> new RDFHandlerException("no instance of type ResultSet"));
+				.orElseThrow(() -> new RDFHandlerException("no instance of type ResultSet"));
 
 			List<String> bindingNames = getBindingNames(resultSetNode);
 			tqrHandler.startQueryResult(bindingNames);
@@ -133,9 +133,9 @@ public class DAWGTestResultSetParser extends AbstractRDFHandler {
 
 	private Binding getBinding(Resource bindingNode) {
 		Literal name = Models.getPropertyLiteral(graph, bindingNode, VARIABLE)
-				.orElseThrow(() -> new RDFHandlerException("missing variable name for binding " + bindingNode));
+			.orElseThrow(() -> new RDFHandlerException("missing variable name for binding " + bindingNode));
 		Value value = Models.getProperty(graph, bindingNode, VALUE)
-				.orElseThrow(() -> new RDFHandlerException("missing variable value for binding " + bindingNode));
+			.orElseThrow(() -> new RDFHandlerException("missing variable value for binding " + bindingNode));
 		return new SimpleBinding(name.getLabel(), value);
 	}
 }

@@ -87,13 +87,13 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 	@Override
 	public void parse(final InputStream in, final String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		parse(in, null, baseURI);
 	}
 
 	@Override
 	public void parse(final Reader reader, final String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		parse(null, reader, baseURI);
 	}
 
@@ -107,13 +107,13 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 	 * @throws RDFHandlerException
 	 */
 	private void parse(InputStream in, Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {
 			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),
-					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
-					() -> createNode());
+				valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
+				() -> createNode());
 
 			final JsonLdOptions options = new JsonLdOptions(baseURI);
 			options.useNamespaces = true;
@@ -131,7 +131,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 			throw new RDFParseException("Could not parse JSONLD", e);
 		} catch (JsonProcessingException e) {
 			throw new RDFParseException("Could not parse JSONLD", e, e.getLocation().getLineNr(),
-					e.getLocation().getColumnNr());
+				e.getLocation().getColumnNr());
 		} catch (RuntimeException e) {
 			if (e.getCause() != null && e.getCause() instanceof RDFParseException) {
 				throw (RDFParseException) e.getCause();
@@ -153,47 +153,47 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 		if (parserConfig.isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
-					parserConfig.get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
+				parserConfig.get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
-					parserConfig.get(JSONSettings.ALLOW_COMMENTS));
+				parserConfig.get(JSONSettings.ALLOW_COMMENTS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
-					parserConfig.get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
+				parserConfig.get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
-					parserConfig.get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
+				parserConfig.get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
-					parserConfig.get(JSONSettings.ALLOW_SINGLE_QUOTES));
+				parserConfig.get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
-					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
+				parserConfig.get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
-					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
+				parserConfig.get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
-					parserConfig.get(JSONSettings.ALLOW_YAML_COMMENTS));
+				parserConfig.get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
 		if (parserConfig.isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
-					parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));
+				parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
 		if (parserConfig.isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
 			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
-					parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
+				parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
 		if (parserConfig.isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
-					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));
+				parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
 		return nextJsonFactory;
 	}

@@ -84,9 +84,9 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 		repoConfig.validate();
 		RepositoryImplConfig config = repoConfig.getRepositoryImplConfig();
 		RepositoryFactory factory = RepositoryRegistry.getInstance()
-				.get(config.getType())
-				.orElseThrow(
-						() -> new RepositoryConfigException("Repository type not in classpath: " + config.getType()));
+			.get(config.getType())
+			.orElseThrow(
+				() -> new RepositoryConfigException("Repository type not in classpath: " + config.getType()));
 		return factory.getRepository(config);
 	}
 

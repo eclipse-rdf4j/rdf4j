@@ -70,7 +70,7 @@ public abstract class SPARQLComplianceTest {
 	@Test
 	public void test() throws Exception {
 		assumeThat(getIgnoredTests().contains(getName())).withFailMessage("test case '%s' is ignored", getName())
-				.isFalse();
+			.isFalse();
 		runTest();
 	}
 

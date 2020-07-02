@@ -30,7 +30,7 @@ public class XMLWriterSettings {
 	 *      specification</a>
 	 */
 	public static final RioSetting<Boolean> INCLUDE_XML_PI = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.include_xml_pi", "Include XML Processing Instruction", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.include_xml_pi", "Include XML Processing Instruction", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for RDF/XML Writer to determine whether the rdf:RDF root tag is to be written. The tag is
@@ -44,7 +44,7 @@ public class XMLWriterSettings {
 	 *      specification</a>
 	 */
 	public static final RioSetting<Boolean> INCLUDE_ROOT_RDF_TAG = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.include_root_rdf_tag", "Include Root RDF Tag", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.include_root_rdf_tag", "Include Root RDF Tag", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for RDF/XML Writer to determine if single quotes are used to quote attribute values. By default
@@ -55,7 +55,7 @@ public class XMLWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.use_single_quotes}
 	 */
 	public static final RioSetting<Boolean> USE_SINGLE_QUOTES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.use_single_quotes", "Use single quotes", Boolean.FALSE);
+		"org.eclipse.rdf4j.rio.use_single_quotes", "Use single quotes", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for RDF/XML Writer to determine if the character used to quote attribute values, (single quote or
@@ -67,7 +67,7 @@ public class XMLWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.quotes_to_entities_in_text}
 	 */
 	public static final RioSetting<Boolean> QUOTES_TO_ENTITIES_IN_TEXT = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.quotes_to_entities_in_text", "Use single quotes", Boolean.FALSE);
+		"org.eclipse.rdf4j.rio.quotes_to_entities_in_text", "Use single quotes", Boolean.FALSE);
 
 	/**
 	 * Private default constructor.

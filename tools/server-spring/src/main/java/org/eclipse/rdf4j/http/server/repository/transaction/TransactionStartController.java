@@ -51,7 +51,7 @@ public class TransactionStartController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+		throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -64,13 +64,13 @@ public class TransactionStartController extends AbstractController {
 			logger.info("transaction started");
 		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-					"Method not allowed: " + reqMethod);
+				"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+		HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 

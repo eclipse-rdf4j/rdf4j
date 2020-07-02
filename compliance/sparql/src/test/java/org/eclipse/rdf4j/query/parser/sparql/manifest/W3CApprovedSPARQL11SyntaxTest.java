@@ -23,7 +23,7 @@ public class W3CApprovedSPARQL11SyntaxTest extends SPARQL11SyntaxComplianceTest 
 	 * @param positiveTest
 	 */
 	public W3CApprovedSPARQL11SyntaxTest(String displayName, String testURI, String name, String queryFileURL,
-			boolean positiveTest) {
+		boolean positiveTest) {
 		super(displayName, testURI, name, queryFileURL, positiveTest);
 	}
 

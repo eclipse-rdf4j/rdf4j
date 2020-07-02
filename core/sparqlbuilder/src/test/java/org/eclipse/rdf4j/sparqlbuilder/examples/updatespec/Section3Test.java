@@ -46,8 +46,8 @@ public class Section3Test extends BaseExamples {
 		InsertDataQuery insertDataQuery = Queries.INSERT_DATA();
 
 		insertDataQuery.prefix(dc)
-				.insertData(iri("http://example/book1").has(dc.iri("title"), Rdf.literalOf("A new book"))
-						.andHas(dc.iri("creator"), Rdf.literalOf("A.N.Other")));
+			.insertData(iri("http://example/book1").has(dc.iri("title"), Rdf.literalOf("A new book"))
+				.andHas(dc.iri("creator"), Rdf.literalOf("A.N.Other")));
 
 		p(insertDataQuery);
 	}
@@ -61,8 +61,8 @@ public class Section3Test extends BaseExamples {
 		InsertDataQuery insertDataQuery = Queries.INSERT_DATA();
 
 		insertDataQuery.prefix(dc, ns)
-				.insertData(iri("http://example/book1").has(ns.iri("price"), Rdf.literalOf(42)))
-				.into(iri("http://example/bookStore"));
+			.insertData(iri("http://example/book1").has(ns.iri("price"), Rdf.literalOf(42)))
+			.into(iri("http://example/bookStore"));
 
 		p(insertDataQuery);
 	}
@@ -77,7 +77,7 @@ public class Section3Test extends BaseExamples {
 		DeleteDataQuery deleteDataQuery = Queries.DELETE_DATA().prefix(dc);
 
 		deleteDataQuery.deleteData(iri("http://example/book2").has(dc.iri("title"), Rdf.literalOf("David Copperfield"))
-				.andHas(dc.iri("creator"), Rdf.literalOf("Edmund Wells")));
+			.andHas(dc.iri("creator"), Rdf.literalOf("Edmund Wells")));
 
 		p(deleteDataQuery);
 	}
@@ -92,16 +92,16 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_4() {
 		Iri bookStore = iri("http://example/bookStore"), exampleBook = iri("http://example/book1"),
-				title = dc.iri("title");
+			title = dc.iri("title");
 
 		DeleteDataQuery deleteTypoQuery = Queries.DELETE_DATA()
-				.prefix(dc)
-				.deleteData(exampleBook.has(title, "Fundamentals of Compiler Desing"))
-				.from(bookStore);
+			.prefix(dc)
+			.deleteData(exampleBook.has(title, "Fundamentals of Compiler Desing"))
+			.from(bookStore);
 		InsertDataQuery insertFixedTitleQuery = Queries.INSERT_DATA()
-				.prefix(dc)
-				.insertData(exampleBook.has(title, "Fundamentals of Compiler Design"))
-				.into(bookStore);
+			.prefix(dc)
+			.insertData(exampleBook.has(title, "Fundamentals of Compiler Design"))
+			.into(bookStore);
 		p(deleteTypoQuery, insertFixedTitleQuery);
 	}
 
@@ -137,10 +137,10 @@ public class Section3Test extends BaseExamples {
 		ModifyQuery modify = Queries.MODIFY();
 
 		modify.prefix(foaf)
-				.with(iri("http://example/addresses"))
-				.delete(person.has(foaf.iri("givenName"), "Bill"))
-				.insert(person.has(foaf.iri("givenName"), "William"))
-				.where(person.has(foaf.iri("givenName"), "Bill"));
+			.with(iri("http://example/addresses"))
+			.delete(person.has(foaf.iri("givenName"), "Bill"))
+			.insert(person.has(foaf.iri("givenName"), "William"))
+			.where(person.has(foaf.iri("givenName"), "Bill"));
 
 		p(modify);
 	}
@@ -154,15 +154,15 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_6() {
 		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
-				date = SparqlBuilder.var("date");
+			date = SparqlBuilder.var("date");
 
 		ModifyQuery modify = Queries.MODIFY();
 
 		modify.prefix(dc, xsd)
-				.delete(book.has(p, v))
-				.where(GraphPatterns.and(book.has(dc.iri("date"), date), book.has(p, v))
-						.filter(Expressions.gt(date,
-								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+			.delete(book.has(p, v))
+			.where(GraphPatterns.and(book.has(dc.iri("date"), date), book.has(p, v))
+				.filter(Expressions.gt(date,
+					Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 		p(modify);
 	}
 
@@ -175,13 +175,13 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_7() {
 		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"),
-				value = SparqlBuilder.var("value");
+			value = SparqlBuilder.var("value");
 
 		ModifyQuery modify = Queries.MODIFY()
-				.prefix(foaf)
-				.with(iri("http://example/addresses"))
-				.delete(person.has(property, value))
-				.where(person.has(property, value).andHas(foaf.iri("givenName"), "Fred"));
+			.prefix(foaf)
+			.with(iri("http://example/addresses"))
+			.delete(person.has(property, value))
+			.where(person.has(property, value).andHas(foaf.iri("givenName"), "Fred"));
 
 		p(modify);
 	}
@@ -195,15 +195,15 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_8() {
 		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
-				date = SparqlBuilder.var("date");
+			date = SparqlBuilder.var("date");
 
 		p(Queries.MODIFY()
-				.prefix(dc, xsd)
-				.insert(book.has(p, v))
-				.into(iri("http://example/bookStore2"))
-				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
-						.filter(Expressions.gt(date,
-								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime"))))));
+			.prefix(dc, xsd)
+			.insert(book.has(p, v))
+			.into(iri("http://example/bookStore2"))
+			.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
+				.filter(Expressions.gt(date,
+					Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime"))))));
 	}
 
 	/**
@@ -215,16 +215,16 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_9() {
 		Variable person = SparqlBuilder.var("person"), name = SparqlBuilder.var("name"),
-				email = SparqlBuilder.var("email");
+			email = SparqlBuilder.var("email");
 		TriplePattern personNameTriple = person.has(foaf.iri("name"), name),
-				personEmailTriple = person.has(foaf.iri("mbox"), email);
+			personEmailTriple = person.has(foaf.iri("mbox"), email);
 
 		ModifyQuery insertAddressesQuery = Queries.MODIFY()
-				.prefix(foaf, rdf)
-				.insert(personNameTriple, personEmailTriple)
-				.into(iri("http://example/addresses"))
-				.where(and(personNameTriple, GraphPatterns.optional(personEmailTriple))
-						.from(iri("http://example/people")));
+			.prefix(foaf, rdf)
+			.insert(personNameTriple, personEmailTriple)
+			.into(iri("http://example/addresses"))
+			.where(and(personNameTriple, GraphPatterns.optional(personEmailTriple))
+				.from(iri("http://example/people")));
 
 		p(insertAddressesQuery);
 	}
@@ -242,23 +242,23 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_10() {
 		Variable book = SparqlBuilder.var("book"), p = SparqlBuilder.var("p"), v = SparqlBuilder.var("v"),
-				date = SparqlBuilder.var("date");
+			date = SparqlBuilder.var("date");
 		Prefix dcmitype = SparqlBuilder.prefix("dcmitype", iri("http://purl.org/dc/dcmitype/"));
 
 		ModifyQuery insertIntobookStore2Query = Queries.MODIFY()
-				.prefix(dcmitype, dc, xsd)
-				.insert(book.has(p, v))
-				.into(iri("http://example/bookStore2"))
-				.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
-						.filter(Expressions.lt(date,
-								Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+			.prefix(dcmitype, dc, xsd)
+			.insert(book.has(p, v))
+			.into(iri("http://example/bookStore2"))
+			.where(and(book.has(dc.iri("date"), date), book.has(p, v)).from(iri("http://example/bookStore"))
+				.filter(Expressions.lt(date,
+					Rdf.literalOfType("1970-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 		ModifyQuery deleteFromBookStoreQuery = Queries.MODIFY()
-				.with(iri("http://example/bookStore"))
-				.delete(book.has(p, v))
-				.where(and(book.has(dc.iri("date"), date).andHas(dc.iri("type"), dcmitype.iri("PhysicalObject")),
-						book.has(p, v))
-								.filter(Expressions.lt(date,
-										Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+			.with(iri("http://example/bookStore"))
+			.delete(book.has(p, v))
+			.where(and(book.has(dc.iri("date"), date).andHas(dc.iri("type"), dcmitype.iri("PhysicalObject")),
+				book.has(p, v))
+					.filter(Expressions.lt(date,
+						Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 
 		p(insertIntobookStore2Query, deleteFromBookStoreQuery);
 	}
@@ -271,12 +271,12 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_11() {
 		Variable person = SparqlBuilder.var("person"), property = SparqlBuilder.var("property"),
-				value = SparqlBuilder.var("value");
+			value = SparqlBuilder.var("value");
 
 		p(Queries.MODIFY()
-				.prefix(foaf)
-				.delete()
-				.where(person.has(foaf.iri("givenName"), "Fred").andHas(property, value)));
+			.prefix(foaf)
+			.delete()
+			.where(person.has(foaf.iri("givenName"), "Fred").andHas(property, value)));
 	}
 
 	/**
@@ -288,15 +288,15 @@ public class Section3Test extends BaseExamples {
 	@Test
 	public void example_12() {
 		Variable person = SparqlBuilder.var("person"), property1 = SparqlBuilder.var("property1"),
-				value1 = SparqlBuilder.var("value1"), property2 = SparqlBuilder.var("property2"),
-				value2 = SparqlBuilder.var("value2");
+			value1 = SparqlBuilder.var("value1"), property2 = SparqlBuilder.var("property2"),
+			value2 = SparqlBuilder.var("value2");
 		Iri namesGraph = iri("http://example.com/names"), addressesGraph = iri("http://example.com/addresses");
 
 		ModifyQuery deleteFredFromNamesAndAddressesQuery = Queries.MODIFY()
-				.prefix(foaf)
-				.delete()
-				.where(and(person.has(foaf.iri("givenName"), "Fred").andHas(property1, value1)).from(namesGraph),
-						and(person.has(property2, value2)).from(addressesGraph));
+			.prefix(foaf)
+			.delete()
+			.where(and(person.has(foaf.iri("givenName"), "Fred").andHas(property1, value1)).from(namesGraph),
+				and(person.has(property2, value2)).from(addressesGraph));
 
 		p(deleteFredFromNamesAndAddressesQuery);
 	}

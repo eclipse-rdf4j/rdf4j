@@ -44,10 +44,10 @@ public class ExplanationImpl implements Explanation {
 		try {
 			// TODO: Consider removing pretty printer
 			return this.objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.PUBLIC_ONLY)
-					.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.NONE)
-					.setSerializationInclusion(JsonInclude.Include.NON_NULL)
-					.writerWithDefaultPrettyPrinter()
-					.writeValueAsString(toGenericPlanNode());
+				.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.NONE)
+				.setSerializationInclusion(JsonInclude.Include.NON_NULL)
+				.writerWithDefaultPrettyPrinter()
+				.writeValueAsString(toGenericPlanNode());
 		} catch (JsonProcessingException e) {
 			throw new RuntimeException(e);
 		}

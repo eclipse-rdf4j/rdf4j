@@ -47,10 +47,10 @@ public class Load extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
-				+ "  <file-or-url>   The path or URL identifying the data file\n"
-				+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
-				+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
-				+ "Loads the specified data file into the current repository\n";
+			+ "  <file-or-url>   The path or URL identifying the data file\n"
+			+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
+			+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
+			+ "Loads the specified data file into the current repository\n";
 	}
 
 	@Override
@@ -161,7 +161,7 @@ public class Load extends ConsoleCommand {
 	 * @param tokens     full command as series of tokens
 	 */
 	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
-			final String... tokens) {
+		final String... tokens) {
 		try {
 			if (LockRemover.tryToRemoveLock(repository, consoleIO)) {
 				execute(tokens);
@@ -188,7 +188,7 @@ public class Load extends ConsoleCommand {
 	 * @throws RDFParseException
 	 */
 	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
-			throws RepositoryException, IOException, RDFParseException {
+		throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
 		writeln("Loading data...");
 

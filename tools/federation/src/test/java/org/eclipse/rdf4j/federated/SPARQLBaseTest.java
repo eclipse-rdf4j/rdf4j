@@ -60,7 +60,7 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 
 		Set<Statement> res = new HashSet<>();
 		try (RepositoryConnection conn = fedxRule.getRepository()
-				.getConnection()) {
+			.getConnection()) {
 			try (RepositoryResult<Statement> stmts = conn.getStatements(subj, pred, obj, false)) {
 				while (stmts.hasNext()) {
 					res.add(stmts.next());

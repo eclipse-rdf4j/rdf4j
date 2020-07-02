@@ -19,13 +19,13 @@ public class RepositoriesServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-			throws RepositoryException, QueryResultHandlerException {
+		throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "repositories.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
 		builder.link(Arrays.asList(INFO));
 		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 			builder.result(info.isReadable(), info.isWritable(), info.getId(), info.getDescription(),
-					info.getLocation().toString());
+				info.getLocation().toString());
 		}
 		builder.end();
 	}

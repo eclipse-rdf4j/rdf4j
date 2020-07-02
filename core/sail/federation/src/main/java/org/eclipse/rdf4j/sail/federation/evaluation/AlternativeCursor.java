@@ -25,7 +25,7 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 	private final CloseableIteration<? extends E, QueryEvaluationException> alternative;
 
 	public AlternativeCursor(CloseableIteration<? extends E, QueryEvaluationException> primary,
-			CloseableIteration<? extends E, QueryEvaluationException> alternative) {
+		CloseableIteration<? extends E, QueryEvaluationException> alternative) {
 		super();
 		this.alternative = alternative;
 		this.primary = primary;

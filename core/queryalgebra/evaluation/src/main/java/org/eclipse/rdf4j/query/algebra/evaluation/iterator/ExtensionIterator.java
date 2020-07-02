@@ -27,7 +27,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	private final EvaluationStrategy strategy;
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy) throws QueryEvaluationException {
+		EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.extension = extension;
 		this.strategy = strategy;

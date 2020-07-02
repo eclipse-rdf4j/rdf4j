@@ -199,7 +199,7 @@ public class BTree implements Closeable {
 	 * @see DefaultRecordComparator
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, boolean forceSync)
-			throws IOException {
+		throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, new DefaultRecordComparator(), forceSync);
 	}
 
@@ -217,7 +217,7 @@ public class BTree implements Closeable {
 	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator)
-			throws IOException {
+		throws IOException {
 		this(dataDir, filenamePrefix, blockSize, valueSize, comparator, false);
 	}
 
@@ -237,7 +237,7 @@ public class BTree implements Closeable {
 	 * @throws IOException In case the initialization of the B-Tree file failed.
 	 */
 	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator,
-			boolean forceSync) throws IOException {
+		boolean forceSync) throws IOException {
 		if (dataDir == null) {
 			throw new IllegalArgumentException("dataDir must not be null");
 		}
@@ -294,12 +294,12 @@ public class BTree implements Closeable {
 					throw new IOException("Unable to read BTree file " + file + "; it uses a newer file format");
 				} else if (version != FILE_FORMAT_VERSION) {
 					throw new IOException(
-							"Unable to read BTree file " + file + "; invalid file format version: " + version);
+						"Unable to read BTree file " + file + "; invalid file format version: " + version);
 				}
 			} else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {
 				if (version != 1) {
 					throw new IOException(
-							"Unable to read BTree file " + file + "; invalid file format version: " + version);
+						"Unable to read BTree file " + file + "; invalid file format version: " + version);
 				}
 				// Write new magic number to file
 				logger.info("Updating file header for btree file '{}'", file.getAbsolutePath());
@@ -311,7 +311,7 @@ public class BTree implements Closeable {
 			// Verify that the value sizes match
 			if (this.valueSize != valueSize) {
 				throw new IOException("Specified value size (" + valueSize
-						+ ") is different from what is stored on disk (" + this.valueSize + ") in " + file);
+					+ ") is different from what is stored on disk (" + this.valueSize + ") in " + file);
 			}
 		}
 
@@ -584,7 +584,7 @@ public class BTree implements Closeable {
 	}
 
 	private long getValueCountEstimate(List<PathSegment> minValuePath, List<PathSegment> maxValuePath)
-			throws IOException {
+		throws IOException {
 		int commonListSize = Math.min(minValuePath.size(), maxValuePath.size());
 
 		if (commonListSize == 0) {
@@ -772,7 +772,7 @@ public class BTree implements Closeable {
 					// Child node overflowed, insert overflow in this node
 					byte[] oldValue = insertResult.oldValue;
 					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID, valueIdx,
-							node);
+						node);
 					insertResult.oldValue = oldValue;
 				}
 			}

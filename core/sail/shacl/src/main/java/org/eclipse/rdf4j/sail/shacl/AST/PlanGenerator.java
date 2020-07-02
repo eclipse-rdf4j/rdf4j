@@ -20,13 +20,13 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 public interface PlanGenerator {
 
 	PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans);
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans);
 
 	PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper);
+		PlaneNodeWrapper planeNodeWrapper);
 
 	PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper);
+		PlaneNodeWrapper planeNodeWrapper);
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated);
 

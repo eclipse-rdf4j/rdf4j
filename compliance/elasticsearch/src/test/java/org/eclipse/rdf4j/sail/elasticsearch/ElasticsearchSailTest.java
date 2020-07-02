@@ -40,7 +40,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 			protected void configure(LuceneSail sail) {
 				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-						client.settings().get("cluster.name"));
+					client.settings().get("cluster.name"));
 				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
@@ -92,13 +92,13 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 
 	@Test
 	public void testMultipleLuceneQueries()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testMultipleLuceneQueries();
 	}
 
 	@Test
 	public void testPredicateLuceneQueries()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testPredicateLuceneQueries();
 	}
 
@@ -109,7 +109,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 
 	@Test
 	public void testSnippetLimitedToPredicate()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		delegateTest.testSnippetLimitedToPredicate();
 	}
 
@@ -120,7 +120,7 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 
 	@Test
 	public void testQueryWithSpecifiedSubject()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testQueryWithSpecifiedSubject();
 	}
 

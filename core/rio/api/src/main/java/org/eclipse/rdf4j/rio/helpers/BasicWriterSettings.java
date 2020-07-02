@@ -24,7 +24,7 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.pretty_print}.
 	 */
 	public static final RioSetting<Boolean> PRETTY_PRINT = new BooleanRioSetting("org.eclipse.rdf4j.rio.pretty_print",
-			"Pretty print", Boolean.TRUE);
+		"Pretty print", Boolean.TRUE);
 
 	/**
 	 * Inline blanks nodes by their value and don't write any blank node labels when this setting is true. This setting
@@ -40,9 +40,9 @@ public class BasicWriterSettings {
 	 * @since 2.3
 	 */
 	public static final RioSetting<Boolean> INLINE_BLANK_NODES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.inline_blank_nodes",
-			"Use blank node property lists, collections, and anonymous nodes instead of blank node labels",
-			Boolean.FALSE);
+		"org.eclipse.rdf4j.rio.inline_blank_nodes",
+		"Use blank node property lists, collections, and anonymous nodes instead of blank node labels",
+		Boolean.FALSE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals and
@@ -55,7 +55,7 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdf10_plain_literals}.
 	 */
 	public static final RioSetting<Boolean> XSD_STRING_TO_PLAIN_LITERAL = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.rdf10_plain_literals", "RDF-1.0 compatible Plain Literals", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.rdf10_plain_literals", "RDF-1.0 compatible Plain Literals", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should omit the rdf:langString datatype from language literals
@@ -76,7 +76,7 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdf10_language_literals}.
 	 */
 	public static final RioSetting<Boolean> RDF_LANGSTRING_TO_LANG_LITERAL = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.rdf10_language_literals", "RDF-1.0 compatible Language Literals", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.rdf10_language_literals", "RDF-1.0 compatible Language Literals", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should include a base directive.
@@ -86,7 +86,7 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.base_directive}.
 	 */
 	public static final RioSetting<Boolean> BASE_DIRECTIVE = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.base_directive", "Serialize base directive", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.base_directive", "Serialize base directive", Boolean.TRUE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should convert RDF* statements to standard RDF reification.
@@ -96,7 +96,7 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.convert_rdf_star}.
 	 */
 	public static final RioSetting<Boolean> CONVERT_RDF_STAR_TO_REIFICATION = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.convert_rdf_star", "Convert RDF* statements to RDF reification", Boolean.FALSE);
+		"org.eclipse.rdf4j.rio.convert_rdf_star", "Convert RDF* statements to RDF reification", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for writer to determine whether it should encode RDF* triple values to RDF-compatible special
@@ -110,8 +110,8 @@ public class BasicWriterSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.encode_rdf_star}.
 	 */
 	public static final RioSetting<Boolean> ENCODE_RDF_STAR = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.encode_rdf_star",
-			"Encodes RDF* triples to special IRIs for compatibility with RDF", Boolean.TRUE);
+		"org.eclipse.rdf4j.rio.encode_rdf_star",
+		"Encodes RDF* triples to special IRIs for compatibility with RDF", Boolean.TRUE);
 
 	/**
 	 * Private default constructor.

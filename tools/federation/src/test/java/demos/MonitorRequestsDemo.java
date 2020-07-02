@@ -22,20 +22,20 @@ public class MonitorRequestsDemo {
 
 		FedXConfig config = new FedXConfig().withEnableMonitoring(true).withLogQueries(true);
 		FedXRepository repo = FedXFactory.newFederation()
-				.withSparqlEndpoint("http://dbpedia.org/sparql")
-				.withSparqlEndpoint("https://query.wikidata.org/sparql")
-				.withConfig(config)
-				.create();
+			.withSparqlEndpoint("http://dbpedia.org/sparql")
+			.withSparqlEndpoint("https://query.wikidata.org/sparql")
+			.withConfig(config)
+			.create();
 
 		repo.init();
 
 		String q = "PREFIX wd: <http://www.wikidata.org/entity/> "
-				+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-				+ "SELECT * WHERE { "
-				+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
-				+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
-				+ " ?countrySameAs wdt:P2131 ?gdp ."
-				+ "}";
+			+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+			+ "SELECT * WHERE { "
+			+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
+			+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
+			+ " ?countrySameAs wdt:P2131 ?gdp ."
+			+ "}";
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);

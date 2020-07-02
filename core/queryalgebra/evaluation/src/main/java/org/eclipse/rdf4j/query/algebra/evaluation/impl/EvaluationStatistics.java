@@ -99,7 +99,7 @@ public class EvaluationStatistics {
 				// so due to the lower actual cardinality we value it in preference to a fully unbound statement
 				// pattern.
 				cardinality = getSubjectCardinality(subjVar) * getObjectCardinality(objVar)
-						* getContextCardinality(node.getContextVar());
+					* getContextCardinality(node.getContextVar());
 			}
 		}
 
@@ -112,7 +112,7 @@ public class EvaluationStatistics {
 			// the length of the path is unknown but expected to be _at least_ twice that of a normal
 			// statement pattern.
 			cardinality = 2.0 * getCardinality(
-					new StatementPattern(node.getSubjectVar(), pathVar, node.getObjectVar(), node.getContextVar()));
+				new StatementPattern(node.getSubjectVar(), pathVar, node.getObjectVar(), node.getContextVar()));
 		}
 
 		@Override
@@ -150,13 +150,13 @@ public class EvaluationStatistics {
 		@Override
 		public void meet(TripleRef tripleRef) {
 			cardinality = getSubjectCardinality(tripleRef.getSubjectVar())
-					* getPredicateCardinality(tripleRef.getPredicateVar())
-					* getObjectCardinality(tripleRef.getObjectVar());
+				* getPredicateCardinality(tripleRef.getPredicateVar())
+				* getObjectCardinality(tripleRef.getObjectVar());
 		}
 
 		protected double getCardinality(StatementPattern sp) {
 			return getSubjectCardinality(sp) * getPredicateCardinality(sp) * getObjectCardinality(sp)
-					* getContextCardinality(sp);
+				* getContextCardinality(sp);
 		}
 
 		/**

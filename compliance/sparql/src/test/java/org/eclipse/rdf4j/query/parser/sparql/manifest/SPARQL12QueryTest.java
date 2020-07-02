@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class SPARQL12QueryTest extends SPARQL12QueryComplianceTest {
 
 	public SPARQL12QueryTest(String displayName, String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataset, boolean ordered) {
+		Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 

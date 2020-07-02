@@ -174,8 +174,8 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		if (getMembers() == null) {
 			if (getDataConfig() == null && getFedxConfig() == null) {
 				throw new RepositoryConfigException(
-						"At least one of fedxConfig or dataConfig needs to be "
-								+ "provided to initialize the federation, if no explicit members are defined");
+					"At least one of fedxConfig or dataConfig needs to be "
+						+ "provided to initialize the federation, if no explicit members are defined");
 			}
 		}
 
@@ -187,7 +187,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Models.objectLiteral(m.getStatements(implNode, DATA_CONFIG, null))
-					.ifPresent(value -> setDataConfig(value.stringValue()));
+				.ifPresent(value -> setDataConfig(value.stringValue()));
 
 			Set<Value> memberNodes = m.filter(implNode, MEMBER, null).objects();
 			if (!memberNodes.isEmpty()) {

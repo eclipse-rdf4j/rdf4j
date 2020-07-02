@@ -166,7 +166,7 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 		if (other instanceof TripleRef) {
 			TripleRef o = (TripleRef) other;
 			return subjectVar.equals(o.getSubjectVar()) && predicateVar.equals(o.getPredicateVar())
-					&& objectVar.equals(o.getObjectVar());
+				&& objectVar.equals(o.getObjectVar());
 		}
 		return false;
 	}

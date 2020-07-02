@@ -112,7 +112,7 @@ public class RegexAsStringFunctionOptimizierTest {
 	}
 
 	private void testOptimizer(String expectedQuery, String actualQuery)
-			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
 		QueryOptimizer opt = new RegexAsStringFunctionOptimizer(SimpleValueFactory.getInstance());
 		QueryRoot optRoot = new QueryRoot(pq.getTupleExpr());

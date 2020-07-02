@@ -31,7 +31,7 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 
 	public static <T> FedXQueueCursor<T> create(int capacity) {
 		BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue = new ArrayBlockingQueue<>(capacity,
-				false);
+			false);
 		return new FedXQueueCursor<>(queue);
 	}
 

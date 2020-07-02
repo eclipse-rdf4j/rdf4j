@@ -24,7 +24,7 @@ public class TurtleUtil {
 	private static final Logger logger = LoggerFactory.getLogger(TurtleUtil.class);
 
 	public static final char[] LOCAL_ESCAPED_CHARS = new char[] { '_', '~', '.', '-', '!', '$', '&', '\'', '(', ')',
-			'*', '+', ',', ';', '=', '/', '?', '#', '@', '%' };
+		'*', '+', ',', ';', '=', '/', '?', '#', '@', '%' };
 
 	static {
 		// sorting array to allow simple binary search for char lookup.
@@ -100,12 +100,12 @@ public class TurtleUtil {
 	 */
 	public static boolean isPN_CHARS_BASE(int codePoint) {
 		return ASCIIUtil.isLetter(codePoint) || codePoint >= 0x00C0 && codePoint <= 0x00D6
-				|| codePoint >= 0x00D8 && codePoint <= 0x00F6 || codePoint >= 0x00F8 && codePoint <= 0x02FF
-				|| codePoint >= 0x0370 && codePoint <= 0x037D || codePoint >= 0x037F && codePoint <= 0x1FFF
-				|| codePoint >= 0x200C && codePoint <= 0x200D || codePoint >= 0x2070 && codePoint <= 0x218F
-				|| codePoint >= 0x2C00 && codePoint <= 0x2FEF || codePoint >= 0x3001 && codePoint <= 0xD7FF
-				|| codePoint >= 0xF900 && codePoint <= 0xFDCF || codePoint >= 0xFDF0 && codePoint <= 0xFFFD
-				|| codePoint >= 0x10000 && codePoint <= 0xEFFFF;
+			|| codePoint >= 0x00D8 && codePoint <= 0x00F6 || codePoint >= 0x00F8 && codePoint <= 0x02FF
+			|| codePoint >= 0x0370 && codePoint <= 0x037D || codePoint >= 0x037F && codePoint <= 0x1FFF
+			|| codePoint >= 0x200C && codePoint <= 0x200D || codePoint >= 0x2070 && codePoint <= 0x218F
+			|| codePoint >= 0x2C00 && codePoint <= 0x2FEF || codePoint >= 0x3001 && codePoint <= 0xD7FF
+			|| codePoint >= 0xF900 && codePoint <= 0xFDCF || codePoint >= 0xFDF0 && codePoint <= 0xFFFD
+			|| codePoint >= 0x10000 && codePoint <= 0xEFFFF;
 	}
 
 	/**
@@ -132,7 +132,7 @@ public class TurtleUtil {
 	 */
 	public static boolean isPN_CHARS(int codePoint) {
 		return isPN_CHARS_U(codePoint) || ASCIIUtil.isNumber(codePoint) || codePoint == '-' || codePoint == 0x00B7
-				|| codePoint >= 0x0300 && codePoint <= 0x036F || codePoint >= 0x203F && codePoint <= 0x2040;
+			|| codePoint >= 0x0300 && codePoint <= 0x036F || codePoint >= 0x203F && codePoint <= 0x2040;
 	}
 
 	/**
@@ -188,7 +188,7 @@ public class TurtleUtil {
 	 */
 	public static boolean isNameStartChar(int codePoint) {
 		return isPN_CHARS_U(codePoint) || codePoint == ':' || ASCIIUtil.isNumber(codePoint) || codePoint == '\\'
-				|| codePoint == '%';
+			|| codePoint == '%';
 	}
 
 	/**
@@ -275,7 +275,7 @@ public class TurtleUtil {
 
 		if (!isPN_CHARS_BASE(prefix.charAt(0))) {
 			logger.debug("PN_PREFIX was not valid (start character invalid) i=0 nextchar={} prefix=", prefix.charAt(0),
-					prefix);
+				prefix);
 			return false;
 		}
 
@@ -285,8 +285,8 @@ public class TurtleUtil {
 
 			if (!isPN_CHARS(codePoint) || (codePoint == '.' && i < (numberOfCodePoints - 1))) {
 				logger.debug(
-						"PN_PREFIX was not valid (intermediate character invalid) i=" + i + " nextchar={} prefix={}",
-						Character.toChars(codePoint), prefix);
+					"PN_PREFIX was not valid (intermediate character invalid) i=" + i + " nextchar={} prefix={}",
+					Character.toChars(codePoint), prefix);
 				return false;
 			}
 
@@ -294,7 +294,7 @@ public class TurtleUtil {
 			// end of the prefix, in which case it is invalid
 			if (codePoint == '%' && (prefix.length() - i) < 2) {
 				logger.debug("PN_PREFIX was not valid (percent encoding) i=" + i + " nextchar={} prefix={}",
-						Character.toChars(codePoint), prefix);
+					Character.toChars(codePoint), prefix);
 				return false;
 			}
 
@@ -370,22 +370,22 @@ public class TurtleUtil {
 		}
 
 		if (!isPN_CHARS_U(name.charAt(0)) && name.charAt(0) != ':' && !ASCIIUtil.isNumber(name.charAt(0))
-				&& !isPLX_START(name)) {
+			&& !isPLX_START(name)) {
 			logger.debug("PN_LOCAL was not valid (start characters invalid) i=" + 0 + " nextchar="
-					+ name.charAt(0) + " name=" + name);
+				+ name.charAt(0) + " name=" + name);
 			return false;
 		}
 
 		if (!isNameStartChar(name.charAt(0))) {
 			logger.debug("name was not valid (start character invalid) i=" + 0 + " nextchar=" + name.charAt(0)
-					+ " name=" + name);
+				+ " name=" + name);
 			return false;
 		}
 
 		for (int i = 1; i < name.length(); i++) {
 			if (!isNameChar(name.charAt(i))) {
 				logger.debug("name was not valid (intermediate character invalid) i=" + i + " nextchar="
-						+ name.charAt(i) + " name=" + name);
+					+ name.charAt(i) + " name=" + name);
 				return false;
 			}
 
@@ -393,7 +393,7 @@ public class TurtleUtil {
 			// end of the prefix, in which case it is invalid
 			if (name.charAt(i) == '%' && (name.length() - i) < 3) {
 				logger.debug("name was not valid (short percent escape) i=" + i + " nextchar=" + name.charAt(i)
-						+ " name=" + name);
+					+ " name=" + name);
 				return false;
 			}
 		}

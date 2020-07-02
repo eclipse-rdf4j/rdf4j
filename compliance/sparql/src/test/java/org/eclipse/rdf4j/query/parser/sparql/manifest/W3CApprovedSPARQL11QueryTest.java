@@ -29,41 +29,41 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 
 			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
+				String resultFileURL, Dataset dataSet, boolean laxCardinality) {
 				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
-						false);
+					false);
 			}
 
 			@Override
 			public W3CApprovedSPARQL11QueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
+				String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
 				String[] ignoredTests = {
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRDT   TypeErrors",
-						// test case incompatible with RDF 1.1 - see
-						// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-						"STRLANG   TypeErrors",
-						// known issue: SES-937
-						"sq03 - Subquery within graph pattern, graph variable is not bound",
-						// test case is incorrect wrt SPARQL 1.1 spec, see https://github.com/eclipse/rdf4j/issues/1978
+					// test case incompatible with RDF 1.1 - see
+					// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+					"STRDT   TypeErrors",
+					// test case incompatible with RDF 1.1 - see
+					// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+					"STRLANG   TypeErrors",
+					// known issue: SES-937
+					"sq03 - Subquery within graph pattern, graph variable is not bound",
+					// test case is incorrect wrt SPARQL 1.1 spec, see https://github.com/eclipse/rdf4j/issues/1978
 //						"agg empty group",
 //						"Aggregate over empty group resulting in a row with unbound variables"
 				};
 
 				return new W3CApprovedSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,
-						laxCardinality, checkOrder, ignoredTests);
+					laxCardinality, checkOrder, ignoredTests);
 			}
 		}, manifestUrl.toString(), true, "service");
 	}
 
 	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
+		Dataset dataSet, boolean laxCardinality, String... ignoredTests) {
 		this(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, false, ignoredTests);
 	}
 
 	protected W3CApprovedSPARQL11QueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
+		Dataset dataSet, boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
 		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder, ignoredTests);
 	}
 

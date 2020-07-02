@@ -77,7 +77,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		assertEquals(0, Iterations.asList(testCon.getStatements(null, null, null, false, context1)).size());
 		assertEquals(1000, Iterations.asList(testCon.getStatements(null, null, null, false, context2)).size());
 		assertEquals(2000,
-				Iterations.asList(testCon.getStatements(null, null, null, false, context2, context3)).size());
+			Iterations.asList(testCon.getStatements(null, null, null, false, context2, context3)).size());
 		testCon.commit();
 
 		// check context content using fresh connection
@@ -90,7 +90,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 	@Test
 	public void testLimit() throws Exception {
 		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
-				.setMaxCollectionsSize(2);
+			.setMaxCollectionsSize(2);
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
 		IRI context1 = vf.createIRI("http://my.context.1");
@@ -117,7 +117,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 	@Test
 	public void testOrderAndLimit() throws Exception {
 		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
-				.setMaxCollectionsSize(2);
+			.setMaxCollectionsSize(2);
 		testCon.begin();
 		ValueFactory vf = testCon.getValueFactory();
 		IRI context1 = vf.createIRI("http://my.context.1");

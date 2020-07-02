@@ -147,7 +147,7 @@ public class ProtocolTest {
 	@Test
 	public void testSeRQLselect() throws Exception {
 		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * from {X} P {Y}",
-				QueryLanguage.SERQL);
+			QueryLanguage.SERQL);
 		QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
 	}
 
@@ -247,7 +247,7 @@ public class ProtocolTest {
 				assertEquals(RDFFormat.RDFXML.getDefaultMIMEType(), contentType);
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
@@ -280,7 +280,7 @@ public class ProtocolTest {
 				// do nothing, expected
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 			}
 		} finally {
@@ -320,7 +320,7 @@ public class ProtocolTest {
 				assertEquals(0, conn.getContentLength());
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
@@ -357,7 +357,7 @@ public class ProtocolTest {
 				assertEquals(0, conn.getContentLength());
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}
@@ -439,7 +439,7 @@ public class ProtocolTest {
 		String repositoryLocation = TestServer.REPOSITORY_URL;
 
 		ExecutorService threadPool = Executors.newFixedThreadPool(20,
-				new ThreadFactoryBuilder().setNameFormat("rdf4j-protocoltest-%d").build());
+			new ThreadFactoryBuilder().setNameFormat("rdf4j-protocoltest-%d").build());
 
 		for (int count = 0; count < limitCount; count++) {
 			final int number = count;
@@ -478,12 +478,12 @@ public class ProtocolTest {
 			int responseCode = conn.getResponseCode();
 			if (responseCode != HttpURLConnection.HTTP_OK) {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 			}
 
 			try (CSVReader reader = new CSVReader(
-					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
+				new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
 				String[] headerRow = reader.readNext();
 
 				if (headerRow == null) {
@@ -535,7 +535,7 @@ public class ProtocolTest {
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " (" + responseCode
-					+ ")";
+				+ ")";
 			fail(response);
 		}
 	}
@@ -555,7 +555,7 @@ public class ProtocolTest {
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " (" + responseCode
-					+ ")";
+				+ ")";
 			fail(response);
 		}
 	}
@@ -588,7 +588,7 @@ public class ProtocolTest {
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " (" + responseCode
-					+ ")";
+				+ ")";
 			fail(response);
 		}
 	}
@@ -605,7 +605,7 @@ public class ProtocolTest {
 		// HTTP 200 or 204
 		if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
 			String response = "location " + location + " responded: " + conn.getResponseMessage() + " (" + responseCode
-					+ ")";
+				+ ")";
 			fail(response);
 		}
 	}
@@ -630,7 +630,7 @@ public class ProtocolTest {
 				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL);
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
-						+ responseCode + ")";
+					+ responseCode + ")";
 				fail(response);
 				throw new RuntimeException(response);
 			}

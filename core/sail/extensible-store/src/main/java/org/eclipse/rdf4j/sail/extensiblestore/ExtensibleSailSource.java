@@ -38,7 +38,7 @@ class ExtensibleSailSource implements SailSource {
 	private final ExtensibleStatementHelper extensibleStatementHelper;
 
 	public ExtensibleSailSource(DataStructureInterface dataStructure, NamespaceStoreInterface namespaceStore,
-			boolean inferred, ExtensibleStatementHelper extensibleStatementHelper) {
+		boolean inferred, ExtensibleStatementHelper extensibleStatementHelper) {
 		this.dataStructure = dataStructure;
 		this.namespaceStore = namespaceStore;
 		this.inferred = inferred;
@@ -53,7 +53,7 @@ class ExtensibleSailSource implements SailSource {
 	@Override
 	public SailSource fork() {
 		return new ExtensibleSailSource(new ReadCommittedWrapper(this.dataStructure), namespaceStore, inferred,
-				extensibleStatementHelper);
+			extensibleStatementHelper);
 	}
 
 	@Override
@@ -207,7 +207,7 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-					Value obj, Resource... contexts) throws SailException {
+				Value obj, Resource... contexts) throws SailException {
 				return dataStructure.getStatements(subj, pred, obj, inferred, contexts);
 			}
 

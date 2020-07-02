@@ -235,7 +235,7 @@ public abstract class AbstractDatatypeHandlerTest {
 	@Test
 	public void testNormalizeDatatypeValidValue() throws Exception {
 		Literal result = testHandler.normalizeDatatype(getValueMatchingRecognisedDatatypeUri(),
-				getRecognisedDatatypeUri(), vf);
+			getRecognisedDatatypeUri(), vf);
 		Literal expectedResult = getNormalisedLiteralForRecognisedDatatypeAndValue();
 
 		assertNotNull(expectedResult.getDatatype());

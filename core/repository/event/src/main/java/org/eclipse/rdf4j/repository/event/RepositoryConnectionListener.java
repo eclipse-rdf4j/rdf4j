@@ -38,10 +38,10 @@ public interface RepositoryConnectionListener {
 	public abstract void rollback(RepositoryConnection conn);
 
 	public abstract void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts);
+		Resource... contexts);
 
 	public abstract void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts);
+		Resource... contexts);
 
 	public abstract void clear(RepositoryConnection conn, Resource... contexts);
 
@@ -52,5 +52,5 @@ public interface RepositoryConnectionListener {
 	public abstract void clearNamespaces(RepositoryConnection conn);
 
 	public abstract void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-			Update operation);
+		Update operation);
 }

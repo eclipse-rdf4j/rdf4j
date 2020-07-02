@@ -68,7 +68,7 @@ public class SPARQLResultsXMLParser extends AbstractSPARQLXMLParser implements T
 
 	@Override
 	public void parseQueryResult(InputStream in)
-			throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
+		throws IOException, QueryResultParseException, TupleQueryResultHandlerException {
 		try {
 			parseQueryResultInternal(in, false, true);
 		} catch (QueryResultHandlerException e) {

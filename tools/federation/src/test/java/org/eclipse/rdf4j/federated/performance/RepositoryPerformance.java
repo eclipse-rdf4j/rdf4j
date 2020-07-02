@@ -73,10 +73,10 @@ public class RepositoryPerformance {
 				start = System.currentTimeMillis();
 				List<IRI> instances = retrieveInstances(conn);
 				System.out.println(
-						instances.size() + " instances retrieved in " + (System.currentTimeMillis() - start) + "ms");
+					instances.size() + " instances retrieved in " + (System.currentTimeMillis() - start) + "ms");
 
 				System.out
-						.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
+					.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
 				List<Future<?>> tasks = new ArrayList<>();
 				start = System.currentTimeMillis();
 				int count = 0;
@@ -95,7 +95,7 @@ public class RepositoryPerformance {
 							runQuery(_conn, instance);
 						} catch (Exception e) {
 							System.err.println("Error while performing query evaluation for instance "
-									+ instance.stringValue() + ": " + e.getMessage());
+								+ instance.stringValue() + ": " + e.getMessage());
 						}
 					});
 					tasks.add(task);
@@ -143,7 +143,7 @@ public class RepositoryPerformance {
 
 			long start = System.currentTimeMillis();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-					"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
+				"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
 
 			TupleQueryResult res = null;
 			try {
@@ -154,7 +154,7 @@ public class RepositoryPerformance {
 					count++;
 				}
 				System.out.println("Instance " + instance.stringValue() + " has " + count + " results. Duration: "
-						+ (System.currentTimeMillis() - start) + "ms");
+					+ (System.currentTimeMillis() - start) + "ms");
 				return count;
 			} finally {
 				if (res != null) {
@@ -235,7 +235,7 @@ public class RepositoryPerformance {
 		System.out.println("#RemoteRepository");
 		try {
 			new RemoteRepositoryPerformanceTest(DRUGBANK.DRUGS, "http://10.212.10.29:8081/openrdf-sesame", "drugbank")
-					.run();
+				.run();
 		} catch (Exception e) {
 			System.out.println("Error while performing RemoteRepository test: " + e.getMessage());
 		}

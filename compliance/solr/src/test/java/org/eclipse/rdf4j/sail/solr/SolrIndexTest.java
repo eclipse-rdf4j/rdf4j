@@ -109,7 +109,7 @@ public class SolrIndexTest {
 		assertEquals(1, count);
 
 		QueryResponse response = client
-				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
+			.query(new SolrQuery(SolrIndex.termQuery(SearchFields.URI_FIELD_NAME, subject.toString())));
 		Iterator<SolrDocument> docs = response.getResults().iterator();
 		assertTrue(docs.hasNext());
 
@@ -145,15 +145,15 @@ public class SolrIndexTest {
 
 		// see if we can query for these literals
 		count = client
-				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(0))
-				.getResults()
-				.getNumFound();
+			.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object1.getLabel())).setRows(0))
+			.getResults()
+			.getNumFound();
 		assertEquals(1, count);
 
 		count = client
-				.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(0))
-				.getResults()
-				.getNumFound();
+			.query(new SolrQuery(SolrIndex.termQuery(SearchFields.TEXT_FIELD_NAME, object2.getLabel())).setRows(0))
+			.getResults()
+			.getNumFound();
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -271,7 +271,7 @@ public class SolrIndexTest {
 
 		try ( // now add the statements through the repo
 				// add statements with context
-				SailRepositoryConnection connection = repository.getConnection()) {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -323,7 +323,7 @@ public class SolrIndexTest {
 
 		try ( // now add the statements through the repo
 				// add statements with context
-				SailRepositoryConnection connection = repository.getConnection()) {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());

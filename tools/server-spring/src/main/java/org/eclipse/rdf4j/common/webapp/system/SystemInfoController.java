@@ -76,9 +76,9 @@ public class SystemInfoController implements Controller {
 
 		public ServerInfo() {
 			os = System.getProperty("os.name") + " " + System.getProperty("os.version") + " ("
-					+ System.getProperty("os.arch") + ")";
+				+ System.getProperty("os.arch") + ")";
 			java = System.getProperty("java.vendor") + " " + System.getProperty("java.vm.name") + " "
-					+ System.getProperty("java.version");
+				+ System.getProperty("java.version");
 			user = System.getProperty("user.name");
 		}
 

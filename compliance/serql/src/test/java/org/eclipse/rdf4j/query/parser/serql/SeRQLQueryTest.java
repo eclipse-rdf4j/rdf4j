@@ -22,14 +22,14 @@ public class SeRQLQueryTest extends SeRQLQueryTestCase {
 
 			@Override
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
-					String resultFile, String entailment) {
+				String resultFile, String entailment) {
 				return new SeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile, entailment);
 			}
 		});
 	}
 
 	public SeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile, String resultFile,
-			String entailment) {
+		String entailment) {
 		super(name, dataFile, graphNames, queryFile, resultFile, entailment);
 	}
 

@@ -26,7 +26,7 @@ public class JSONLDParserHandlerTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-				"src/test/resources/testcases/jsonld/jsonld-RDF-langString-no-language-test.jsonld");
+			"src/test/resources/testcases/jsonld/jsonld-RDF-langString-no-language-test.jsonld");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

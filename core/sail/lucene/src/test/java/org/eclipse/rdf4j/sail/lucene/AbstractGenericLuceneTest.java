@@ -189,7 +189,7 @@ public abstract class AbstractGenericLuceneTest {
 	}
 
 	private void evaluate(String[] queries, ArrayList<List<Map<String, String>>> expectedResults)
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		for (int queryID = 0; queryID < queries.length; queryID++) {
 			String serql = queries[queryID];
 			List<Map<String, String>> expectedResultSet = expectedResults.get(queryID);
@@ -263,23 +263,23 @@ public abstract class AbstractGenericLuceneTest {
 			// the number of matched expected results must be equal to the number
 			// of actual results
 			assertEquals("How many expected results were retrieved for query #" + queryID + "?",
-					expectedResultSet.size(), matched.size());
+				expectedResultSet.size(), matched.size());
 			assertEquals("How many actual results were retrieved for query #" + queryID + "?", expectedResultSet.size(),
-					actualResults);
+				actualResults);
 		}
 	}
 
 	@Test
 	public void testPredicateLuceneQueries()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		String[] queries = new String[] {
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
-						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
-						+ "> {Snippet}",
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
-						+ "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
-						+ "> {Snippet}" };
+			"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
+				+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
+				+ "> {Snippet}",
+			"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
+				+ "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
+				+ "> {Snippet}" };
 
 		ArrayList<List<Map<String, String>>> allResults = new ArrayList<>();
 
@@ -377,7 +377,7 @@ public abstract class AbstractGenericLuceneTest {
 	 */
 	@Test
 	public void testSnippetLimitedToPredicate()
-			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		try (RepositoryConnection localConnection = repository.getConnection()) {
 			localConnection.begin();
 			// we use the string 'charly' as test-case. the snippets should contain
@@ -433,11 +433,11 @@ public abstract class AbstractGenericLuceneTest {
 				}
 				if (snippet.contains(notexpected)) {
 					fail("snippet '" + snippet + "' contained value '" + notexpected + "' from predicate "
-							+ PREDICATE_2);
+						+ PREDICATE_2);
 				}
 				if (!foundexpected) {
 					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
-							+ snippet);
+						+ snippet);
 				}
 
 				// there should be a score
@@ -507,7 +507,7 @@ public abstract class AbstractGenericLuceneTest {
 				}
 				if (!foundexpected) {
 					fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
-							+ snippet);
+						+ snippet);
 				}
 
 				// there should be a score
@@ -547,12 +547,12 @@ public abstract class AbstractGenericLuceneTest {
 				n++;
 
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_1)) {
+					&& statement.getObject().equals(SUBJECT_1)) {
 					r |= 1;
 					continue;
 				}
 				if (statement.getSubject().equals(SUBJECT_3) && statement.getPredicate().equals(PREDICATE_3)
-						&& statement.getObject().equals(SUBJECT_2)) {
+					&& statement.getObject().equals(SUBJECT_2)) {
 					r |= 2;
 					continue;
 				}
@@ -571,7 +571,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testQueryWithSpecifiedSubject()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
 		query.setBinding("Subject", SUBJECT_1);
@@ -823,15 +823,15 @@ public abstract class AbstractGenericLuceneTest {
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
-				+ literal + "\"} ";
+			+ literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
 			assertTrue("query for literal '" + literal + " did not return any results, expected was " + resultUri,
-					result.hasNext());
+				result.hasNext());
 			BindingSet bindings = result.next();
 			assertEquals("query for literal '" + literal + " did not return the expected resource", resultUri,
-					bindings.getValue("Resource"));
+				bindings.getValue("Resource"));
 			assertFalse(result.hasNext());
 		}
 	}
@@ -839,12 +839,12 @@ public abstract class AbstractGenericLuceneTest {
 	protected void assertNoQueryResult(String literal) throws Exception {
 		// fire a query for all subjects with a given term
 		String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
-				+ literal + "\"} ";
+			+ literal + "\"} ";
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the result
 			assertFalse("query for literal '" + literal + " did return results, which was not expected.",
-					result.hasNext());
+				result.hasNext());
 		}
 	}
 

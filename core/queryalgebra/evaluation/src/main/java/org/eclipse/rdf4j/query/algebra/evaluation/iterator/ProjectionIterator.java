@@ -36,7 +36,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 *--------------*/
 
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			BindingSet parentBindings) throws QueryEvaluationException {
+		BindingSet parentBindings) throws QueryEvaluationException {
 		super(iter);
 		this.projection = projection;
 		this.parentBindings = parentBindings;
@@ -64,12 +64,12 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
-			BindingSet parentBindings) {
+		BindingSet parentBindings) {
 		return project(projElemList, sourceBindings, parentBindings, false);
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
-			BindingSet parentBindings, boolean includeAllParentBindings) {
+		BindingSet parentBindings, boolean includeAllParentBindings) {
 		final QueryBindingSet resultBindings = new QueryBindingSet();
 		if (includeAllParentBindings) {
 			resultBindings.addAll(parentBindings);

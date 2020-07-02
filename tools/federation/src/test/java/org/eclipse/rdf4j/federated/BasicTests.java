@@ -106,25 +106,25 @@ public class BasicTests extends SPARQLBaseTest {
 		String ns1 = "http://namespace1.org/";
 		String ns2 = "http://namespace2.org/";
 		List<Endpoint> endpoints = prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl",
-				"/tests/data/data3.ttl",
-				"/tests/data/data4.ttl"));
+			"/tests/data/data3.ttl",
+			"/tests/data/data4.ttl"));
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			TupleQuery tq = conn
-					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
+				.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
 			TupleQueryResult result = tq.evaluate();
 
 			TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("person"))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
-					.build();
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
+				.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
+				.build();
 
 			compareTupleQueryResults(result, expected, false);
 
@@ -136,12 +136,12 @@ public class BasicTests extends SPARQLBaseTest {
 			result = tq.evaluate();
 
 			expected = tupleQueryResultBuilder(Arrays.asList("person"))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
-					.build();
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
+				.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+				.build();
 
 			compareTupleQueryResults(result, expected, false);
 		}
@@ -154,21 +154,21 @@ public class BasicTests extends SPARQLBaseTest {
 		final QueryManager qm = federationContext().getQueryManager();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\n" +
-				"SELECT ?name WHERE {\r\n" +
-				" ?person a foaf:Person .\r\n" +
-				" ?person foaf:name ?name .\r\n" +
-				"}";
+			"SELECT ?name WHERE {\r\n" +
+			" ?person a foaf:Person .\r\n" +
+			" ?person foaf:name ?name .\r\n" +
+			"}";
 		TupleQuery query = qm.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
 		TupleQueryResult actual = query.evaluate();
 
 		TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("name"))
-				.add(Arrays.asList(vf.createLiteral("Person1")))
-				.build();
+			.add(Arrays.asList(vf.createLiteral("Person1")))
+			.build();
 
 		compareTupleQueryResults(actual, expected, false);
 	}
@@ -179,7 +179,7 @@ public class BasicTests extends SPARQLBaseTest {
 		final QueryManager qm = federationContext().getQueryManager();
 
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-				"/tests/medium/data4.ttl"));
+			"/tests/medium/data4.ttl"));
 
 		String queryString = readQueryString("/tests/basic/query_limit01.rq");
 
@@ -204,14 +204,14 @@ public class BasicTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		Assertions.assertEquals(
-				1, Repositories
-						.tupleQueryNoTransaction(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
-								it -> QueryResults.asList(it))
-						.size());
+			1, Repositories
+				.tupleQueryNoTransaction(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
+					it -> QueryResults.asList(it))
+				.size());
 
 		Assertions.assertEquals(1,
-				Repositories.tupleQuery(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
-						it -> QueryResults.asList(it)).size());
+			Repositories.tupleQuery(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
+				it -> QueryResults.asList(it)).size());
 	}
 
 	@Test
@@ -224,7 +224,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 			// SELECT query
 			TupleQuery tq = conn
-					.prepareTupleQuery("SELECT ?person WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
+				.prepareTupleQuery("SELECT ?person WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
 			tq.setBinding("name", l("Alan"));
 			TupleQueryResult tqr = tq.evaluate();
 			List<BindingSet> res = Iterations.asList(tqr);
@@ -232,7 +232,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 			// CONSTRUCT query
 			GraphQuery gq = conn.prepareGraphQuery(
-					"CONSTRUCT { ?person <http://xmlns.com/foaf/0.1/name> ?name } WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
+				"CONSTRUCT { ?person <http://xmlns.com/foaf/0.1/name> ?name } WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
 			gq.setBinding("name", l("Alan"));
 			GraphQueryResult gqr = gq.evaluate();
 			List<Statement> stmts = Iterations.asList(gqr);

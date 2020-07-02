@@ -56,15 +56,15 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 
 	@Override
 	public void parseQueryResult(InputStream in)
-			throws IOException, QueryResultParseException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parseQueryResultInternal(in, true, true);
 	}
 
 	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
-			throws IOException, QueryResultParseException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, QueryResultHandlerException {
 		if (!attemptParseBoolean && !attemptParseTuple) {
 			throw new IllegalArgumentException(
-					"Internal error: Did not specify whether to parse as either boolean and/or tuple");
+				"Internal error: Did not specify whether to parse as either boolean and/or tuple");
 		}
 
 		BufferedInputStream buff = new BufferedInputStream(in);
@@ -220,7 +220,7 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	protected void reportWarning(String msg) {
 		if (getParseErrorListener() != null) {
 			getParseErrorListener().warning(msg, internalSAXParser.getLocator().getLineNumber(),
-					internalSAXParser.getLocator().getColumnNumber());
+				internalSAXParser.getLocator().getColumnNumber());
 		}
 	}
 
@@ -310,13 +310,13 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 			if (getParserConfig().get(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
 				if (getParseErrorListener() != null) {
 					getParseErrorListener().error(exception.getMessage(),
-							internalSAXParser.getLocator().getLineNumber(),
-							internalSAXParser.getLocator().getColumnNumber());
+						internalSAXParser.getLocator().getLineNumber(),
+						internalSAXParser.getLocator().getColumnNumber());
 				}
 
 				if (!getParserConfig().isNonFatalError(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {
 					throw new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
-							internalSAXParser.getLocator().getColumnNumber());
+						internalSAXParser.getLocator().getColumnNumber());
 				}
 			}
 		} catch (QueryResultParseException e) {
@@ -328,12 +328,12 @@ public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser 
 	public void fatalError(SAXParseException exception) throws SAXException {
 		if (getParseErrorListener() != null) {
 			getParseErrorListener().fatalError(exception.getMessage(), internalSAXParser.getLocator().getLineNumber(),
-					internalSAXParser.getLocator().getColumnNumber());
+				internalSAXParser.getLocator().getColumnNumber());
 		}
 
 		throw new SAXParseException(exception.getMessage(), internalSAXParser.getLocator(),
-				new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
-						internalSAXParser.getLocator().getColumnNumber()));
+			new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),
+				internalSAXParser.getLocator().getColumnNumber()));
 	}
 
 }

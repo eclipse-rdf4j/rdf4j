@@ -48,7 +48,7 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.SERIALIZABLE);
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED,
-				supportedLevels);
+			supportedLevels);
 		assertNotNull(compatibleLevel);
 		assertEquals(IsolationLevels.SERIALIZABLE, compatibleLevel);
 	}
@@ -62,7 +62,7 @@ public class IsolationLevelsTest {
 		supportedLevels.add(IsolationLevels.READ_COMMITTED);
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SERIALIZABLE,
-				supportedLevels);
+			supportedLevels);
 		assertNull(compatibleLevel);
 
 	}
@@ -71,7 +71,7 @@ public class IsolationLevelsTest {
 	public void testGetCompatibleIsolationLevelNullParams() {
 		try {
 			IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.SNAPSHOT,
-					null);
+				null);
 			fail("should have resulted in an IllegalArgumentException");
 		} catch (IllegalArgumentException e) {
 			// do nothing, expected.

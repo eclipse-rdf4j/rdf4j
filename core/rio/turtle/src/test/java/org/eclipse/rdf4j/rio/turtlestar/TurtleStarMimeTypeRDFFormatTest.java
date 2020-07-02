@@ -26,13 +26,13 @@ public class TurtleStarMimeTypeRDFFormatTest {
 	@Test
 	public void testApplicationXTurtleStarUtf8() {
 		assertEquals(expectedRDFFormat, Rio.getParserFormatForMIMEType("application/x-turtlestar;charset=UTF-8")
-				.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
+			.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
 	}
 
 	@Test
 	public void testApplicationXTurtleStar() {
 		assertEquals(expectedRDFFormat, Rio.getParserFormatForMIMEType("application/x-turtlestar")
-				.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
+			.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
 	}
 
 	@Test

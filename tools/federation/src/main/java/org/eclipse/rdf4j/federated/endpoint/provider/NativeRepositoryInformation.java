@@ -70,8 +70,8 @@ public class NativeRepositoryInformation extends RepositoryInformation {
 		setProperty("name", repNode.stringValue());
 
 		setWritable(getPropertyLiteral(graph, repNode, Vocabulary.FEDX.WRITABLE)
-				.map(Literal::booleanValue)
-				.orElse(false));
+			.map(Literal::booleanValue)
+			.orElse(false));
 
 		// location
 		String location = getPropertyString(graph, repNode, Vocabulary.FEDX.REPOSITORY_LOCATION).orElse(null);

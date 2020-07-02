@@ -99,15 +99,15 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	@Override
 	public void parseQueryResult(InputStream in)
-			throws IOException, QueryResultParseException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parseQueryResultInternal(in, true, true);
 	}
 
 	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
-			throws IOException, QueryResultParseException, QueryResultHandlerException {
+		throws IOException, QueryResultParseException, QueryResultHandlerException {
 		if (!attemptParseBoolean && !attemptParseTuple) {
 			throw new IllegalArgumentException(
-					"Internal error: Did not specify whether to parse as either boolean and/or tuple");
+				"Internal error: Did not specify whether to parse as either boolean and/or tuple");
 		}
 
 		JsonParser jp = null;
@@ -118,7 +118,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				throw new QueryResultParseException("Expected SPARQL Results JSON document to start with an Object",
-						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+					jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 			}
 
 			List<String> varsList = new ArrayList<>();
@@ -132,7 +132,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 				if (baseStr.equals(HEAD)) {
 					if (jp.nextToken() != JsonToken.START_OBJECT) {
 						throw new QueryResultParseException("Did not find object under " + baseStr + " field",
-								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					}
 
 					while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -141,13 +141,13 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						if (headStr.equals(VARS)) {
 							if (!attemptParseTuple) {
 								throw new QueryResultParseException(
-										"Found tuple results variables when attempting to parse SPARQL Results JSON to boolean result",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
+									"Found tuple results variables when attempting to parse SPARQL Results JSON to boolean result",
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Expected variable labels to be an array",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -174,7 +174,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							List<String> linksList = new ArrayList<>();
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Expected links to be an array",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -187,19 +187,19 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 						} else {
 							throw new QueryResultParseException("Found unexpected object in head field: " + headStr,
-									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 						}
 					}
 				} else if (baseStr.equals(RESULTS)) {
 					if (!attemptParseTuple) {
 						throw new QueryResultParseException(
-								"Found tuple results bindings when attempting to parse SPARQL Results JSON to boolean result",
-								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
+							"Found tuple results bindings when attempting to parse SPARQL Results JSON to boolean result",
+							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 					}
 					if (jp.nextToken() != JsonToken.START_OBJECT) {
 						throw new QueryResultParseException(
-								"Found unexpected token in results object: " + jp.getCurrentName(),
-								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+							"Found unexpected token in results object: " + jp.getCurrentName(),
+							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					}
 
 					while (jp.nextToken() != JsonToken.END_OBJECT) {
@@ -207,7 +207,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 						if (jp.getCurrentName().equals(BINDINGS)) {
 							if (jp.nextToken() != JsonToken.START_ARRAY) {
 								throw new QueryResultParseException("Found unexpected token in bindings object",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 							}
 
 							while (jp.nextToken() != JsonToken.END_ARRAY) {
@@ -216,16 +216,16 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 								if (jp.getCurrentToken() != JsonToken.START_OBJECT) {
 									throw new QueryResultParseException(
-											"Did not find object in bindings array: " + jp.getCurrentName(),
-											jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+										"Did not find object in bindings array: " + jp.getCurrentName(),
+										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 								}
 
 								while (jp.nextToken() != JsonToken.END_OBJECT) {
 
 									if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 										throw new QueryResultParseException("Did not find binding name",
-												jp.getCurrentLocation().getLineNr(),
-												jp.getCurrentLocation().getColumnNr());
+											jp.getCurrentLocation().getLineNr(),
+											jp.getCurrentLocation().getColumnNr());
 									}
 
 									final String bindingStr = jp.getCurrentName();
@@ -254,15 +254,15 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 							jp.nextToken();
 						} else {
 							throw new QueryResultParseException(
-									"Found unexpected field in results: " + jp.getCurrentName(),
-									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+								"Found unexpected field in results: " + jp.getCurrentName(),
+								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 						}
 					}
 				} else if (baseStr.equals(BOOLEAN)) {
 					if (!attemptParseBoolean) {
 						throw new QueryResultParseException(
-								"Found boolean results when attempting to parse SPARQL Results JSON to tuple results",
-								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
+							"Found boolean results when attempting to parse SPARQL Results JSON to tuple results",
+							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 					}
 					jp.nextToken();
 
@@ -272,27 +272,27 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 					}
 				} else {
 					logger.debug("Found unexpected object in top level {} field #{}.{}", baseStr,
-							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
+						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());
 					// Consume the discovered unexpected object
 					// (in particular, if it is either an array or a composite object).
 					jp.nextToken();
 
 					if (jp.currentToken() == JsonToken.START_ARRAY) {
 						while (!(jp.getParsingContext().getParent().inRoot()
-								&& (jp.currentToken() == JsonToken.END_ARRAY))) {
+							&& (jp.currentToken() == JsonToken.END_ARRAY))) {
 							if (jp.nextToken() == null) {
 								throw new QueryResultParseException(
-										"An array value of the unexpected " + baseStr + " field is not closed.",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
+									"An array value of the unexpected " + baseStr + " field is not closed.",
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 						}
 					} else if (jp.currentToken() == JsonToken.START_OBJECT) {
 						while (!(jp.getParsingContext().getParent().inRoot()
-								&& (jp.currentToken() == JsonToken.END_OBJECT))) {
+							&& (jp.currentToken() == JsonToken.END_OBJECT))) {
 							if (jp.nextToken() == null) {
 								throw new QueryResultParseException(
-										"An object value of the unexpected " + baseStr + " field is not closed.",
-										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
+									"An object value of the unexpected " + baseStr + " field is not closed.",
+									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());
 							}
 						}
 					}
@@ -300,7 +300,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			}
 		} catch (JsonProcessingException e) {
 			throw new QueryResultParseException("Could not parse SPARQL/JSON", e, e.getLocation().getLineNr(),
-					e.getLocation().getLineNr());
+				e.getLocation().getLineNr());
 		}
 
 		return result;
@@ -309,8 +309,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 	protected Value parseValue(JsonParser jp, String bindingStr) throws IOException {
 		if (jp.nextToken() != JsonToken.START_OBJECT) {
 			throw new QueryResultParseException("Did not find object for binding value",
-					jp.getCurrentLocation().getLineNr(),
-					jp.getCurrentLocation().getColumnNr());
+				jp.getCurrentLocation().getLineNr(),
+				jp.getCurrentLocation().getColumnNr());
 		}
 
 		String lang = null;
@@ -323,9 +323,9 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
 			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 				throw new QueryResultParseException(
-						"Did not find value attribute under " + bindingStr + " field",
-						jp.getCurrentLocation().getLineNr(),
-						jp.getCurrentLocation().getColumnNr());
+					"Did not find value attribute under " + bindingStr + " field",
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
 			}
 			String fieldName = jp.getCurrentName();
 
@@ -347,8 +347,8 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 				}
 			} else {
 				throw new QueryResultParseException("Unexpected field name: " + fieldName,
-						jp.getCurrentLocation().getLineNr(),
-						jp.getCurrentLocation().getColumnNr());
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
 
 			}
 		}
@@ -362,7 +362,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
 		throw new QueryResultParseException("Unexpected object as value", jp.getCurrentLocation().getLineNr(),
-				jp.getCurrentLocation().getColumnNr());
+			jp.getCurrentLocation().getColumnNr());
 	}
 
 	protected boolean checkTripleType(JsonParser jp, String type) {
@@ -441,47 +441,47 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
-					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
+				getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
+				getParserConfig().get(JSONSettings.ALLOW_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,
-					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
+				getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,
-					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
+				getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,
-					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
+				getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
+				getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,
-					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
+				getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,
-					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
+				getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));
 		}
 		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {
 			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,
-					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
+				getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
 		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
 			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,
-					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
+				getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		}
 		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,
-					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
+				getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));
 		}
 		return nextJsonFactory;
 	}

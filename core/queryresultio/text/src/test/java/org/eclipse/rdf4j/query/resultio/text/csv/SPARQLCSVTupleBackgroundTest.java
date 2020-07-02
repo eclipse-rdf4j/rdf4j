@@ -93,11 +93,11 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 
 		System.out.println(out.toString("UTF-8"));
 		assertRegex("a\r\n" + "foo:bar\r\n" + "2.0(E0)?\r\n" + "_:bnode3\r\n" + "''single-quoted string\r\n"
-				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
-				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
-				+ "\"newline at the end \n\"(\r\n)?"
-				+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
-				out.toString("UTF-8"));
+			+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
+			+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
+			+ "\"newline at the end \n\"(\r\n)?"
+			+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
+			out.toString("UTF-8"));
 	}
 
 	@Test
@@ -111,10 +111,10 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		QueryResults.report(createTupleMultipleBindingSets(), writer);
 
 		assertRegex("a,b,c\r\n" + "foo:bar,_:bnode,baz\r\n" + "1,,Hello World!\r\n"
-				+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
-				+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
-				+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
-				out.toString("UTF-8"));
+			+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
+			+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
+			+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
+			out.toString("UTF-8"));
 	}
 
 	private void assertRegex(String pattern, String actual) {
@@ -125,7 +125,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 
 	@Override
 	protected void assertQueryResultsEqual(TupleQueryResult tqr1, TupleQueryResult tqr2)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		List<BindingSet> list1 = Iterations.asList(tqr1);
 		List<BindingSet> list2 = Iterations.asList(tqr2);
 
@@ -138,7 +138,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	private boolean matchBindingSets(List<? extends BindingSet> queryResult1,
-			Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx) {
+		Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx) {
 		boolean result = false;
 
 		if (idx < queryResult1.size()) {
@@ -176,7 +176,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	}
 
 	private static List<BindingSet> findMatchingBindingSets(BindingSet st, Iterable<? extends BindingSet> model,
-			Map<BNode, BNode> bNodeMapping) {
+		Map<BNode, BNode> bNodeMapping) {
 		List<BindingSet> result = new ArrayList<>();
 
 		for (BindingSet modelSt : model) {
@@ -205,7 +205,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 				return false;
 			} else if (value1 != null && value2 != null) {
 				if (!CSVQueryResultsComparisons.equals(value1, value2)
-						&& !value1.stringValue().equals(value2.stringValue())) {
+					&& !value1.stringValue().equals(value2.stringValue())) {
 					return false;
 				}
 			}

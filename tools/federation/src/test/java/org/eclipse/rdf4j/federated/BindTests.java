@@ -16,14 +16,14 @@ public class BindTests extends SPARQLBaseTest {
 	@BeforeEach
 	public void prepareData() throws Exception {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-				"/tests/data/data4.ttl"));
+			"/tests/data/data4.ttl"));
 	}
 
 	@Test
 	public void testSimple() throws Exception {
 
 		List<BindingSet> res = runQuery(
-				"SELECT * WHERE { BIND(20 AS ?age) . ?person foaf:age ?age }");
+			"SELECT * WHERE { BIND(20 AS ?age) . ?person foaf:age ?age }");
 		assertContainsAll(res, "person", Sets.newHashSet(fullIri("http://namespace1.org/Person_1")));
 	}
 
@@ -31,7 +31,7 @@ public class BindTests extends SPARQLBaseTest {
 	public void testConcat() throws Exception {
 
 		List<BindingSet> res = runQuery(
-				"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(CONCAT('age: ', str(?age)) AS ?outAge) }");
+			"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(CONCAT('age: ', str(?age)) AS ?outAge) }");
 
 		assertContainsAll(res, "outAge", Sets.newHashSet(l("age: 20")));
 	}
@@ -40,7 +40,7 @@ public class BindTests extends SPARQLBaseTest {
 	public void testRebind() throws Exception {
 
 		List<BindingSet> res = runQuery(
-				"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");
+			"SELECT * WHERE { <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");
 
 		assertContainsAll(res, "outAge", Sets.newHashSet(l("20")));
 	}
@@ -49,14 +49,14 @@ public class BindTests extends SPARQLBaseTest {
 	public void testMultiBind() throws Exception {
 
 		List<BindingSet> res = runQuery(
-				"SELECT * WHERE { BIND(20 AS ?age) . <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");
+			"SELECT * WHERE { BIND(20 AS ?age) . <http://namespace1.org/Person_1> foaf:age ?age . BIND(str(?age) AS ?outAge) }");
 
 		assertContainsAll(res, "outAge", Sets.newHashSet(l("20")));
 	}
 
 	protected List<BindingSet> runQuery(String query) {
 		String prefixes = "PREFIX : <http://example.org/> \n" +
-				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n";
+			"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n";
 		query = prefixes + query;
 		return Repositories.tupleQueryNoTransaction(this.fedxRule.repository, query, it -> QueryResults.asList(it));
 	}

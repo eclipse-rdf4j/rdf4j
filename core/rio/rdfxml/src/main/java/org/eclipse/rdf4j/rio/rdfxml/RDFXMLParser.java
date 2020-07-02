@@ -191,7 +191,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 */
 	@Override
 	public synchronized void parse(InputStream in, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream cannot be 'null'");
 		}
@@ -217,7 +217,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		if (reader == null) {
 			throw new IllegalArgumentException("Reader cannot be 'null'");
 		}
@@ -345,7 +345,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	void startElement(String namespaceURI, String localName, String qName, Atts atts)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		if (topIsProperty()) {
 			// this element represents the subject and/or object of a statement
 			processNodeElt(namespaceURI, localName, qName, atts, false);
@@ -390,7 +390,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	void emptyElement(String namespaceURI, String localName, String qName, Atts atts)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		if (topIsProperty()) {
 			// this element represents the subject and/or object of a statement
 			processNodeElt(namespaceURI, localName, qName, atts, true);
@@ -425,7 +425,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/* Process a node element (can be both subject and object) */
 	private void processNodeElt(String namespaceURI, String localName, String qName, Atts atts, boolean isEmptyElt)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		if (getParserConfig().get(XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES)) {
 			// Check the element name
 			checkNodeEltName(namespaceURI, localName, qName);
@@ -520,7 +520,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 			if (definedAttsCount > 1) {
 				reportError("Only one of the attributes rdf:ID, rdf:about or rdf:nodeID can be used here",
-						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 			}
 		}
 
@@ -557,7 +557,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	private void processPropertyElt(String namespaceURI, String localName, String qName, Atts atts, boolean isEmptyElt)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		if (getParserConfig().get(XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES)) {
 			checkPropertyEltName(namespaceURI, localName, qName, XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 		}
@@ -567,7 +567,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		if (namespaceURI.isEmpty()) {
 			// no namespace URI
 			reportError("unqualified property element <" + qName + "> not allowed",
-					XMLParserSettings.FAIL_ON_INVALID_QNAME);
+				XMLParserSettings.FAIL_ON_INVALID_QNAME);
 			// Use base URI as namespace:
 			propURI = buildResourceFromLocalName(localName);
 		} else {
@@ -738,7 +738,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 			if (definedAttsCount > 1) {
 				reportError("Only one of the attributes rdf:resource or rdf:nodeID can be used here",
-						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 			}
 		}
 
@@ -771,7 +771,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	private void reifyStatement(Resource reifNode, Resource subj, IRI pred, Value obj)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		reportStatement(reifNode, RDF.TYPE, RDF.STATEMENT);
 		reportStatement(reifNode, RDF.SUBJECT, subj);
 		reportStatement(reifNode, RDF.PREDICATE, pred);
@@ -840,21 +840,21 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		if (RDF.NAMESPACE.equals(namespaceURI)) {
 
 			if (localName.equals("Description") || localName.equals("Seq") || localName.equals("Bag")
-					|| localName.equals("Alt") || localName.equals("Statement") || localName.equals("Property")
-					|| localName.equals("List") || localName.equals("subject") || localName.equals("predicate")
-					|| localName.equals("object") || localName.equals("type") || localName.equals("value")
-					|| localName.equals("first") || localName.equals("rest") || localName.equals("nil")
-					|| localName.startsWith("_")) {
+				|| localName.equals("Alt") || localName.equals("Statement") || localName.equals("Property")
+				|| localName.equals("List") || localName.equals("subject") || localName.equals("predicate")
+				|| localName.equals("object") || localName.equals("type") || localName.equals("value")
+				|| localName.equals("first") || localName.equals("rest") || localName.equals("nil")
+				|| localName.startsWith("_")) {
 				// These are OK
 			} else if (localName.equals("li") || localName.equals("RDF") || localName.equals("ID")
-					|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
-					|| localName.equals("nodeID") || localName.equals("datatype")) {
+				|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
+				|| localName.equals("nodeID") || localName.equals("datatype")) {
 				reportError("<" + qName + "> not allowed as node element",
-						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 			} else if (localName.equals("bagID") || localName.equals("aboutEach")
-					|| localName.equals("aboutEachPrefix")) {
+				|| localName.equals("aboutEachPrefix")) {
 				reportError(qName + " is no longer a valid RDF name",
-						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 			} else {
 				reportWarning("unknown rdf element <" + qName + ">");
 			}
@@ -870,21 +870,21 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * @param setting
 	 */
 	private void checkPropertyEltName(String namespaceURI, String localName, String qName, RioSetting<Boolean> setting)
-			throws RDFParseException {
+		throws RDFParseException {
 		if (RDF.NAMESPACE.equals(namespaceURI)) {
 
 			if (localName.equals("li") || localName.equals("Seq") || localName.equals("Bag") || localName.equals("Alt")
-					|| localName.equals("Statement") || localName.equals("Property") || localName.equals("List")
-					|| localName.equals("subject") || localName.equals("predicate") || localName.equals("object")
-					|| localName.equals("type") || localName.equals("value") || localName.equals("first")
-					|| localName.equals("rest") || localName.equals("nil") || localName.startsWith("_")) {
+				|| localName.equals("Statement") || localName.equals("Property") || localName.equals("List")
+				|| localName.equals("subject") || localName.equals("predicate") || localName.equals("object")
+				|| localName.equals("type") || localName.equals("value") || localName.equals("first")
+				|| localName.equals("rest") || localName.equals("nil") || localName.startsWith("_")) {
 				// These are OK
 			} else if (localName.equals("Description") || localName.equals("RDF") || localName.equals("ID")
-					|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
-					|| localName.equals("nodeID") || localName.equals("datatype")) {
+				|| localName.equals("about") || localName.equals("parseType") || localName.equals("resource")
+				|| localName.equals("nodeID") || localName.equals("datatype")) {
 				reportError("<" + qName + "> not allowed as property element", setting);
 			} else if (localName.equals("bagID") || localName.equals("aboutEach")
-					|| localName.equals("aboutEachPrefix")) {
+				|| localName.equals("aboutEachPrefix")) {
 				reportError(qName + " is no longer a valid RDF name", setting);
 			} else {
 				reportWarning("unknown rdf element <" + qName + ">");
@@ -907,21 +907,21 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 				String localName = att.getLocalName();
 
 				if (localName.equals("Seq") || localName.equals("Bag") || localName.equals("Alt")
-						|| localName.equals("Statement") || localName.equals("Property") || localName.equals("List")
-						|| localName.equals("subject") || localName.equals("predicate") || localName.equals("object")
-						|| localName.equals("type") || localName.equals("value") || localName.equals("first")
-						|| localName.equals("rest") || localName.equals("nil") || localName.startsWith("_")) {
+					|| localName.equals("Statement") || localName.equals("Property") || localName.equals("List")
+					|| localName.equals("subject") || localName.equals("predicate") || localName.equals("object")
+					|| localName.equals("type") || localName.equals("value") || localName.equals("first")
+					|| localName.equals("rest") || localName.equals("nil") || localName.startsWith("_")) {
 					// These are OK
 				} else if (localName.equals("Description") || localName.equals("li") || localName.equals("RDF")
-						|| localName.equals("ID") || localName.equals("about") || localName.equals("parseType")
-						|| localName.equals("resource") || localName.equals("nodeID") || localName.equals("datatype")) {
+					|| localName.equals("ID") || localName.equals("about") || localName.equals("parseType")
+					|| localName.equals("resource") || localName.equals("nodeID") || localName.equals("datatype")) {
 					reportError("'" + att.getQName() + "' not allowed as attribute name",
-							XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 					iter.remove();
 				} else if (localName.equals("bagID") || localName.equals("aboutEach")
-						|| localName.equals("aboutEachPrefix")) {
+					|| localName.equals("aboutEachPrefix")) {
 					reportError(att.getQName() + " is no longer a valid RDF name",
-							XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 				} else {
 					reportWarning("unknown rdf attribute '" + att.getQName() + "'");
 				}
@@ -941,7 +941,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 				Att att = iter.next();
 
 				reportError("unexpected attribute '" + att.getQName() + "'",
-						XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
+					XMLParserSettings.FAIL_ON_NON_STANDARD_ATTRIBUTES);
 				iter.remove();
 			}
 		}
@@ -956,7 +956,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * @throws RDFHandlerException If the configured RDFHandlerException throws an RDFHandlerException.
 	 */
 	private void reportStatement(Resource subject, IRI predicate, Value object)
-			throws RDFParseException, RDFHandlerException {
+		throws RDFParseException, RDFHandlerException {
 		Statement st = createStatement(subject, predicate, object);
 		if (rdfHandler != null) {
 			rdfHandler.handleStatement(st);

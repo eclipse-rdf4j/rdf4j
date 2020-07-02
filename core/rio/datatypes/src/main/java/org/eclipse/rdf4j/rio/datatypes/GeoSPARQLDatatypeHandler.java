@@ -52,7 +52,7 @@ public class GeoSPARQLDatatypeHandler implements DatatypeHandler {
 
 	@Override
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-			throws LiteralUtilException {
+		throws LiteralUtilException {
 		if (isRecognizedDatatype(datatypeUri)) {
 			if (literalValue == null) {
 				throw new NullPointerException("Literal value cannot be null");

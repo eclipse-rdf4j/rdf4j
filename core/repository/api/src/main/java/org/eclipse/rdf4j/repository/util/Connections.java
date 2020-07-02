@@ -50,7 +50,7 @@ public class Connections {
 	 *      vocabulary</a>.
 	 */
 	public static void consumeRDFCollection(RepositoryConnection conn, Resource head,
-			Consumer<Statement> collectionConsumer, Resource... contexts) throws RepositoryException {
+		Consumer<Statement> collectionConsumer, Resource... contexts) throws RepositoryException {
 		GetStatementOptional statementSupplier = (s, p, o, c) -> getStatement(conn, s, p, o, c);
 		Function<String, Supplier<RepositoryException>> exceptionSupplier = Repositories::repositoryException;
 		RDFCollections.extract(statementSupplier, head, collectionConsumer, exceptionSupplier, contexts);
@@ -75,7 +75,7 @@ public class Connections {
 	 *      vocabulary</a>.
 	 */
 	public static <C extends Collection<Statement>> C getRDFCollection(RepositoryConnection conn, Resource head,
-			C statementCollection, Resource... contexts) throws RepositoryException {
+		C statementCollection, Resource... contexts) throws RepositoryException {
 		Objects.requireNonNull(statementCollection, "statementCollection may not be null");
 		consumeRDFCollection(conn, head, st -> statementCollection.add(st), contexts);
 		return statementCollection;
@@ -97,7 +97,7 @@ public class Connections {
 	 * @throws RepositoryException
 	 */
 	public static Optional<Statement> getStatement(RepositoryConnection conn, Resource subject, IRI predicate,
-			Value object, Resource... contexts) throws RepositoryException {
+		Value object, Resource... contexts) throws RepositoryException {
 		try (RepositoryResult<Statement> stmts = conn.getStatements(subject, predicate, object, contexts)) {
 			Statement st = stmts.hasNext() ? stmts.next() : null;
 			return Optional.ofNullable(st);

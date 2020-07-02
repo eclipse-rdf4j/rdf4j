@@ -77,7 +77,7 @@ public class SHACLManifestTestSuiteFactory {
 		String getName();
 
 		Test createSHACLTest(String testURI, String label, Model shapesGraph, Model dataGraph, boolean failure,
-				boolean conforms);
+			boolean conforms);
 	}
 
 	/**
@@ -98,7 +98,7 @@ public class SHACLManifestTestSuiteFactory {
 	 * @throws Exception
 	 */
 	public TestSuite createTestSuite(TestFactory factory, boolean officialWorkingGroupTests, boolean approvedTestsOnly,
-			boolean useRemoteTests, String... excludedSubdirs) throws Exception {
+		boolean useRemoteTests, String... excludedSubdirs) throws Exception {
 		final String manifest = getManifestFile(officialWorkingGroupTests, useRemoteTests);
 
 		TestSuite suite = new TestSuite(factory.getName()) {
@@ -113,7 +113,7 @@ public class SHACLManifestTestSuiteFactory {
 							FileUtil.deleteDir(tmpDir);
 						} catch (IOException e) {
 							System.err.println(
-									"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
+								"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
 						}
 					}
 				}
@@ -172,7 +172,7 @@ public class SHACLManifestTestSuiteFactory {
 	}
 
 	private IRI readTurtle(Model manifests, URL url, String baseURI, String... excludedSubdirs)
-			throws IOException, RDFParseException {
+		throws IOException, RDFParseException {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
@@ -194,7 +194,7 @@ public class SHACLManifestTestSuiteFactory {
 		}
 		if (before < manifests.size()) {
 			for (Value included : new LinkedHashSet<>(
-					manifests.filter(manifest, vf.createIRI(MF_INCLUDE), null).objects())) {
+				manifests.filter(manifest, vf.createIRI(MF_INCLUDE), null).objects())) {
 				String subManifestFile = included.stringValue();
 				if (includeSubManifest(subManifestFile, excludedSubdirs)) {
 					readTurtle(manifests, new URL(subManifestFile), subManifestFile, excludedSubdirs);
@@ -231,7 +231,7 @@ public class SHACLManifestTestSuiteFactory {
 	}
 
 	private TestSuite createSuiteEntry(String manifestFileURL, TestFactory factory, boolean approvedOnly)
-			throws Exception {
+		throws Exception {
 		logger.info("Building test suite for {}", manifestFileURL);
 
 		// Read manifest and create declared test cases
@@ -257,9 +257,9 @@ public class SHACLManifestTestSuiteFactory {
 			logger.debug("found test case : {}", label);
 
 			if (status.stringValue().equals(SHT_APPROVED)
-					|| !approvedOnly && status.stringValue().equals(SHT_PROPOSED)) {
+				|| !approvedOnly && status.stringValue().equals(SHT_PROPOSED)) {
 				Test test = factory.createSHACLTest(entry.stringValue(), label, shapesGraph, dataGraph, failure,
-						conforms);
+					conforms);
 				if (test != null) {
 					suite.addTest(test);
 				}
@@ -271,7 +271,7 @@ public class SHACLManifestTestSuiteFactory {
 	}
 
 	private String getManifestName(Model model, IRI manifest)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+		throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		String label = Models.objectString(model.getStatements(manifest, RDFS.LABEL, null)).orElse(null);
 		if (label != null) {

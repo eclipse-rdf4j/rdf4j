@@ -94,12 +94,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 *--------------*/
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		this(strategy, group, parentBindings, 0);
 	}
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			long iterationCacheSyncThreshold) throws QueryEvaluationException {
+		long iterationCacheSyncThreshold) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -345,7 +345,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		private Aggregate create(AggregateOperator operator)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+			throws ValueExprEvaluationException, QueryEvaluationException {
 			if (operator instanceof Count) {
 				return new CountAggregate((Count) operator);
 			} else if (operator instanceof Min) {
@@ -556,7 +556,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				if (v instanceof Literal) {
 					Literal nextLiteral = (Literal) v;
 					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+						&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 						sum = MathUtil.compute(sum, nextLiteral, MathOp.PLUS);
 					} else {
 						typeError = new ValueExprEvaluationException("not a number: " + v);
@@ -603,7 +603,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					Literal nextLiteral = (Literal) v;
 					// check if the literal is numeric.
 					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
+						&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 						sum = MathUtil.compute(sum, nextLiteral, MathOp.PLUS);
 					} else {
 						typeError = new ValueExprEvaluationException("not a number: " + v);
@@ -674,7 +674,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private String separator = " ";
 
 		public ConcatAggregate(GroupConcat groupConcatOp)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+			throws ValueExprEvaluationException, QueryEvaluationException {
 			super(groupConcatOp);
 			ValueExpr separatorExpr = groupConcatOp.getSeparator();
 			if (separatorExpr != null) {

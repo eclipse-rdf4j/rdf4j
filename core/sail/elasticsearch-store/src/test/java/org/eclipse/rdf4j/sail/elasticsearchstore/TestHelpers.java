@@ -32,15 +32,15 @@ public class TestHelpers {
 	public static EmbeddedElastic startElasticsearch(File installLocation) throws IOException, InterruptedException {
 
 		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-				.withInstallationDirectory(installLocation)
-				.withDownloadDirectory(new File("tempElasticsearchDownload"))
+			.withElasticVersion(VERSION)
+			.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
+			.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
+			.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
+			.withInstallationDirectory(installLocation)
+			.withDownloadDirectory(new File("tempElasticsearchDownload"))
 //			.withPlugin("analysis-stempel")
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
+			.withStartTimeout(5, TimeUnit.MINUTES)
+			.build();
 
 		embeddedElastic.start();
 		logger.info("Elasticearch using transport port: " + embeddedElastic.getTransportTcpPort());
@@ -60,19 +60,19 @@ public class TestHelpers {
 	}
 
 	public static EmbeddedElastic startElasticsearch(File installLocation, String javaHomePath)
-			throws IOException, InterruptedException {
+		throws IOException, InterruptedException {
 
 		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.CLUSTER_NAME, CLUSTER)
-				.withInstallationDirectory(installLocation)
-				.withJavaHome(JavaHomeOption.path(javaHomePath))
-				.withDownloadDirectory(new File(ELASTICSEARCH_DOWNLOAD_DIRECTORY))
+			.withElasticVersion(VERSION)
+			.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
+			.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
+			.withSetting(PopularProperties.CLUSTER_NAME, CLUSTER)
+			.withInstallationDirectory(installLocation)
+			.withJavaHome(JavaHomeOption.path(javaHomePath))
+			.withDownloadDirectory(new File(ELASTICSEARCH_DOWNLOAD_DIRECTORY))
 //			.withPlugin("analysis-stempel")
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
+			.withStartTimeout(5, TimeUnit.MINUTES)
+			.build();
 
 		embeddedElastic.start();
 		return embeddedElastic;

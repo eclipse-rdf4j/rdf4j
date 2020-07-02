@@ -56,7 +56,7 @@ public class ExportServlet extends TupleServlet {
 
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, TupleResultBuilder builder,
-			RepositoryConnection con) throws Exception {
+		RepositoryConnection con) throws Exception {
 		int limit = ExploreServlet.LIMIT_DEFAULT;
 		if (req.getInt(ExploreServlet.LIMIT) > 0) {
 			limit = req.getInt(ExploreServlet.LIMIT);

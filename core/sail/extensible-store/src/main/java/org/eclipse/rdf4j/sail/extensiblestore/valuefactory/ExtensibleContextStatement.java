@@ -26,7 +26,7 @@ public class ExtensibleContextStatement extends ContextStatement implements Exte
 	 * @param context   The statement's context, <tt>null</tt> to indicate no context is associated.
 	 */
 	public ExtensibleContextStatement(Resource subject, IRI predicate, Value object, Resource context,
-			boolean inferred) {
+		boolean inferred) {
 		super(subject, predicate, object, context);
 		this.inferred = inferred;
 	}

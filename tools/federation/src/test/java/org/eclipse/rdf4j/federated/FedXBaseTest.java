@@ -83,7 +83,7 @@ public abstract class FedXBaseTest {
 	 * @throws Exception
 	 */
 	protected void execute(RepositoryConnection conn, String queryFile, String expectedResultFile, boolean checkOrder)
-			throws Exception {
+		throws Exception {
 
 		String queryString = readQueryString(queryFile);
 
@@ -148,7 +148,7 @@ public abstract class FedXBaseTest {
 
 	protected void assertContainsAll(List<BindingSet> res, String bindingName, Set<Value> expected) {
 		Assertions.assertEquals(expected,
-				res.stream().map(bs -> bs.getValue(bindingName)).collect(Collectors.toSet()));
+			res.stream().map(bs -> bs.getValue(bindingName)).collect(Collectors.toSet()));
 		Assertions.assertEquals(expected.size(), res.size());
 	}
 
@@ -268,9 +268,9 @@ public abstract class FedXBaseTest {
 
 	protected boolean readExpectedBooleanQueryResult(String resultFile) throws Exception {
 		QueryResultFormat bqrFormat = BooleanQueryResultParserRegistry.getInstance()
-				.getFileFormatForFileName(
-						resultFile)
-				.get();
+			.getFileFormatForFileName(
+				resultFile)
+			.get();
 
 		if (bqrFormat != null) {
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
@@ -310,8 +310,8 @@ public abstract class FedXBaseTest {
 	 * @throws Exception
 	 */
 	protected void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult,
-			boolean checkOrder)
-			throws Exception {
+		boolean checkOrder)
+		throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -403,7 +403,7 @@ public abstract class FedXBaseTest {
 	 * @throws Exception
 	 */
 	protected void compareGraphs(Set<Statement> queryResult, Set<Statement> expectedResult)
-			throws Exception {
+		throws Exception {
 		if (!Models.isomorphic(expectedResult, queryResult)) {
 			StringBuilder message = new StringBuilder(128);
 			message.append("Expected result: \n");
@@ -451,8 +451,8 @@ public abstract class FedXBaseTest {
 			// check if the binding names are a subset of defined binding names
 			if (!bindingNames.containsAll(b.getBindingNames())) {
 				throw new IllegalArgumentException(
-						"Provided binding set does must be a subset of defined binding names: " + bindingNames
-								+ ". Was: " + b.getBindingNames());
+					"Provided binding set does must be a subset of defined binding names: " + bindingNames
+						+ ". Was: " + b.getBindingNames());
 			}
 			this.bindings.add(b);
 			return this;

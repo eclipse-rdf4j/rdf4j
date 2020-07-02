@@ -48,7 +48,7 @@ public interface InferencerConnection extends NotifyingSailConnection {
 	 */
 	// FIXME: remove boolean result value to enable batch-wise processing
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException;
+		throws SailException;
 
 	/**
 	 * Removes all inferred statements from the specified/all contexts. If no contexts are specified the method operates

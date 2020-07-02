@@ -64,11 +64,11 @@ public class ComplexBenchmark {
 	static {
 		try {
 			transaction1 = IOUtils.toString(
-					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"),
-					StandardCharsets.UTF_8);
+				ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction1.qr"),
+				StandardCharsets.UTF_8);
 			transaction2 = IOUtils.toString(
-					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"),
-					StandardCharsets.UTF_8);
+				ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/transaction2.qr"),
+				StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException();
@@ -79,7 +79,7 @@ public class ComplexBenchmark {
 	public void setUp() {
 		System.gc();
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-				.setLevel(ch.qos.logback.classic.Level.ERROR);
+			.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
@@ -124,8 +124,8 @@ public class ComplexBenchmark {
 			connection.begin(IsolationLevels.NONE);
 			try {
 				connection.add(
-						ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.ttl"), "",
-						RDFFormat.TURTLE);
+					ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.ttl"), "",
+					RDFFormat.TURTLE);
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -175,7 +175,7 @@ public class ComplexBenchmark {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
-					connection.getValueFactory().createLiteral(""));
+				connection.getValueFactory().createLiteral(""));
 			connection.commit();
 
 		}

@@ -115,7 +115,7 @@ public class SPARQLParser implements QueryParser {
 						globalUsedBNodeIds.addAll(usedBNodeIds);
 					} else {
 						throw new MalformedQueryException(
-								"blank node identifier may not be shared across INSERT/DELETE DATA operations");
+							"blank node identifier may not be shared across INSERT/DELETE DATA operations");
 					}
 				}
 
@@ -239,7 +239,7 @@ public class SPARQLParser implements QueryParser {
 					try {
 						long start = System.currentTimeMillis();
 						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryStr,
-								null);
+							null);
 						long finish = System.currentTimeMillis();
 
 						System.out.println("Parsed query: ");

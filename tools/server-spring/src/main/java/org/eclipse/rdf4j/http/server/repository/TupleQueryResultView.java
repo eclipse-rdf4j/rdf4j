@@ -62,7 +62,7 @@ public class TupleQueryResultView extends QueryResultView {
 	@SuppressWarnings("rawtypes")
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
-			throws IOException {
+		throws IOException {
 		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
 		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
 

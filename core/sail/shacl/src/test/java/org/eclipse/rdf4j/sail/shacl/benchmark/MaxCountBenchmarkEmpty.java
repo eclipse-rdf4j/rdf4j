@@ -131,7 +131,7 @@ public class MaxCountBenchmarkEmpty {
 				connection.begin();
 				connection.add(statements);
 				try (Stream<BindingSet> stream = connection.prepareTupleQuery("select * where {?a a <"
-						+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate().stream()) {
+					+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate().stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();
@@ -157,10 +157,10 @@ public class MaxCountBenchmarkEmpty {
 				connection.begin();
 				connection.add(statements);
 				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <"
-								+ RDFS.LABEL + "> ?c} group by ?a having(?count > 1)")
-						.evaluate()
-						.stream()) {
+					.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <"
+						+ RDFS.LABEL + "> ?c} group by ?a having(?count > 1)")
+					.evaluate()
+					.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

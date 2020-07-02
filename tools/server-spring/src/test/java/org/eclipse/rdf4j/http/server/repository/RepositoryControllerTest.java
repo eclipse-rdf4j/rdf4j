@@ -50,8 +50,8 @@ public class RepositoryControllerTest {
 		request.setMethod(HttpMethod.PUT.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
-				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-						.getBytes(Charsets.UTF_8));
+			("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
+				.getBytes(Charsets.UTF_8));
 
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(false);
 
@@ -68,8 +68,8 @@ public class RepositoryControllerTest {
 		request.setMethod(HttpMethod.PUT.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
-				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-						.getBytes(Charsets.UTF_8));
+			("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
+				.getBytes(Charsets.UTF_8));
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
 
 		try {

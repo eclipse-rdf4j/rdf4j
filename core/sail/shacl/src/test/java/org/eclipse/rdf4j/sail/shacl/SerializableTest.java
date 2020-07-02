@@ -119,7 +119,7 @@ public class SerializableTest {
 	}
 
 	private void multithreadedMaxCountViolation(IsolationLevels isolationLevel, SailRepository repo)
-			throws InterruptedException {
+		throws InterruptedException {
 		CountDownLatch countDownLatch = new CountDownLatch(2);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -185,7 +185,7 @@ public class SerializableTest {
 	}
 
 	private void multithreadedMaxCount2Violation(IsolationLevels isolationLevel, SailRepository repo)
-			throws InterruptedException {
+		throws InterruptedException {
 		CountDownLatch countDownLatch = new CountDownLatch(2);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

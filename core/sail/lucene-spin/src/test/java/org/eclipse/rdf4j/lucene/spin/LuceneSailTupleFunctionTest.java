@@ -319,8 +319,8 @@ public class LuceneSailTupleFunctionTest {
 	@Test
 	public void testDistanceFunction() throws Exception {
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-				+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
-				+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
+			+ "select ?toUri ?fromUri ?dist where {?toUri a <urn:geo/Landmark>; geo:asWKT ?to. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range."
+			+ " bind(geof:distance(?from, ?to, ?units) as ?dist)" + " filter(?dist < ?range)" + " }";
 		try {
 			connection.begin();
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);

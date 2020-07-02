@@ -65,49 +65,49 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 		try {
 
 			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.hostname, null))
-					.ifPresent(value -> {
-						try {
-							setHostname(value.stringValue());
-						} catch (IllegalArgumentException e) {
-							throw new SailConfigException(
-									"String value required for " + ElasticsearchStoreSchema.hostname
-											+ " property, found "
-											+ value);
-						}
-					});
+				.ifPresent(value -> {
+					try {
+						setHostname(value.stringValue());
+					} catch (IllegalArgumentException e) {
+						throw new SailConfigException(
+							"String value required for " + ElasticsearchStoreSchema.hostname
+								+ " property, found "
+								+ value);
+					}
+				});
 
 			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.index, null))
-					.ifPresent(value -> {
-						try {
-							setIndex(value.stringValue());
-						} catch (IllegalArgumentException e) {
-							throw new SailConfigException(
-									"String value required for " + ElasticsearchStoreSchema.index + " property, found "
-											+ value);
-						}
-					});
+				.ifPresent(value -> {
+					try {
+						setIndex(value.stringValue());
+					} catch (IllegalArgumentException e) {
+						throw new SailConfigException(
+							"String value required for " + ElasticsearchStoreSchema.index + " property, found "
+								+ value);
+					}
+				});
 
 			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.clusterName, null))
-					.ifPresent(value -> {
-						try {
-							setClusterName(value.stringValue());
-						} catch (IllegalArgumentException e) {
-							throw new SailConfigException(
-									"String value required for " + ElasticsearchStoreSchema.clusterName
-											+ " property, found " + value);
-						}
-					});
+				.ifPresent(value -> {
+					try {
+						setClusterName(value.stringValue());
+					} catch (IllegalArgumentException e) {
+						throw new SailConfigException(
+							"String value required for " + ElasticsearchStoreSchema.clusterName
+								+ " property, found " + value);
+					}
+				});
 
 			Models.objectLiteral(graph.getStatements(implNode, ElasticsearchStoreSchema.port, null))
-					.ifPresent(value -> {
-						try {
-							setPort(value.intValue());
-						} catch (IllegalArgumentException e) {
-							throw new SailConfigException(
-									"Integer value required for " + ElasticsearchStoreSchema.port + " property, found "
-											+ value);
-						}
-					});
+				.ifPresent(value -> {
+					try {
+						setPort(value.intValue());
+					} catch (IllegalArgumentException e) {
+						throw new SailConfigException(
+							"Integer value required for " + ElasticsearchStoreSchema.port + " property, found "
+								+ value);
+					}
+				});
 
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
@@ -165,7 +165,7 @@ public class ElasticsearchStoreConfig extends BaseSailConfig {
 
 		if (!missingFields.isEmpty()) {
 			throw new SailConfigException(
-					"Required config missing for: " + missingFields.stream().reduce((a, b) -> a + " and " + b));
+				"Required config missing for: " + missingFields.stream().reduce((a, b) -> a + " and " + b));
 		}
 
 	}

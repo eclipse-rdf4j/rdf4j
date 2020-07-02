@@ -96,7 +96,7 @@ class FunctionArguments {
 	 * @throws ValueExprEvaluationException
 	 */
 	public static Point getPoint(Function func, Value v, SpatialContext geoContext)
-			throws ValueExprEvaluationException {
+		throws ValueExprEvaluationException {
 		Shape p = FunctionArguments.getShape(func, v, geoContext);
 		if (!(p instanceof Point)) {
 			throw new ValueExprEvaluationException("Invalid argument for " + func.getURI() + " (not a point): " + v);
@@ -120,7 +120,7 @@ class FunctionArguments {
 		Literal lit = (Literal) v;
 		if (!expectedDatatype.equals(lit.getDatatype())) {
 			throw new ValueExprEvaluationException(
-					"Invalid datatype " + lit.getDatatype() + " for " + func.getURI() + ": " + v);
+				"Invalid datatype " + lit.getDatatype() + " for " + func.getURI() + ": " + v);
 		}
 		return lit;
 	}

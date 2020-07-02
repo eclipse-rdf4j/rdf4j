@@ -24,7 +24,7 @@ public class MonitoringUtil {
 	}
 
 	private static MonitoringService getMonitoringService(FederationContext federationContext)
-			throws FedXRuntimeException {
+		throws FedXRuntimeException {
 		Monitoring m = federationContext.getMonitoringService();
 		if (m instanceof MonitoringService) {
 			return (MonitoringService) m;

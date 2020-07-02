@@ -29,8 +29,8 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(DatatypePropertyShape.class);
 
 	DatatypePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			Resource datatype) {
+		PathPropertyShape parent, Resource path,
+		Resource datatype) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.datatype = datatype;
@@ -39,7 +39,7 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -47,7 +47,7 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new DatatypeFilter(parent, datatype), this, overrideTargetNode, negateThisPlan);
+			(parent) -> new DatatypeFilter(parent, datatype), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -86,10 +86,10 @@ public class DatatypePropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "DatatypePropertyShape{" +
-				"datatype=" + datatype +
-				", path=" + getPath() +
-				", id=" + id +
+			"datatype=" + datatype +
+			", path=" + getPath() +
+			", id=" + id +
 
-				'}';
+			'}';
 	}
 }

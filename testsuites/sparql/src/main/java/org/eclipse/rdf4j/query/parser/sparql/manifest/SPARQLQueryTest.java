@@ -112,12 +112,12 @@ public abstract class SPARQLQueryTest extends TestCase {
 	 *--------------*/
 
 	public SPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL, Dataset dataSet,
-			boolean laxCardinality, String... ignoredTests) {
+		boolean laxCardinality, String... ignoredTests) {
 		this(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, false);
 	}
 
 	public SPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL, Dataset dataSet,
-			boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
+		boolean laxCardinality, boolean checkOrder, String... ignoredTests) {
 		super(name.replaceAll("\\(", " ").replaceAll("\\)", " "));
 
 		this.testURI = testURI;
@@ -233,7 +233,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 	}
 
 	protected final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
-			throws Exception {
+		throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -500,7 +500,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 	protected final boolean readExpectedBooleanQueryResult() throws Exception {
 		Optional<QueryResultFormat> bqrFormat = BooleanQueryResultParserRegistry.getInstance()
-				.getFileFormatForFileName(resultFileURL);
+			.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
 			InputStream in = new URL(resultFileURL).openStream();
@@ -517,7 +517,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 	protected final Set<Statement> readExpectedGraphQueryResult() throws Exception {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL)
-				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
+			.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
@@ -540,10 +540,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 	public interface Factory {
 
 		SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-				Dataset dataSet, boolean laxCardinality);
+			Dataset dataSet, boolean laxCardinality);
 
 		SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-				Dataset dataSet, boolean laxCardinality, boolean checkOrder);
+			Dataset dataSet, boolean laxCardinality, boolean checkOrder);
 	}
 
 	public static TestSuite suite(String manifestFileURL, Factory factory) throws Exception {
@@ -572,7 +572,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 			query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
 			query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 			query.append(
-					" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+				" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
 			query.append(" WHERE { [] rdf:first ?testURI . \n");
 			if (approvedOnly) {
 				query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
@@ -657,7 +657,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 					// is in the number of results
 					if (!laxCardinality) {
 						if (testURI.stringValue().contains("distinct/manifest#distinct-2")
-								|| testURI.stringValue().contains("distinct/manifest#distinct-9")) {
+							|| testURI.stringValue().contains("distinct/manifest#distinct-9")) {
 							laxCardinality = true;
 						}
 					}
@@ -671,7 +671,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 					}
 
 					SPARQLQueryTest test = factory.createSPARQLQueryTest(testURI.stringValue(), testName, queryFile,
-							resultFile, dataset, laxCardinality, checkOrder);
+						resultFile, dataset, laxCardinality, checkOrder);
 					if (test != null) {
 						suite.addTest(test);
 					}
@@ -684,10 +684,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 	}
 
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+		throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,
-				"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
+			"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
 		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
 		try {

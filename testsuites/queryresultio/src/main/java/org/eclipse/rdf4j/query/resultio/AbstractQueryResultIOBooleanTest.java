@@ -81,9 +81,9 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	@Test
 	public final void testBooleanMultipleLinksWithStylesheet() throws Exception {
 		doBooleanLinksAndStylesheet(getBooleanFormat(), true, Arrays.asList("info", "alternate", "other", "another"),
-				"test.xsl");
+			"test.xsl");
 		doBooleanLinksAndStylesheet(getBooleanFormat(), false, Arrays.asList("info", "alternate", "other", "another"),
-				"test.xsl");
+			"test.xsl");
 	}
 
 	@Test
@@ -95,9 +95,9 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	@Test
 	public final void testInvalidBooleanAfterStartQueryResult() throws Exception {
 		doInvalidBooleanAfterStartQueryResult(getBooleanFormat(), true,
-				Arrays.asList("info", "alternate", "other", "another"));
+			Arrays.asList("info", "alternate", "other", "another"));
 		doInvalidBooleanAfterStartQueryResult(getBooleanFormat(), false,
-				Arrays.asList("info", "alternate", "other", "another"));
+			Arrays.asList("info", "alternate", "other", "another"));
 	}
 
 	@Test
@@ -109,19 +109,19 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 	@Test
 	public final void testBooleanParseNoHandlerOnTupleResultsNoResults() throws Exception {
 		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleNoBindingSets(),
-				getMatchingTupleFormatOrNull());
+			getMatchingTupleFormatOrNull());
 	}
 
 	@Test
 	public final void testBooleanParseNoHandlerOnTupleResultsSingleVarMultipleBindingSets() throws Exception {
 		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleSingleVarMultipleBindingSets(),
-				getMatchingTupleFormatOrNull());
+			getMatchingTupleFormatOrNull());
 	}
 
 	@Test
 	public final void testBooleanParseNoHandlerOnTupleResultsMultipleBindingsMultipleBindingSets() throws Exception {
 		doBooleanParseNoHandlerOnTupleResults(getBooleanFormat(), createTupleMultipleBindingSets(),
-				getMatchingTupleFormatOrNull());
+			getMatchingTupleFormatOrNull());
 	}
 
 }

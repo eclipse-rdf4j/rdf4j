@@ -142,7 +142,7 @@ public class TransactionWriter {
 
 			if (dataset.getDefaultInsertGraph() != null) {
 				xmlWriter.textElement(TransactionXMLConstants.DEFAULT_INSERT_GRAPH,
-						dataset.getDefaultInsertGraph().stringValue());
+					dataset.getDefaultInsertGraph().stringValue());
 			}
 			xmlWriter.endTag(TransactionXMLConstants.DATASET_TAG);
 		}
@@ -152,7 +152,7 @@ public class TransactionWriter {
 
 			for (Binding binding : op.getBindings()) {
 				if (binding.getName() != null && binding.getValue() != null
-						&& binding.getValue().stringValue() != null) {
+					&& binding.getValue().stringValue() != null) {
 					if (binding.getValue() instanceof IRI) {
 						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());
 						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI, binding.getValue().stringValue());
@@ -171,11 +171,11 @@ public class TransactionWriter {
 							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT, literal.getLanguage().get());
 						} else {
 							xmlWriter.setAttribute(TransactionXMLConstants.DATA_TYPE_ATT,
-									literal.getDatatype().stringValue());
+								literal.getDatatype().stringValue());
 						}
 
 						xmlWriter.textElement(TransactionXMLConstants.BINDING_LITERAL,
-								binding.getValue().stringValue());
+							binding.getValue().stringValue());
 					}
 				}
 			}

@@ -83,9 +83,9 @@ public class Tuple implements Comparable<Tuple> {
 		if (causedByPropertyShapes != null) {
 
 			String join = String.join(" , ",
-					causedByPropertyShapes.stream()
-							.map(p -> p.getClass().getSimpleName() + " <" + p.getId() + ">")
-							.collect(Collectors.toList()));
+				causedByPropertyShapes.stream()
+					.map(p -> p.getClass().getSimpleName() + " <" + p.getId() + ">")
+					.collect(Collectors.toList()));
 
 			propertyShapeDescrption = ", propertyShapes= " + join;
 		}
@@ -151,8 +151,8 @@ public class Tuple implements Comparable<Tuple> {
 
 	public String getCause() {
 		return " [ "
-				+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))
-				+ " ]";
+			+ String.join(" , ", history.stream().distinct().map(Object::toString).collect(Collectors.toList()))
+			+ " ]";
 	}
 
 	public void addHistory(Tuple tuple) {

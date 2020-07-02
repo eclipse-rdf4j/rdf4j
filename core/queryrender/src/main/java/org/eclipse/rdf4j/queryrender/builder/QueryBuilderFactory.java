@@ -97,7 +97,7 @@ public class QueryBuilderFactory {
 				aVarObj.setAnonymous(true);
 
 				aGroup.filter()
-						.or(new SameTerm(aVarObj, new Var("descr_subj")), new SameTerm(aVarObj, new Var("descr_obj")));
+					.or(new SameTerm(aVarObj, new Var("descr_subj")), new SameTerm(aVarObj, new Var("descr_obj")));
 			}
 		}
 
@@ -110,8 +110,8 @@ public class QueryBuilderFactory {
 				aObjVar.setAnonymous(true);
 
 				aGroup.filter()
-						.or(new SameTerm(new ValueConstant(aVar), aSubjVar),
-								new SameTerm(new ValueConstant(aVar), aObjVar));
+					.or(new SameTerm(new ValueConstant(aVar), aSubjVar),
+						new SameTerm(new ValueConstant(aVar), aObjVar));
 			}
 		}
 

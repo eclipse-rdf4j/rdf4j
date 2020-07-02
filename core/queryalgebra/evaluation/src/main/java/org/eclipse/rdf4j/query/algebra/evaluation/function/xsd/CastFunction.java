@@ -35,7 +35,7 @@ public abstract class CastFunction implements Function {
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
-					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
+				getXsdName() + " cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {

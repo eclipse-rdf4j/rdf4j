@@ -80,7 +80,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 	}
 
 	public SpinMagicPropertyInterpreter(SpinParser parser, TripleSource tripleSource,
-			TupleFunctionRegistry tupleFunctionRegistry, AbstractFederatedServiceResolver serviceResolver) {
+		TupleFunctionRegistry tupleFunctionRegistry, AbstractFederatedServiceResolver serviceResolver) {
 		this.parser = parser;
 		this.tripleSource = tripleSource;
 		this.tupleFunctionRegistry = tupleFunctionRegistry;
@@ -111,7 +111,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						magicProperties.put(sp, func);
 					} else {
 						Statement magicPropStmt = TripleSources.single(pred, RDF.TYPE, SPIN.MAGIC_PROPERTY_CLASS,
-								tripleSource);
+							tripleSource);
 						if (magicPropStmt != null) {
 							func = parser.parseMagicProperty(pred, tripleSource);
 							tupleFunctionRegistry.add(func);
@@ -175,7 +175,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 						// use SERVICE evaluation
 						if (!serviceResolver.hasService(SPIN_SERVICE)) {
 							serviceResolver.registerService(SPIN_SERVICE, new TupleFunctionFederatedService(
-									tupleFunctionRegistry, tripleSource.getValueFactory()));
+								tupleFunctionRegistry, tripleSource.getValueFactory()));
 						}
 
 						Var serviceRef = TupleExprs.createConstVar(spinServiceUri);
@@ -211,7 +211,7 @@ public class SpinMagicPropertyInterpreter implements QueryOptimizer {
 		}
 
 		private TupleExpr addList(List<? super Var> list, Var subj,
-				Map<String, Map<IRI, List<StatementPattern>>> spIndex) {
+			Map<String, Map<IRI, List<StatementPattern>>> spIndex) {
 			TupleExpr node = null;
 			do {
 				Map<IRI, List<StatementPattern>> predMap = spIndex.get(subj.getName());

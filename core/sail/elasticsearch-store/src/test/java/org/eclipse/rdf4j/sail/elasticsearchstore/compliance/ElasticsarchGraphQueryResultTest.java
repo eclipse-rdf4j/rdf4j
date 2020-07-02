@@ -48,6 +48,6 @@ public class ElasticsarchGraphQueryResultTest extends GraphQueryResultTest {
 	@Override
 	protected Repository newRepository() {
 		return new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
+			new ElasticsearchStore(clientPool, "index1"));
 	}
 }

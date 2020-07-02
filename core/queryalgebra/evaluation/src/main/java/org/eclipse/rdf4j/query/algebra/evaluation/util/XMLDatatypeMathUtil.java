@@ -42,19 +42,19 @@ public class XMLDatatypeMathUtil {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype) && XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 			return MathUtil.compute(leftLit, rightLit, op);
 		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+			&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
 			return operationsBetweenDurations(leftLit, rightLit, op);
 		} else if (XMLDatatypeUtil.isDecimalDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+			&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
 			return operationsBetweenDurationAndDecimal(rightLit, leftLit, op);
 		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDecimalDatatype(rightDatatype)) {
+			&& XMLDatatypeUtil.isDecimalDatatype(rightDatatype)) {
 			return operationsBetweenDurationAndDecimal(leftLit, rightLit, op);
 		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+			&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
 			return operationsBetweenCalendarAndDuration(leftLit, rightLit, op);
 		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+			&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 			return operationsBetweenDurationAndCalendar(leftLit, rightLit, op);
 		} else {
 			throw new ValueExprEvaluationException("Mathematical operators are not supported on these operands");
@@ -93,7 +93,7 @@ public class XMLDatatypeMathUtil {
 				return buildLiteral(duration.multiply(decimalLit.decimalValue()));
 			} else {
 				throw new ValueExprEvaluationException(
-						"Only multiplication is defined between xsd:decimal and xsd:duration.");
+					"Only multiplication is defined between xsd:decimal and xsd:duration.");
 			}
 		} catch (IllegalStateException e) {
 			throw new ValueExprEvaluationException(e);
@@ -120,10 +120,10 @@ public class XMLDatatypeMathUtil {
 				return SimpleValueFactory.getInstance().createLiteral(calendar);
 			case MULTIPLY:
 				throw new ValueExprEvaluationException(
-						"Multiplication is not defined between xsd:duration and calendar values.");
+					"Multiplication is not defined between xsd:duration and calendar values.");
 			case DIVIDE:
 				throw new ValueExprEvaluationException(
-						"Division is not defined between xsd:duration and calendar values.");
+					"Division is not defined between xsd:duration and calendar values.");
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + op);
 			}
@@ -145,7 +145,7 @@ public class XMLDatatypeMathUtil {
 				return SimpleValueFactory.getInstance().createLiteral(calendar);
 			} else {
 				throw new ValueExprEvaluationException(
-						"Only addition is defined between xsd:duration and calendar datatypes.");
+					"Only addition is defined between xsd:duration and calendar datatypes.");
 			}
 		} catch (IllegalStateException e) {
 			throw new ValueExprEvaluationException(e);

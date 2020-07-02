@@ -267,7 +267,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	public void add(File file, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isNilContext(contexts) && !dataFormat.supportsContexts()) {
 			super.add(file, getBaseURI(), dataFormat, getAddContexts());
 		} else {
@@ -277,7 +277,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -289,7 +289,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	public void add(InputStream in, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isNilContext(contexts) && !dataFormat.supportsContexts()) {
 			super.add(in, getBaseURI(), dataFormat, getAddContexts());
 		} else {
@@ -299,7 +299,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -321,7 +321,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+		throws RepositoryException, E {
 		final IRI insertContext = getInsertContext();
 		if (isNilContext(contexts)) {
 			super.add(new ConvertingIteration<Statement, Statement, E>(statementIter) {
@@ -330,7 +330,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null) {
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-								insertContext);
+							insertContext);
 					}
 					return st;
 				}
@@ -341,7 +341,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	public void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isNilContext(contexts) && !dataFormat.supportsContexts()) {
 			super.add(reader, getBaseURI(), dataFormat, getAddContexts());
 		} else {
@@ -351,7 +351,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -381,7 +381,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	public void add(URL url, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (isNilContext(contexts) && !dataFormat.supportsContexts()) {
 			super.add(url, getBaseURI(), dataFormat, getAddContexts());
 		} else {
@@ -391,7 +391,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -433,7 +433,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * @see #isIncludeInferred()
 	 */
 	public void exportStatements(Resource subj, IRI pred, Value obj, RDFHandler handler, Resource... contexts)
-			throws RepositoryException, RDFHandlerException {
+		throws RepositoryException, RDFHandlerException {
 		if (isAllContext(contexts)) {
 			super.exportStatements(subj, pred, obj, isIncludeInferred(), handler, getReadContexts());
 		} else {
@@ -443,7 +443,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
-			Resource... contexts) throws RepositoryException, RDFHandlerException {
+		Resource... contexts) throws RepositoryException, RDFHandlerException {
 		if (isAllContext(contexts)) {
 			super.exportStatements(subj, pred, obj, includeInferred, handler, getReadContexts());
 		} else {
@@ -466,7 +466,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 */
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (isAllContext(contexts)) {
 			return super.getStatements(subj, pred, obj, isIncludeInferred(), getReadContexts());
 		} else {
@@ -476,7 +476,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts) throws RepositoryException {
+		Resource... contexts) throws RepositoryException {
 		if (isAllContext(contexts)) {
 			return super.getStatements(subj, pred, obj, includeInferred, getReadContexts());
 		} else {
@@ -486,7 +486,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (isAllContext(contexts)) {
 			return super.hasStatement(subj, pred, obj, includeInferred, getReadContexts());
 		} else {
@@ -496,7 +496,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (isAllContext(contexts) && st.getContext() == null) {
 			return super.hasStatement(st, includeInferred, getReadContexts());
 		} else {
@@ -561,7 +561,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return prepareGraphQuery(ql, query, getBaseURI());
 	}
 
@@ -572,13 +572,13 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return prepareTupleQuery(ql, query, getBaseURI());
 	}
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		return prepareBooleanQuery(ql, query, getBaseURI());
 	}
 
@@ -589,7 +589,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -598,7 +598,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -607,7 +607,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -616,7 +616,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -625,7 +625,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-			throws MalformedQueryException, RepositoryException {
+		throws MalformedQueryException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = getBaseURI();
 		}
@@ -653,7 +653,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 */
 	@Override
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
-			throws RepositoryException, E {
+		throws RepositoryException, E {
 		final IRI[] removeContexts = getRemoveContexts();
 		if (isAllContext(contexts) && removeContexts.length == 1) {
 			super.remove(new ConvertingIteration<Statement, Statement, E>(statementIter) {
@@ -662,7 +662,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 				protected Statement convert(Statement st) {
 					if (st.getContext() == null) {
 						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-								removeContexts[0]);
+							removeContexts[0]);
 					}
 					return st;
 				}
@@ -726,7 +726,7 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		IRI[] archiveContexts = getArchiveContexts();
 		if (archiveContexts.length > 0) {
 			RDFHandler handler = new RDFInserter(getDelegate());

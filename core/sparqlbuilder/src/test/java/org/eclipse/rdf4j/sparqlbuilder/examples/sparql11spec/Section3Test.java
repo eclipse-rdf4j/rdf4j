@@ -49,7 +49,7 @@ public class Section3Test extends BaseExamples {
 		Expression<?> priceConstraint = Expressions.lt(price, 30.5);
 
 		GraphPattern where = GraphPatterns.and(x.has(ns.iri("price"), price), x.has(dc.iri("title"), title))
-				.filter(priceConstraint);
+			.filter(priceConstraint);
 
 		query.prefix(dc, ns).select(title, price).where(where);
 		p();

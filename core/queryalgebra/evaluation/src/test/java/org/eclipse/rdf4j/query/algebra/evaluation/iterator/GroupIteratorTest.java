@@ -68,8 +68,8 @@ public class GroupIteratorTest {
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
 		assertThat(gi.next().getBinding("avg").getValue())
-				.describedAs("AVG on empty set should result in 0")
-				.isEqualTo(vf.createLiteral("0", XMLSchema.INTEGER));
+			.describedAs("AVG on empty set should result in 0")
+			.isEqualTo(vf.createLiteral("0", XMLSchema.INTEGER));
 	}
 
 	@Test
@@ -120,8 +120,8 @@ public class GroupIteratorTest {
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
 		assertThat(gi.next().getBinding("groupconcat").getValue())
-				.describedAs("GROUP_CONCAT on empty set should result in empty string")
-				.isEqualTo(vf.createLiteral(""));
+			.describedAs("GROUP_CONCAT on empty set should result in empty string")
+			.isEqualTo(vf.createLiteral(""));
 	}
 
 	@Test

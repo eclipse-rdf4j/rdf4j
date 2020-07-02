@@ -45,9 +45,9 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerBoundJoin.class);
 
 	public ControlledWorkerBoundJoin(ControlledWorkerScheduler<BindingSet> scheduler, FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
-			throws QueryEvaluationException {
+		CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+		TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
+		throws QueryEvaluationException {
 		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);
 	}
 
@@ -55,8 +55,8 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	protected void handleBindings() throws Exception {
 		if (!(canApplyVectoredEvaluation(rightArg))) {
 			log.debug(
-					"Right argument is not an applicable BoundJoinTupleExpr. Fallback on ControlledWorkerJoin implementation: "
-							+ rightArg.getClass().getCanonicalName());
+				"Right argument is not an applicable BoundJoinTupleExpr. Fallback on ControlledWorkerJoin implementation: "
+					+ rightArg.getClass().getCanonicalName());
 			super.handleBindings(); // fallback
 			return;
 		}
@@ -83,7 +83,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 				taskCreator = new FedXServiceJoinTaskCreator(this, strategy, (FedXService) expr);
 			} else {
 				throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
-						+ ". Please report this problem.");
+					+ ". Please report this problem.");
 			}
 			phaser.register();
 			scheduler.schedule(new ParallelJoinTask(this, strategy, expr, b));
@@ -161,7 +161,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		protected final StatementTupleExpr _expr;
 
 		public BoundJoinTaskCreator(ControlledWorkerBoundJoin control,
-				FederationEvalStrategy strategy, StatementTupleExpr expr) {
+			FederationEvalStrategy strategy, StatementTupleExpr expr) {
 			super();
 			_control = control;
 			_strategy = strategy;
@@ -180,7 +180,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		protected final CheckStatementPattern _expr;
 
 		public CheckJoinTaskCreator(ControlledWorkerBoundJoin control,
-				FederationEvalStrategy strategy, CheckStatementPattern expr) {
+			FederationEvalStrategy strategy, CheckStatementPattern expr) {
 			super();
 			_control = control;
 			_strategy = strategy;
@@ -199,7 +199,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		protected final FedXService _expr;
 
 		public FedXServiceJoinTaskCreator(ControlledWorkerBoundJoin control,
-				FederationEvalStrategy strategy, FedXService expr) {
+			FederationEvalStrategy strategy, FedXService expr) {
 			super();
 			_control = control;
 			_strategy = strategy;

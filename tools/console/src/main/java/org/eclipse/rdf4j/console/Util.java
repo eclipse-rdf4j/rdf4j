@@ -55,7 +55,7 @@ public class Util {
 	 * @throws IllegalArgumentException
 	 */
 	public static Resource[] getContexts(String[] tokens, int pos, Repository repository)
-			throws IllegalArgumentException {
+		throws IllegalArgumentException {
 		Resource[] contexts = new Resource[] {};
 
 		if (tokens.length > pos) {
@@ -146,8 +146,8 @@ public class Util {
 		}
 		if (value instanceof Triple) {
 			return "<<" + getPrefixedValue(((Triple) value).getSubject(), namespaces) + " "
-					+ getPrefixedValue(((Triple) value).getPredicate(), namespaces) + " "
-					+ getPrefixedValue(((Triple) value).getObject(), namespaces) + ">>";
+				+ getPrefixedValue(((Triple) value).getPredicate(), namespaces) + " "
+				+ getPrefixedValue(((Triple) value).getObject(), namespaces) + ">>";
 		}
 		return NTriplesUtil.toNTriplesString(value);
 	}

@@ -67,8 +67,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
 	public PathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
-			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
-			throws QueryEvaluationException {
+		TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
+		throws QueryEvaluationException {
 		this.evaluationStrategyImpl = evaluationStrategyImpl;
 		this.scope = scope;
 		this.startVar = startVar;
@@ -424,7 +424,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		@Override
 		public void meet(Var var) {
 			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
-					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
+				&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacement);
 				replacement.setParentNode(parent);

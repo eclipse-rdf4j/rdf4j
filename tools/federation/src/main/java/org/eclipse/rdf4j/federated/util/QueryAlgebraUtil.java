@@ -155,7 +155,7 @@ public class QueryAlgebraUtil {
 	 * @throws IllegalQueryException
 	 */
 	public static TupleExpr selectQuery(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated) throws IllegalQueryException {
+		AtomicBoolean evaluated) throws IllegalQueryException {
 
 		Set<String> varNames = new HashSet<>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
@@ -197,7 +197,7 @@ public class QueryAlgebraUtil {
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
-			AtomicBoolean evaluated) {
+		AtomicBoolean evaluated) {
 
 		Set<String> varNames = new HashSet<>();
 		List<ExclusiveTupleExpr> stmts = group.getExclusiveExpressions();
@@ -206,7 +206,7 @@ public class QueryAlgebraUtil {
 
 		if (stmts.size() == 2) {
 			join = new Join(constructJoinArg(stmts.get(0), varNames, bindings),
-					constructJoinArg(stmts.get(1), varNames, bindings));
+				constructJoinArg(stmts.get(1), varNames, bindings));
 		} else {
 			join = new Join();
 			join.setLeftArg(constructJoinArg(stmts.get(0), varNames, bindings));
@@ -261,7 +261,7 @@ public class QueryAlgebraUtil {
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQueryBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
-			FilterValueExpr filterExpr, Boolean evaluated) {
+		FilterValueExpr filterExpr, Boolean evaluated) {
 
 		// TODO add FILTER expressions
 
@@ -327,7 +327,7 @@ public class QueryAlgebraUtil {
 	}
 
 	protected static Union constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
-			List<BindingSet> bindings) {
+		List<BindingSet> bindings) {
 
 		Union union = new Union();
 		union.setLeftArg(constructStatementId(stmt, outerID + "_0", varNames, bindings.get(0)));
@@ -358,7 +358,7 @@ public class QueryAlgebraUtil {
 	 * @return the fresh {@link TupleExpr} with bindings inserted
 	 */
 	private static TupleExpr constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 
 		if (exclusiveExpr instanceof StatementPattern) {
 			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);
@@ -382,7 +382,7 @@ public class QueryAlgebraUtil {
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatement(StatementPattern stmt, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 
 		Var subj = appendVar(stmt.getSubjectVar(), varNames, bindings);
 		Var pred = appendVar(stmt.getPredicateVar(), varNames, bindings);
@@ -403,7 +403,7 @@ public class QueryAlgebraUtil {
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatementId(StatementPattern stmt, String varID, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 
 		Var subj = appendVarId(stmt.getSubjectVar(), varID, varNames, bindings);
 		Var pred = appendVarId(stmt.getPredicateVar(), varID, varNames, bindings);
@@ -423,7 +423,7 @@ public class QueryAlgebraUtil {
 	 * @return the expression
 	 */
 	protected static TupleExpr constructStatementCheckId(StatementPattern stmt, int varID, Set<String> varNames,
-			BindingSet bindings) {
+		BindingSet bindings) {
 
 		String _varID = Integer.toString(varID);
 		Var subj = appendVarId(stmt.getSubjectVar(), _varID, varNames, bindings);
@@ -603,7 +603,7 @@ public class QueryAlgebraUtil {
 		}
 
 		log.debug("Type " + tupleExpr.getClass().getSimpleName()
-				+ " not supported for computing free vars. If you run into this, please report a bug.");
+			+ " not supported for computing free vars. If you run into this, please report a bug.");
 		return new ArrayList<>();
 	}
 }

@@ -27,7 +27,7 @@ public class RDFJSONHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-				"src/test/resources/testcases/rdfjson/rdfjson-RDF-langString-no-language-test.rj");
+			"src/test/resources/testcases/rdfjson/rdfjson-RDF-langString-no-language-test.rj");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

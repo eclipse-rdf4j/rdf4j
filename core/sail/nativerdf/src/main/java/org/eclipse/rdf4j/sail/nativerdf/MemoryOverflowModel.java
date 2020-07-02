@@ -167,7 +167,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-					Resource... contexts) {
+				Resource... contexts) {
 				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -175,7 +175,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+		Resource... contexts) {
 		if (disk == null) {
 			memory.removeTermIteration(iter, subj, pred, obj, contexts);
 		} else {

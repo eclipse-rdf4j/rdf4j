@@ -24,17 +24,17 @@ public interface ExtensibleStatementHelper {
 		@Override
 		public ExtensibleStatement fromStatement(Statement statement, boolean inferred) {
 			if (statement instanceof ExtensibleStatement
-					&& ((ExtensibleStatement) statement).isInferred() == inferred) {
+				&& ((ExtensibleStatement) statement).isInferred() == inferred) {
 				return (ExtensibleStatement) statement;
 			}
 
 			if (statement.getContext() != null) {
 				return new ExtensibleContextStatement(statement.getSubject(), statement.getPredicate(),
-						statement.getObject(), statement.getContext(), inferred);
+					statement.getObject(), statement.getContext(), inferred);
 			}
 
 			return new ExtensibleStatementImpl(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-					inferred);
+				inferred);
 
 		}
 	}

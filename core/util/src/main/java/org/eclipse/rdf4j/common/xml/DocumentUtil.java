@@ -66,7 +66,7 @@ public class DocumentUtil {
 	}
 
 	private static Document getDocument(URL location, boolean validating, boolean namespaceAware, Schema schema)
-			throws IOException {
+		throws IOException {
 		Document result = null;
 
 		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -79,7 +79,7 @@ public class DocumentUtil {
 			result = builder.parse(in);
 		} catch (SAXParseException e) {
 			String message = "Parsing error" + ", line " + e.getLineNumber() + ", uri " + e.getSystemId() + ", "
-					+ e.getMessage();
+				+ e.getMessage();
 			throw toIOE(message, e);
 		} catch (SAXException | ParserConfigurationException e) {
 			throw toIOE(e);

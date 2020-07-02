@@ -259,7 +259,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);
 		if (waitForRelocatingShards != null) {
 			logger.warn("Property " + WAIT_FOR_RELOCATING_SHARDS_KEY + " no longer supported. Use "
-					+ WAIT_FOR_NO_RELOCATING_SHARDS_KEY + " instead");
+				+ WAIT_FOR_NO_RELOCATING_SHARDS_KEY + " instead");
 		}
 		String waitForNoRelocatingShards = parameters.getProperty(WAIT_FOR_NO_RELOCATING_SHARDS_KEY);
 		if (waitForNoRelocatingShards != null) {
@@ -268,17 +268,17 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		ClusterHealthResponse healthResponse = healthReqBuilder.execute().actionGet();
 		logger.info("Cluster health: {}", healthResponse.getStatus());
 		logger.info("Cluster nodes: {} (data {})", healthResponse.getNumberOfNodes(),
-				healthResponse.getNumberOfDataNodes());
+			healthResponse.getNumberOfDataNodes());
 		ClusterIndexHealth indexHealth = healthResponse.getIndices().get(indexName);
 		logger.info("Index health: {}", indexHealth.getStatus());
 		logger.info("Index shards: {} (active {} [primary {}], initializing {}, unassigned {}, relocating {})",
-				indexHealth.getNumberOfShards(), indexHealth.getActiveShards(), indexHealth.getActivePrimaryShards(),
-				indexHealth.getInitializingShards(), indexHealth.getUnassignedShards(),
-				indexHealth.getRelocatingShards());
+			indexHealth.getNumberOfShards(), indexHealth.getActiveShards(), indexHealth.getActivePrimaryShards(),
+			indexHealth.getInitializingShards(), indexHealth.getUnassignedShards(),
+			indexHealth.getRelocatingShards());
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
-			Map<String, String> parameters) {
+		Map<String, String> parameters) {
 		// this should really be based on the schema
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
@@ -287,12 +287,12 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	public Map<String, Object> getMappings() throws IOException {
 		ImmutableOpenMap<String, ImmutableOpenMap<String, MappingMetaData>> indexMappings = client.admin()
-				.indices()
-				.prepareGetMappings(indexName)
-				.setTypes(documentType)
-				.execute()
-				.actionGet()
-				.getMappings();
+			.indices()
+			.prepareGetMappings(indexName)
+			.setTypes(documentType)
+			.execute()
+			.actionGet()
+			.getMappings();
 		ImmutableOpenMap<String, MappingMetaData> typeMappings = indexMappings.get(indexName);
 		MappingMetaData mappings = typeMappings.get(documentType);
 		return mappings.sourceAsMap();
@@ -300,55 +300,55 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private void createIndex() throws IOException {
 		try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
-				.startObject()
-				.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
-				.startObject("analysis")
-				.startObject("analyzer")
-				.startObject("default")
-				.field("type", analyzer)
-				.endObject()
-				.endObject()
-				.endObject()
-				.endObject()) {
+			.startObject()
+			.field("index.query.default_field", SearchFields.TEXT_FIELD_NAME)
+			.startObject("analysis")
+			.startObject("analyzer")
+			.startObject("default")
+			.field("type", analyzer)
+			.endObject()
+			.endObject()
+			.endObject()
+			.endObject()) {
 
 			doAcknowledgedRequest(client.admin()
-					.indices()
-					.prepareCreate(indexName)
-					.setSettings(
-							Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
+				.indices()
+				.prepareCreate(indexName)
+				.setSettings(
+					Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));
 		}
 
 		// use _source instead of explicit stored = true
 		try (XContentBuilder typeMapping = XContentFactory.jsonBuilder()) {
 			typeMapping.startObject().startObject(documentType).startObject("properties");
 			typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)
-					.field("type", "keyword")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
 			typeMapping.startObject(SearchFields.URI_FIELD_NAME)
-					.field("type", "keyword")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
+				.field("type", "keyword")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
 			typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)
-					.field("type", "text")
-					.field("index", true)
-					.field("copy_to", "_all")
-					.endObject();
+				.field("type", "text")
+				.field("index", true)
+				.field("copy_to", "_all")
+				.endObject();
 			for (String wktField : wktFields) {
 				typeMapping.startObject(toGeoPointFieldName(wktField)).field("type", "geo_point").endObject();
 				if (supportsShapes(wktField)) {
 					typeMapping.startObject(toGeoShapeFieldName(wktField))
-							.field("type", "geo_shape")
-							.field("copy_to", "_all")
-							.endObject();
+						.field("type", "geo_shape")
+						.field("copy_to", "_all")
+						.endObject();
 				}
 			}
 			typeMapping.endObject().endObject().endObject();
 
 			doAcknowledgedRequest(
-					client.admin().indices().preparePutMapping(indexName).setType(documentType).setSource(typeMapping));
+				client.admin().indices().preparePutMapping(indexName).setType(documentType).setSource(typeMapping));
 		}
 	}
 
@@ -387,7 +387,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		GetResponse response = client.prepareGet(indexName, documentType, id).execute().actionGet();
 		if (response.isExists()) {
 			return new ElasticsearchDocument(response.getId(), response.getType(), response.getIndex(),
-					response.getVersion(), response.getSource(), geoContextMapper);
+				response.getVersion(), response.getSource(), geoContextMapper);
 		}
 		// no such Document
 		return null;
@@ -416,31 +416,31 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		Map<String, Object> source = esDoc.getSource();
 		Map<String, Object> newDocument = new HashMap<>(source);
 		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getVersion(),
-				newDocument, geoContextMapper);
+			newDocument, geoContextMapper);
 	}
 
 	@Override
 	protected void addDocument(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		doIndexRequest(
-				client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(esDoc.getSource()));
+			client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(esDoc.getSource()));
 	}
 
 	@Override
 	protected void updateDocument(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		doUpdateRequest(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setVersion(esDoc.getVersion())
-				.setDoc(esDoc.getSource()));
+			.setVersion(esDoc.getVersion())
+			.setDoc(esDoc.getSource()));
 	}
 
 	@Override
 	protected void deleteDocument(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setVersion(esDoc.getVersion())
-				.execute()
-				.actionGet();
+			.setVersion(esDoc.getVersion())
+			.execute()
+			.actionGet();
 	}
 
 	@Override
@@ -553,7 +553,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight) throws MalformedQueryException, IOException {
+		boolean highlight) throws MalformedQueryException, IOException {
 		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
 		SearchRequestBuilder request = client.prepareSearch();
 		if (highlight) {
@@ -619,14 +619,14 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query) {
 		// rewrite the query
 		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,
-				SearchFields.getResourceID(resource));
+			SearchFields.getResourceID(resource));
 		QueryBuilder combinedQuery = QueryBuilders.boolQuery().must(idQuery).must(query);
 		return search(request, combinedQuery);
 	}
 
 	@Override
 	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
-			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+		double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double unitDist;
 		final DistanceUnit unit;
 		if (GEOF.UOM_METRE.equals(units)) {
@@ -649,9 +649,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		double lon = p.getX();
 		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));
 		QueryBuilder qb = QueryBuilders.functionScoreQuery(
-				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
-				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
-						new DistanceUnit.Distance(unitDist, unit).toString()));
+			QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),
+			ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),
+				new DistanceUnit.Distance(unitDist, unit).toString()));
 		if (contextVar != null) {
 			qb = addContextTerm(qb, (Resource) contextVar.getValue());
 		}
@@ -680,14 +680,14 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	@Override
 	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
-			Var contextVar) throws MalformedQueryException, IOException {
+		Var contextVar) throws MalformedQueryException, IOException {
 		ShapeRelation spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;
 		}
 		final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));
 		GeoShapeQueryBuilder fb = QueryBuilders.geoShapeQuery(fieldName,
-				ElasticsearchSpatialSupport.getSpatialSupport().toShapeBuilder(shape));
+			ElasticsearchSpatialSupport.getSpatialSupport().toShapeBuilder(shape));
 		fb.relation(spatialOp);
 		QueryBuilder qb = QueryBuilders.matchAllQuery();
 		if (contextVar != null) {
@@ -728,20 +728,20 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			nDocs = maxDocs;
 		} else {
 			long docCount = client.prepareSearch(indexName)
-					.setTypes(types)
-					.setSource(new SearchSourceBuilder().size(0).query(query))
-					.get()
-					.getHits()
-					.getTotalHits();
+				.setTypes(types)
+				.setSource(new SearchSourceBuilder().size(0).query(query))
+				.get()
+				.getHits()
+				.getTotalHits();
 			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);
 		}
 		SearchResponse response = request.setIndices(indexName)
-				.setTypes(types)
-				.setVersion(true)
-				.setQuery(query)
-				.setSize(nDocs)
-				.execute()
-				.actionGet();
+			.setTypes(types)
+			.setVersion(true)
+			.setQuery(query)
+			.setSize(nDocs)
+			.execute()
+			.actionGet();
 		return response.getHits();
 	}
 
@@ -825,9 +825,9 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 			// now delete all documents from the deleted context
 			DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
-					.source(indexName)
-					.filter(QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString))
-					.get();
+				.source(indexName)
+				.filter(QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString))
+				.get();
 		}
 
 		// now add those again, that had other contexts also.
@@ -885,7 +885,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	private static void doAcknowledgedRequest(ActionRequestBuilder<?, ? extends AcknowledgedResponse, ?> request)
-			throws IOException {
+		throws IOException {
 		boolean ok = request.execute().actionGet().isAcknowledged();
 		if (!ok) {
 			throw new IOException("Request not acknowledged: " + request.get().getClass().getName());
@@ -902,7 +902,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	private static long doUpdateRequest(ActionRequestBuilder<?, ? extends UpdateResponse, ?> request)
-			throws IOException {
+		throws IOException {
 		UpdateResponse response = request.execute().actionGet();
 		boolean isUpsert = response.status().equals(RestStatus.CREATED);
 		if (isUpsert) {

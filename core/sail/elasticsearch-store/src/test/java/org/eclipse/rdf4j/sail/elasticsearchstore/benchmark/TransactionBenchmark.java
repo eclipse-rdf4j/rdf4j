@@ -63,11 +63,11 @@ public class TransactionBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		repository = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
-						false));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+				false));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
@@ -98,9 +98,9 @@ public class TransactionBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			IntStream
-					.range(0, 1)
-					.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-					.forEach(connection::add);
+				.range(0, 1)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.forEach(connection::add);
 			connection.commit();
 		}
 
@@ -114,9 +114,9 @@ public class TransactionBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			IntStream
-					.range(0, 10)
-					.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-					.forEach(connection::add);
+				.range(0, 10)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.forEach(connection::add);
 			connection.commit();
 		}
 
@@ -130,9 +130,9 @@ public class TransactionBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			IntStream
-					.range(0, 100)
-					.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-					.forEach(connection::add);
+				.range(0, 100)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.forEach(connection::add);
 			connection.commit();
 		}
 
@@ -146,9 +146,9 @@ public class TransactionBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			IntStream
-					.range(0, 1000)
-					.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-					.forEach(connection::add);
+				.range(0, 1000)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.forEach(connection::add);
 			connection.commit();
 		}
 

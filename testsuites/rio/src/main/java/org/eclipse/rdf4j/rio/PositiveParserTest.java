@@ -47,7 +47,7 @@ public class PositiveParserTest extends TestCase {
 	 *--------------*/
 
 	public PositiveParserTest(IRI testUri, String testName, String inputURL, String outputURL, String baseURL,
-			RDFParser targetParser, RDFParser ntriplesParser) throws MalformedURLException {
+		RDFParser targetParser, RDFParser ntriplesParser) throws MalformedURLException {
 		super(testName);
 		this.testUri = testUri;
 		this.inputURL = inputURL;
@@ -116,9 +116,9 @@ public class PositiveParserTest extends TestCase {
 			// Check equality of the two models
 			if (!Models.isomorphic(inputCollection, outputCollection)) {
 				logger.error("===models not equal===\n"
-						+ "Expected: " + outputCollection + "\n"
-						+ "Actual  : " + inputCollection + "\n"
-						+ "======================");
+					+ "Expected: " + outputCollection + "\n"
+					+ "Actual  : " + inputCollection + "\n"
+					+ "======================");
 
 				fail("models not equal");
 			}

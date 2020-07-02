@@ -85,7 +85,7 @@ public class RepositoryUtil {
 	 * @return The collection of statements that is the difference between rep1 and rep2.
 	 */
 	public static Collection<? extends Statement> difference(Repository rep1, Repository rep2)
-			throws RepositoryException {
+		throws RepositoryException {
 		Collection<Statement> model1;
 		Collection<Statement> model2;
 
@@ -110,7 +110,7 @@ public class RepositoryUtil {
 	 * @return The collection of statements that is the difference between model1 and model2.
 	 */
 	public static Collection<? extends Statement> difference(Collection<? extends Statement> model1,
-			Collection<? extends Statement> model2) {
+		Collection<? extends Statement> model2) {
 		// Create working copies
 		LinkedList<Statement> copy1 = new LinkedList<>(model1);
 		LinkedList<Statement> copy2 = new LinkedList<>(model2);

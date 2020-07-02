@@ -217,7 +217,7 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
 		assertEquals(9, size(b, null, null, null, false));
@@ -236,7 +236,7 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-				"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
+			"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
 				b.add((Resource) painting, RDF.TYPE, PAINTING);
@@ -260,7 +260,7 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter> "
-				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+			+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
 		assertEquals(9, size(b, null, null, null, false));
@@ -279,8 +279,8 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-				"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
-						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
+			"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
+				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
 		for (Value painting : result) {
 			b.add((Resource) painting, RDF.TYPE, PAINTING);
 		}
@@ -301,9 +301,9 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-				"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
-						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
-				NS).execute();
+			"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
+				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
+			NS).execute();
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
 	}
@@ -327,8 +327,8 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+			"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
 			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
@@ -355,16 +355,16 @@ public class LinearTest {
 		a.commit();
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
-				NS).execute();
+			"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+				+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+			NS).execute();
 		b.commit();
 		assertEquals(17, size(a, null, null, null, false));
 	}
 
 	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx)
-			throws Exception {
+		throws Exception {
 		try (RepositoryResult<Statement> statements = con.getStatements(subj, pred, obj, inf, ctx);) {
 			return QueryResults.asList(statements).size();
 		}

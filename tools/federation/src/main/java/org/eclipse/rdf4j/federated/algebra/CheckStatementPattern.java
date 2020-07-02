@@ -104,7 +104,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public void replaceChildNode(QueryModelNode current,
-			QueryModelNode replacement) {
+		QueryModelNode replacement) {
 		stmt.replaceChildNode(current, replacement);
 	}
 
@@ -120,13 +120,13 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		stmt.visit(visitor);
 	}
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		stmt.visitChildren(visitor);
 	}
 
@@ -177,7 +177,7 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 
 		StatementPattern st = (StatementPattern) stmt;
 
@@ -185,8 +185,8 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 			// return true if at least one endpoint has a result for this binding set
 			for (StatementSource source : stmt.getStatementSources()) {
 				Endpoint ownedEndpoint = queryInfo.getFederationContext()
-						.getEndpointManager()
-						.getEndpoint(source.getEndpointID());
+					.getEndpointManager()
+					.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
 				if (t.hasStatements(st, bindings, queryInfo, queryInfo.getDataset())) {
 					return new SingleBindingSetIteration(bindings);

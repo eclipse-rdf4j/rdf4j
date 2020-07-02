@@ -39,12 +39,12 @@ public class SimplePath extends Path {
 		}
 
 		return addedStatements.hasStatement(null, path, null, false)
-				|| removedStatements.hasStatement(null, path, null, false);
+			|| removedStatements.hasStatement(null, path, null, false);
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return subjectVariable + " <" + path + "> " + objectVariable + " . \n";
 

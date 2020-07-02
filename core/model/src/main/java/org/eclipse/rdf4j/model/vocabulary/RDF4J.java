@@ -40,5 +40,5 @@ public class RDF4J {
 	 * <tt>http://rdf4j.org/schema/rdf4j#SHACLShapeGraph</tt>
 	 */
 	public final static IRI SHACL_SHAPE_GRAPH = SimpleValueFactory.getInstance()
-			.createIRI(NAMESPACE, "SHACLShapeGraph");
+		.createIRI(NAMESPACE, "SHACLShapeGraph");
 }

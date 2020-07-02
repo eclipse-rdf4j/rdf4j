@@ -68,8 +68,8 @@ public abstract class CustomGraphQueryInferencerTest {
 	public static final Collection<Object[]> parameters() {
 		Expectation predExpect = new Expectation(8, 2, 0, 2, 0);
 		return Arrays.asList(new Object[][] { { PREDICATE, predExpect, QueryLanguage.SPARQL },
-				{ "resource", new Expectation(4, 2, 2, 0, 2), QueryLanguage.SPARQL },
-				{ "predicate-serql", predExpect, QueryLanguage.SERQL } });
+			{ "resource", new Expectation(4, 2, 2, 0, 2), QueryLanguage.SPARQL },
+			{ "predicate-serql", predExpect, QueryLanguage.SERQL } });
 	}
 
 	private String initial;
@@ -83,7 +83,7 @@ public abstract class CustomGraphQueryInferencerTest {
 	private QueryLanguage language;
 
 	protected void runTest(final CustomGraphQueryInferencer inferencer) throws RepositoryException, RDFParseException,
-			IOException, MalformedQueryException, UpdateExecutionException {
+		IOException, MalformedQueryException, UpdateExecutionException {
 		// Initialize
 		Repository sail = new SailRepository(inferencer);
 		sail.initialize();
@@ -113,12 +113,12 @@ public abstract class CustomGraphQueryInferencerTest {
 
 			// Test initial inferencing results
 			assertThat(Iterations.asSet(connection.getStatements(null, null, null, true)))
-					.hasSize(testData.initialCount);
+				.hasSize(testData.initialCount);
 
 			// Test results after removing some statements
 			connection.prepareUpdate(QueryLanguage.SPARQL, delete).execute();
 			assertThat(Iterations.asSet(connection.getStatements(null, null, null, true)))
-					.hasSize(testData.countAfterRemove);
+				.hasSize(testData.countAfterRemove);
 
 			// Tidy up. Storage gets re-used for subsequent tests, so must clear here,
 			// in order to properly clear out any inferred statements.
@@ -137,8 +137,8 @@ public abstract class CustomGraphQueryInferencerTest {
 	}
 
 	protected CustomGraphQueryInferencer createRepository(boolean withMatchQuery)
-			throws IOException, MalformedQueryException, UnsupportedQueryLanguageException, RepositoryException,
-			SailException, RDFParseException {
+		throws IOException, MalformedQueryException, UnsupportedQueryLanguageException, RepositoryException,
+		SailException, RDFParseException {
 		String testFolder = TEST_DIR_PREFIX + resourceFolder;
 		String rule = ResourceUtil.getString(testFolder + "/rule.rq");
 		String match = withMatchQuery ? ResourceUtil.getString(testFolder + "/match.rq") : "";
@@ -159,14 +159,14 @@ public abstract class CustomGraphQueryInferencerTest {
 
 	@Test
 	public void testCustomQueryInference() throws RepositoryException, RDFParseException, MalformedQueryException,
-			UpdateExecutionException, IOException, UnsupportedQueryLanguageException, SailException {
+		UpdateExecutionException, IOException, UnsupportedQueryLanguageException, SailException {
 		runTest(createRepository(true));
 	}
 
 	@Test
 	public void testCustomQueryInferenceImplicitMatcher()
-			throws RepositoryException, RDFParseException, MalformedQueryException, UpdateExecutionException,
-			IOException, UnsupportedQueryLanguageException, SailException {
+		throws RepositoryException, RDFParseException, MalformedQueryException, UpdateExecutionException,
+		IOException, UnsupportedQueryLanguageException, SailException {
 		runTest(createRepository(false));
 	}
 

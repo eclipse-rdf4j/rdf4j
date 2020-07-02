@@ -31,26 +31,26 @@ public class DistanceQuerySpecTest extends SearchQueryEvaluatorTest {
 	 * Reused from {@link org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest}
 	 */
 	private static final String QUERY = "PREFIX geo:  <" + GEO.NAMESPACE + ">\n" +
-			"PREFIX geof: <" + GEOF.NAMESPACE + ">" +
-			"PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>\n" +
-			"SELECT ?toUri ?to { " +
-			"   ?toUri geo:asWKT ?to . " +
-			"   FILTER(geof:distance(\"POINT (2.2871 48.8630)\"^^geo:wktLiteral, ?to, uom:metre) < \"1500.0\")" +
-			"}";
+		"PREFIX geof: <" + GEOF.NAMESPACE + ">" +
+		"PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>\n" +
+		"SELECT ?toUri ?to { " +
+		"   ?toUri geo:asWKT ?to . " +
+		"   FILTER(geof:distance(\"POINT (2.2871 48.8630)\"^^geo:wktLiteral, ?to, uom:metre) < \"1500.0\")" +
+		"}";
 
 	@Test
 	public void testReplaceQueryPatternsWithNonEmptyResults() {
 		final String expectedQueryPlan = "Projection\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"toUri\"\n" +
-				"      ProjectionElem \"to\"\n" +
-				"   BindingSetAssignment ([[toUri=urn:subject1;to=\"POINT (2.2945 48.8582)\"^^<http://www.opengis.net/ont/geosparql#wktLiteral>]])\n";
+			"   ProjectionElemList\n" +
+			"      ProjectionElem \"toUri\"\n" +
+			"      ProjectionElem \"to\"\n" +
+			"   BindingSetAssignment ([[toUri=urn:subject1;to=\"POINT (2.2945 48.8582)\"^^<http://www.opengis.net/ont/geosparql#wktLiteral>]])\n";
 		final ParsedQuery query = parseQuery(QUERY);
 
 		final List<SearchQueryEvaluator> queries = new ArrayList<>();
 
 		new DistanceQuerySpecBuilder(new SearchIndexImpl())
-				.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
+			.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
 		assertEquals(1, queries.size());
 
 		final DistanceQuerySpec querySpec = (DistanceQuerySpec) queries.get(0);
@@ -70,16 +70,16 @@ public class DistanceQuerySpecTest extends SearchQueryEvaluatorTest {
 	@Test
 	public void testReplaceQueryPatternsWithEmptyResults() {
 		final String expectedQueryPlan = "Projection\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"toUri\"\n" +
-				"      ProjectionElem \"to\"\n" +
-				"   EmptySet\n";
+			"   ProjectionElemList\n" +
+			"      ProjectionElem \"toUri\"\n" +
+			"      ProjectionElem \"to\"\n" +
+			"   EmptySet\n";
 		final ParsedQuery query = parseQuery(QUERY);
 
 		final List<SearchQueryEvaluator> queries = new ArrayList<>();
 
 		new DistanceQuerySpecBuilder(new SearchIndexImpl())
-				.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
+			.process(query.getTupleExpr(), EmptyBindingSet.getInstance(), queries);
 		assertEquals(1, queries.size());
 
 		final DistanceQuerySpec querySpec = (DistanceQuerySpec) queries.get(0);

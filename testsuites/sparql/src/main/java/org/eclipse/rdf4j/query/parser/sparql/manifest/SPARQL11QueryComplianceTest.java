@@ -31,14 +31,14 @@ import org.junit.runners.Parameterized;
 public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceTest {
 
 	private static final String[] defaultIgnoredTests = {
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRDT() TypeErrors",
-			// test case incompatible with RDF 1.1 - see
-			// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
-			"STRLANG() TypeErrors",
-			// known issue: SES-937
-			"sq03 - Subquery within graph pattern, graph variable is not bound"
+		// test case incompatible with RDF 1.1 - see
+		// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+		"STRDT() TypeErrors",
+		// test case incompatible with RDF 1.1 - see
+		// http://lists.w3.org/Archives/Public/public-sparql-dev/2013AprJun/0006.html
+		"STRLANG() TypeErrors",
+		// known issue: SES-937
+		"sq03 - Subquery within graph pattern, graph variable is not bound"
 	};
 
 	private static final List<String> excludedSubdirs = Arrays.asList("service");
@@ -68,11 +68,11 @@ public abstract class SPARQL11QueryComplianceTest extends SPARQLQueryComplianceT
 
 	protected static URL getManifestURL() {
 		return SPARQL11QueryComplianceTest.class.getClassLoader()
-				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl");
+			.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl");
 	}
 
 	public SPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+		String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 

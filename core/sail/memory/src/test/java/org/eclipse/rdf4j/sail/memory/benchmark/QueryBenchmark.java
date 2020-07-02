@@ -104,8 +104,8 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+				.prepareTupleQuery(query1)
+				.evaluate());
 		}
 	}
 

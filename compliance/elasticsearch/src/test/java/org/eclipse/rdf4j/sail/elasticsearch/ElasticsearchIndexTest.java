@@ -105,7 +105,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		Properties sailProperties = new Properties();
 		sailProperties.put(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 		sailProperties.put(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-				client.settings().get("cluster.name"));
+			client.settings().get("cluster.name"));
 		sailProperties.put(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
 		sailProperties.put(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
@@ -145,26 +145,26 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// check that it arrived properly
 		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits();
+			.setTypes(index.getTypes())
+			.get()
+			.getHits()
+			.getTotalHits();
 		assertEquals(1, count);
 
 		SearchHits hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
+			.setTypes(index.getTypes())
+			.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
+			.execute()
+			.actionGet()
+			.getHits();
 		Iterator<SearchHit> docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
 		SearchHit doc = docs.next();
 		Map<String, Object> fields = client.prepareGet(doc.getIndex(), doc.getType(), doc.getId())
-				.execute()
-				.actionGet()
-				.getSource();
+			.execute()
+			.actionGet()
+			.getSource();
 		assertEquals(subject.toString(), fields.get(SearchFields.URI_FIELD_NAME));
 		assertEquals(object1.getLabel(), fields.get(predicate1Field));
 
@@ -182,11 +182,11 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertEquals(1, count); // #docs should *not* have increased
 
 		hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
+			.setTypes(index.getTypes())
+			.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
+			.execute()
+			.actionGet()
+			.getHits();
 		docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
@@ -200,19 +200,19 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// see if we can query for these literals
 		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object1.getLabel())))
-				.get()
-				.getHits()
-				.getTotalHits();
+			.setTypes(index.getTypes())
+			.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object1.getLabel())))
+			.get()
+			.getHits()
+			.getTotalHits();
 		assertEquals(1, count);
 
 		count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object2.getLabel())))
-				.get()
-				.getHits()
-				.getTotalHits();
+			.setTypes(index.getTypes())
+			.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object2.getLabel())))
+			.get()
+			.getHits()
+			.getTotalHits();
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -228,11 +228,11 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		assertEquals(1, count);
 
 		hits = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
-				.execute()
-				.actionGet()
-				.getHits();
+			.setTypes(index.getTypes())
+			.setQuery(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, subject.toString()))
+			.execute()
+			.actionGet()
+			.getHits();
 		docs = hits.iterator();
 		assertTrue(docs.hasNext());
 
@@ -272,10 +272,10 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// check that it arrived properly
 
 		long count = client.prepareSearch(index.getIndexName())
-				.setTypes(index.getTypes())
-				.get()
-				.getHits()
-				.getTotalHits();
+			.setTypes(index.getTypes())
+			.get()
+			.getHits()
+			.getTotalHits();
 		assertEquals(2, count);
 
 		// check the documents

@@ -34,7 +34,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	}
 
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> enforceMaxQueryTime(
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter) {
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter) {
 		if (getMaxExecutionTime() > 0) {
 			bindingsIter = new QueryInterruptIteration(bindingsIter, 1000L * getMaxExecutionTime());
 		}
@@ -66,7 +66,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	protected class QueryInterruptIteration extends TimeLimitIteration<BindingSet, QueryEvaluationException> {
 
 		public QueryInterruptIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
-				long timeLimit) {
+			long timeLimit) {
 			super(iter, timeLimit);
 		}
 

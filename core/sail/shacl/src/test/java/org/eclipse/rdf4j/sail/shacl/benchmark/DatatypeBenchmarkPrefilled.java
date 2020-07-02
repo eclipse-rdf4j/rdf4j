@@ -90,9 +90,9 @@ public class DatatypeBenchmarkPrefilled {
 
 		for (int i = 0; i < 100000; i++) {
 			allStatements2.add(
-					vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
+				vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), RDF.TYPE, RDFS.RESOURCE));
 			allStatements2.add(vf.createStatement(vf.createIRI("http://example.com/preinserted/" + i), FOAF.AGE,
-					vf.createLiteral(i)));
+				vf.createLiteral(i)));
 		}
 
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");
@@ -181,10 +181,10 @@ public class DatatypeBenchmarkPrefilled {
 				connection.begin();
 				connection.add(statements);
 				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
-								+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
-						.evaluate()
-						.stream()) {
+					.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
+						+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
+					.evaluate()
+					.stream()) {
 					stream.forEach(System.out::println);
 				}
 				connection.commit();

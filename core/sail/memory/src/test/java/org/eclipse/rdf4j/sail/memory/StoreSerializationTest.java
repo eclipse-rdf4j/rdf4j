@@ -102,11 +102,11 @@ public class StoreSerializationTest extends TestCase {
 		con.commit();
 
 		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, "SELECT X, P, Y FROM {X} P {Y}",
-				null);
+			null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter = con.evaluate(tupleExpr, null,
-				EmptyBindingSet.getInstance(), false);
+			EmptyBindingSet.getInstance(), false);
 
 		BindingSet bindingSet = iter.next();
 

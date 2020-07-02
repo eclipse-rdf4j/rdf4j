@@ -87,7 +87,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 		sb.append("                 mf:action ?Action ;");
 		sb.append("                 dawgt:approval dawgt:Approved . ");
 		sb.append(
-				"        FILTER(?Type IN (mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
+			"        FILTER(?Type IN (mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
 		sb.append(" } ");
 		TESTCASE_QUERY = sb.toString();
 	}
@@ -179,7 +179,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 	public interface Factory {
 
 		SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName, String testAction,
-				boolean positiveTest);
+			boolean positiveTest);
 	}
 
 	public static Test suite(Factory factory, boolean useRemote) throws Exception {
@@ -237,7 +237,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 							FileUtil.deleteDir(tmpDir);
 						} catch (IOException e) {
 							System.err.println(
-									"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
+								"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
 						}
 					}
 				}
@@ -286,9 +286,9 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 				String type = bindingSet.getValue("Type").toString();
 				boolean positiveTest = type
-						.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
-						|| type.equals(
-								"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+					.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+					|| type.equals(
+						"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
 
 				subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
 			}

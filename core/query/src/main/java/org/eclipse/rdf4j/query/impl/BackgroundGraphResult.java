@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
  * @author James Leigh
  */
 public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEvaluationException>
-		implements GraphQueryResult, Runnable, RDFHandler {
+	implements GraphQueryResult, Runnable, RDFHandler {
 
 	private final RDFParser parser;
 
@@ -52,7 +52,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement, QueryEval
 	}
 
 	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,
-			String baseURI) {
+		String baseURI) {
 		super(queue);
 		this.queue = queue;
 		this.parser = parser;

@@ -51,7 +51,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws IOException, RDF4JException, BadRequestException {
+		throws IOException, RDF4JException, BadRequestException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.transform(xslPath, "saved-queries.xsl");
 		builder.start();
@@ -62,7 +62,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
-			throws BadRequestException, IOException, RDF4JException {
+		throws BadRequestException, IOException, RDF4JException {
 		final String urn = wreq.getParameter("delete");
 		if (null == urn || urn.isEmpty()) {
 			throw new BadRequestException("Expected POST to contain a 'delete=' parameter.");
@@ -84,7 +84,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)
-			throws RDF4JException, BadRequestException {
+		throws RDF4JException, BadRequestException {
 		final HTTPRepository repo = (HTTPRepository) this.repository;
 		String user = req.getParameter(SERVER_USER);
 		if (null == user) {
@@ -92,7 +92,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 		}
 		if (!storage.checkAccess(repo)) {
 			throw new BadRequestException(
-					"User '" + user + "' not authorized to access repository '" + repo.getRepositoryURL() + "'");
+				"User '" + user + "' not authorized to access repository '" + repo.getRepositoryURL() + "'");
 		}
 		storage.selectSavedQueries(repo, user, builder);
 	}

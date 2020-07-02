@@ -44,7 +44,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	 *--------------*/
 
 	public MultiProjectionIterator(MultiProjection multiProjection,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
+		CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
 		this.projections = multiProjection.getProjections();
 		this.iter = iter;
 		this.parentBindings = bindings;

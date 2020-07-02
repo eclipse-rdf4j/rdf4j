@@ -59,7 +59,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	 */
 	public T prefix(Prefix... prefixes) {
 		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes,
-				p -> p.addPrefix(prefixes));
+			p -> p.addPrefix(prefixes));
 
 		return (T) this;
 	}

@@ -163,7 +163,7 @@ public class ConfigurationUtil {
 	 * @throws IOException if the settings could not be saved because of an I/O problem
 	 */
 	public static void saveConfigurationProperties(Properties props, File file, boolean includeDefaults)
-			throws IOException {
+		throws IOException {
 		if (file.getParentFile().mkdirs() || file.getParentFile().canWrite()) {
 			IOUtil.writeProperties(props, file, includeDefaults);
 		}

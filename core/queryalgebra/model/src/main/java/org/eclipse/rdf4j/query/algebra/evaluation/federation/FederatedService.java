@@ -61,7 +61,7 @@ public interface FederatedService {
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
-			BindingSet bindings, String baseUri) throws QueryEvaluationException;
+		BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
 	 * Evaluate the provided SPARQL query at this federated service, possibilities for vectored evaluation.
@@ -84,8 +84,8 @@ public interface FederatedService {
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-			throws QueryEvaluationException;
+		CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+		throws QueryEvaluationException;
 
 	/**
 	 * Method to check if {@link #initialize()} had been called.

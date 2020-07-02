@@ -67,46 +67,46 @@ public class LuceneSailExample {
 		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
-				SailRepositoryConnection connection = repository.getConnection()) {
+			SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(LuceneSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
-					"", RDFFormat.RDFXML);
+				"", RDFFormat.RDFXML);
 			connection.commit();
 
 			// search for resources that mention "person"
 			String queryString = "PREFIX search:   <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \n" + "SELECT * WHERE { \n"
-					+ "?subject search:matches ?match . \n" + "?match search:query \"person\" ; \n"
-					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
-					+ "       search:snippet ?snippet . \n" + "?subject rdf:type ?type . \n" + "} LIMIT 3 \n"
-					+ "BINDINGS ?type { \n" + " (<http://www.w3.org/2002/07/owl#Class>) \n" + "}";
+				+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \n" + "SELECT * WHERE { \n"
+				+ "?subject search:matches ?match . \n" + "?match search:query \"person\" ; \n"
+				+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
+				+ "       search:snippet ?snippet . \n" + "?subject rdf:type ?type . \n" + "} LIMIT 3 \n"
+				+ "BINDINGS ?type { \n" + " (<http://www.w3.org/2002/07/owl#Class>) \n" + "}";
 			tupleQuery(queryString, connection);
 
 			// search for property "name" with domain "person"
 			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "SELECT * WHERE { \n"
-					+ "?subject rdfs:domain ?domain . \n" + "?subject search:matches ?match . \n"
-					+ "?match search:query \"chat\" ; \n" + "       search:score ?score . \n"
-					+ "?domain search:matches ?match2 . \n" + "?match2 search:query \"person\" ; \n"
-					+ "        search:score ?score2 . \n" + "} LIMIT 5";
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "SELECT * WHERE { \n"
+				+ "?subject rdfs:domain ?domain . \n" + "?subject search:matches ?match . \n"
+				+ "?match search:query \"chat\" ; \n" + "       search:score ?score . \n"
+				+ "?domain search:matches ?match2 . \n" + "?match2 search:query \"person\" ; \n"
+				+ "        search:score ?score2 . \n" + "} LIMIT 5";
 			tupleQuery(queryString, connection);
 
 			// search in subquery and filter results
 			queryString = "PREFIX search:   <" + LuceneSailSchema.NAMESPACE + "> \n" + "SELECT * WHERE { \n"
-					+ "{ SELECT * WHERE { \n" + "  ?subject search:matches ?match . \n"
-					+ "  ?match search:query \"person\" ; \n" + "         search:property ?property ; \n"
-					+ "         search:score ?score ; \n" + "         search:snippet ?snippet . \n" + "} } \n"
-					+ "FILTER(CONTAINS(STR(?subject), \"Person\")) \n" + "} \n" + "";
+				+ "{ SELECT * WHERE { \n" + "  ?subject search:matches ?match . \n"
+				+ "  ?match search:query \"person\" ; \n" + "         search:property ?property ; \n"
+				+ "         search:score ?score ; \n" + "         search:snippet ?snippet . \n" + "} } \n"
+				+ "FILTER(CONTAINS(STR(?subject), \"Person\")) \n" + "} \n" + "";
 			tupleQuery(queryString, connection);
 
 			// search for property "homepage" with domain foaf:Person
 			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
-					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
-					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n" + "?x rdfs:domain foaf:Person . \n"
-					+ "?x search:matches ?match . \n" + "?match search:query \"homepage\" ; \n"
-					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
-					+ "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
+				+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
+				+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n" + "?x rdfs:domain foaf:Person . \n"
+				+ "?x search:matches ?match . \n" + "?match search:query \"homepage\" ; \n"
+				+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
+				+ "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
 			graphQuery(queryString, connection);
 		} finally {
 			repository.shutDown();
@@ -114,7 +114,7 @@ public class LuceneSailExample {
 	}
 
 	private static void tupleQuery(String queryString, RepositoryConnection connection)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+		throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		System.out.println("Running query: \n" + queryString);
 		TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		try (TupleQueryResult result = query.evaluate()) {
@@ -131,7 +131,7 @@ public class LuceneSailExample {
 	}
 
 	private static void graphQuery(String queryString, RepositoryConnection connection)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		System.out.println("Running query: \n" + queryString);
 		GraphQuery query = connection.prepareGraphQuery(QueryLanguage.SPARQL, queryString);
 		try (GraphQueryResult result = query.evaluate()) {
@@ -139,7 +139,7 @@ public class LuceneSailExample {
 			while (result.hasNext()) {
 				Statement stmt = result.next();
 				System.out.println("found match: " + stmt.getSubject().stringValue() + "\t"
-						+ stmt.getPredicate().stringValue() + "\t" + stmt.getObject().stringValue());
+					+ stmt.getPredicate().stringValue() + "\t" + stmt.getObject().stringValue());
 			}
 		}
 

@@ -124,7 +124,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 		assumeSparqlEndpoint();
 
 		List<Endpoint> endpoints = prepareTest(
-				Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+			Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		String query = "SELECT * WHERE { ?person <" + FOAF.NAME + "> ?name }";
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
@@ -158,7 +158,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 		// for {s, foaf:name, ?name}
 
 		List<Endpoint> endpoints = prepareTest(
-				Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+			Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		String query = "SELECT * WHERE { ?person <" + FOAF.NAME + "> 'Alan' }";
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
@@ -195,7 +195,7 @@ public class SourceSelectionMemoryCacheTest extends SPARQLBaseTest {
 		// for {s, foaf:name, "Alan"}
 
 		List<Endpoint> endpoints = prepareTest(
-				Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+			Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		String query = "SELECT * WHERE { ?person <" + FOAF.NAME + "> ?name }";
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {

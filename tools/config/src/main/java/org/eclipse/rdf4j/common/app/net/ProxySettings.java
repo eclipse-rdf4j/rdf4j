@@ -251,7 +251,7 @@ public class ProxySettings implements Configuration {
 			ConfigurationUtil.saveConfigurationProperties(props, propsFile, false);
 		}
 		ConfigurationUtil.saveConfigurationProperties(props,
-				new File(propsFile.getParentFile(), propsFile.getName() + ".default"), true);
+			new File(propsFile.getParentFile(), propsFile.getName() + ".default"), true);
 
 	}
 

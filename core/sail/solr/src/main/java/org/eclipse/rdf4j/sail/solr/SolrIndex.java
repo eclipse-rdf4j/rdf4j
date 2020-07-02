@@ -91,7 +91,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	protected Function<? super String, ? extends SpatialContext> createSpatialContextMapper(
-			Map<String, String> parameters) {
+		Map<String, String> parameters) {
 		// this should really be based on the schema
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
@@ -130,9 +130,9 @@ public class SolrIndex extends AbstractSearchIndex {
 		SolrDocument doc;
 		try {
 			doc = (SolrDocument) client
-					.query(new SolrQuery().setRequestHandler("/get").set(SearchFields.ID_FIELD_NAME, id))
-					.getResponse()
-					.get("doc");
+				.query(new SolrQuery().setRequestHandler("/get").set(SearchFields.ID_FIELD_NAME, id))
+				.getResponse()
+				.get("doc");
 		} catch (SolrServerException e) {
 			throw new IOException(e);
 		}
@@ -312,7 +312,7 @@ public class SolrIndex extends AbstractSearchIndex {
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight) throws MalformedQueryException, IOException {
+		boolean highlight) throws MalformedQueryException, IOException {
 		SolrQuery q = prepareQuery(propertyURI, new SolrQuery(query));
 		if (highlight) {
 			q.setHighlight(true);
@@ -344,7 +344,7 @@ public class SolrIndex extends AbstractSearchIndex {
 		return Iterables.transform(results, (SolrDocument document) -> {
 			SolrSearchDocument doc = new SolrSearchDocument(document);
 			Map<String, List<String>> docHighlighting = (highlighting != null) ? highlighting.get(doc.getId())
-					: null;
+				: null;
 			return new SolrDocumentScore(doc, docHighlighting);
 		});
 	}
@@ -383,7 +383,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	@Override
 	protected Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, final IRI units, double distance,
-			String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+		String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double kms = GeoUnits.toKilometres(distance, units);
 
 		String qstr = "{!geofilt score=recipDistance}";
@@ -428,7 +428,7 @@ public class SolrIndex extends AbstractSearchIndex {
 
 	@Override
 	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
-			Var contextVar) throws MalformedQueryException, IOException {
+		Var contextVar) throws MalformedQueryException, IOException {
 		String spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;

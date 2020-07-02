@@ -42,7 +42,7 @@ public class SparqlTest extends AbstractCommandTest {
 
 		addRepositories("sparql", MEMORY_MEMBER);
 		TupleAndGraphQueryEvaluator tqe = new TupleAndGraphQueryEvaluator(mockConsoleIO, mockConsoleState,
-				defaultSettings);
+			defaultSettings);
 		when(mockConsoleState.getRepository()).thenReturn(manager.getRepository(MEMORY_MEMBER));
 		when(mockConsoleIO.askProceed("File exists, continue ?", false)).thenReturn(Boolean.TRUE);
 
@@ -86,7 +86,7 @@ public class SparqlTest extends AbstractCommandTest {
 		File f = LOCATION.newFile("out.ttl");
 
 		cmd.executeQuery("sparql OUTFILE=\"" + f.getAbsolutePath() + "\" construct { ?s ?p ?o } where { ?s ?p ?o }",
-				"sparql");
+			"sparql");
 		verify(mockConsoleIO, never()).writeError(anyString());
 
 		assertTrue("File does not exist", f.exists());
@@ -118,7 +118,7 @@ public class SparqlTest extends AbstractCommandTest {
 
 		// SELECT should use sparql result format, not a triple file format
 		cmd.executeQuery("sparql OUTFILE=\"" + f.getAbsolutePath() + "\" select ?s ?p ?o where { ?s ?p ?o }",
-				"sparql");
+			"sparql");
 
 		verify(mockConsoleIO).writeError("No suitable result writer found");
 	}
@@ -131,7 +131,7 @@ public class SparqlTest extends AbstractCommandTest {
 		File fout = LOCATION.newFile("out.srj");
 
 		cmd.executeQuery("sparql infile=\"" + fin.getAbsolutePath() + "\"" +
-				" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
+			" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
 
 		verify(mockConsoleIO, never()).writeError(anyString());
 		assertFalse(mockConsoleIO.wasErrorWritten());
@@ -148,7 +148,7 @@ public class SparqlTest extends AbstractCommandTest {
 		File fout = LOCATION.newFile("out.srj");
 
 		cmd.executeQuery("sparql infile=\"" + fin.getAbsolutePath() + "\"" +
-				" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
+			" outfile=\"" + fout.getAbsolutePath() + "\"", "sparql");
 
 		verify(mockConsoleIO, never()).writeError(anyString());
 		assertFalse(mockConsoleIO.wasErrorWritten());

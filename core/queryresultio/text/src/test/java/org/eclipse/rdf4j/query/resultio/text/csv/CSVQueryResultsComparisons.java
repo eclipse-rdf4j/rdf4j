@@ -86,7 +86,7 @@ class CSVQueryResultsComparisons {
 				if (leftDatatype.equals(rightDatatype)) {
 					commonDatatype = leftDatatype;
 				} else if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 					// left and right arguments have different datatypes, try to find
 					// a
 					// more general, shared datatype
@@ -100,11 +100,11 @@ class CSVQueryResultsComparisons {
 						commonDatatype = XMLSchema.INTEGER;
 					}
 				} else if (!strict && XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 					// We're not running in strict eval mode so we use extended datatype comparsion.
 					commonDatatype = XMLSchema.DATETIME;
 				} else if (!strict && XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-						&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+					&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
 					commonDatatype = XMLSchema.DURATION;
 				}
 			}
@@ -177,7 +177,7 @@ class CSVQueryResultsComparisons {
 
 			if (!literalsEqual) {
 				if (!leftLangLit && !rightLangLit && isSupportedDatatype(leftDatatype)
-						&& isSupportedDatatype(rightDatatype)) {
+					&& isSupportedDatatype(rightDatatype)) {
 					// left and right arguments have incompatible but supported
 					// datatypes
 
@@ -202,7 +202,7 @@ class CSVQueryResultsComparisons {
 					}
 					if (leftNumeric != rightNumeric) {
 						throw new IllegalArgumentException(
-								"Unable to compare numeric types with other supported types");
+							"Unable to compare numeric types with other supported types");
 					}
 					if (leftDate != rightDate) {
 						throw new IllegalArgumentException("Unable to compare date types with other supported types");
@@ -220,7 +220,7 @@ class CSVQueryResultsComparisons {
 
 	private static boolean isSupportedDatatype(IRI datatype) {
 		return (XMLSchema.STRING.equals(datatype) || XMLDatatypeUtil.isNumericDatatype(datatype)
-				|| XMLDatatypeUtil.isCalendarDatatype(datatype));
+			|| XMLDatatypeUtil.isCalendarDatatype(datatype));
 	}
 
 	/**

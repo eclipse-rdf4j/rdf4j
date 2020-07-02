@@ -88,7 +88,7 @@ public class NativeStoreTxnTest {
 
 		// make sure there is no txncacheXXX.dat file
 		Assert.assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
-				.anyMatch(file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
+			.anyMatch(file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			Assert.assertEquals(1, conn.size());

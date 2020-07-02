@@ -25,7 +25,7 @@ public class TurtleParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.case_insensitive_directives}.
 	 */
 	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
-			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
-			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
+		"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
+		"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
 }

@@ -65,11 +65,11 @@ public class Substring implements Function {
 						startIndex = startLiteral - 1;
 					} catch (NumberFormatException e) {
 						throw new ValueExprEvaluationException(
-								"illegal start index value (expected int value): " + startIndexValue);
+							"illegal start index value (expected int value): " + startIndexValue);
 					}
 				} else if (startIndexValue != null) {
 					throw new ValueExprEvaluationException(
-							"illegal start index value (expected literal value): " + startIndexValue);
+						"illegal start index value (expected literal value): " + startIndexValue);
 				}
 
 				// optionally convert supplied length expression to an end index for
@@ -87,11 +87,11 @@ public class Substring implements Function {
 						}
 					} catch (NumberFormatException e) {
 						throw new ValueExprEvaluationException(
-								"illegal length value (expected int value): " + lengthValue);
+							"illegal length value (expected int value): " + lengthValue);
 					}
 				} else if (lengthValue != null) {
 					throw new ValueExprEvaluationException(
-							"illegal length value (expected literal value): " + lengthValue);
+						"illegal length value (expected literal value): " + lengthValue);
 				}
 
 				try {
@@ -100,8 +100,8 @@ public class Substring implements Function {
 					return convert(lexicalValue, literal, valueFactory);
 				} catch (IndexOutOfBoundsException e) {
 					throw new ValueExprEvaluationException(
-							"could not determine substring, index out of bounds " + startIndex + "length:" + endIndex,
-							e);
+						"could not determine substring, index out of bounds " + startIndex + "length:" + endIndex,
+						e);
 				}
 			} else {
 				throw new ValueExprEvaluationException("unexpected input value for function substring: " + argValue);

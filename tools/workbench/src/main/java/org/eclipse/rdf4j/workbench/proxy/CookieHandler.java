@@ -30,7 +30,7 @@ public class CookieHandler {
 	}
 
 	protected String getCookieNullIfEmpty(final HttpServletRequest req, final HttpServletResponse resp,
-			final String name) {
+		final String name) {
 		String value = this.getCookie(req, resp, name);
 		if (null != value && value.isEmpty()) {
 			value = null;
@@ -70,7 +70,7 @@ public class CookieHandler {
 	 * @param value cookie value
 	 */
 	protected void addNewCookie(final HttpServletRequest req, final HttpServletResponse resp, final String name,
-			final String value) {
+		final String value) {
 		final Cookie cookie = new Cookie(name, value);
 		initCookie(cookie, req);
 		resp.addCookie(cookie);

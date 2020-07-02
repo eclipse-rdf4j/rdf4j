@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.impl.QueueCursor;
  * @author James Leigh
  */
 public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, QueryEvaluationException>
-		implements Runnable {
+	implements Runnable {
 
 	/*-----------*
 	 * Constants *
@@ -61,14 +61,14 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	private volatile boolean closed;
 
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
-			1024);
+		1024);
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public ParallelLeftJoinCursor(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		super();
 		this.strategy = strategy;
 		this.join = join;
@@ -106,9 +106,9 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	}
 
 	private void addToRightQueue(ValueExpr condition, BindingSet leftBindings)
-			throws QueryEvaluationException, InterruptedException {
+		throws QueryEvaluationException, InterruptedException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(join.getRightArg(),
-				leftBindings);
+			leftBindings);
 		if (condition != null) {
 			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
 		}

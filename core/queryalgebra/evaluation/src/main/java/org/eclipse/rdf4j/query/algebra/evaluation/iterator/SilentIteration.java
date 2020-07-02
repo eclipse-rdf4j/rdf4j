@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 @Deprecated
 @InternalUseOnly
 public class SilentIteration
-		extends org.eclipse.rdf4j.common.iteration.SilentIteration<BindingSet, QueryEvaluationException> {
+	extends org.eclipse.rdf4j.common.iteration.SilentIteration<BindingSet, QueryEvaluationException> {
 
 	public SilentIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
 		super(iter);

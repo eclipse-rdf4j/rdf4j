@@ -63,14 +63,14 @@ public class RepositoryWriteStrategy implements WriteStrategy {
 
 	@Override
 	public void addStatement(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws RepositoryException {
+		Resource... contexts) throws RepositoryException {
 		createConnection();
 		connection.add(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public void removeStatement(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws RepositoryException {
+		Resource... contexts) throws RepositoryException {
 		createConnection();
 		connection.remove(subj, pred, obj, contexts);
 	}

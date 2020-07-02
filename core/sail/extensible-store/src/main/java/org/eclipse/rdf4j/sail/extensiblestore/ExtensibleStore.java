@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
  */
 @Experimental
 public abstract class ExtensibleStore<T extends DataStructureInterface, N extends NamespaceStoreInterface>
-		extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+	extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleStore.class);
 
@@ -90,7 +90,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		}
 
 		sailStore = new ExtensibleSailStore(dataStructure,
-				Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType(), getExtensibleStatementHelper());
+			Objects.requireNonNull(namespaceStore), getEvaluationStatisticsType(), getExtensibleStatementHelper());
 
 		sailStore.init();
 		namespaceStore.init();

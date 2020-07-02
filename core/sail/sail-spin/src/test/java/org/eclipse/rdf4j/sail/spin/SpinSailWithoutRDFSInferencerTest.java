@@ -62,15 +62,15 @@ public class SpinSailWithoutRDFSInferencerTest {
 	@Test
 	public void testAskConstraint() throws Exception {
 		assertThatThrownBy(() -> loadStatements("testAskConstraint.ttl"))
-				.hasCauseInstanceOf(ConstraintViolationException.class)
-				.hasMessageContaining("Test constraint");
+			.hasCauseInstanceOf(ConstraintViolationException.class)
+			.hasMessageContaining("Test constraint");
 	}
 
 	@Test
 	public void testTemplateConstraint() throws Exception {
 		assertThatThrownBy(() -> loadStatements("testTemplateConstraint-full.ttl"))
-				.hasCauseInstanceOf(ConstraintViolationException.class)
-				.hasMessageContaining("Invalid number of values: 0");
+			.hasCauseInstanceOf(ConstraintViolationException.class)
+			.hasMessageContaining("Invalid number of values: 0");
 	}
 
 	@Test
@@ -173,7 +173,7 @@ public class SpinSailWithoutRDFSInferencerTest {
 	}
 
 	private void assertStatements(String ttl)
-			throws RDFParseException, RDFHandlerException, IOException, RepositoryException {
+		throws RDFParseException, RDFHandlerException, IOException, RepositoryException {
 		StatementCollector expected = new StatementCollector();
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(expected);

@@ -61,7 +61,7 @@ public class LeftOuterJoin implements PlanNode {
 					if (nextRight != null) {
 
 						if (nextLeft.line.get(0) == nextRight.line.get(0)
-								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
+							|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
 							prevLeft = nextLeft;
 							nextRight = null;
@@ -147,7 +147,7 @@ public class LeftOuterJoin implements PlanNode {
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);

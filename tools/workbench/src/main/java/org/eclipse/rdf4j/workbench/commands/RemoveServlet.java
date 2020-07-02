@@ -33,7 +33,7 @@ public class RemoveServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-			throws IOException, RepositoryException, QueryResultHandlerException {
+		throws IOException, RepositoryException, QueryResultHandlerException {
 		String objectParameter = req.getParameter("obj");
 		try {
 			try (RepositoryConnection con = repository.getConnection()) {
@@ -60,13 +60,13 @@ public class RemoveServlet extends TransformationServlet {
 			builder.start("error-message", "subj", "pred", "obj", CONTEXT);
 			builder.link(Arrays.asList(INFO));
 			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"), objectParameter,
-					req.getParameter(CONTEXT));
+				req.getParameter(CONTEXT));
 			builder.end();
 		}
 	}
 
 	private void remove(RepositoryConnection con, Resource subj, IRI pred, Value obj, WorkbenchRequest req)
-			throws BadRequestException, RepositoryException {
+		throws BadRequestException, RepositoryException {
 		if (req.isParameterPresent(CONTEXT)) {
 			Resource ctx = req.getResource(CONTEXT);
 			if (subj == null && pred == null && obj == null) {
@@ -81,7 +81,7 @@ public class RemoveServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-			throws RepositoryException, QueryResultHandlerException {
+		throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "remove.xsl");
 		builder.start();
 		builder.link(Arrays.asList(INFO));

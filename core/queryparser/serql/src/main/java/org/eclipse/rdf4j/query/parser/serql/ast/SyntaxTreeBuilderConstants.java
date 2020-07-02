@@ -282,16 +282,16 @@ public interface SyntaxTreeBuilderConstants {
 
 	/** Literal token values. */
 	String[] tokenImage = { "<EOF>", "\" \"", "\"\\t\"", "\"\\n\"", "\"\\r\"", "<SINGLE_LINE_COMMENT>", "\"=\"",
-			"\"!=\"", "\"<\"", "\"<=\"", "\">=\"", "\">\"", "\"*\"", "\",\"", "\";\"", "\"{\"", "\"}\"", "\"(\"",
-			"\")\"", "\"[\"", "\"]\"", "\"using\"", "\"namespace\"", "\"select\"", "\"construct\"", "\"distinct\"",
-			"\"reduced\"", "\"from\"", "\"context\"", "\"where\"", "\"order\"", "\"by\"", "\"asc\"", "\"desc\"",
-			"\"limit\"", "\"offset\"", "\"true\"", "\"false\"", "\"not\"", "\"and\"", "\"or\"", "\"sameTerm\"",
-			"\"like\"", "\"ignore\"", "\"case\"", "\"regex\"", "\"label\"", "\"lang\"", "\"langMatches\"",
-			"\"datatype\"", "\"localname\"", "\"str\"", "\"bound\"", "\"null\"", "\"isResource\"", "\"isBNode\"",
-			"\"isURI\"", "\"isLiteral\"", "\"as\"", "\"union\"", "\"minus\"", "\"intersect\"", "\"any\"", "\"all\"",
-			"\"in\"", "\"exists\"", "<LANG_LITERAL>", "<DATATYPED_LITERAL>", "<STRING>", "<SAFE_CHAR>",
-			"<ESCAPED_CHAR>", "<UNICODE_ESC>", "<LANG_TAG>", "<URI>", "<SCHEME>", "<QNAME>", "<BNODE>", "<PREFIX_NAME>",
-			"<POS_INTEGER>", "<NEG_INTEGER>", "<DECIMAL>", "<HEX>", "<ALPHA>", "<NUM>", "<NCNAME>", "<NCNAME_CHAR>",
-			"<LETTER>", "<BASECHAR>", "<IDEOGRAPHIC>", "<COMBINING_CHAR>", "<DIGIT>", "<EXTENDER>", };
+		"\"!=\"", "\"<\"", "\"<=\"", "\">=\"", "\">\"", "\"*\"", "\",\"", "\";\"", "\"{\"", "\"}\"", "\"(\"",
+		"\")\"", "\"[\"", "\"]\"", "\"using\"", "\"namespace\"", "\"select\"", "\"construct\"", "\"distinct\"",
+		"\"reduced\"", "\"from\"", "\"context\"", "\"where\"", "\"order\"", "\"by\"", "\"asc\"", "\"desc\"",
+		"\"limit\"", "\"offset\"", "\"true\"", "\"false\"", "\"not\"", "\"and\"", "\"or\"", "\"sameTerm\"",
+		"\"like\"", "\"ignore\"", "\"case\"", "\"regex\"", "\"label\"", "\"lang\"", "\"langMatches\"",
+		"\"datatype\"", "\"localname\"", "\"str\"", "\"bound\"", "\"null\"", "\"isResource\"", "\"isBNode\"",
+		"\"isURI\"", "\"isLiteral\"", "\"as\"", "\"union\"", "\"minus\"", "\"intersect\"", "\"any\"", "\"all\"",
+		"\"in\"", "\"exists\"", "<LANG_LITERAL>", "<DATATYPED_LITERAL>", "<STRING>", "<SAFE_CHAR>",
+		"<ESCAPED_CHAR>", "<UNICODE_ESC>", "<LANG_TAG>", "<URI>", "<SCHEME>", "<QNAME>", "<BNODE>", "<PREFIX_NAME>",
+		"<POS_INTEGER>", "<NEG_INTEGER>", "<DECIMAL>", "<HEX>", "<ALPHA>", "<NUM>", "<NCNAME>", "<NCNAME_CHAR>",
+		"<LETTER>", "<BASECHAR>", "<IDEOGRAPHIC>", "<COMBINING_CHAR>", "<DIGIT>", "<EXTENDER>", };
 
 }

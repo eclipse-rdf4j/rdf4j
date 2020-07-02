@@ -54,7 +54,7 @@ public class SPARQL10ManifestTest {
 			tmpDir = null;
 		} else {
 			URL url = SPARQL10ManifestTest.class
-					.getResource("/testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl");
+				.getResource("/testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl");
 
 			if ("jar".equals(url.getProtocol())) {
 				// Extract manifest files to a temporary directory
@@ -89,7 +89,7 @@ public class SPARQL10ManifestTest {
 							FileUtil.deleteDir(tmpDir);
 						} catch (IOException e) {
 							System.err.println(
-									"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
+								"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
 						}
 					}
 				}
@@ -103,8 +103,8 @@ public class SPARQL10ManifestTest {
 		addTurtle(con, new URL(manifestFile), manifestFile);
 
 		String query = "SELECT DISTINCT manifestFile FROM {x} rdf:first {manifestFile} "
-				+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+			+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
+			+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
 
 		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SERQL, query, manifestFile).evaluate();
 
@@ -123,7 +123,7 @@ public class SPARQL10ManifestTest {
 	}
 
 	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
-			throws IOException, RepositoryException, RDFParseException, RDFHandlerException {
+		throws IOException, RepositoryException, RDFParseException, RDFHandlerException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();

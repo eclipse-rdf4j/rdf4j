@@ -78,7 +78,7 @@ import org.slf4j.LoggerFactory;
  * @author Arjohn Kampman
  */
 abstract class AbstractFederationConnection extends AbstractSailConnection implements FederatedServiceResolverClient,
-		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+	RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractFederationConnection.class);
 
@@ -286,7 +286,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 				return size; // NOPMD
 			} else {
 				try (CloseableIteration<? extends Statement, SailException> cursor = getStatements(null, null, null,
-						false, contexts)) {
+					false, contexts)) {
 					long size = 0;
 					while (cursor.hasNext()) {
 						cursor.next();
@@ -302,10 +302,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatementsInternal(final Resource subj,
-			final IRI pred, final Value obj, final boolean includeInferred, final Resource... contexts)
-			throws SailException {
+		final IRI pred, final Value obj, final boolean includeInferred, final Resource... contexts)
+		throws SailException {
 		CloseableIteration<? extends Statement, SailException> cursor = union(
-				(RepositoryConnection member) -> member.getStatements(subj, pred, obj, includeInferred, contexts));
+			(RepositoryConnection member) -> member.getStatements(subj, pred, obj, includeInferred, contexts));
 
 		if (!federation.isDistinct() && !isLocal(pred)) {
 			// Filter any duplicates
@@ -317,10 +317,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr query,
-			Dataset dataset, BindingSet bindings, boolean inf) throws SailException {
+		Dataset dataset, BindingSet bindings, boolean inf) throws SailException {
 		TripleSource tripleSource = new FederationTripleSource(inf);
 		EvaluationStrategy strategy = federation.createEvaluationStrategy(tripleSource, dataset,
-				getFederatedServiceResolver());
+			getFederatedServiceResolver());
 		TupleExpr qry = optimize(query, dataset, bindings, inf, strategy);
 		try {
 			return strategy.evaluate(qry, EmptyBindingSet.getInstance());
@@ -339,10 +339,10 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 		@Override
 		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
-				Value obj, Resource... contexts) throws QueryEvaluationException {
+			Value obj, Resource... contexts) throws QueryEvaluationException {
 			try {
 				CloseableIteration<? extends Statement, SailException> result = AbstractFederationConnection.this
-						.getStatements(subj, pred, obj, inf, contexts);
+					.getStatements(subj, pred, obj, inf, contexts);
 				return new ExceptionConvertingIteration<Statement, QueryEvaluationException>(result) {
 
 					@Override
@@ -362,7 +362,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	private TupleExpr optimize(TupleExpr parsed, Dataset dataset, BindingSet bindings, boolean includeInferred,
-			EvaluationStrategy strategy) throws SailException {
+		EvaluationStrategy strategy) throws SailException {
 		LOGGER.trace("Incoming query model:\n{}", parsed);
 
 		// Clone the tuple expression to allow for more aggressive optimisations
@@ -383,7 +383,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		RepositoryBloomFilter defaultBloomFilter = new AccurateRepositoryBloomFilter(includeInferred);
 		Map<Repository, RepositoryBloomFilter> bloomFilters = federation.getBloomFilters();
 		java.util.function.Function<Repository, RepositoryBloomFilter> bloomFilterFunction = c -> bloomFilters
-				.getOrDefault(c, defaultBloomFilter);
+			.getOrDefault(c, defaultBloomFilter);
 
 		new EmptyPatternOptimizer(members, bloomFilterFunction).optimize(query, dataset, bindings);
 		boolean distinct = federation.isDistinct();
@@ -436,7 +436,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	private interface Function<E> {
 
 		CloseableIteration<? extends E, RepositoryException> call(RepositoryConnection member)
-				throws RepositoryException;
+			throws RepositoryException;
 	}
 
 	private <E> CloseableIteration<? extends E, SailException> union(Function<E> function) throws SailException {
@@ -488,7 +488,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
 }

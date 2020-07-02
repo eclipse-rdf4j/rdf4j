@@ -77,7 +77,7 @@ public class PlatformFactory {
 					logger.debug("Detected Windows platform");
 					platform = new WindowsPlatform();
 				} else if (osName.contains("solaris") || osName.contains("sunos") || osName.contains("linux")
-						|| osName.contains("hp-ux")) {
+					|| osName.contains("hp-ux")) {
 					// Try to detect specific window managers
 					if (isGnome()) {
 						logger.debug("Detected Gnome window manager on Posix platform");
@@ -90,7 +90,7 @@ public class PlatformFactory {
 						platform = new PosixPlatform();
 					}
 				} else if (osName.contains("mac os x") || osName.contains("macos") || osName.contains("darwin")
-						|| System.getProperty("mrj.version") != null) {
+					|| System.getProperty("mrj.version") != null) {
 					logger.debug("Detected Mac OS X platform");
 					platform = new MacOSXPlatform();
 				} else {

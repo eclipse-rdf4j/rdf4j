@@ -74,7 +74,7 @@ public interface SailDataset extends SailClosable {
 	 * @throws SailException If the triple source failed to get the statements.
 	 */
 	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws SailException;
+		Resource... contexts) throws SailException;
 
 	/**
 	 * Gets all RDF* triples that have a specific subject, predicate and/or object. All three parameters may be null to
@@ -87,7 +87,7 @@ public interface SailDataset extends SailClosable {
 	 * @throws SailException If the triple source failed to get the RDF* triples.
 	 */
 	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-			throws SailException {
+		throws SailException {
 		throw new SailException("RDF* triple retrieval not supported by this store");
 	}
 

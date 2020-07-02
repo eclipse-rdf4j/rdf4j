@@ -28,26 +28,26 @@ public class Index implements TupleFunction {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-			final ValueFactory valueFactory, final Value... args) throws QueryEvaluationException {
+		final ValueFactory valueFactory, final Value... args) throws QueryEvaluationException {
 		return new CloseableIteratorIteration<List<? extends Value>, QueryEvaluationException>(
-				new Iterator<List<Value>>() {
+			new Iterator<List<Value>>() {
 
-					int pos = 0;
+				int pos = 0;
 
-					@Override
-					public boolean hasNext() {
-						return (pos < args.length);
-					}
+				@Override
+				public boolean hasNext() {
+					return (pos < args.length);
+				}
 
-					@Override
-					public List<Value> next() {
-						return Arrays.asList(valueFactory.createLiteral(pos), args[pos++]);
-					}
+				@Override
+				public List<Value> next() {
+					return Arrays.asList(valueFactory.createLiteral(pos), args[pos++]);
+				}
 
-					@Override
-					public void remove() {
-						throw new UnsupportedOperationException();
-					}
-				});
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+			});
 	}
 }

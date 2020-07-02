@@ -63,7 +63,7 @@ public interface RepositoryConnectionInterceptor {
 	 * @return true if the interceptor has been denied access to the add operation, false otherwise.
 	 */
 	public abstract boolean add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts);
+		Resource... contexts);
 
 	/**
 	 * @param conn the RepositoryConnection to perform the
@@ -71,7 +71,7 @@ public interface RepositoryConnectionInterceptor {
 	 * @return true if the interceptor has been denied access to the remove operation, false otherwise.
 	 */
 	public abstract boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts);
+		Resource... contexts);
 
 	/**
 	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#clear(Resource...)} operation on.
@@ -104,5 +104,5 @@ public interface RepositoryConnectionInterceptor {
 	 * @return true if the interceptor has been denied access to the query execution operations, false otherwise.
 	 */
 	public abstract boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-			Update operation);
+		Update operation);
 }

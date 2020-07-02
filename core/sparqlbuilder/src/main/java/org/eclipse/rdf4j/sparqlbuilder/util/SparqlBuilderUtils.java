@@ -22,22 +22,22 @@ public class SparqlBuilderUtils {
 	private static final String PAD = " ";
 
 	public static <O> Optional<O> getOrCreateAndModifyOptional(Optional<O> optional, Supplier<O> getter,
-			UnaryOperator<O> operator) {
+		UnaryOperator<O> operator) {
 		return Optional.of(operator.apply(optional.orElseGet(getter)));
 	}
 
 	public static void appendAndNewlineIfPresent(Optional<? extends QueryElement> elementOptional,
-			StringBuilder builder) {
+		StringBuilder builder) {
 		appendQueryElementIfPresent(elementOptional, builder, null, "\n");
 	}
 
 	public static void appendQueryElementIfPresent(Optional<? extends QueryElement> queryElementOptional,
-			StringBuilder builder, String prefix, String suffix) {
+		StringBuilder builder, String prefix, String suffix) {
 		appendStringIfPresent(queryElementOptional.map(QueryElement::getQueryString), builder, prefix, suffix);
 	}
 
 	public static void appendStringIfPresent(Optional<String> stringOptional, StringBuilder builder, String prefix,
-			String suffix) {
+		String suffix) {
 		Optional<String> preOpt = Optional.ofNullable(prefix);
 		Optional<String> sufOpt = Optional.ofNullable(suffix);
 

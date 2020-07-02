@@ -102,7 +102,7 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 			for (String varName : visitor.getVariableNames()) {
 				ASTVar varNode = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);
 				ASTProjectionElem projectionElemNode = new ASTProjectionElem(
-						SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
+					SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
 
 				varNode.setName(varName);
 				projectionElemNode.jjtAppendChild(varNode);

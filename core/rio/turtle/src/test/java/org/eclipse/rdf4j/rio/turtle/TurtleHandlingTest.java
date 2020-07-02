@@ -25,7 +25,7 @@ public class TurtleHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-				"src/test/resources/testcases/turtle/turtle-RDF-langString-no-language-test.ttl");
+			"src/test/resources/testcases/turtle/turtle-RDF-langString-no-language-test.ttl");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

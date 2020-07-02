@@ -48,7 +48,7 @@ public class MemStatement extends ContextStatement {
 	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as 'explicit'.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
-			int sinceSnapshot) {
+		int sinceSnapshot) {
 		this(subject, predicate, object, context, true, sinceSnapshot);
 	}
 
@@ -57,7 +57,7 @@ public class MemStatement extends ContextStatement {
 	 * <tt>explicit</tt> parameter determines if this statement is marked as 'explicit' or not.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
-			int sinceSnapshot) {
+		int sinceSnapshot) {
 		super(subject, predicate, object, context);
 		setExplicit(explicit);
 		setSinceSnapshot(sinceSnapshot);

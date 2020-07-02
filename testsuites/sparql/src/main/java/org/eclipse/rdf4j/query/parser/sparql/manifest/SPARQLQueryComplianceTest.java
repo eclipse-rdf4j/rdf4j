@@ -89,7 +89,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	 * @param ordered2
 	 */
 	public SPARQLQueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+		String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name);
 		this.queryFileURL = queryFileURL;
 		this.resultFileURL = resultFileURL;
@@ -202,7 +202,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	private final boolean readExpectedBooleanQueryResult() throws Exception {
 		Optional<QueryResultFormat> bqrFormat = BooleanQueryResultParserRegistry.getInstance()
-				.getFileFormatForFileName(resultFileURL);
+			.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
 			InputStream in = new URL(resultFileURL).openStream();
@@ -219,7 +219,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	private final Set<Statement> readExpectedGraphQueryResult() throws Exception {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL)
-				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
+			.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
 		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
@@ -240,7 +240,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	}
 
 	private final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
-			throws Exception {
+		throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
@@ -384,13 +384,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-						+ "SELECT DISTINCT ?manifestFile "
-						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+					+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+					+ "SELECT DISTINCT ?manifestFile "
+					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
 				try (TupleQueryResult manifestResults = connection
-						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
-						.evaluate()) {
+					.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
+					.evaluate()) {
 					for (BindingSet bindingSet : manifestResults) {
 						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
 						if (SPARQLQueryComplianceTest.includeSubManifest(subManifestFile, excludedSubdirs)) {
@@ -406,7 +406,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
 				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 				query.append(
-						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+					" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
 				query.append(" WHERE { [] rdf:first ?testURI . \n");
 				if (approvedOnly) {
 					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
@@ -440,7 +440,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 						String testName = bs.getValue("testName").stringValue();
 						String displayName = filename.substring(0, filename.lastIndexOf('/'));
 						displayName = displayName.substring(displayName.lastIndexOf('/') + 1, displayName.length())
-								+ ": " + testName;
+							+ ": " + testName;
 
 						IRI defaultGraphURI = (IRI) bs.getValue("defaultGraph");
 						Value action = bs.getValue("action");
@@ -465,13 +465,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 						}
 
 						getTests().add(new Object[] {
-								displayName,
-								bs.getValue("testURI").stringValue(),
-								testName,
-								bs.getValue("queryFile").stringValue(),
-								bs.getValue("resultFile").stringValue(),
-								dataset,
-								Literals.getBooleanValue(ordered, false) });
+							displayName,
+							bs.getValue("testURI").stringValue(),
+							testName,
+							bs.getValue("queryFile").stringValue(),
+							bs.getValue("resultFile").stringValue(),
+							dataset,
+							Literals.getBooleanValue(ordered, false) });
 					}
 				}
 

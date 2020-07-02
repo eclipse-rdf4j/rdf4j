@@ -104,8 +104,8 @@ public class QueryResultsTest {
 	@Test
 	public void testStreamGraphResult() {
 		List<Statement> aboutA = gqr.stream()
-				.filter(s -> s.getSubject().equals(a))
-				.collect(Collectors.toList());
+			.filter(s -> s.getSubject().equals(a))
+			.collect(Collectors.toList());
 
 		assertFalse(aboutA.isEmpty());
 
@@ -125,8 +125,8 @@ public class QueryResultsTest {
 		tqr1.append(b);
 
 		List<BindingSet> list = tqr1.stream()
-				.filter(bs -> bs.getValue("a").equals(foo))
-				.collect(Collectors.toList());
+			.filter(bs -> bs.getValue("a").equals(foo))
+			.collect(Collectors.toList());
 
 		assertNotNull(list);
 		assertFalse(list.isEmpty());
@@ -183,7 +183,7 @@ public class QueryResultsTest {
 	}
 
 	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement, QueryEvaluationException>
-			implements GraphQueryResult {
+		implements GraphQueryResult {
 
 		private List<Statement> statements = new ArrayList<>();
 

@@ -49,15 +49,15 @@ public class RDFXMLParserCustomTest {
 		final Model aGraph = new LinkedHashModel();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		RDFParser aParser = Rio.createParser(RDFFormat.RDFXML)
-				.setRDFHandler(new StatementCollector(aGraph))
-				.setParseErrorListener(errorCollector);
+			.setRDFHandler(new StatementCollector(aGraph))
+			.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at the
 			// 64k entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
-					"http://example.org");
+				this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+				"http://example.org");
 			fail("Parser did not throw an exception");
 		} catch (RDFParseException e) {
 			// assertTrue(e.getMessage().contains(
@@ -80,16 +80,16 @@ public class RDFXMLParserCustomTest {
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		ParserConfig config = new ParserConfig();
 		RDFParser aParser = Rio.createParser(RDFFormat.RDFXML)
-				.setRDFHandler(new StatementCollector(aGraph))
-				.setParserConfig(config)
-				.setParseErrorListener(errorCollector);
+			.setRDFHandler(new StatementCollector(aGraph))
+			.setParserConfig(config)
+			.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at the
 			// 64k entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
-					"http://example.org");
+				this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+				"http://example.org");
 			fail("Parser did not throw an exception");
 		} catch (RDFParseException e) {
 			// assertTrue(e.getMessage().contains(
@@ -111,16 +111,16 @@ public class RDFXMLParserCustomTest {
 		final Model aGraph = new LinkedHashModel();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		RDFParser aParser = Rio.createParser(RDFFormat.RDFXML)
-				.setRDFHandler(new StatementCollector(aGraph))
-				.set(XMLParserSettings.SECURE_PROCESSING, true)
-				.setParseErrorListener(errorCollector);
+			.setRDFHandler(new StatementCollector(aGraph))
+			.set(XMLParserSettings.SECURE_PROCESSING, true)
+			.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at the
 			// 64k entity limit rather than OOMing
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
-					"http://example.org");
+				this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+				"http://example.org");
 			fail("Parser did not throw an exception");
 		} catch (RDFParseException e) {
 			// assertTrue(e.getMessage().contains(
@@ -147,15 +147,15 @@ public class RDFXMLParserCustomTest {
 		final Model aGraph = new LinkedHashModel();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		RDFParser aParser = Rio.createParser(RDFFormat.RDFXML)
-				.setRDFHandler(new StatementCollector(aGraph))
-				.set(XMLParserSettings.SECURE_PROCESSING, false)
-				.setParseErrorListener(errorCollector);
+			.setRDFHandler(new StatementCollector(aGraph))
+			.set(XMLParserSettings.SECURE_PROCESSING, false)
+			.setParseErrorListener(errorCollector);
 
 		try {
 			// IMPORTANT: This will not use the entity limit
 			aParser.parse(
-					this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
-					"http://example.org");
+				this.getClass().getResourceAsStream("/testcases/rdfxml/openrdf/bad-entity-expansion-limit.rdf"),
+				"http://example.org");
 			fail("Parser did not throw an exception");
 		} catch (RDFParseException e) {
 			// assertTrue(e.getMessage().contains(

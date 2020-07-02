@@ -56,7 +56,7 @@ public class LogConfigurator extends JoranConfigurator {
 			if (className != null) {
 				try {
 					LogReader logReader = (LogReader) OptionHelper.instantiateByClassName(className,
-							org.eclipse.rdf4j.common.logging.LogReader.class, context);
+						org.eclipse.rdf4j.common.logging.LogReader.class, context);
 					logReader.setAppender(appenders.get(appenderName));
 					return logReader;
 				} catch (Exception ex) {

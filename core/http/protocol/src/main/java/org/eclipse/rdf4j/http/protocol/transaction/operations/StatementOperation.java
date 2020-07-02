@@ -60,8 +60,8 @@ public abstract class StatementOperation extends ContextOperation {
 			StatementOperation o = (StatementOperation) other;
 
 			return ObjectUtil.nullEquals(getSubject(), o.getSubject())
-					&& ObjectUtil.nullEquals(getPredicate(), o.getPredicate())
-					&& ObjectUtil.nullEquals(getObject(), o.getObject()) && super.equals(other);
+				&& ObjectUtil.nullEquals(getPredicate(), o.getPredicate())
+				&& ObjectUtil.nullEquals(getObject(), o.getObject()) && super.equals(other);
 		}
 
 		return false;

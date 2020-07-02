@@ -40,10 +40,10 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser imple
 			SPARQLResultsCSVMappingStrategy strategy = new SPARQLResultsCSVMappingStrategy(valueFactory);
 
 			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(
-					new InputStreamReader(in, StandardCharsets.UTF_8)).withType(BindingSet.class)
-							.withMappingStrategy(strategy)
-							.build()
-							.parse();
+				new InputStreamReader(in, StandardCharsets.UTF_8)).withType(BindingSet.class)
+					.withMappingStrategy(strategy)
+					.build()
+					.parse();
 			List<String> bindingNames = strategy.getBindingNames();
 			handler.startQueryResult(bindingNames);
 			for (BindingSet bs : bindingSets) {

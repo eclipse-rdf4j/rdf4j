@@ -52,7 +52,7 @@ public class DropTest extends AbstractCommandTest {
 
 	private void setUserDropConfirm(boolean confirm) throws IOException {
 		when(mockConsoleIO.askProceed(startsWith("WARNING: you are about to drop repository '"), anyBoolean()))
-				.thenReturn(confirm);
+			.thenReturn(confirm);
 	}
 
 	@Test
@@ -71,7 +71,7 @@ public class DropTest extends AbstractCommandTest {
 		setUserDropConfirm(true);
 		assertThat(manager.isSafeToRemove(MEMORY_MEMBER_ID1)).isFalse();
 		when(mockConsoleIO.askProceed(startsWith("WARNING: dropping this repository may break"), anyBoolean()))
-				.thenReturn(false);
+			.thenReturn(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO).writeln("Drop aborted");
 	}
@@ -81,7 +81,7 @@ public class DropTest extends AbstractCommandTest {
 		setUserDropConfirm(false);
 		drop.execute("drop", MEMORY_MEMBER_ID1);
 		verify(mockConsoleIO, never()).askProceed(startsWith("WARNING: dropping this repository may break"),
-				anyBoolean());
+			anyBoolean());
 		verify(mockConsoleIO).writeln("Drop aborted");
 	}
 }

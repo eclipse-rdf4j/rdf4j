@@ -50,7 +50,7 @@ public class SolrSailGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	@Ignore // JTS is required
 	@Override
 	public void testComplexIntersectionQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		super.testComplexIntersectionQuery();
 	}
 

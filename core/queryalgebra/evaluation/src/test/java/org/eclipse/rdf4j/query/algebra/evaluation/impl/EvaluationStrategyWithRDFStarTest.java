@@ -78,73 +78,73 @@ public class EvaluationStrategyWithRDFStarTest {
 	 */
 	class CommonBaseSource {
 		public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj,
-				IRI pred, Value obj)
-				throws QueryEvaluationException {
+			IRI pred, Value obj)
+			throws QueryEvaluationException {
 			return new AbstractCloseableIteration<Triple, QueryEvaluationException>() {
 				Iterator<Triple> iter = triples.iterator();
 
 				@Override
 				public boolean hasNext()
-						throws QueryEvaluationException {
+					throws QueryEvaluationException {
 					return iter.hasNext();
 				}
 
 				@Override
 				public Triple next()
-						throws QueryEvaluationException {
+					throws QueryEvaluationException {
 					return iter.next();
 				}
 
 				@Override
 				public void remove()
-						throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				}
 			};
 		}
 
 		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-				IRI pred, Value obj, Resource... contexts)
-				throws QueryEvaluationException {
+			IRI pred, Value obj, Resource... contexts)
+			throws QueryEvaluationException {
 			// handle only arguments with reification vocabulary
 			// and return iterations accordingly from the same set of Triples
 
 			// handle (*, rdf:type, rdf:Statement)
 			if (pred != null && pred.equals(RDF.TYPE) && obj != null && obj.equals(RDF.STATEMENT)) {
 				return new ConvertingIteration<Triple, Statement, QueryEvaluationException>(
-						getRdfStarTriples(null, null, null)) {
+					getRdfStarTriples(null, null, null)) {
 					@Override
 					protected Statement convert(Triple sourceObject)
-							throws QueryEvaluationException {
+						throws QueryEvaluationException {
 						return vf.createStatement(sourceObject, RDF.TYPE, RDF.STATEMENT);
 					}
 				};
 			} else if (pred != null && pred.equals(RDF.SUBJECT)) {
 				// handle (*, rdf:subject, *)
 				return new ConvertingIteration<Triple, Statement, QueryEvaluationException>(
-						getRdfStarTriples(null, null, null)) {
+					getRdfStarTriples(null, null, null)) {
 					@Override
 					protected Statement convert(Triple sourceObject)
-							throws QueryEvaluationException {
+						throws QueryEvaluationException {
 						return vf.createStatement(sourceObject, RDF.SUBJECT, sourceObject.getSubject());
 					}
 				};
 			} else if (pred != null && pred.equals(RDF.PREDICATE)) {
 				// handle (*, rdf:predicate, *)
 				return new ConvertingIteration<Triple, Statement, QueryEvaluationException>(
-						getRdfStarTriples(null, null, null)) {
+					getRdfStarTriples(null, null, null)) {
 					@Override
 					protected Statement convert(Triple sourceObject)
-							throws QueryEvaluationException {
+						throws QueryEvaluationException {
 						return vf.createStatement(sourceObject, RDF.PREDICATE, sourceObject.getPredicate());
 					}
 				};
 			} else if (pred != null && pred.equals(RDF.OBJECT)) {
 				// handle (*, rdf:object, *)
 				return new ConvertingIteration<Triple, Statement, QueryEvaluationException>(
-						getRdfStarTriples(null, null, null)) {
+					getRdfStarTriples(null, null, null)) {
 					@Override
 					protected Statement convert(Triple sourceObject)
-							throws QueryEvaluationException {
+						throws QueryEvaluationException {
 						return vf.createStatement(sourceObject, RDF.OBJECT, sourceObject.getObject());
 					}
 				};
@@ -191,15 +191,15 @@ public class EvaluationStrategyWithRDFStarTest {
 
 				@Override
 				public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-						IRI pred, Value obj, Resource... contexts)
-						throws QueryEvaluationException {
+					IRI pred, Value obj, Resource... contexts)
+					throws QueryEvaluationException {
 					return baseSource.getStatements(subj, pred, obj, contexts);
 				}
 
 				@Override
 				public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj,
-						IRI pred, Value obj)
-						throws QueryEvaluationException {
+					IRI pred, Value obj)
+					throws QueryEvaluationException {
 					return baseSource.getRdfStarTriples(subj, pred, obj);
 				}
 			};
@@ -212,8 +212,8 @@ public class EvaluationStrategyWithRDFStarTest {
 
 				@Override
 				public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-						IRI pred, Value obj, Resource... contexts)
-						throws QueryEvaluationException {
+					IRI pred, Value obj, Resource... contexts)
+					throws QueryEvaluationException {
 					return baseSource.getStatements(subj, pred, obj, contexts);
 				}
 			};
@@ -224,7 +224,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	public void testMatchAllUnbound() {
 		// case check all unbound
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
-				new EmptyBindingSet())) {
+			new EmptyBindingSet())) {
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				expected.add(fromTriple(t));
@@ -241,7 +241,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	@Test
 	public void testSubjVarBound() {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getSubjectVar(), vf.createIRI("urn:a")))) {
+			createWithVarValue(tripleRefNode.getSubjectVar(), vf.createIRI("urn:a")))) {
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
 				if (t.getSubject().equals(vf.createIRI("urn:a"))) {
@@ -260,7 +260,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	@Test
 	public void testPredVarBound() {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getPredicateVar(), vf.createIRI("urn:p")))) {
+			createWithVarValue(tripleRefNode.getPredicateVar(), vf.createIRI("urn:p")))) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {
@@ -280,7 +280,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	@Test
 	public void testObjVarBound() {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
-				createWithVarValue(tripleRefNode.getObjectVar(), vf.createIRI("urn:b")))) {
+			createWithVarValue(tripleRefNode.getObjectVar(), vf.createIRI("urn:b")))) {
 
 			ArrayList<BindingSet> expected = new ArrayList<>();
 			triples.forEach(t -> {

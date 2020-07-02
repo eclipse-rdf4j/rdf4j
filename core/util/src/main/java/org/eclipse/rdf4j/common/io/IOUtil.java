@@ -158,7 +158,7 @@ public class IOUtil {
 		long fileSize = file.length();
 		if (fileSize > Integer.MAX_VALUE) {
 			throw new IllegalArgumentException(
-					"File size exceeds maximum array length (" + fileSize + " > " + Integer.MAX_VALUE + ")");
+				"File size exceeds maximum array length (" + fileSize + " > " + Integer.MAX_VALUE + ")");
 		}
 
 		try (FileInputStream in = new FileInputStream(file)) {

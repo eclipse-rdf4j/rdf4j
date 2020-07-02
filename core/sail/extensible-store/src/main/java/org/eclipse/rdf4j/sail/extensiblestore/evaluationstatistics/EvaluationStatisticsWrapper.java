@@ -48,8 +48,8 @@ public class EvaluationStatisticsWrapper implements DataStructureInterface {
 
 	@Override
 	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
-			IRI predicate,
-			Value object, boolean inferred, Resource... context) {
+		IRI predicate,
+		Value object, boolean inferred, Resource... context) {
 		return delegate.getStatements(subject, predicate, object, inferred, context);
 	}
 

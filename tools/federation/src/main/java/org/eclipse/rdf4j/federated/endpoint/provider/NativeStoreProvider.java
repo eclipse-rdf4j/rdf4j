@@ -53,7 +53,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			// exists
 			if (!store.isDirectory()) {
 				throw new FedXRuntimeException(
-						"Store does not exist at '" + repoInfo.getLocation() + ": " + store.getAbsolutePath() + "'.");
+					"Store does not exist at '" + repoInfo.getLocation() + ": " + store.getAbsolutePath() + "'.");
 			}
 
 			log.debug("Loading Native store from " + store.getAbsolutePath());
@@ -61,7 +61,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 
 			if (baseDir == null) {
 				throw new FedXException(
-						"Base directory not defined. Use FedXFactory for base directory initialization.");
+					"Base directory not defined. Use FedXFactory for base directory initialization.");
 			}
 
 			store = new File(baseDir, "repositories/" + repoInfo.getLocation());
@@ -84,13 +84,13 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 			}
 
 			ManagedRepositoryEndpoint res = new ManagedRepositoryEndpoint(repoInfo, repoInfo.getLocation(),
-					EndpointClassification.Local, repo);
+				EndpointClassification.Local, repo);
 			res.setEndpointConfiguration(repoInfo.getEndpointConfiguration());
 
 			return res;
 		} catch (RepositoryException e) {
 			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
-					e);
+				e);
 		}
 	}
 
@@ -103,7 +103,7 @@ public class NativeStoreProvider implements EndpointProvider<NativeRepositoryInf
 	protected NativeStore createNativeStore(File store) {
 		NativeStore ns = new NativeStore(store);
 		EvaluationStrategyFactory factory = new SailSourceEvaluationStrategyFactory(
-				ns.getEvaluationStrategyFactory());
+			ns.getEvaluationStrategyFactory());
 		ns.setEvaluationStrategyFactory(factory);
 		return ns;
 	}

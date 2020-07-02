@@ -92,7 +92,7 @@ public interface DatatypeHandler {
 	 *                              be normalized due to an error.
 	 */
 	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
-			throws LiteralUtilException;
+		throws LiteralUtilException;
 
 	/**
 	 * A unique key for this datatype handler to identify it in the DatatypeHandlerRegistry.

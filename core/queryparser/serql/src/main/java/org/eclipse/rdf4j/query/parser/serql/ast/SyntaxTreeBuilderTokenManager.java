@@ -815,7 +815,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	static final long[] jjbitVec0 = { 0xfffffffffffffffeL, 0xffffffffffffffffL, 0xffffffffffffffffL,
-			0xffffffffffffffffL };
+		0xffffffffffffffffL };
 
 	static final long[] jjbitVec2 = { 0x0L, 0x0L, 0xffffffffffffffffL, 0xffffffffffffffffL };
 
@@ -838,14 +838,14 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	static final long[] jjbitVec11 = { 0x0L, 0x0L, 0x0L, 0xff7fffffff7fffffL };
 
 	static final long[] jjbitVec12 = { 0x7ff3ffffffffffffL, 0x7ffffffffffffdfeL, 0xffffffffffffffffL,
-			0xfc31ffffffffe00fL };
+		0xfc31ffffffffe00fL };
 
 	static final long[] jjbitVec13 = { 0xffffffL, 0xffffffffffff0000L, 0xf80001ffffffffffL, 0x3L };
 
 	static final long[] jjbitVec14 = { 0x0L, 0x0L, 0xfffffffbffffd740L, 0xffffffc7f7fffL };
 
 	static final long[] jjbitVec15 = { 0xffffffffffffdffeL, 0xffffffffdffeffffL, 0xffffffffffff0003L,
-			0x33fcfffffff199fL };
+		0x33fcfffffff199fL };
 
 	static final long[] jjbitVec16 = { 0xfffe000000000000L, 0xfffffffe027fffffL, 0x7fL, 0x707ffffff0000L };
 
@@ -868,13 +868,13 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	static final long[] jjbitVec25 = { 0x0L, 0x0L, 0xffffffff00000000L, 0x7fffffffff003fL };
 
 	static final long[] jjbitVec26 = { 0x500000000007daedL, 0x2c62ab82315001L, 0xf580c90040000000L,
-			0x201080000000007L };
+		0x201080000000007L };
 
 	static final long[] jjbitVec27 = { 0xffffffffffffffffL, 0xffffffffffffffffL, 0xffffffff0fffffffL,
-			0x3ffffffffffffffL };
+		0x3ffffffffffffffL };
 
 	static final long[] jjbitVec28 = { 0xffffffff3f3fffffL, 0x3fffffffaaff3f3fL, 0x5fdfffffffffffffL,
-			0x1fdc1fff0fcf1fdcL };
+		0x1fdc1fff0fcf1fdcL };
 
 	static final long[] jjbitVec29 = { 0x4c4000000000L, 0x0L, 0x7L, 0x0L };
 
@@ -893,13 +893,13 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	static final long[] jjbitVec36 = { 0xffffffffffffffffL, 0x30000003fL, 0xfffffffbffffd7c0L, 0xffffffc7f7fffL };
 
 	static final long[] jjbitVec37 = { 0xffffffffffffdffeL, 0xffffffffdffeffffL, 0xffffffffffff007bL,
-			0x33fcfffffff199fL };
+		0x33fcfffffff199fL };
 
 	static final long[] jjbitVec38 = { 0xfffe000000000000L, 0xfffffffe027fffffL, 0xbbfffffbfffe007fL,
-			0x707ffffff0016L };
+		0x707ffffff0016L };
 
 	static final long[] jjbitVec39 = { 0x7fffffe00000000L, 0xffff03ff0007ffffL, 0x7cffffffffffffffL,
-			0x3ff3dffffef7fffL };
+		0x3ff3dffffef7fffL };
 
 	static final long[] jjbitVec40 = { 0xf3ffffffffffffeeL, 0xffcfff1e3fffL, 0xd3c5fdfffff99feeL, 0x3ffcfb080399fL };
 
@@ -918,7 +918,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	static final long[] jjbitVec47 = { 0x0L, 0x0L, 0x0L, 0x21fff0000L };
 
 	static final long[] jjbitVec48 = { 0x3efffe000000a0L, 0xfffffffffffffffeL, 0xfffffffe661fffffL,
-			0x77ffffffffffffffL };
+		0x77ffffffffffffffL };
 
 	private int jjMoveNfa_0(int startState, int curPos) {
 		int startsAt = 0;
@@ -2055,8 +2055,8 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	}
 
 	static final int[] jjnextStates = { 16, 20, 21, 24, 25, 49, 50, 84, 85, 86, 65, 30, 1, 2, 4, 7, 8, 24, 25, 30, 49,
-			50, 65, 54, 55, 84, 85, 86, 106, 107, 109, 9, 10, 31, 32, 33, 34, 35, 36, 45, 52, 58, 62, 56, 57, 66, 67,
-			68, 69, 70, 71, 80, 87, 88, 89, 90, 91, 92, 101, };
+		50, 65, 54, 55, 84, 85, 86, 106, 107, 109, 9, 10, 31, 32, 33, 34, 35, 36, 45, 52, 58, 62, 56, 57, 66, 67,
+		68, 69, 70, 71, 80, 87, 88, 89, 90, 91, 92, 101, };
 
 	private static final boolean jjCanMove_0(int hiByte, int i1, int i2, long l1, long l2) {
 		switch (hiByte) {
@@ -2210,11 +2210,11 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 
 	/** Token literal values. */
 	public static final String[] jjstrLiteralImages = { "", null, null, null, null, null, "\75", "\41\75", "\74",
-			"\74\75", "\76\75", "\76", "\52", "\54", "\73", "\173", "\175", "\50", "\51", "\133", "\135", null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, };
+		"\74\75", "\76\75", "\76", "\52", "\54", "\73", "\173", "\175", "\50", "\51", "\133", "\135", null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, };
 
 	/** Lexer state names. */
 	public static final String[] lexStateNames = { "DEFAULT", };
@@ -2273,7 +2273,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	public void SwitchTo(int lexState) {
 		if (lexState >= 1 || lexState < 0) {
 			throw new TokenMgrError("Error: Ignoring invalid lexical state : " + lexState + ". State unchanged.",
-					TokenMgrError.INVALID_LEXICAL_STATE);
+				TokenMgrError.INVALID_LEXICAL_STATE);
 		} else {
 			curLexState = lexState;
 		}
@@ -2384,7 +2384,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 				error_after = curPos <= 1 ? "" : input_stream.GetImage();
 			}
 			throw new TokenMgrError(EOFSeen, curLexState, error_line, error_column, error_after, curChar,
-					TokenMgrError.LEXICAL_ERROR);
+				TokenMgrError.LEXICAL_ERROR);
 		}
 	}
 

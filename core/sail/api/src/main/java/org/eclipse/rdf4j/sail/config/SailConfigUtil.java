@@ -20,7 +20,7 @@ public class SailConfigUtil {
 	public static SailImplConfig parseRepositoryImpl(Model m, Resource implNode) throws SailConfigException {
 		try {
 			Optional<Literal> typeLit = Models
-					.objectLiteral(m.getStatements(implNode, SailConfigSchema.SAILTYPE, null));
+				.objectLiteral(m.getStatements(implNode, SailConfigSchema.SAILTYPE, null));
 
 			if (typeLit.isPresent()) {
 				Optional<SailFactory> factory = SailRegistry.getInstance().get(typeLit.get().getLabel());

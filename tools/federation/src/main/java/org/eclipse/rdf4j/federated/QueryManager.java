@@ -123,7 +123,7 @@ public class QueryManager {
 	 */
 	public void registerQuery(QueryInfo queryInfo) {
 		assert runningQueries.contains(queryInfo) : "Duplicate query: query " + queryInfo.getQueryID()
-				+ " is already registered.";
+			+ " is already registered.";
 		runningQueries.add(queryInfo);
 	}
 
@@ -234,7 +234,7 @@ public class QueryManager {
 
 	static Pattern prefixCheck = Pattern.compile(".*PREFIX .*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 	static Pattern prefixPattern = Pattern.compile("PREFIX[ ]*(\\w*):[ ]*<(\\S*)>",
-			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+		Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	/**
 	 * Prepare a {@link Query} which uses the underlying federation to evaluate the SPARQL query.
@@ -303,14 +303,14 @@ public class QueryManager {
 		}
 		// we use a dummy query info object here
 		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				federationContext.getConfig().getIncludeInferredDefault(), federationContext,
-				((ParsedQuery) query).getDataset());
+			federationContext.getConfig().getIncludeInferredDefault(), federationContext,
+			((ParsedQuery) query).getDataset());
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
-					new SimpleDataset());
+				new SimpleDataset());
 			tupleExpr = federationContext.getStrategy()
-					.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
+				.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());
@@ -335,10 +335,10 @@ public class QueryManager {
 		StringBuilder sb = new StringBuilder();
 		for (String namespace : prefixDeclarations.keySet()) {
 			sb.append("PREFIX ")
-					.append(namespace)
-					.append(": <")
-					.append(prefixDeclarations.get(namespace))
-					.append(">\r\n");
+				.append(namespace)
+				.append(": <")
+				.append(prefixDeclarations.get(namespace))
+				.append(">\r\n");
 		}
 		return sb.toString();
 	}
@@ -360,10 +360,10 @@ public class QueryManager {
 				continue; // already there, do not add
 			}
 			sb.append("PREFIX ")
-					.append(prefix)
-					.append(": <")
-					.append(prefixDeclarations.get(prefix))
-					.append(">\r\n");
+				.append(prefix)
+				.append(": <")
+				.append(prefixDeclarations.get(prefix))
+				.append(">\r\n");
 		}
 		return sb.toString();
 	}

@@ -50,10 +50,10 @@ public class RdfsSubClassOfReasoner {
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		if (statement.getPredicate().equals(RDF.TYPE)
-				&& forwardChainCache.containsKey(((Resource) statement.getObject()))) {
+			&& forwardChainCache.containsKey(((Resource) statement.getObject()))) {
 			return forwardChainCache.get(statement.getObject())
-					.stream()
-					.map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
+				.stream()
+				.map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
 		}
 		return Stream.of(statement);
 	}
@@ -153,7 +153,7 @@ public class RdfsSubClassOfReasoner {
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
 		try (Stream<? extends Statement> stream = shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false)
-				.stream()) {
+			.stream()) {
 			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
 		}
 

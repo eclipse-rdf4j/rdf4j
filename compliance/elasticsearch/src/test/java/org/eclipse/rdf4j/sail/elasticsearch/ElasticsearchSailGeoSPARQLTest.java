@@ -41,7 +41,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 			protected void configure(LuceneSail sail) {
 				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
 				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-						client.settings().get("cluster.name"));
+					client.settings().get("cluster.name"));
 				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
 				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
 				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
@@ -83,7 +83,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 
 	@Test
 	public void testComplexDistanceQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexDistanceQuery();
 	}
 
@@ -96,7 +96,7 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 	@Test
 	@Ignore // JTS is required
 	public void testComplexIntersectionQuery()
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		delegateTest.testComplexIntersectionQuery();
 	}
 }

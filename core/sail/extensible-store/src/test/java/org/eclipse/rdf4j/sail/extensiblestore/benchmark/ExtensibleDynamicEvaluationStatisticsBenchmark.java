@@ -68,10 +68,10 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	@Benchmark
 	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-				null);
+			null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics
-				.add(ExtensibleStatementHelper.getDefaultImpl().fromStatement(s, false)));
+			.add(ExtensibleStatementHelper.getDefaultImpl().fromStatement(s, false)));
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
@@ -81,7 +81,7 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 	@Benchmark
 	public ExtensibleDynamicEvaluationStatistics instantiate() throws IOException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-				null);
+			null);
 
 		return extensibleDynamicEvaluationStatistics;
 	}

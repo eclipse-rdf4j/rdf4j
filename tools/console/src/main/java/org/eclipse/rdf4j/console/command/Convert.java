@@ -129,7 +129,7 @@ public class Convert extends ConsoleCommand {
 		String baseURI = pathFrom.toUri().toString();
 
 		try (BufferedInputStream r = new BufferedInputStream(Files.newInputStream(pathFrom));
-				BufferedWriter w = Files.newBufferedWriter(pathTo)) {
+			BufferedWriter w = Files.newBufferedWriter(pathTo)) {
 			RDFWriter writer = Rio.createWriter(fmtTo.get(), w);
 			parser.setRDFHandler(writer);
 

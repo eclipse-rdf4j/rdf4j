@@ -90,7 +90,7 @@ public abstract class SailConcurrencyTest {
 		private final boolean rollback;
 
 		public UploadTransaction(CountDownLatch completed, CountDownLatch otherTxnCommitted, IRI context,
-				boolean rollback) {
+			boolean rollback) {
 			this.completed = completed;
 			this.otherTxnCommitted = otherTxnCommitted;
 			this.context = context;
@@ -270,7 +270,7 @@ public abstract class SailConcurrencyTest {
 				try {
 					while (continueRunning) {
 						CloseableIteration<? extends Resource, SailException> contextIter = connection
-								.getContextIDs();
+							.getContextIDs();
 						try {
 							while (contextIter.hasNext()) {
 								Resource context = contextIter.next();
@@ -331,12 +331,12 @@ public abstract class SailConcurrencyTest {
 	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
 		// System.out.print("+");
 		connection.addStatement(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p" + i),
-				vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));
+			vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));
 	}
 
 	protected void removeTestStatement(SailConnection connection, int i) throws SailException {
 		// System.out.print("-");
 		connection.removeStatements(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p" + i),
-				vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));
+			vf.createIRI("http://test#o" + i), vf.createIRI("http://test#context_" + i));
 	}
 }

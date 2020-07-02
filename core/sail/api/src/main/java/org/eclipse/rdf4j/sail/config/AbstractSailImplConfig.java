@@ -71,7 +71,7 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 
 		if (iterationCacheSyncThreshold > 0) {
 			m.add(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD,
-					vf.createLiteral(iterationCacheSyncThreshold));
+				vf.createLiteral(iterationCacheSyncThreshold));
 		}
 
 		if (connectionTimeOut > 0) {
@@ -85,9 +85,9 @@ public abstract class AbstractSailImplConfig implements SailImplConfig {
 		try {
 			Models.objectLiteral(m.getStatements(implNode, SAILTYPE, null)).ifPresent(lit -> setType(lit.getLabel()));
 			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.ITERATION_CACHE_SYNC_THRESHOLD, null))
-					.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
+				.ifPresent(lit -> setIterationCacheSyncThreshold(lit.longValue()));
 			Models.objectLiteral(m.getStatements(implNode, SailConfigSchema.CONNECTION_TIME_OUT, null))
-					.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
+				.ifPresent(lit -> setConnectionTimeOut(lit.longValue()));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

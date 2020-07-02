@@ -65,12 +65,12 @@ public class LuceneIndexLocationTest {
 		repository.initialize();
 
 		try ( // create temporary transaction to load data
-				SailRepositoryConnection cnx = repository.getConnection()) {
+			SailRepositoryConnection cnx = repository.getConnection()) {
 			cnx.begin();
 
 			IntStream.rangeClosed(0, 50)
-					.forEach(i -> cnx.add(vf.createStatement(vf.createIRI("urn:subject" + i),
-							vf.createIRI("urn:predicate:" + i), vf.createLiteral("Value" + i))));
+				.forEach(i -> cnx.add(vf.createStatement(vf.createIRI("urn:subject" + i),
+					vf.createIRI("urn:predicate:" + i), vf.createLiteral("Value" + i))));
 			cnx.commit();
 		}
 		connection = repository.getConnection();
@@ -101,7 +101,7 @@ public class LuceneIndexLocationTest {
 
 		log.info("Lucene index location: {}", lucenePath);
 		Assert.assertEquals(dataDir.getAbsolutePath() + File.separator + luceneIndexPath,
-				lucenePath.toAbsolutePath().toString());
+			lucenePath.toAbsolutePath().toString());
 
 		Assert.assertTrue(lucenePath.toFile().exists());
 		Assert.assertTrue(lucenePath.toFile().isDirectory());

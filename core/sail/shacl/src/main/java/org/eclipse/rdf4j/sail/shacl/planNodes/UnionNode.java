@@ -34,8 +34,8 @@ public class UnionNode implements PlanNode {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			List<CloseableIteration<Tuple, SailException>> iterators = Arrays.stream(nodes)
-					.map(PlanNode::iterator)
-					.collect(Collectors.toList());
+				.map(PlanNode::iterator)
+				.collect(Collectors.toList());
 
 			Tuple[] peekList = new Tuple[nodes.length];
 
@@ -123,7 +123,7 @@ public class UnionNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		for (PlanNode node : nodes) {
 			stringBuilder.append(node.getId() + " -> " + getId()).append("\n");
 			node.getPlanAsGraphvizDot(stringBuilder);
@@ -144,15 +144,15 @@ public class UnionNode implements PlanNode {
 	@Override
 	public IteratorData getIteratorDataType() {
 		List<IteratorData> collect = Arrays.stream(nodes)
-				.map(PlanNode::getIteratorDataType)
-				.distinct()
-				.collect(Collectors.toList());
+			.map(PlanNode::getIteratorDataType)
+			.distinct()
+			.collect(Collectors.toList());
 		if (collect.size() == 1) {
 			return collect.get(0);
 		}
 
 		throw new IllegalStateException(
-				"Not implemented support for when union node operates on nodes with different iterator data types");
+			"Not implemented support for when union node operates on nodes with different iterator data types");
 
 	}
 

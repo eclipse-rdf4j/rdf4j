@@ -39,13 +39,13 @@ public class NotPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NotPropertyShape.class);
 
 	NotPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource not) {
+		PathPropertyShape parent, Resource path, Resource not) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		List<List<PathPropertyShape>> collect = Factory.getPropertyShapesInner(connection, nodeShape, not, this)
-				.stream()
-				.map(Collections::singletonList)
-				.collect(Collectors.toList());
+			.stream()
+			.map(Collections::singletonList)
+			.collect(Collectors.toList());
 
 		orPropertyShape = new OrPropertyShape(id, connection, nodeShape, deactivated, this, null, collect);
 
@@ -53,7 +53,7 @@ public class NotPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -61,7 +61,7 @@ public class NotPropertyShape extends PathPropertyShape {
 
 		if (this.getPath() != null) {
 			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
-					overrideTargetNode, false, !negateThisPlan);
+				overrideTargetNode, false, !negateThisPlan);
 
 			PlanNode parent = plan.getParent();
 
@@ -70,7 +70,7 @@ public class NotPropertyShape extends PathPropertyShape {
 		} else {
 
 			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
-					() -> getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan), false, false);
+				() -> getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan), false, false);
 
 			// parents are the targets that are checked
 			PlanNode parent = plan.getParent();
@@ -98,7 +98,7 @@ public class NotPropertyShape extends PathPropertyShape {
 	}
 
 	public PlanNode getTargetsPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
-			boolean negated) {
+		boolean negated) {
 		PlanNode targetsPlan = orPropertyShape.getAllTargetsPlan(connectionsGroup, negated);
 		if (overrideTargetNode != null) {
 			targetsPlan = new Unique(new UnionNode(targetsPlan, overrideTargetNode.getPlanNode()));
@@ -153,9 +153,9 @@ public class NotPropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "NotPropertyShape{" +
-				"orPropertyShape=" + orPropertyShape +
-				", id=" + id +
-				'}';
+			"orPropertyShape=" + orPropertyShape +
+			", id=" + id +
+			'}';
 	}
 
 	public boolean childrenHasOwnPath() {

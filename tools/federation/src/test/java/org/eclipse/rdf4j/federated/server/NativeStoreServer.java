@@ -40,7 +40,7 @@ public class NativeStoreServer implements Server {
 		for (int i = 1; i <= nRepositories; i++) {
 			NativeStore store = NativeStoreProvideTest.createNativeStore(new File(dataDir, "endpoint" + i));
 			ConfigurableSailRepository repo = new ConfigurableSailRepository(
-					store, true);
+				store, true);
 			repo.init();
 			repositories.add(repo);
 			repo.shutDown();

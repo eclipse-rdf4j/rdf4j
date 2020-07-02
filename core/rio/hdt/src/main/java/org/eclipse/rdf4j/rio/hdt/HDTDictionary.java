@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  */
 class HDTDictionary extends HDTPart {
 	protected final static byte[] DICT_FORMAT = "<http://purl.org/HDT/hdt#dictionaryFour>"
-			.getBytes(StandardCharsets.US_ASCII);
+		.getBytes(StandardCharsets.US_ASCII);
 	protected final static String DICT_MAPPING = "mapping";
 	protected final static String DICT_ELEMENTS = "elements";
 
@@ -42,7 +42,7 @@ class HDTDictionary extends HDTPart {
 	protected void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
+			CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
 
 			checkControl(cis, HDTPart.Type.DICTIONARY);
 			checkFormat(cis, DICT_FORMAT);

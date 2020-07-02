@@ -40,23 +40,23 @@ public class AndPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(AndPropertyShape.class);
 
 	AndPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource and) {
+		PathPropertyShape parent, Resource path, Resource and) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.and = toList(connection, and).stream()
-				.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
-				.collect(Collectors.toList());
+			.map(v -> Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
+			.collect(Collectors.toList());
 
 	}
 
 	public AndPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
-			List<List<PathPropertyShape>> and) {
+		List<List<PathPropertyShape>> and) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.and = and;
 	}
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -64,10 +64,10 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		if (negateThisPlan) { // De Morgan's laws
 			OrPropertyShape orPropertyShape = new OrPropertyShape(getId(), nodeShape, deactivated, this, null,
-					and);
+				and);
 
 			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
-					overrideTargetNode, false, true);
+				overrideTargetNode, false, true);
 
 			return new EnrichWithShape(plan.getParent(), this);
 
@@ -75,24 +75,24 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		if (and.stream().mapToLong(List::size).sum() == 1) {
 			PlanNode plan = and.get(0)
-					.get(0)
-					.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
+				.get(0)
+				.getPlan(connectionsGroup, false, overrideTargetNode, negateSubPlans, false);
 			return new EnrichWithShape(plan, this);
 		}
 
 		List<PlanNode> plans = and
-				.stream()
-				.flatMap(List::stream)
-				.map(shape -> shape.getPlan(connectionsGroup, printPlans, overrideTargetNode, negateSubPlans,
-						false))
-				.collect(Collectors.toList());
+			.stream()
+			.flatMap(List::stream)
+			.map(shape -> shape.getPlan(connectionsGroup, printPlans, overrideTargetNode, negateSubPlans,
+				false))
+			.collect(Collectors.toList());
 
 		PlanNode unionPlan = unionAll(plans);
 
 		List<IteratorData> iteratorDataTypes = plans.stream()
-				.map(PlanNode::getIteratorDataType)
-				.distinct()
-				.collect(Collectors.toList());
+			.map(PlanNode::getIteratorDataType)
+			.distinct()
+			.collect(Collectors.toList());
 
 		IteratorData iteratorData = iteratorDataTypes.get(0);
 
@@ -127,10 +127,10 @@ public class AndPropertyShape extends PathPropertyShape {
 		}
 
 		return super.requiresEvaluation(addedStatements, removedStatements, stats) || and.stream()
-				.flatMap(Collection::stream)
-				.map(p -> p.requiresEvaluation(addedStatements, removedStatements, stats))
-				.reduce((a, b) -> a || b)
-				.orElse(false);
+			.flatMap(Collection::stream)
+			.map(p -> p.requiresEvaluation(addedStatements, removedStatements, stats))
+			.reduce((a, b) -> a || b)
+			.orElse(false);
 	}
 
 	@Override
@@ -161,9 +161,9 @@ public class AndPropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "AndPropertyShape{" +
-				"and=" + toString(and) +
-				", id=" + id +
-				'}';
+			"and=" + toString(and) +
+			", id=" + id +
+			'}';
 	}
 
 	public boolean childrenHasOwnPath() {
@@ -173,9 +173,9 @@ public class AndPropertyShape extends PathPropertyShape {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Optional<PlanNode> reduce = and.stream()
-				.flatMap(Collection::stream)
-				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
-				.reduce((a, b) -> new UnionNode(a, b));
+			.flatMap(Collection::stream)
+			.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
+			.reduce((a, b) -> new UnionNode(a, b));
 
 		return new Unique(reduce.get());
 	}

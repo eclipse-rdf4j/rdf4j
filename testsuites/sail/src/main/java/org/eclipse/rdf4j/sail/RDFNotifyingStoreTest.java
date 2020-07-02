@@ -70,7 +70,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
 
 		Assert.assertEquals("Statement (Painting, type, Class) should no longer be in the repository", 0,
-				countQueryResults("select 1 from {ex:Painting} rdf:type {rdfs:Class}"));
+			countQueryResults("select 1 from {ex:Painting} rdf:type {rdfs:Class}"));
 
 		con.begin();
 		con.removeStatements(null, null, null, context1);

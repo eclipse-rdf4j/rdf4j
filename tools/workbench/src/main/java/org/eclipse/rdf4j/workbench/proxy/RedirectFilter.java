@@ -35,7 +35,7 @@ public class RedirectFilter implements Filter {
 	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
-			throws IOException, ServletException {
+		throws IOException, ServletException {
 		HttpServletRequest hreq = (HttpServletRequest) req;
 		HttpServletResponse hresp = (HttpServletResponse) resp;
 		Enumeration<String> names = config.getInitParameterNames();

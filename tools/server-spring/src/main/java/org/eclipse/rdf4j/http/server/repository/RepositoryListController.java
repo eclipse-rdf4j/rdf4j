@@ -49,7 +49,7 @@ public class RepositoryListController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+		throws Exception {
 		Map<String, Object> model = new HashMap<>();
 
 		if (METHOD_GET.equals(request.getMethod())) {
@@ -90,7 +90,7 @@ public class RepositoryListController extends AbstractController {
 		}
 
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
-				TupleQueryResultWriterRegistry.getInstance());
+			TupleQueryResultWriterRegistry.getInstance());
 
 		model.put(QueryResultView.FILENAME_HINT_KEY, "repositories");
 		model.put(QueryResultView.FACTORY_KEY, factory);

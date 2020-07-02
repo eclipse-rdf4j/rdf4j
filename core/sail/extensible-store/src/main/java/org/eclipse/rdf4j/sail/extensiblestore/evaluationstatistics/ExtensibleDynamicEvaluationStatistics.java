@@ -102,13 +102,13 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		super(extensibleSailStore);
 
 		Stream.of(subjectPredicateIndex, predicateObjectIndex, subjectPredicateIndex_removed,
-				predicateObjectIndex_removed).forEach(index -> {
-					for (int i = 0; i < index.length; i++) {
-						for (int j = 0; j < index[i].length; j++) {
-							index[i][j] = getHLL();
-						}
+			predicateObjectIndex_removed).forEach(index -> {
+				for (int i = 0; i < index.length; i++) {
+					for (int j = 0; j < index[i].length; j++) {
+						index[i][j] = getHLL();
 					}
-				});
+				}
+			});
 
 	}
 
@@ -163,20 +163,20 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 			if (sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null) {
 				min = Math.min(min,
-						getHllCardinality(
-								subjectPredicateIndex,
-								subjectPredicateIndex_removed,
-								sp.getSubjectVar().getValue(),
-								sp.getPredicateVar().getValue()));
+					getHllCardinality(
+						subjectPredicateIndex,
+						subjectPredicateIndex_removed,
+						sp.getSubjectVar().getValue(),
+						sp.getPredicateVar().getValue()));
 			}
 
 			if (sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null) {
 				min = Math.min(min,
-						getHllCardinality(
-								predicateObjectIndex,
-								predicateObjectIndex_removed,
-								sp.getPredicateVar().getValue(),
-								sp.getObjectVar().getValue()));
+					getHllCardinality(
+						predicateObjectIndex,
+						predicateObjectIndex_removed,
+						sp.getPredicateVar().getValue(),
+						sp.getObjectVar().getValue()));
 			}
 
 			return min;
@@ -224,7 +224,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	;
 
 	private double getHllCardinality(HLL[][] index, HLL[][] index_removed,
-			Value value1, Value value2) {
+		Value value1, Value value2) {
 
 		int value1IndexIntoAdded = Math.abs(value1.hashCode() % index.length);
 		int value2IndexIntoAdded = Math.abs(value2.hashCode() % index.length);
@@ -238,7 +238,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	private double getHllCardinality(Map<Integer, HLL> index,
-			Map<Integer, HLL> index_removed, Value value) {
+		Map<Integer, HLL> index_removed, Value value) {
 
 		int indexIntoMap = Math.abs(value.hashCode() % SINGLE_DIMENSION_INDEX_SIZE);
 
@@ -268,21 +268,21 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						queueSize.decrementAndGet();
 						Statement statement = poll.statement;
 						long statementHash = HASH_FUNCTION
-								.hashString(statement.toString(), StandardCharsets.UTF_8)
-								.asLong();
+							.hashString(statement.toString(), StandardCharsets.UTF_8)
+							.asLong();
 
 						if (poll.type == StatementQueueItem.Type.added) {
 
 							handleStatement(statement, statementHash, size, subjectIndex, predicateIndex, objectIndex,
-									subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
+								subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
 
 						} else { // removed
 
 							assert poll.type == StatementQueueItem.Type.removed;
 
 							handleStatement(statement, statementHash, size_removed, subjectIndex_removed,
-									predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
-									predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
+								predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
+								predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
 
 						}
 
@@ -307,10 +307,10 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	synchronized private void handleStatement(Statement statement, long statementHash, HLL size,
-			Map<Integer, HLL> subjectIndex, Map<Integer, HLL> predicateIndex,
-			Map<Integer, HLL> objectIndex, HLL[][] subjectPredicateIndex,
-			HLL[][] predicateObjectIndex, HLL defaultContext,
-			Map<Integer, HLL> contextIndex) {
+		Map<Integer, HLL> subjectIndex, Map<Integer, HLL> predicateIndex,
+		Map<Integer, HLL> objectIndex, HLL[][] subjectPredicateIndex,
+		HLL[][] predicateObjectIndex, HLL defaultContext,
+		Map<Integer, HLL> contextIndex) {
 		size.addRaw(statementHash);
 		int subjectHash = statement.getSubject().hashCode();
 		int predicateHash = statement.getPredicate().hashCode();

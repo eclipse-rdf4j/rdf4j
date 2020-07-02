@@ -59,7 +59,7 @@ public interface EvaluationStrategyFactory {
 	 * @return an EvaluationStrategy.
 	 */
 	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics);
+		EvaluationStatistics evaluationStatistics);
 
 	/**
 	 * Returns the status of the result size tracking for the query plan. Useful to determine which parts of a query

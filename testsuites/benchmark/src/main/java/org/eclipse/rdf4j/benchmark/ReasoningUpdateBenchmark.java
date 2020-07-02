@@ -83,8 +83,8 @@ public class ReasoningUpdateBenchmark {
 	private int getSize(SailRepository sail) {
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			try (TupleQueryResult evaluate = connection
-					.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
-					.evaluate()) {
+				.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
+				.evaluate()) {
 				return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
 
 			}
@@ -116,7 +116,7 @@ public class ReasoningUpdateBenchmark {
 		String content = cache.computeIfAbsent(filename, (fn) -> {
 			try {
 				return IOUtils.toString(ReasoningUpdateBenchmark.class.getClassLoader().getResourceAsStream(fn),
-						StandardCharsets.UTF_8);
+					StandardCharsets.UTF_8);
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}

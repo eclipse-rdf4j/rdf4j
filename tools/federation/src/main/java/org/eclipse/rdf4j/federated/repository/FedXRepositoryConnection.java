@@ -58,20 +58,20 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	 * @see #BINDING_ORIGINAL_MAX_EXECUTION_TIME
 	 */
 	public static final Set<String> FEDX_BINDINGS = Collections.unmodifiableSet(
-			Sets.newHashSet(BINDING_ORIGINAL_QUERY, BINDING_ORIGINAL_BASE_URI, BINDING_ORIGINAL_QUERY_TYPE,
-					BINDING_ORIGINAL_MAX_EXECUTION_TIME));
+		Sets.newHashSet(BINDING_ORIGINAL_QUERY, BINDING_ORIGINAL_BASE_URI, BINDING_ORIGINAL_QUERY_TYPE,
+			BINDING_ORIGINAL_MAX_EXECUTION_TIME));
 
 	private final FederationContext federationContext;
 
 	protected FedXRepositoryConnection(FedXRepository repository,
-			SailConnection sailConnection) {
+		SailConnection sailConnection) {
 		super(repository, sailConnection);
 		this.federationContext = repository.getFederationContext();
 	}
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString,
-			String baseURI) throws MalformedQueryException {
+		String baseURI) throws MalformedQueryException {
 		SailQuery q = super.prepareQuery(ql, queryString, baseURI);
 		if (q instanceof SailTupleQuery) {
 			insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);
@@ -89,7 +89,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	@Override
 	public FedXTupleQuery prepareTupleQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException {
+		String queryString, String baseURI) throws MalformedQueryException {
 		SailTupleQuery q = super.prepareTupleQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);
 		setIncludeInferredDefault(q);
@@ -98,7 +98,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	@Override
 	public FedXGraphQuery prepareGraphQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException {
+		String queryString, String baseURI) throws MalformedQueryException {
 		SailGraphQuery q = super.prepareGraphQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, baseURI, QueryType.CONSTRUCT);
 		setIncludeInferredDefault(q);
@@ -107,7 +107,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
-			String queryString, String baseURI) throws MalformedQueryException {
+		String queryString, String baseURI) throws MalformedQueryException {
 		SailBooleanQuery q = super.prepareBooleanQuery(ql, queryString, baseURI);
 		insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);
 		setIncludeInferredDefault(q);
@@ -116,7 +116,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String updateString, String baseURI)
-			throws RepositoryException, MalformedQueryException {
+		throws RepositoryException, MalformedQueryException {
 		Update update = super.prepareUpdate(ql, updateString, baseURI);
 		insertOriginalQueryString(update, updateString, baseURI, QueryType.UPDATE);
 		return update;

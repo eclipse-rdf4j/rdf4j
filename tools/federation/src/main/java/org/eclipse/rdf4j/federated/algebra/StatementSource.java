@@ -37,7 +37,7 @@ public class StatementSource extends AbstractQueryModelNode {
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-			throws X {
+		throws X {
 		visitor.meetOther(this);
 	}
 

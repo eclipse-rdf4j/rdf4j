@@ -53,7 +53,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 
 		try {
 
@@ -64,8 +64,8 @@ public class StatementSourcePattern extends FedXStatementPattern {
 			for (StatementSource source : statementSources) {
 
 				Endpoint ownedEndpoint = queryInfo.getFederationContext()
-						.getEndpointManager()
-						.getEndpoint(source.getEndpointID());
+					.getEndpointManager()
+					.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
 
 				/*
@@ -81,11 +81,11 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					if (preparedQuery == null) {
 						try {
 							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
-									queryInfo.getDataset());
+								queryInfo.getDataset());
 						} catch (IllegalQueryException e1) {
 							/* all vars are bound, this must be handled as a check query, can occur in joins */
 							CloseableIteration<BindingSet, QueryEvaluationException> res = handleStatementSourcePatternCheck(
-									bindings);
+								bindings);
 							if (boundFilters != null && !(res instanceof EmptyIteration)) {
 								res = new InsertBindingsIteration(res, boundFilters);
 							}
@@ -94,7 +94,7 @@ public class StatementSourcePattern extends FedXStatementPattern {
 					}
 
 					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint, bindings,
-							(isEvaluated.get() ? null : filterExpr), queryInfo));
+						(isEvaluated.get() ? null : filterExpr), queryInfo));
 
 				} else {
 					union.addTask(new ParallelUnionTask(union, this, ownedEndpoint, bindings, filterExpr, queryInfo));
@@ -118,15 +118,15 @@ public class StatementSourcePattern extends FedXStatementPattern {
 	}
 
 	protected CloseableIteration<BindingSet, QueryEvaluationException> handleStatementSourcePatternCheck(
-			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
 		// if at least one source has statements, we can return this binding set as result
 
 		// XXX do this in parallel for the number of endpoints ?
 		for (StatementSource source : statementSources) {
 			Endpoint ownedEndpoint = queryInfo.getFederationContext()
-					.getEndpointManager()
-					.getEndpoint(source.getEndpointID());
+				.getEndpointManager()
+				.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
 			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {
 				return new SingleBindingSetIteration(bindings);

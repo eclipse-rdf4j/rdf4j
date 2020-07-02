@@ -44,7 +44,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	private long maxCount;
 
 	MaxCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Long maxCount) {
+		PathPropertyShape parent, Resource path, Long maxCount) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxCount = maxCount;
@@ -53,7 +53,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -64,12 +64,12 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		if (overrideTargetNode != null) {
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-					connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
-					"?c");
+				connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
+				"?c");
 			PlanNode groupByCount = new GroupByCount(bulkedExternalInnerJoin);
 
 			PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
-					.getFalseNode(UnBufferedPlanNode.class);
+				.getFalseNode(UnBufferedPlanNode.class);
 
 			if (printPlans) {
 				String planAsGraphvizDot = getPlanAsGraphvizDot(directTupleFromFilter, connectionsGroup);
@@ -126,16 +126,16 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			PlanNode unique = new Unique(trimmed);
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(unique, connectionsGroup.getBaseConnection(),
-					getPath().getQuery("?a", "?c", null),
-					true, connectionsGroup.getPreviousStateConnection(), "?a", "?c");
+				getPath().getQuery("?a", "?c", null),
+				true, connectionsGroup.getPreviousStateConnection(), "?a", "?c");
 
 			PlanNode groupByCount = new GroupByCount(bulkedExternalInnerJoin);
 
 			PlanNode directTupleFromFilter = new MaxCountFilter(groupByCount, maxCount)
-					.getFalseNode(UnBufferedPlanNode.class);
+				.getFalseNode(UnBufferedPlanNode.class);
 
 			mergeNode1 = new UnionNode(directTupleFromFilter,
-					invalidValues);
+				invalidValues);
 		} else {
 			mergeNode1 = invalidValues;
 		}
@@ -177,11 +177,11 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "MaxCountPropertyShape{" +
-				"maxCount=" + maxCount +
-				", path=" + getPath() +
-				", id=" + id +
+			"maxCount=" + maxCount +
+			", path=" + getPath() +
+			", id=" + id +
 
-				'}';
+			'}';
 	}
 
 	@Override

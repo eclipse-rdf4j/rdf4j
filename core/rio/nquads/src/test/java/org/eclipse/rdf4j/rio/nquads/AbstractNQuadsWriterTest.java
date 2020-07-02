@@ -73,7 +73,7 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 	@Test
 	public void testNoContext() throws RDFHandlerException {
 		Statement s1 = vf.createStatement(vf.createIRI("http://test.example.org/test/subject/1"),
-				vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"));
+			vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"));
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		writer = rdfWriterFactory.getWriter(baos);
@@ -85,14 +85,14 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
 		Assert.assertEquals(
-				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" .",
-				lines[0]);
+			"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" .",
+			lines[0]);
 	}
 
 	@Test
 	public void testNoContextAddXSDString() throws RDFHandlerException {
 		Statement s1 = vf.createStatement(vf.createIRI("http://test.example.org/test/subject/1"),
-				vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"));
+			vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"));
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		writer = rdfWriterFactory.getWriter(baos);
@@ -105,15 +105,15 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
 		Assert.assertEquals(
-				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> .",
-				lines[0]);
+			"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> .",
+			lines[0]);
 	}
 
 	@Test
 	public void testBlankNodeContext() throws RDFHandlerException {
 		Statement s1 = vf.createStatement(vf.createIRI("http://test.example.org/test/subject/1"),
-				vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"),
-				vf.createBNode());
+			vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"),
+			vf.createBNode());
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		writer = rdfWriterFactory.getWriter(baos);
@@ -125,14 +125,14 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
 		Assert.assertTrue(lines[0].startsWith(
-				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" _:"));
+			"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\" _:"));
 	}
 
 	@Test
 	public void testBlankNodeContextAddXSDString() throws RDFHandlerException {
 		Statement s1 = vf.createStatement(vf.createIRI("http://test.example.org/test/subject/1"),
-				vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"),
-				vf.createBNode());
+			vf.createIRI("http://other.example.com/test/predicate/1"), vf.createLiteral("test literal"),
+			vf.createBNode());
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		writer = rdfWriterFactory.getWriter(baos);
@@ -145,6 +145,6 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		String[] lines = content.split("\n");
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
 		Assert.assertTrue(lines[0].startsWith(
-				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
+			"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
 	}
 }

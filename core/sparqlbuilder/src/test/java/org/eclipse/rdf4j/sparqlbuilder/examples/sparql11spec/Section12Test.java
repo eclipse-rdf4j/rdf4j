@@ -33,8 +33,8 @@ public class Section12Test extends BaseExamples {
 		sub.select(y, Expressions.min(name).as(minName)).where(y.has(base.iri("name"), name)).groupBy(y);
 
 		query.prefix(base, base) // SparqlBuilder even fixes typos for you ;)
-				.select(y, minName)
-				.where(base.iri("alice").has(base.iri("knows"), y), sub);
+			.select(y, minName)
+			.where(base.iri("alice").has(base.iri("knows"), y), sub);
 		p();
 	}
 }

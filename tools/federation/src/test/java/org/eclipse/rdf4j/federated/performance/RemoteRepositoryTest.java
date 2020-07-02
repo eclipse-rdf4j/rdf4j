@@ -46,7 +46,7 @@ public class RemoteRepositoryTest {
 
 		System.out.println("Retrieving instances...");
 		List<IRI> instances = retrieveInstances(conn,
-				FedXUtil.iri("http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/drugs"));
+			FedXUtil.iri("http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/drugs"));
 		System.out.println("Retrieved " + instances.size() + " instances");
 
 		System.out.println("Performing queries to retrieve outgoing statements for " + N_QUERIES + " instances.");
@@ -65,7 +65,7 @@ public class RemoteRepositoryTest {
 					runQuery(_conn, instance);
 				} catch (Exception e) {
 					System.err.println("Error while performing query evaluation for instance "
-							+ instance.stringValue() + ": " + e.getMessage());
+						+ instance.stringValue() + ": " + e.getMessage());
 				}
 			});
 			tasks.add(task);
@@ -106,7 +106,7 @@ public class RemoteRepositoryTest {
 	private static int runQuery(RepositoryConnection conn, IRI instance) throws Exception {
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
-				"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
+			"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
 
 		TupleQueryResult res = null;
 		try {

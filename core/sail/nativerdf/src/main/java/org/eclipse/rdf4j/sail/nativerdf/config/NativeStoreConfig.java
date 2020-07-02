@@ -150,13 +150,13 @@ public class NativeStoreConfig extends BaseSailConfig {
 		try {
 
 			Models.objectLiteral(m.getStatements(implNode, TRIPLE_INDEXES, null))
-					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
+				.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
 			Models.objectLiteral(m.getStatements(implNode, FORCE_SYNC, null)).ifPresent(lit -> {
 				try {
 					setForceSync(lit.booleanValue());
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
-							"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
+						"Boolean value required for " + FORCE_SYNC + " property, found " + lit);
 				}
 			});
 
@@ -165,7 +165,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 					setValueCacheSize(lit.intValue());
 				} catch (NumberFormatException e) {
 					throw new SailConfigException(
-							"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
+						"Integer value required for " + VALUE_CACHE_SIZE + " property, found " + lit);
 				}
 			});
 
@@ -174,7 +174,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 					setValueIDCacheSize(lit.intValue());
 				} catch (NumberFormatException e) {
 					throw new SailConfigException(
-							"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
+						"Integer value required for " + VALUE_ID_CACHE_SIZE + " property, found " + lit);
 				}
 			});
 
@@ -183,7 +183,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 					setNamespaceCacheSize(lit.intValue());
 				} catch (NumberFormatException e) {
 					throw new SailConfigException(
-							"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
+						"Integer value required for " + NAMESPACE_CACHE_SIZE + " property, found " + lit);
 				}
 			});
 
@@ -192,7 +192,7 @@ public class NativeStoreConfig extends BaseSailConfig {
 					setNamespaceIDCacheSize(lit.intValue());
 				} catch (NumberFormatException e) {
 					throw new SailConfigException(
-							"Integer value required for " + NAMESPACE_ID_CACHE_SIZE + " property, found " + lit);
+						"Integer value required for " + NAMESPACE_ID_CACHE_SIZE + " property, found " + lit);
 				}
 			});
 		} catch (ModelException e) {

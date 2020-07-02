@@ -45,13 +45,13 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
-			BindingSet bindings) throws QueryEvaluationException {
+		BindingSet bindings) throws QueryEvaluationException {
 
 		try {
 
 			Endpoint ownedEndpoint = queryInfo.getFederationContext()
-					.getEndpointManager()
-					.getEndpoint(getOwner().getEndpointID());
+				.getEndpointManager()
+				.getEndpoint(getOwner().getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
 
 			/*
@@ -68,7 +68,7 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 				String preparedQuery;
 				try {
 					preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
-							queryInfo.getDataset());
+						queryInfo.getDataset());
 				} catch (IllegalQueryException e1) {
 					// TODO there might be an issue with filters being evaluated => investigate
 					/* all vars are bound, this must be handled as a check query, can occur in joins */

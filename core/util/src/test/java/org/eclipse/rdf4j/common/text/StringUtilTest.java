@@ -19,7 +19,7 @@ import org.junit.Test;
  */
 public class StringUtilTest {
 	private final String str = "http://example.com/?q=a&b='+ °àµ~<\"'\u00AA\u0AAA\uAAAA" +
-			new String(Character.toChars(0x1AAAA));
+		new String(Character.toChars(0x1AAAA));
 
 	@Test
 	public void testEncodeParsedASCII() throws IOException {

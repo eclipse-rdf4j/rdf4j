@@ -22,7 +22,7 @@ import com.google.common.collect.Iterables;
 public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult implements DocumentScore {
 
 	public ElasticsearchDocumentScore(SearchHit hit,
-			Function<? super String, ? extends SpatialContext> geoContextMapper) {
+		Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		super(hit, geoContextMapper);
 	}
 
@@ -43,6 +43,6 @@ public class ElasticsearchDocumentScore extends ElasticsearchDocumentResult impl
 			return null;
 		}
 		return Iterables.transform(Arrays.asList(highlightField.getFragments()),
-				(Text fragment) -> SearchFields.getSnippet(fragment.string()));
+			(Text fragment) -> SearchFields.getSnippet(fragment.string()));
 	}
 }

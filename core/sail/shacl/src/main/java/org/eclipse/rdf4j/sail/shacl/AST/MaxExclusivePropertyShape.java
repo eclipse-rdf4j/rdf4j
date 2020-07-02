@@ -30,7 +30,7 @@ public class MaxExclusivePropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MaxExclusivePropertyShape.class);
 
 	MaxExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-			boolean deactivated, PathPropertyShape parent, Resource path, Literal maxExclusive) {
+		boolean deactivated, PathPropertyShape parent, Resource path, Literal maxExclusive) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.maxExclusive = maxExclusive;
@@ -39,7 +39,7 @@ public class MaxExclusivePropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -47,8 +47,8 @@ public class MaxExclusivePropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new LiteralComparatorFilter(parent, maxExclusive, value -> value > 0), this,
-				overrideTargetNode, negateThisPlan);
+			(parent) -> new LiteralComparatorFilter(parent, maxExclusive, value -> value > 0), this,
+			overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -87,9 +87,9 @@ public class MaxExclusivePropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "MaxExclusivePropertyShape{" +
-				"maxExclusive=" + maxExclusive +
-				", path=" + getPath() +
-				", id=" + id +
-				'}';
+			"maxExclusive=" + maxExclusive +
+			", path=" + getPath() +
+			", id=" + id +
+			'}';
 	}
 }

@@ -24,12 +24,12 @@ import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
  * @author Andreas Schwarte
  */
 public class ServiceJoinConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+	extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
 
 	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			List<BindingSet> bindings) {
+		List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}
@@ -56,8 +56,8 @@ public class ServiceJoinConversionIteration
 		// is dealt with in another place)
 		if (bIndex == -1) {
 			throw new QueryEvaluationException(
-					"Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. "
-							+ "Please report to the developers.");
+				"Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. "
+					+ "Please report to the developers.");
 		}
 
 		res.addAll(bindings.get(bIndex));

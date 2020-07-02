@@ -27,7 +27,7 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	 * @param iter
 	 */
 	public LimitedSizeDistinctIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
-			AtomicLong used, long maxSize) {
+		AtomicLong used, long maxSize) {
 		super(iter);
 		this.used = used;
 		this.maxSize = maxSize;

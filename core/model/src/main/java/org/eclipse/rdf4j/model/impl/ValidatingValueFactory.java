@@ -36,19 +36,19 @@ import org.eclipse.rdf4j.model.util.URIUtil;
 public class ValidatingValueFactory implements ValueFactory {
 
 	private static final int[][] PN_CHARS_U = { new int[] { '0', '9' }, new int[] { '_', '_' }, new int[] { 'A', 'Z' },
-			new int[] { 'a', 'z' }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
-			new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
-			new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
-			new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
-			new int[] { 0x10000, 0xEFFFF } };
+		new int[] { 'a', 'z' }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
+		new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
+		new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
+		new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
+		new int[] { 0x10000, 0xEFFFF } };
 
 	private static final int[][] PN_CHARS = { new int[] { '-', '-' }, new int[] { 0x00B7, 0x00B7 },
-			new int[] { 0x0300, 0x036F }, new int[] { 0x203F, 0x2040 }, new int[] { '0', '9' }, new int[] { '_', '_' },
-			new int[] { 'A', 'Z' }, new int[] { 'a', 'z' }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
-			new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
-			new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
-			new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
-			new int[] { 0x10000, 0xEFFFF } };
+		new int[] { 0x0300, 0x036F }, new int[] { 0x203F, 0x2040 }, new int[] { '0', '9' }, new int[] { '_', '_' },
+		new int[] { 'A', 'Z' }, new int[] { 'a', 'z' }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
+		new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
+		new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
+		new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
+		new int[] { 0x10000, 0xEFFFF } };
 
 	private final ValueFactory delegate;
 

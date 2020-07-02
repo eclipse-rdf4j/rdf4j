@@ -47,11 +47,11 @@ public class MemTripleTest {
 	@Test
 	public void testStringValue() {
 		assertThat(triple.stringValue())
-				.startsWith("<<")
-				.contains(s1.stringValue())
-				.contains(p1.stringValue())
-				.contains(o1.stringValue())
-				.endsWith(">>");
+			.startsWith("<<")
+			.contains(s1.stringValue())
+			.contains(p1.stringValue())
+			.contains(o1.stringValue())
+			.endsWith(">>");
 	}
 
 	@Test

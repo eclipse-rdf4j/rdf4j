@@ -25,7 +25,7 @@ public class TriGHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-				"src/test/resources/testcases/trig/trig-RDF-langString-no-language-test.trig");
+			"src/test/resources/testcases/trig/trig-RDF-langString-no-language-test.trig");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

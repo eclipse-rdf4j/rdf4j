@@ -32,7 +32,7 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 	protected final Phaser phaser = new Phaser(1);
 
 	public ControlledWorkerUnion(FederationEvalStrategy strategy, ControlledWorkerScheduler<T> scheduler,
-			QueryInfo queryInfo) {
+		QueryInfo queryInfo) {
 		super(strategy, queryInfo);
 		this.scheduler = scheduler;
 	}

@@ -50,7 +50,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 		if (null != this.proxiedID) {
 			model.setNamespace("proxy", ProxyRepositorySchema.NAMESPACE);
 			model.add(implNode, ProxyRepositorySchema.PROXIED_ID,
-					SimpleValueFactory.getInstance().createLiteral(this.proxiedID));
+				SimpleValueFactory.getInstance().createLiteral(this.proxiedID));
 		}
 		return implNode;
 	}
@@ -61,7 +61,7 @@ public class ProxyRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Models.objectLiteral(model.getStatements(implNode, ProxyRepositorySchema.PROXIED_ID, null))
-					.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
+				.ifPresent(lit -> setProxiedRepositoryID(lit.getLabel()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}

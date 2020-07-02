@@ -54,7 +54,7 @@ public class CreateServlet extends TransformationServlet {
 	 */
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws ServletException {
+		throws ServletException {
 		try {
 			resp.sendRedirect("../" + createRepositoryConfig(req) + "/summary");
 		} catch (Exception e) {
@@ -70,7 +70,7 @@ public class CreateServlet extends TransformationServlet {
 	 */
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws IOException, RepositoryException, QueryResultHandlerException {
+		throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
 		if (req.isParameterPresent("type")) {
@@ -100,7 +100,7 @@ public class CreateServlet extends TransformationServlet {
 		if ("federate".equals(type)) {
 			newID = req.getParameter("Local repository ID");
 			addFederated(newID, req.getParameter("Repository title"),
-					Arrays.asList(req.getParameterValues("memberID")));
+				Arrays.asList(req.getParameterValues("memberID")));
 		} else {
 			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();
 		}
@@ -114,7 +114,7 @@ public class CreateServlet extends TransformationServlet {
 		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
 		Resource res = Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-				.orElseThrow(() -> new RepositoryException("could not find instance of Repository class in config"));
+			.orElseThrow(() -> new RepositoryException("could not find instance of Repository class in config"));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
 		manager.addRepositoryConfig(repConfig);
@@ -124,8 +124,8 @@ public class CreateServlet extends TransformationServlet {
 	private void addFederated(String repositoryId, String repositoryTitle, List<String> memberIds) {
 
 		RepositoryConfig repoConfig = FedXRepositoryConfigBuilder.create()
-				.withResolvableEndpoint(memberIds)
-				.build(repositoryId, repositoryTitle);
+			.withResolvableEndpoint(memberIds)
+			.build(repositoryId, repositoryTitle);
 		repoConfig.validate();
 		manager.addRepositoryConfig(repoConfig);
 	}

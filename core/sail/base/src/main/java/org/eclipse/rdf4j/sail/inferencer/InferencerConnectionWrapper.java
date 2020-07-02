@@ -58,7 +58,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		return getWrappedConnection().removeInferredStatement(subj, pred, obj, contexts);
 	}
 
@@ -101,7 +101,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 */
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+		Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flushUpdates();
 		return super.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
@@ -120,7 +120,7 @@ public class InferencerConnectionWrapper extends NotifyingSailConnectionWrapper 
 	 */
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+		boolean includeInferred, Resource... contexts) throws SailException {
 		flushUpdates();
 		return super.getStatements(subj, pred, obj, includeInferred, contexts);
 	}

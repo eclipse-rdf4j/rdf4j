@@ -22,12 +22,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  */
 public class GroupedCheckConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+	extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
 
 	public GroupedCheckConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			List<BindingSet> bindings) {
+		List<BindingSet> bindings) {
 		super(iter);
 		this.bindings = bindings;
 	}

@@ -88,7 +88,7 @@ public class DatasetRepository extends RepositoryWrapper {
 	}
 
 	private synchronized void load(URL url, URLConnection urlCon, IRI context, ParserConfig config)
-			throws RepositoryException, RDFParseException, IOException {
+		throws RepositoryException, RDFParseException, IOException {
 		long modified = urlCon.getLastModified();
 		if (lastModified.containsKey(url) && lastModified.get(url) >= modified) {
 			return;
@@ -101,7 +101,7 @@ public class DatasetRepository extends RepositoryWrapper {
 			mimeType = mimeType.substring(0, semiColonIdx);
 		}
 		RDFFormat format = Rio.getParserFormatForMIMEType(mimeType)
-				.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+			.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
 
 		try (InputStream stream = urlCon.getInputStream()) {
 			try (RepositoryConnection repCon = super.getConnection()) {

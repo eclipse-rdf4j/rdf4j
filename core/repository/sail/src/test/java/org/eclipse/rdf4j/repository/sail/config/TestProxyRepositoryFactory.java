@@ -44,10 +44,10 @@ public class TestProxyRepositoryFactory {
 	@Test
 	public final void testGetRepository() throws RDF4JException, IOException {
 		Model graph = Rio.parse(this.getClass().getResourceAsStream("/proxy.ttl"), RepositoryConfigSchema.NAMESPACE,
-				RDFFormat.TURTLE);
+			RDFFormat.TURTLE);
 		RepositoryConfig config = RepositoryConfig.create(graph,
-				Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-						.orElseThrow(() -> new RepositoryConfigException("missing Repository instance in config")));
+			Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+				.orElseThrow(() -> new RepositoryConfigException("missing Repository instance in config")));
 		config.validate();
 		assertThat(config.getID()).isEqualTo("proxy");
 		assertThat(config.getTitle()).isEqualTo("Test Proxy for 'memory'");

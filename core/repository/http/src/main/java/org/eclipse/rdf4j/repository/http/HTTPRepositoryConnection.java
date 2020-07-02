@@ -118,7 +118,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 		getParserConfig().set(HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE,
-				HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE.getDefaultValue());
+			HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE.getDefaultValue());
 	}
 
 	/*---------*
@@ -240,7 +240,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts) throws RepositoryException {
+		Resource... contexts) throws RepositoryException {
 		try {
 			StatementCollector collector = new StatementCollector();
 			exportStatements(subj, pred, obj, includeInferred, collector, contexts);
@@ -253,7 +253,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
-			Resource... contexts) throws RDFHandlerException, RepositoryException {
+		Resource... contexts) throws RDFHandlerException, RepositoryException {
 		flushTransactionState(Action.GET);
 		try {
 			client.getStatements(subj, pred, obj, includeInferred, handler, contexts);
@@ -335,14 +335,14 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			// default baseURI to file
 			baseURI = file.toURI().toString();
 		}
 		if (dataFormat == null) {
 			dataFormat = Rio.getParserFormatForFileName(file.getName())
-					.orElseThrow(Rio.unsupportedFormat(file.getName()));
+				.orElseThrow(Rio.unsupportedFormat(file.getName()));
 		}
 
 		try (InputStream in = new FileInputStream(file)) {
@@ -352,7 +352,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
@@ -382,7 +382,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 				mimeType = mimeType.substring(0, semiColonIdx);
 			}
 			dataFormat = Rio.getParserFormatForMIMEType(mimeType)
-					.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
+				.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));
 		}
 
 		try {
@@ -394,7 +394,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 		if (this.getRepository().useCompatibleMode()) {
 
 			dataFormat = getBackwardCompatibleFormat(dataFormat);
@@ -425,8 +425,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			// N-Triples format, just with a different
 			// default MIME-type.
 			return new RDFFormat(NTRIPLES.getName(), Arrays.asList("text/plain"), NTRIPLES.getCharset(),
-					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
-					NTRIPLES.supportsRDFStar());
+				NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
+				NTRIPLES.supportsRDFStar());
 		}
 
 		return format;
@@ -434,7 +434,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-			throws IOException, RDFParseException, RepositoryException {
+		throws IOException, RDFParseException, RepositoryException {
 
 		if (this.getRepository().useCompatibleMode()) {
 
@@ -480,7 +480,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		if (!isActive()) {
 			logger.debug("adding statement directly: {} {} {} {}",
-					new Object[] { subject, predicate, object, contexts });
+				new Object[] { subject, predicate, object, contexts });
 			// operation is not part of a transaction - just send directly
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			final Model m = new LinkedHashModel();
@@ -503,7 +503,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (this.getRepository().useCompatibleMode()) {
 			txn.add(new AddStatementOperation(subject, predicate, object, contexts));
 			return;
@@ -603,7 +603,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
+		throws RepositoryException {
 		if (this.getRepository().useCompatibleMode()) {
 			txn.add(new RemoveStatementsOperation(subject, predicate, object, contexts));
 			return;
@@ -759,7 +759,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-			throws RepositoryException, MalformedQueryException {
+		throws RepositoryException, MalformedQueryException {
 		return new HTTPUpdate(this, ql, update, baseURI);
 	}
 

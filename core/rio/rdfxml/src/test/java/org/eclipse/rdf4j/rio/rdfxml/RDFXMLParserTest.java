@@ -111,7 +111,7 @@ public class RDFXMLParserTest {
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-general-entity.rdf");) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external general entity");
@@ -135,19 +135,19 @@ public class RDFXMLParserTest {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, true);
 
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
 			parser.parse(in, "");
 		} catch (RDFParseException e) {
 			assertEquals(
-					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
-					e.getMessage());
+				"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
+				e.getMessage());
 		}
 		assertEquals(0, el.getWarnings().size());
 		assertEquals(0, el.getErrors().size());
 		assertEquals(1, el.getFatalErrors().size());
 		assertEquals(
-				"[Rio fatal] DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. (2, 10)",
-				el.getFatalErrors().get(0));
+			"[Rio fatal] DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. (2, 10)",
+			el.getFatalErrors().get(0));
 	}
 
 	@Test
@@ -156,7 +156,7 @@ public class RDFXMLParserTest {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external parameter entity");
@@ -169,7 +169,7 @@ public class RDFXMLParserTest {
 	@Test
 	public void testRDFXMLWhitespace() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-whitespace-literal.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-whitespace-literal.rdf");) {
 			parser.parse(in, "");
 		}
 		Statement stmt1 = sc.getStatements().iterator().next();
@@ -181,7 +181,7 @@ public class RDFXMLParserTest {
 	@Test
 	public void testFatalErrorPrologContent() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/not-an-rdfxml-file.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/not-an-rdfxml-file.rdf");) {
 			parser.parse(in, "");
 		} catch (RDFParseException e) {
 			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
@@ -200,7 +200,7 @@ public class RDFXMLParserTest {
 		parser.setRDFHandler(inputCollector);
 
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-namespace-addition.rdf");) {
+			.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-namespace-addition.rdf");) {
 			parser.parse(in, "");
 		} catch (RDFParseException | IOException e) {
 			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
@@ -209,10 +209,10 @@ public class RDFXMLParserTest {
 		String[] expectedLiteral = new String[2];
 
 		String s1 = "(http://mycorp.example.com/papers/NobelPaper1, http://test.org/testing/somedata, \"<test:datapart xmlns:test=\"http://test.org/testing/\">Literal</test:datapart>\n"
-				+
-				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
-				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
-				"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>)";
+			+
+			"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
+			"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
+			"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>)";
 		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\")";
 		expectedLiteral[0] = s1;
 		expectedLiteral[1] = s2;

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 public class DAWGTestResultSetUtil {
 
 	public static TupleQueryResult toTupleQueryResult(Iterable<? extends Statement> dawgGraph)
-			throws DAWGTestResultSetParseException {
+		throws DAWGTestResultSetParseException {
 		TupleQueryResultBuilder tqrBuilder = new TupleQueryResultBuilder();
 		DAWGTestResultSetParser parser = new DAWGTestResultSetParser(tqrBuilder);
 
@@ -60,7 +60,7 @@ public class DAWGTestResultSetUtil {
 	}
 
 	public static boolean toBooleanQueryResult(Iterable<? extends Statement> dawgGraph)
-			throws DAWGTestResultSetParseException {
+		throws DAWGTestResultSetParseException {
 		DAWGTestBooleanParser parser = new DAWGTestBooleanParser();
 
 		try {

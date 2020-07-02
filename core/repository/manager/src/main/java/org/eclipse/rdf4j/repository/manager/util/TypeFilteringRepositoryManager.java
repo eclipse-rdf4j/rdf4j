@@ -73,7 +73,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	@Override
 	protected Repository createSystemRepository() throws RepositoryException {
 		throw new UnsupportedOperationException(
-				"The system repository cannot be created through this wrapper. This method should not have been called, the delegate should take care of it.");
+			"The system repository cannot be created through this wrapper. This method should not have been called, the delegate should take care of it.");
 	}
 
 	@Override
@@ -116,14 +116,14 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 
 	@Override
 	public RepositoryConfig getRepositoryConfig(String repositoryID)
-			throws RepositoryConfigException, RepositoryException {
+		throws RepositoryConfigException, RepositoryException {
 		RepositoryConfig result = delegate.getRepositoryConfig(repositoryID);
 
 		if (result != null) {
 			if (!isCorrectType(result)) {
 				logger.debug(
-						"Surpressing retrieval of repository {}: repository type {} did not match expected type {}",
-						new Object[] { result.getID(), result.getRepositoryImplConfig().getType(), type });
+					"Surpressing retrieval of repository {}: repository type {} did not match expected type {}",
+					new Object[] { result.getID(), result.getRepositoryImplConfig().getType(), type });
 
 				result = null;
 			}
@@ -138,7 +138,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 			delegate.addRepositoryConfig(config);
 		} else {
 			throw new UnsupportedOperationException(
-					"Only repositories of type " + type + " can be added to this manager.");
+				"Only repositories of type " + type + " can be added to this manager.");
 		}
 	}
 
@@ -204,7 +204,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	@Override
 	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
 		throw new UnsupportedOperationException(
-				"Repositories cannot be created through this wrapper. This method should not have been called, the delegate should take care of it.");
+			"Repositories cannot be created through this wrapper. This method should not have been called, the delegate should take care of it.");
 	}
 
 	@Override
@@ -250,7 +250,7 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	@Override
 	protected void cleanUpRepository(String repositoryID) throws IOException {
 		throw new UnsupportedOperationException(
-				"Repositories cannot be removed through this wrapper. This method should not have been called, the delegate should take care of it.");
+			"Repositories cannot be removed through this wrapper. This method should not have been called, the delegate should take care of it.");
 	}
 
 	protected boolean isCorrectType(String repositoryID) throws RepositoryConfigException, RepositoryException {

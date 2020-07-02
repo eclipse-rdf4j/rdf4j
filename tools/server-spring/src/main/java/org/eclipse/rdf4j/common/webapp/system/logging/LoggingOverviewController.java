@@ -32,7 +32,7 @@ public class LoggingOverviewController implements Controller {
 	String appenderName = null;
 
 	String[] loglevels = { "All", LogLevel.ERROR.toString(), LogLevel.WARN.toString(), LogLevel.INFO.toString(),
-			LogLevel.DEBUG.toString() };
+		LogLevel.DEBUG.toString() };
 
 	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
@@ -90,7 +90,7 @@ public class LoggingOverviewController implements Controller {
 
 	public LogReader getLogReader(int offset, int count, HttpServletRequest request) {
 		LogReader logReader = (LogReader) request.getSession()
-				.getAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""));
+			.getAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""));
 		if (logReader == null) {
 			if (appenderName == null) {
 				logReader = config.getLogConfiguration().getDefaultLogReader();
@@ -98,7 +98,7 @@ public class LoggingOverviewController implements Controller {
 				logReader = config.getLogConfiguration().getLogReader(appenderName);
 			}
 			request.getSession()
-					.setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""), logReader);
+				.setAttribute("logreader" + (appenderName != null ? "+" + appenderName : ""), logReader);
 		}
 		logReader.setOffset(offset);
 		logReader.setLimit(count);
@@ -120,10 +120,10 @@ public class LoggingOverviewController implements Controller {
 			if (request.getParameter("applystartdate") != null) {
 				Calendar cal = Calendar.getInstance();
 				cal.set(Integer.parseInt(request.getParameter("s_year")),
-						Integer.parseInt(request.getParameter("s_month")),
-						Integer.parseInt(request.getParameter("s_day")),
-						Integer.parseInt(request.getParameter("s_hour")),
-						Integer.parseInt(request.getParameter("s_min")), 0);
+					Integer.parseInt(request.getParameter("s_month")),
+					Integer.parseInt(request.getParameter("s_day")),
+					Integer.parseInt(request.getParameter("s_hour")),
+					Integer.parseInt(request.getParameter("s_min")), 0);
 				logReader.setStartDate(cal.getTime());
 			} else if (logReader.getStartDate() != null) {
 				logReader.setStartDate(null);
@@ -131,10 +131,10 @@ public class LoggingOverviewController implements Controller {
 			if (request.getParameter("applyenddate") != null) {
 				Calendar cal = Calendar.getInstance();
 				cal.set(Integer.parseInt(request.getParameter("e_year")),
-						Integer.parseInt(request.getParameter("e_month")),
-						Integer.parseInt(request.getParameter("e_day")),
-						Integer.parseInt(request.getParameter("e_hour")),
-						Integer.parseInt(request.getParameter("e_min")), 59);
+					Integer.parseInt(request.getParameter("e_month")),
+					Integer.parseInt(request.getParameter("e_day")),
+					Integer.parseInt(request.getParameter("e_hour")),
+					Integer.parseInt(request.getParameter("e_min")), 59);
 				logReader.setEndDate(cal.getTime());
 			} else if (logReader.getEndDate() != null) {
 				logReader.setEndDate(null);

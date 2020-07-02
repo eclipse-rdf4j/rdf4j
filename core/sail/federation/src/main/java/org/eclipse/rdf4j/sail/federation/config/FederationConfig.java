@@ -51,7 +51,7 @@ public class FederationConfig extends AbstractSailImplConfig {
 	 * and any predicate in this space.
 	 */
 	public static final IRI LOCALPROPERTYSPACE = vf.createIRI(NAMESPACE // NOPMD
-			+ "localPropertySpace");
+		+ "localPropertySpace");
 
 	/**
 	 * If no two members contain the same statement.

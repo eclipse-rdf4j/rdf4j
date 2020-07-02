@@ -361,19 +361,19 @@ public class ClientWithStats implements Client {
 
 	@Override
 	public <Request extends ActionRequest, Response extends ActionResponse, RequestBuilder extends ActionRequestBuilder<Request, Response, RequestBuilder>> ActionFuture<Response> execute(
-			Action<Request, Response, RequestBuilder> action, Request request) {
+		Action<Request, Response, RequestBuilder> action, Request request) {
 		return wrapped.execute(action, request);
 	}
 
 	@Override
 	public <Request extends ActionRequest, Response extends ActionResponse, RequestBuilder extends ActionRequestBuilder<Request, Response, RequestBuilder>> void execute(
-			Action<Request, Response, RequestBuilder> action, Request request, ActionListener<Response> listener) {
+		Action<Request, Response, RequestBuilder> action, Request request, ActionListener<Response> listener) {
 		wrapped.execute(action, request, listener);
 	}
 
 	@Override
 	public <Request extends ActionRequest, Response extends ActionResponse, RequestBuilder extends ActionRequestBuilder<Request, Response, RequestBuilder>> RequestBuilder prepareExecute(
-			Action<Request, Response, RequestBuilder> action) {
+		Action<Request, Response, RequestBuilder> action) {
 		return wrapped.prepareExecute(action);
 	}
 

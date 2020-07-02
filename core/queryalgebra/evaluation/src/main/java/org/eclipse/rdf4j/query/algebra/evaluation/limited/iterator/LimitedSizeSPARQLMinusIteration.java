@@ -35,7 +35,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 * @param maxSize  Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
-			Iteration<BindingSet, QueryEvaluationException> rightArg, AtomicLong used, long maxSize) {
+		Iteration<BindingSet, QueryEvaluationException> rightArg, AtomicLong used, long maxSize) {
 		this(leftArg, rightArg, false, used, maxSize);
 	}
 
@@ -50,7 +50,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 * @param maxSize  Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
-			Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used, long maxSize) {
+		Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used, long maxSize) {
 		super(leftArg, rightArg, distinct);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -58,7 +58,7 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 
 	@Override
 	protected Set<BindingSet> makeSet(Iteration<BindingSet, QueryEvaluationException> rightArg2)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		return LimitedSizeIteratorUtil.addAll(rightArg2, makeSet(), used, maxSize);
 	}
 

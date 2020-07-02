@@ -75,7 +75,7 @@ public class FederationNamespacesTest {
 	}
 
 	private RepositoryConnection createFederationWithMemberNamespaces(String... paths)
-			throws RepositoryException, RDFParseException, IOException {
+		throws RepositoryException, RDFParseException, IOException {
 		Federation federation = new Federation();
 		for (int i = 0; i < paths.length; i++) {
 			federation.addMember(createMember(Integer.toString(i), "http://test/" + paths[i] + "#"));
@@ -86,7 +86,7 @@ public class FederationNamespacesTest {
 	}
 
 	private Repository createMember(String memberID, String name)
-			throws RepositoryException, RDFParseException, IOException {
+		throws RepositoryException, RDFParseException, IOException {
 		SailRepository member = new SailRepository(new MemoryStore());
 		member.initialize();
 		try (SailRepositoryConnection con = member.getConnection()) {

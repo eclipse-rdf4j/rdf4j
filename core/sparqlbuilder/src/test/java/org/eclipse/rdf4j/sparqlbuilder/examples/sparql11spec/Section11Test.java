@@ -34,11 +34,11 @@ public class Section11Test extends BaseExamples {
 		Variable org = SparqlBuilder.var("org"), auth = SparqlBuilder.var("auth"), book = SparqlBuilder.var("book");
 
 		query.prefix(base)
-				.select(sumAsTotal)
-				.where(org.has(base.iri("affiliates"), auth), auth.has(base.iri("writesBook"), book),
-						book.has(base.iri("price"), lprice))
-				.groupBy(org)
-				.having(Expressions.gt(sum, 10));
+			.select(sumAsTotal)
+			.where(org.has(base.iri("affiliates"), auth), auth.has(base.iri("writesBook"), book),
+				book.has(base.iri("price"), lprice))
+			.groupBy(org)
+			.having(Expressions.gt(sum, 10));
 		p();
 	}
 
@@ -59,10 +59,10 @@ public class Section11Test extends BaseExamples {
 		Variable org = SparqlBuilder.var("org"), auth = SparqlBuilder.var("auth"), book = SparqlBuilder.var("book");
 
 		query.prefix(base)
-				.select(sumAsTotal)
-				.where(org.has(affiliates, auth), auth.has(writesBook, book), book.has(price, lprice))
-				.groupBy(org)
-				.having(Expressions.gt(sum, 10));
+			.select(sumAsTotal)
+			.where(org.has(affiliates, auth), auth.has(writesBook, book), book.has(price, lprice))
+			.groupBy(org)
+			.having(Expressions.gt(sum, 10));
 		p();
 	}
 
@@ -72,8 +72,8 @@ public class Section11Test extends BaseExamples {
 		Variable y = query.var(), avg = query.var(), a = query.var(), x = query.var();
 
 		query.select(SparqlBuilder.as(Expressions.avg(y), avg))
-				.where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))
-				.groupBy(x);
+			.where(a.has(base.iri("x"), x).andHas(base.iri("y"), y))
+			.groupBy(x);
 		p();
 	}
 
@@ -84,10 +84,10 @@ public class Section11Test extends BaseExamples {
 		Expression<?> avgSize = Expressions.avg(size);
 
 		query.prefix(base)
-				.select(avgSize.as(asize))
-				.where(x.has(base.iri("size"), size))
-				.groupBy(x)
-				.having(Expressions.gt(avgSize, 10));
+			.select(avgSize.as(asize))
+			.where(x.has(base.iri("size"), size))
+			.groupBy(x)
+			.having(Expressions.gt(avgSize, 10));
 		p();
 	}
 
@@ -98,9 +98,9 @@ public class Section11Test extends BaseExamples {
 		Expression<?> twiceMin = Expressions.multiply(Expressions.min(y), Rdf.literalOf(2));
 
 		query.prefix(base)
-				.select(x, twiceMin.as(min))
-				.where(x.has(base.iri("p"), y), x.has(base.iri("q"), z))
-				.groupBy(x, Expressions.str(z));
+			.select(x, twiceMin.as(min))
+			.where(x.has(base.iri("p"), y), x.has(base.iri("q"), z))
+			.groupBy(x, Expressions.str(z));
 		p();
 	}
 
@@ -109,12 +109,12 @@ public class Section11Test extends BaseExamples {
 		Prefix base = SparqlBuilder.prefix(iri("http://example.com/data/#"));
 		Variable g = query.var(), p = query.var(), avg = query.var(), c = query.var();
 		Expression<?> midRange = Expressions
-				.divide(Expressions.add(Expressions.min(p), Expressions.max(p)).parenthesize(), Rdf.literalOf(2));
+			.divide(Expressions.add(Expressions.min(p), Expressions.max(p)).parenthesize(), Rdf.literalOf(2));
 
 		query.prefix(base)
-				.select(g, Expressions.avg(p).as(avg), midRange.as(c))
-				.where(g.has(base.iri("p"), p))
-				.groupBy(g);
+			.select(g, Expressions.avg(p).as(avg), midRange.as(c))
+			.where(g.has(base.iri("p"), p))
+			.groupBy(g);
 		p();
 	}
 }

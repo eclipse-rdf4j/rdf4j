@@ -56,7 +56,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		PlanNode node = new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?c");
 
@@ -65,20 +65,20 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
-				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+			new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode node = connectionsGroup.getCachedNodeFor(
-				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+			new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 
 		return new Unique(new TrimTuple(node, 0, 1));
 	}
@@ -94,7 +94,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 	}
 
 	public Stream<PlanNode> generatePlans(ConnectionsGroup connectionsGroup, NodeShape nodeShape,
-			boolean printPlans, boolean validateEntireBaseSail) {
+		boolean printPlans, boolean validateEntireBaseSail) {
 
 		PlanNodeProvider overrideTargetNodeBufferedSplitter;
 		SailConnection addedStatements;
@@ -106,7 +106,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
 			} else {
 				overrideTargetNodeBufferedSplitter = () -> getPlan(connectionsGroup, printPlans, null,
-						false, false);
+					false, false);
 			}
 			addedStatements = connectionsGroup.getBaseConnection();
 			removedStatements = connectionsGroup.getBaseConnection();
@@ -117,26 +117,26 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		}
 
 		Stream<PlanNode> propertyShapesPlans = convertToPlan(propertyShapes, connectionsGroup, nodeShape, printPlans,
-				overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
+			overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
 
 		Stream<PlanNode> nodeShapesPlans = convertToPlan(this.nodeShapes, connectionsGroup, nodeShape, printPlans,
-				overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
+			overrideTargetNodeBufferedSplitter, addedStatements, removedStatements);
 
 		return Stream.concat(propertyShapesPlans, nodeShapesPlans);
 	}
 
 	private Stream<PlanNode> convertToPlan(List<PathPropertyShape> propertyShapes,
-			ConnectionsGroup connectionsGroup,
-			NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
-			SailConnection addedStatements,
-			SailConnection removedStatements) {
+		ConnectionsGroup connectionsGroup,
+		NodeShape nodeShape, boolean printPlans, PlanNodeProvider overrideTargetNodeBufferedSplitter,
+		SailConnection addedStatements,
+		SailConnection removedStatements) {
 
 		Stats stats = connectionsGroup.getStats();
 		return propertyShapes
-				.stream()
-				.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements, stats))
-				.map(propertyShape -> propertyShape.getPlan(connectionsGroup, printPlans,
-						overrideTargetNodeBufferedSplitter, false, false));
+			.stream()
+			.filter(propertyShape -> propertyShape.requiresEvaluation(addedStatements, removedStatements, stats))
+			.map(propertyShape -> propertyShape.getPlan(connectionsGroup, printPlans,
+				overrideTargetNodeBufferedSplitter, false, false));
 	}
 
 	@Override
@@ -146,7 +146,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return subjectVariable + " ?fj42798yfhf2j4 " + objectVariable + " .";
 	}
 
@@ -166,19 +166,19 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					if (!shaclProperties.targetClass.isEmpty()) {
 						propertyShapes.add(new TargetClass(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetClass));
+							shaclProperties.targetClass));
 					}
 					if (!shaclProperties.targetNode.isEmpty()) {
 						propertyShapes.add(new TargetNode(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetNode));
+							shaclProperties.targetNode));
 					}
 					if (!shaclProperties.targetSubjectsOf.isEmpty()) {
 						propertyShapes.add(new TargetSubjectsOf(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetSubjectsOf));
+							shaclProperties.targetSubjectsOf));
 					}
 					if (!shaclProperties.targetObjectsOf.isEmpty()) {
 						propertyShapes.add(new TargetObjectsOf(shapeId, connection, shaclProperties.deactivated,
-								shaclProperties.targetObjectsOf));
+							shaclProperties.targetObjectsOf));
 					}
 
 					if (sail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
@@ -218,8 +218,8 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		}
 		NodeShape nodeShape = (NodeShape) o;
 		return id.equals(nodeShape.id) &&
-				propertyShapes.equals(nodeShape.propertyShapes) &&
-				nodeShapes.equals(nodeShape.nodeShapes);
+			propertyShapes.equals(nodeShape.propertyShapes) &&
+			nodeShapes.equals(nodeShape.nodeShapes);
 	}
 
 	@Override

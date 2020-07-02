@@ -55,7 +55,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	@Test
 	public final void testSPARQLResultFormatSingleVarMultipleBindingSets() throws Exception {
 		doTupleNoLinks(getTupleFormat(), createTupleSingleVarMultipleBindingSets(),
-				createTupleSingleVarMultipleBindingSets());
+			createTupleSingleVarMultipleBindingSets());
 	}
 
 	@Test
@@ -92,7 +92,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	@Test
 	public final void testNoLinksWithResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.<String>asList());
+			Arrays.<String>asList());
 	}
 
 	@Test
@@ -103,65 +103,65 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	@Test
 	public final void testOneLinkWithResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.asList("info"));
+			Arrays.asList("info"));
 	}
 
 	@Test
 	public final void testMultipleLinksNoResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(),
-				Arrays.asList("info", "alternate", "other", "another"));
+			Arrays.asList("info", "alternate", "other", "another"));
 	}
 
 	@Test
 	public final void testMultipleLinksWithResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.asList("info", "alternate", "other", "another"));
+			Arrays.asList("info", "alternate", "other", "another"));
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheet() throws Exception {
 		doTupleLinksAndStylesheet(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+			Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetAndNamespaces() throws Exception {
 		doTupleLinksAndStylesheetAndNamespaces(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
-				getNamespaces());
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
+			getNamespaces());
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetAndNamespacesQName() throws Exception {
 		doTupleLinksAndStylesheetAndNamespacesQName(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
-				getNamespaces());
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
+			getNamespaces());
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetAndNamespacesWithEmpty() throws Exception {
 		doTupleLinksAndStylesheetAndNamespaces(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
-				getNamespacesWithEmpty());
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
+			getNamespacesWithEmpty());
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetAndNamespacesQNameWithEmpty() throws Exception {
 		doTupleLinksAndStylesheetAndNamespacesQName(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
-				getNamespacesWithEmpty());
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl",
+			getNamespacesWithEmpty());
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetNoStarts() throws Exception {
 		doTupleLinksAndStylesheetNoStarts(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
 	public final void testMultipleLinksWithResultsAndStylesheetMultipleEndHeaders() throws Exception {
 		doTupleLinksAndStylesheetMultipleEndHeaders(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
@@ -172,7 +172,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	@Test
 	public final void testMultipleResultsAndStylesheet() throws Exception {
 		doTupleStylesheet(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				"test.xsl");
+			"test.xsl");
 	}
 
 	@Test
@@ -188,13 +188,13 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 	@Test
 	public final void testNoResultsExceptionHandleSolutionBeforeStartQueryResult() throws Exception {
 		doTupleMissingStartQueryResult(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(),
-				Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+			Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
 	public final void testMultipleExceptionHandleSolutionBeforeStartQueryResult() throws Exception {
 		doTupleMissingStartQueryResult(getTupleFormat(), createTupleMultipleBindingSets(),
-				createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
+			createTupleMultipleBindingSets(), Arrays.asList("info", "alternate", "other", "another"), "test.xsl");
 	}
 
 	@Test
@@ -213,10 +213,10 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 		MapBindingSet bs2 = new MapBindingSet();
 		bs2.addBinding("a", vf.createLiteral("foo"));
 		bs2.addBinding("b", vf.createTriple(vf.createBNode("bnode2"), RDFS.LABEL,
-				vf.createLiteral("\"literal with\tfunny\nchars")));
+			vf.createLiteral("\"literal with\tfunny\nchars")));
 		bs2.addBinding("c", vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f")));
+			vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+			vf.createIRI("urn:f")));
 		bindings.add(bs2);
 
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {

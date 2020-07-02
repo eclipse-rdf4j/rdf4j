@@ -46,30 +46,30 @@ public class TargetObjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
 		PlanNode parent = connectionsGroup
-				.getCachedNodeFor(
-						new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?b1",
-								"?c"));
+			.getCachedNodeFor(
+				new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?b1",
+					"?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
 			IRI iri = targetObjectsOf.stream().findAny().get();
 
 			select = new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null, iri, null,
-					UnorderedSelect.OutputPattern.ObjectPredicateSubject));
+				UnorderedSelect.OutputPattern.ObjectPredicateSubject));
 		} else {
 			select = new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1",
-					"?c");
+				"?c");
 		}
 
 		PlanNode cachedNodeFor = connectionsGroup.getCachedNodeFor(select);
@@ -79,16 +79,16 @@ public class TargetObjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-			PlaneNodeWrapper planeNodeWrapper) {
+		PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode select;
 		if (targetObjectsOf.size() == 1) {
 			IRI iri = targetObjectsOf.stream().findAny().get();
 
 			select = new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, iri, null,
-					UnorderedSelect.OutputPattern.ObjectPredicateSubject));
+				UnorderedSelect.OutputPattern.ObjectPredicateSubject));
 		} else {
 			select = new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1",
-					"?c");
+				"?c");
 		}
 
 		PlanNode cachedNodeFor = connectionsGroup.getCachedNodeFor(select);
@@ -101,25 +101,25 @@ public class TargetObjectsOf extends NodeShape {
 			return false;
 		}
 		return targetObjectsOf.stream()
-				.map(target -> addedStatements.hasStatement(null, target, null, false))
-				.reduce((a, b) -> a || b)
-				.orElseThrow(IllegalStateException::new);
+			.map(target -> addedStatements.hasStatement(null, target, null, false))
+			.reduce((a, b) -> a || b)
+			.orElseThrow(IllegalStateException::new);
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return targetObjectsOf.stream()
-				.map(target -> "\n{ BIND(<" + target + "> as ?b1) \n " + objectVariable + " ?b1 " + subjectVariable
-						+ ". } \n")
-				.reduce((a, b) -> a + " UNION " + b)
-				.get();
+			.map(target -> "\n{ BIND(<" + target + "> as ?b1) \n " + objectVariable + " ?b1 " + subjectVariable
+				+ ". } \n")
+			.reduce((a, b) -> a + " UNION " + b)
+			.get();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
 		return new ExternalFilterByPredicate(shaclSailConnection, targetObjectsOf, parent, 0,
-				ExternalFilterByPredicate.On.Object);
+			ExternalFilterByPredicate.On.Object);
 	}
 
 	@Override
@@ -145,8 +145,8 @@ public class TargetObjectsOf extends NodeShape {
 	@Override
 	public String toString() {
 		return "TargetObjectsOf{" +
-				"targetObjectsOf=" + Arrays.toString(targetObjectsOf.toArray()) +
-				", id=" + id +
-				'}';
+			"targetObjectsOf=" + Arrays.toString(targetObjectsOf.toArray()) +
+			", id=" + id +
+			'}';
 	}
 }

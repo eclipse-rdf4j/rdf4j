@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 @SuppressWarnings("javadoc")
 public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManagementQuery<T>>
-		extends GraphManagementQuery<TargetedGraphManagementQuery<T>> {
+	extends GraphManagementQuery<TargetedGraphManagementQuery<T>> {
 	private static final String GRAPH = "GRAPH";
 	private static final String DEFAULT = "DEFAULT";
 	private static final String NAMED = "NAMED";

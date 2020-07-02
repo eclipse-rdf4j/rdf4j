@@ -25,7 +25,7 @@ abstract class ElasticsearchSpatialSupport {
 		ElasticsearchSpatialSupport spatialSupport;
 		try {
 			Class<?> cls = Class.forName("org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer",
-					true, Thread.currentThread().getContextClassLoader());
+				true, Thread.currentThread().getContextClassLoader());
 			spatialSupport = (ElasticsearchSpatialSupport) cls.newInstance();
 		} catch (Exception e) {
 			spatialSupport = new DefaultElasticsearchSpatialSupport();
@@ -46,15 +46,15 @@ abstract class ElasticsearchSpatialSupport {
 		@Override
 		protected ShapeBuilder toShapeBuilder(Shape s) {
 			throw new UnsupportedOperationException(
-					"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
-							+ s.getClass().getName());
+				"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
+					+ s.getClass().getName());
 		}
 
 		@Override
 		protected Map<String, Object> toGeoJSON(Shape s) {
 			throw new UnsupportedOperationException(
-					"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
-							+ s.getClass().getName());
+				"This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: "
+					+ s.getClass().getName());
 		}
 	}
 }

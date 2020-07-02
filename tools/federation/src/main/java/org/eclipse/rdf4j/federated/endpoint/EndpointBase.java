@@ -47,7 +47,7 @@ public abstract class EndpointBase implements Endpoint {
 	protected EndpointConfiguration endpointConfiguration; // additional endpoint type specific configuration
 
 	public EndpointBase(RepositoryInformation repoInfo, String endpoint,
-			EndpointClassification endpointClassification) {
+		EndpointClassification endpointClassification) {
 		super();
 		this.repoInfo = repoInfo;
 		this.endpoint = endpoint;

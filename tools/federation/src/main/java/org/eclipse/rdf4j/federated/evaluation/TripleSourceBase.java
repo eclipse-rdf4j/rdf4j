@@ -65,9 +65,9 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, BindingSet queryBindings, QueryType queryType, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		String preparedQuery, BindingSet queryBindings, QueryType queryType, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
 			final String baseURI = queryInfo.getBaseURI();
@@ -117,9 +117,9 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
 
@@ -136,7 +136,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			if (filterExpr != null) {
 				if (bindings.size() > 0) {
 					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-							this.strategy);
+						this.strategy);
 				} else {
 					res = new FilteringIteration(filterExpr, res, this.strategy);
 				}
@@ -157,7 +157,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public boolean hasStatements(Resource subj,
-			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
+		IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			return conn.hasStatement(subj, pred, obj, queryInfo.getIncludeInferred(), contexts);
 		}
@@ -165,8 +165,8 @@ public abstract class TripleSourceBase implements TripleSource {
 
 	@Override
 	public boolean hasStatements(ExclusiveTupleExpr group, BindingSet bindings)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		monitorRemoteRequest();
 		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getQueryInfo().getDataset());
@@ -216,7 +216,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	}
 
 	private <T> CloseableIteration<T, QueryEvaluationException> closeConn(RepositoryConnection dependentConn,
-			CloseableIteration<T, QueryEvaluationException> inner) {
+		CloseableIteration<T, QueryEvaluationException> inner) {
 		return new CloseDependentConnectionIteration<>(inner, dependentConn);
 	}
 

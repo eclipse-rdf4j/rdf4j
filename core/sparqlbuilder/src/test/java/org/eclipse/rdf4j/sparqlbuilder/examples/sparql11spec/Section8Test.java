@@ -60,7 +60,7 @@ public class Section8Test extends BaseExamples {
 		 * "{ ?s ?x1 ?x2} MINUS { ?s foaf:givenName "Bob" }
 		 */
 		GraphPattern allNotNamedBob = GraphPatterns.and(s.has(query.var(), query.var()))
-				.minus(s.has(foaf.iri("givenName"), Rdf.literalOf("Bob")));
+			.minus(s.has(foaf.iri("givenName"), Rdf.literalOf("Bob")));
 		query.prefix(base, foaf).select(s).distinct().where(allNotNamedBob);
 		p();
 	}
@@ -90,13 +90,13 @@ public class Section8Test extends BaseExamples {
 		Expression<?> filter = Expressions.equals(n, m);
 
 		GraphPattern notExistsFilter = GraphPatterns.and(x.has(base.iri("p"), n))
-				.filterNotExists(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter));
+			.filterNotExists(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter));
 
 		query.prefix(base).select().all().where(notExistsFilter);
 		p();
 
 		QueryPattern where = SparqlBuilder.where(GraphPatterns.and(x.has(base.iri("p"), n))
-				.minus(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter)));
+			.minus(GraphPatterns.and(x.has(base.iri("q"), m)).filter(filter)));
 		query.where(where);
 		p();
 	}

@@ -63,8 +63,8 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		// if endpoint does not have data for {?s foaf:name ?o}, it does also not have data for {?s foaf:name "Alan" }
 		if (subQuery.object() != null) {
 			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null, subQuery.contexts()),
-					endpoint)
-							.equals(StatementSourceAssurance.NONE)) {
+				endpoint)
+					.equals(StatementSourceAssurance.NONE)) {
 				return StatementSourceAssurance.NONE;
 			}
 		}
@@ -114,7 +114,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 
 		public void setEndpointInfo(Endpoint e, boolean hasStatements) {
 			endpointToInformation.put(e.getId(),
-					hasStatements ? StatementSourceAssurance.HAS_REMOTE_STATEMENTS : StatementSourceAssurance.NONE);
+				hasStatements ? StatementSourceAssurance.HAS_REMOTE_STATEMENTS : StatementSourceAssurance.NONE);
 		}
 
 		/**

@@ -31,8 +31,8 @@ public class NTriplesUtil {
 	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
 	 */
 	private static String PN_CHARS_BASE = "[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
-			+ "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD"
-			+ "\uD800\uDC00-\uDB7F\uDFFF]"; // <- \u10000-\uEFFFF expressed with surrogate pairs
+		+ "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD"
+		+ "\uD800\uDC00-\uDB7F\uDFFF]"; // <- \u10000-\uEFFFF expressed with surrogate pairs
 	private static String PN_CHARS_U = "(?:" + PN_CHARS_BASE + "|_)";
 	private static String PN_CHARS = "(?:" + PN_CHARS_U + "|[0-9\u0300-\u036F\u203F-\u2040\u00B7-])";
 	private static String BNODE_ID = "(?:" + PN_CHARS_U + "|[0-9])(?:(?:" + PN_CHARS + "|\\.)*" + PN_CHARS + ")?";
@@ -93,7 +93,7 @@ public class NTriplesUtil {
 	 * @throws IllegalArgumentException If the supplied resource could not be parsed correctly.
 	 */
 	public static Resource parseResource(String nTriplesResource, ValueFactory valueFactory)
-			throws IllegalArgumentException {
+		throws IllegalArgumentException {
 		if (nTriplesResource.startsWith("<<")) {
 			return parseTriple(nTriplesResource, valueFactory);
 		} else if (nTriplesResource.startsWith("<")) {
@@ -150,7 +150,7 @@ public class NTriplesUtil {
 	 * @throws IllegalArgumentException If the supplied literal could not be parsed correctly.
 	 */
 	public static Literal parseLiteral(String nTriplesLiteral, ValueFactory valueFactory)
-			throws IllegalArgumentException {
+		throws IllegalArgumentException {
 		if (nTriplesLiteral.startsWith("\"")) {
 			// Find string separation points
 			int endLabelIdx = findEndOfLabel(nTriplesLiteral);
@@ -360,7 +360,7 @@ public class NTriplesUtil {
 		// default to false. Users must call new method directly to remove
 		// xsd:string
 		append(value, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue(),
-				NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
+			NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
 	}
 
 	/**
@@ -375,7 +375,7 @@ public class NTriplesUtil {
 	 * @throws IOException
 	 */
 	public static void append(Value value, Appendable appendable, boolean xsdStringToPlainLiteral,
-			boolean escapeUnicode) throws IOException {
+		boolean escapeUnicode) throws IOException {
 		if (value instanceof Resource) {
 			append((Resource) value, appendable);
 		} else if (value instanceof Literal) {
@@ -535,7 +535,7 @@ public class NTriplesUtil {
 		// default to false. Users must call new method directly to remove
 		// xsd:string
 		append(lit, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue(),
-				NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
+			NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());
 	}
 
 	/**
@@ -552,7 +552,7 @@ public class NTriplesUtil {
 	 * @throws IOException
 	 */
 	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral,
-			boolean escapeUnicode) throws IOException {
+		boolean escapeUnicode) throws IOException {
 		// Do some character escaping on the label:
 		appendable.append("\"");
 		escapeString(lit.getLabel(), appendable, escapeUnicode);
@@ -583,8 +583,8 @@ public class NTriplesUtil {
 	 */
 	public static String toNTriplesString(Triple triple) {
 		return "<<" + NTriplesUtil.toNTriplesString(triple.getSubject()) + " "
-				+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + " "
-				+ NTriplesUtil.toNTriplesString(triple.getObject()) + ">>";
+			+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + " "
+			+ NTriplesUtil.toNTriplesString(triple.getObject()) + ">>";
 	}
 
 	/**
@@ -745,7 +745,7 @@ public class NTriplesUtil {
 			} else if (c == '\t') {
 				appendable.append("\\t");
 			} else if (cInt >= 0x0 && cInt <= 0x8 || cInt == 0xB || cInt == 0xC || cInt >= 0xE && cInt <= 0x1F
-					|| cInt >= 0x7F && cInt <= 0xFFFF) {
+				|| cInt >= 0x7F && cInt <= 0xFFFF) {
 				if (escapeUnicode) {
 					appendable.append("\\u");
 					appendable.append(toHexString(cInt, 4));

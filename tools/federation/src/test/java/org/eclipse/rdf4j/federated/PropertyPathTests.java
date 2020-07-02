@@ -45,7 +45,7 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "subClass",
-					Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1")));
+				Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1")));
 		}
 	}
 
@@ -59,7 +59,7 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "subClass",
-					Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1"), FOAF.PERSON));
+				Sets.newHashSet(iri("MySubClass1"), iri("MySubClass2"), iri("MySubSubClass1"), FOAF.PERSON));
 		}
 	}
 
@@ -74,8 +74,8 @@ public class PropertyPathTests extends SPARQLBaseTest {
 			List<BindingSet> res = Iterations.asList(tqr);
 
 			assertContainsAll(res, "label",
-					Sets.newHashSet(l("Concept1"), l("Concept1 AltLabel"), l("Concept2"), l("Concept2 AltLabel"),
-							l("Concept3"), l("Concept3 AltLabel")));
+				Sets.newHashSet(l("Concept1"), l("Concept1 AltLabel"), l("Concept2"), l("Concept2 AltLabel"),
+					l("Concept3"), l("Concept3 AltLabel")));
 		}
 	}
 
@@ -88,16 +88,16 @@ public class PropertyPathTests extends SPARQLBaseTest {
 
 		String actualQueryPlan = federationContext().getQueryManager().getQueryPlan(query);
 		assertQueryPlanEquals(readResourceAsString("/tests/propertypath/query_path_exclusiveGroup.qp"),
-				actualQueryPlan);
+			actualQueryPlan);
 
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 
 			assertContainsAll(res, "label",
-					Sets.newHashSet(l("Bovinae"), l("Cows")));
+				Sets.newHashSet(l("Bovinae"), l("Cows")));
 			assertContainsAll(res, "concept",
-					Sets.newHashSet(iri("bovinae"), iri("cows")));
+				Sets.newHashSet(iri("bovinae"), iri("cows")));
 		}
 	}
 
@@ -121,7 +121,7 @@ public class PropertyPathTests extends SPARQLBaseTest {
 			List<BindingSet> res = Iterations.asList(tqr);
 
 			assertContainsAll(res, "label",
-					Sets.newHashSet(l("Person 1"), l("Person 2")));
+				Sets.newHashSet(l("Person 1"), l("Person 2")));
 		}
 	}
 

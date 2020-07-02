@@ -136,7 +136,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	protected SPARQLProtocolSession createHTTPClient() {
 		// initialize HTTP client
 		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,
-				updateEndpointUrl);
+			updateEndpointUrl);
 		httpClient.setValueFactory(SimpleValueFactory.getInstance());
 		httpClient.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.SPARQL);
 		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);

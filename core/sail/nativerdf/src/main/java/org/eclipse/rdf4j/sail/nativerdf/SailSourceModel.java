@@ -354,7 +354,7 @@ class SailSourceModel extends AbstractModel {
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-					Resource... contexts) {
+				Resource... contexts) {
 				SailSourceModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -362,7 +362,7 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-			Resource... contexts) {
+		Resource... contexts) {
 		try {
 			CloseableIteration<? extends Statement, SailException> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
@@ -409,7 +409,7 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		if (dataset == null) {
 			return false;
 		}

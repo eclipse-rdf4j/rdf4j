@@ -55,15 +55,15 @@ public class ElasticsearchStoreConnectionTest extends RepositoryConnectionTest {
 	@Parameterized.Parameters(name = "{0}")
 	public static IsolationLevel[] parameters() {
 		return new IsolationLevel[] {
-				IsolationLevels.NONE,
-				IsolationLevels.READ_UNCOMMITTED,
-				IsolationLevels.READ_COMMITTED
+			IsolationLevels.NONE,
+			IsolationLevels.READ_UNCOMMITTED,
+			IsolationLevels.READ_COMMITTED
 		};
 	}
 
 	@Override
 	protected Repository createRepository() {
 		return new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
+			new ElasticsearchStore(clientPool, "index1"));
 	}
 }

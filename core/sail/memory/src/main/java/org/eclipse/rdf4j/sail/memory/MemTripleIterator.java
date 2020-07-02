@@ -72,7 +72,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 * @param object        object of pattern.
 	 */
 	public MemTripleIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
-			int snapshot) {
+		int snapshot) {
 		this.statementList = statementList;
 		this.subject = subject;
 		this.predicate = predicate;

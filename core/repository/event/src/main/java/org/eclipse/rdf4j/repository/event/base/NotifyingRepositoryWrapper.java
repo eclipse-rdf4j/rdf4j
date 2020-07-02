@@ -112,7 +112,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	public NotifyingRepositoryConnection getConnection() throws RepositoryException {
 		RepositoryConnection con = getDelegate().getConnection();
 		NotifyingRepositoryConnection ncon = new NotifyingRepositoryConnectionWrapper(this, con,
-				getDefaultReportDeltas());
+			getDefaultReportDeltas());
 
 		if (activated) {
 			for (RepositoryListener listener : listeners) {

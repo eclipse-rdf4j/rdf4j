@@ -103,7 +103,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	private void binaryOpMeet(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, TupleExpr theRightExpr)
-			throws Exception {
+		throws Exception {
 		theLeftExpr.visit(this);
 
 		Var aLeftCtx = mContexts.get(theLeftExpr);
@@ -128,7 +128,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	private void sameCtxCheck(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, Var theLeftCtx, TupleExpr theRightExpr,
-			Var theRightCtx) {
+		Var theRightCtx) {
 		if ((theLeftCtx != null) && (theRightCtx != null) && isSameCtx(theLeftCtx, theRightCtx)) {
 			mContexts.remove(theLeftExpr);
 			mContexts.remove(theRightExpr);

@@ -121,7 +121,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private void meetNodeLocal(StringBuilder builder, boolean mapping, Map<String, String> bindings,
-			ProjectionElemList list) throws RepositoryException, AssertionError {
+		ProjectionElemList list) throws RepositoryException, AssertionError {
 		try {
 			QueryModelNode parent = patternNode.getParentNode();
 			if (parent instanceof OwnedTupleExpr) {
@@ -136,7 +136,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private void meetNodeLocalParentOwned(StringBuilder builder, boolean mapping, Map<String, String> bindings,
-			ProjectionElemList list, OwnedTupleExpr owned) throws RepositoryException, MalformedQueryException {
+		ProjectionElemList list, OwnedTupleExpr owned) throws RepositoryException, MalformedQueryException {
 		owned.prepare(QueryLanguage.SPARQL, builder.toString(), bindings);
 		if (mapping) {
 			Projection proj = new Projection(owned.clone(), list);
@@ -145,7 +145,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private void meetNodeLocalParentNotOwned(StringBuilder builder, boolean mapping, Map<String, String> bindings,
-			ProjectionElemList list) throws RepositoryException, MalformedQueryException {
+		ProjectionElemList list) throws RepositoryException, MalformedQueryException {
 		OwnedTupleExpr owned = new OwnedTupleExpr(owner.getOwner(), patternNode.clone());
 		owned.prepare(QueryLanguage.SPARQL, builder.toString(), bindings);
 		if (mapping) {
@@ -157,7 +157,7 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 	}
 
 	private boolean addBindingNames(StringBuilder builder, boolean alreadyMapping, Map<String, String> bindings,
-			ProjectionElemList list, String name) {
+		ProjectionElemList list, String name) {
 		boolean mapping = alreadyMapping;
 		if (variables.containsKey(name)) {
 			String var = variables.get(name);
@@ -326,10 +326,10 @@ public class PrepareOwnedTupleExpr extends AbstractQueryModelVisitor<RepositoryE
 		Var obj = node.getObjectVar();
 		Var ctx = node.getContextVar();
 		boolean cokay = ctx == null && scope.equals(Scope.DEFAULT_CONTEXTS)
-				|| ctx != null && scope.equals(Scope.NAMED_CONTEXTS);
+			|| ctx != null && scope.equals(Scope.NAMED_CONTEXTS);
 		boolean sokay = !subj.hasValue() || subj.isAnonymous() || subj.getValue() instanceof IRI;
 		boolean ookay = !obj.hasValue() || obj.isAnonymous() || obj.getValue() instanceof IRI
-				|| obj.getValue() instanceof Literal;
+			|| obj.getValue() instanceof Literal;
 		if (cokay && sokay && ookay) {
 			variables.clear();
 			if (ctx != null) {

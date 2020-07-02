@@ -43,7 +43,7 @@ class HDTGlobal extends HDTPart {
 	protected void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
+			CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
 
 			checkControl(cis, HDTPart.Type.GLOBAL);
 			checkFormat(cis, GLOBAL_FORMAT);

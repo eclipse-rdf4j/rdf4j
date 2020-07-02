@@ -64,10 +64,10 @@ public class TransactionParallelBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		repository = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
@@ -95,20 +95,20 @@ public class TransactionParallelBenchmark {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		IntStream
-				.range(0, 100)
-				.mapToObj(k -> IntStream
-						.range(0, 10)
-						.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-						.collect(Collectors.toList()))
-				.collect(Collectors.toList())
-				.forEach(list -> {
+			.range(0, 100)
+			.mapToObj(k -> IntStream
+				.range(0, 10)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.collect(Collectors.toList()))
+			.collect(Collectors.toList())
+			.forEach(list -> {
 
-					try (SailRepositoryConnection connection = repository.getConnection()) {
-						connection.begin(IsolationLevels.READ_COMMITTED);
-						connection.add(list);
-						connection.commit();
-					}
-				});
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.READ_COMMITTED);
+					connection.add(list);
+					connection.commit();
+				}
+			});
 
 		return hasStatement();
 
@@ -119,21 +119,21 @@ public class TransactionParallelBenchmark {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		IntStream
-				.range(0, 100)
-				.mapToObj(k -> IntStream
-						.range(0, 10)
-						.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-						.collect(Collectors.toList()))
-				.collect(Collectors.toList())
-				.parallelStream()
-				.forEach(list -> {
+			.range(0, 100)
+			.mapToObj(k -> IntStream
+				.range(0, 10)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.collect(Collectors.toList()))
+			.collect(Collectors.toList())
+			.parallelStream()
+			.forEach(list -> {
 
-					try (SailRepositoryConnection connection = repository.getConnection()) {
-						connection.begin(IsolationLevels.READ_COMMITTED);
-						connection.add(list);
-						connection.commit();
-					}
-				});
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.READ_COMMITTED);
+					connection.add(list);
+					connection.commit();
+				}
+			});
 
 		return hasStatement();
 
@@ -144,21 +144,21 @@ public class TransactionParallelBenchmark {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		IntStream
-				.range(0, 100)
-				.mapToObj(k -> IntStream
-						.range(0, 10)
-						.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
-						.collect(Collectors.toList()))
-				.collect(Collectors.toList())
-				.parallelStream()
-				.forEach(list -> {
+			.range(0, 100)
+			.mapToObj(k -> IntStream
+				.range(0, 10)
+				.mapToObj(i -> vf.createStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral(i)))
+				.collect(Collectors.toList()))
+			.collect(Collectors.toList())
+			.parallelStream()
+			.forEach(list -> {
 
-					try (SailRepositoryConnection connection = repository.getConnection()) {
-						connection.begin(IsolationLevels.NONE);
-						connection.add(list);
-						connection.commit();
-					}
-				});
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(list);
+					connection.commit();
+				}
+			});
 
 		return hasStatement();
 

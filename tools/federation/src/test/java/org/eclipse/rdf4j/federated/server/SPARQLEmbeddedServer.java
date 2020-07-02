@@ -71,7 +71,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 	@Override
 	public void start()
-			throws Exception {
+		throws Exception {
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		super.start();
@@ -83,7 +83,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 
 	@Override
 	public void stop()
-			throws Exception {
+		throws Exception {
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
 			repoManager.init();
@@ -101,7 +101,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	 * @throws RepositoryException
 	 */
 	private void createTestRepositories()
-			throws RepositoryException, RepositoryConfigException {
+		throws RepositoryException, RepositoryConfigException {
 
 		RemoteRepositoryManager repoManager = RemoteRepositoryManager.getInstance(getServerUrl());
 		try {
@@ -111,7 +111,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 			for (String repId : repositoryIds) {
 				MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
 				SailRepositoryConfig sailRepConfig = new ConfigurableSailRepositoryFactory.ConfigurableSailRepositoryConfig(
-						memStoreConfig);
+					memStoreConfig);
 				RepositoryConfig repConfig = new RepositoryConfig(repId, sailRepConfig);
 
 				repoManager.addRepositoryConfig(repConfig);
@@ -146,7 +146,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	@Override
 	public Endpoint loadEndpoint(int i) throws Exception {
 		return useRemoteRepositoryEndpoint ? EndpointFactory.loadRemoteRepository(getServerUrl(), "endpoint" + i)
-				: EndpointFactory.loadSPARQLEndpoint("http://endpoint" + i, getRepositoryUrl("endpoint" + i));
+			: EndpointFactory.loadSPARQLEndpoint("http://endpoint" + i, getRepositoryUrl("endpoint" + i));
 	}
 
 	/**

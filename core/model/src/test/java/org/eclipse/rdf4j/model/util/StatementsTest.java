@@ -69,7 +69,7 @@ public class StatementsTest {
 	public void testInvalidInput() {
 		try {
 			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"),
-					null);
+				null);
 		} catch (IllegalArgumentException e) {
 			// fall through.
 		}
@@ -90,27 +90,27 @@ public class StatementsTest {
 		Model convertedModel1 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
 		assertTrue("RDF* conversion to reification with implicit VF",
-				Models.isomorphic(reifiedModel, convertedModel1));
+			Models.isomorphic(reifiedModel, convertedModel1));
 
 		Model convertedModel2 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
 		assertTrue("RDF* conversion to reification with explicit VF",
-				Models.isomorphic(reifiedModel, convertedModel2));
+			Models.isomorphic(reifiedModel, convertedModel2));
 
 		Model convertedModel3 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
-				s, convertedModel3::add));
+			s, convertedModel3::add));
 		assertTrue("RDF* conversion to reification with explicit VF and custom BNode mapping",
-				Models.isomorphic(reifiedModel, convertedModel3));
+			Models.isomorphic(reifiedModel, convertedModel3));
 	}
 
 	@Test
 	public void testTripleToResourceMapper() {
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
-				vf.createLiteral("data"));
+			vf.createLiteral("data"));
 		Triple t2 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
-				vf.createLiteral("data"));
+			vf.createLiteral("data"));
 		assertEquals("Identical triples must produce the same blank node",
-				Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
+			Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
 	}
 }

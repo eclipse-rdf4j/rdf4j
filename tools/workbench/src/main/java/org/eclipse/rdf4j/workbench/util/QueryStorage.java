@@ -45,7 +45,7 @@ public class QueryStorage {
 	private static QueryStorage instance;
 
 	public static QueryStorage getSingletonInstance(final AppConfiguration config)
-			throws RepositoryException, IOException {
+		throws RepositoryException, IOException {
 		synchronized (LOCK) {
 			if (instance == null || instance.isShutdown()) {
 				instance = new QueryStorage(config);
@@ -64,12 +64,12 @@ public class QueryStorage {
 
 	// SAVE needs xsd: prefix since explicit XSD data types will be substituted.
 	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + PRE
-			+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
-			+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . }";
+		+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
+		+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
+		+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . }";
 
 	private static final String ASK_EXISTS = PRE
-			+ "ASK { [] :userName $<userName> ; :queryName $<queryName> ; :repository $<repository> . }";
+		+ "ASK { [] :userName $<userName> ; :queryName $<queryName> ; :repository $<repository> . }";
 
 	private static final String UPDATE_FILTER = "FILTER (?user = $<userName> || ?user = \"\" ) } ";
 
@@ -78,28 +78,28 @@ public class QueryStorage {
 	private static final String ASK_UPDATABLE = PRE + "ASK { $<query> :userName ?user . " + UPDATE_FILTER;
 
 	private static final String ASK_READABLE = PRE + "ASK { $<query> :userName ?user  ; :shared ?shared . "
-			+ READ_FILTER;
+		+ READ_FILTER;
 
 	private static final String DELETE = PRE + "DELETE WHERE { $<query> :userName ?user ; ?p ?o . }";
 
 	private static final String MATCH = ":shared ?s ; :queryLanguage ?ql ; :query ?q ; :rowsPerPage ?rpp .\n";
 
 	private static final String UPDATE = PRE + "DELETE { $<query> " + MATCH
-			+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . } WHERE { $<query> :userName ?user ; " + MATCH
-			+ UPDATE_FILTER;
+		+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
+		+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> . } WHERE { $<query> :userName ?user ; " + MATCH
+		+ UPDATE_FILTER;
 
 	private static final String SELECT_URI = PRE
-			+ "SELECT ?query { ?query :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> . } ";
+		+ "SELECT ?query { ?query :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> . } ";
 
 	private static final String SELECT_TEXT = PRE
-			+ "SELECT ?queryText { [] :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> ; :query ?queryText . } ";
+		+ "SELECT ?queryText { [] :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> ; :query ?queryText . } ";
 
 	private static final String SELECT = PRE
-			+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage "
-			+ "{ ?query :repository $<repository> ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
-			+ ":queryLanguage ?queryLn ; :query ?queryText ; :infer ?infer ; :rowsPerPage ?rowsPerPage .\n"
-			+ READ_FILTER + "ORDER BY ?user ?queryName";
+		+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage "
+		+ "{ ?query :repository $<repository> ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
+		+ ":queryLanguage ?queryLn ; :query ?queryText ; :infer ?infer ; :rowsPerPage ?rowsPerPage .\n"
+		+ READ_FILTER + "ORDER BY ?user ?queryName";
 
 	private final Repository queries;
 
@@ -168,13 +168,13 @@ public class QueryStorage {
 	 * @throws RDF4JException
 	 */
 	public void saveQuery(final HTTPRepository repository, final String queryName, final String userName,
-			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
-			final int rowsPerPage) throws RDF4JException {
+		final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
+		final int rowsPerPage) throws RDF4JException {
 		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
 			throw new RepositoryException("May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
 		}
 		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
-				&& 200 != rowsPerPage) {
+			&& 200 != rowsPerPage) {
 			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
 		}
 		this.checkQueryText(queryText);
@@ -194,7 +194,7 @@ public class QueryStorage {
 	 * @return <tt>true</tt> if the given query was saved by the given user or the anonymous user
 	 */
 	public boolean canChange(final IRI query, final String currentUser)
-			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
+		throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		return performAccessQuery(ASK_UPDATABLE, query, currentUser);
 	}
 
@@ -206,12 +206,12 @@ public class QueryStorage {
 	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or is shared
 	 */
 	public boolean canRead(IRI query, String currentUser)
-			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
+		throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		return performAccessQuery(ASK_READABLE, query, currentUser);
 	}
 
 	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
-			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
+		throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		final QueryStringBuilder canDelete = new QueryStringBuilder(accessSPARQL);
 		canDelete.replaceURI(QUERY, query.toString());
 		canDelete.replaceQuote(USER_NAME, currentUser);
@@ -222,7 +222,7 @@ public class QueryStorage {
 	}
 
 	public boolean askExists(final HTTPRepository repository, final String queryName, final String userName)
-			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+		throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		final QueryStringBuilder ask = new QueryStringBuilder(ASK_EXISTS);
 		ask.replaceURI(REPOSITORY, repository.getRepositoryURL());
 		ask.replaceQuote(QUERY_NAME, queryName);
@@ -244,7 +244,7 @@ public class QueryStorage {
 	 * @throws MalformedQueryException
 	 */
 	public void deleteQuery(final IRI query, final String userName)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+		throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder delete = new QueryStringBuilder(DELETE);
 		delete.replaceQuote(QueryStorage.USER_NAME, userName);
 		delete.replaceURI(QUERY, query.toString());
@@ -267,8 +267,8 @@ public class QueryStorage {
 	 * @throws MalformedQueryException  if a problem occurs during the update
 	 */
 	public void updateQuery(final IRI query, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+		final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage)
+		throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
 		update.replaceURI(QUERY, query);
 		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage);
@@ -290,8 +290,8 @@ public class QueryStorage {
 	 * @throws QueryResultHandlerException
 	 */
 	public void selectSavedQueries(final HTTPRepository repository, final String userName,
-			final TupleResultBuilder builder)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
+		final TupleResultBuilder builder)
+		throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
 		select.replaceQuote(USER_NAME, userName);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
@@ -311,7 +311,7 @@ public class QueryStorage {
 	 * @throws BadRequestException if the the specified stored query doesn't exist
 	 */
 	public IRI selectSavedQuery(final HTTPRepository repository, final String owner, final String queryName)
-			throws RDF4JException, BadRequestException {
+		throws RDF4JException, BadRequestException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_URI);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
@@ -341,7 +341,7 @@ public class QueryStorage {
 	 * @throws BadRequestException if the specified query doesn't exist
 	 */
 	public String getQueryText(final HTTPRepository repository, final String owner, final String queryName)
-			throws RDF4JException, BadRequestException {
+		throws RDF4JException, BadRequestException {
 		final QueryStringBuilder select = new QueryStringBuilder(SELECT_TEXT);
 		select.replaceQuote(QueryStorage.USER_NAME, owner);
 		select.replaceURI(REPOSITORY, repository.getRepositoryURL());
@@ -360,7 +360,7 @@ public class QueryStorage {
 	}
 
 	private void updateQueryRepository(final String update)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+		throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", update);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
 			connection.prepareUpdate(QueryLanguage.SPARQL, update).execute();
@@ -378,7 +378,7 @@ public class QueryStorage {
 	 * @param rowsPerPage   the rows per page to display for results
 	 */
 	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage) {
+		final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage) {
 		builder.replaceQuote(USER_NAME, userName);
 		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
 		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());

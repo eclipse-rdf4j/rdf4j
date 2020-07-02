@@ -56,7 +56,7 @@ public class JoinIteratorTest {
 	}
 
 	private void testBindingSetAssignmentJoin(int expectedSize, int n, BindingSet bindings)
-			throws QueryEvaluationException {
+		throws QueryEvaluationException {
 		BindingSetAssignment left = new BindingSetAssignment();
 		{
 			List<BindingSet> leftb = new ArrayList<>();

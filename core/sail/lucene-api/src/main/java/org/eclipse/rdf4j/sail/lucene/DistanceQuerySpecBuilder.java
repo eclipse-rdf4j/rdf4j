@@ -42,7 +42,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
-			throws SailException {
+		throws SailException {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
@@ -89,7 +89,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 			public void meet(StatementPattern sp) {
 				IRI propertyName = (IRI) sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-						&& !sp.getObjectVar().hasValue()) {
+					&& !sp.getObjectVar().hasValue()) {
 					String objectVarName = sp.getObjectVar().getName();
 					DistanceQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {
@@ -98,7 +98,7 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 							// constant optimizer
 							results.add(spec);
 						} else if (spec.getDistanceFunctionCall() != null && spec.getDistanceExpr() != null
-								&& spec.getGeoProperty() != null) {
+							&& spec.getGeoProperty() != null) {
 							// evaluate later
 							TupleFunctionCall funcCall = new TupleFunctionCall();
 							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());
@@ -154,10 +154,10 @@ public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 				CompareOp op = compare.getOperator();
 				ValueExpr dist = null;
 				if (op == CompareOp.LT
-						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg()))) {
+					&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg()))) {
 					dist = compare.getRightArg();
 				} else if (op == CompareOp.GT
-						&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg()))) {
+					&& compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg()))) {
 					dist = compare.getLeftArg();
 				}
 				rv = new Object[] { f, dist };

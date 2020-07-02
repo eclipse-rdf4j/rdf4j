@@ -203,7 +203,7 @@ class TripleStore implements Closeable {
 		}
 
 		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))
-				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
+			|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {
 			// Store up-to-date properties
 			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));
 			properties.setProperty(INDEXES_KEY, indexSpecStr);
@@ -267,7 +267,7 @@ class TripleStore implements Closeable {
 
 				// sanity checks
 				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
-						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
+					|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
 					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
 				}
 
@@ -443,7 +443,7 @@ class TripleStore implements Closeable {
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean readTransaction)
-			throws IOException {
+		throws IOException {
 		if (readTransaction) {
 			// Don't read removed statements
 			return getTriples(subj, pred, obj, context, 0, TripleStore.REMOVED_FLAG);
@@ -471,7 +471,7 @@ class TripleStore implements Closeable {
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
-			boolean readTransaction) throws IOException {
+		boolean readTransaction) throws IOException {
 		int flags = 0;
 		int flagsMask = 0;
 
@@ -579,7 +579,7 @@ class TripleStore implements Closeable {
 	} // end inner class ImplicitStatementFilter
 
 	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask)
-			throws IOException {
+		throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);
@@ -597,7 +597,7 @@ class TripleStore implements Closeable {
 	}
 
 	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags, int flagsMask,
-			TripleIndex index, boolean rangeSearch) {
+		TripleIndex index, boolean rangeSearch) {
 		byte[] searchKey = getSearchKey(subj, pred, obj, context, flags);
 		byte[] searchMask = getSearchMask(subj, pred, obj, context, flagsMask);
 
@@ -794,7 +794,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
-			throws IOException {
+		throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
 		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
 		return removeTriples(iter);
@@ -853,7 +853,7 @@ class TripleStore implements Closeable {
 			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords, new TripleComparator("spoc"));
 		} else {
 			assert updatedTriplesCache
-					.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
+				.getRecordCount() == 0L : "updatedTripleCache should have been cleared upon commit or rollback";
 			updatedTriplesCache.setMaxRecords(maxRecords);
 		}
 	}
@@ -1149,7 +1149,7 @@ class TripleStore implements Closeable {
 					break;
 				default:
 					throw new RuntimeException("invalid character '" + field + "' in field sequence: "
-							+ new String(tripleComparator.getFieldSeq()));
+						+ new String(tripleComparator.getFieldSeq()));
 				}
 			}
 
@@ -1202,7 +1202,7 @@ class TripleStore implements Closeable {
 					break;
 				default:
 					throw new IllegalArgumentException(
-							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
+						"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
 				}
 
 				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);

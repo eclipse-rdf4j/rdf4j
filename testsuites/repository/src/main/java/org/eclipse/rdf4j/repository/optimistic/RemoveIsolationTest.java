@@ -67,7 +67,7 @@ public class RemoveIsolationTest {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
-				f.createLiteral("Alice"));
+			f.createLiteral("Alice"));
 
 		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
 			con.remove(stats);
@@ -84,7 +84,7 @@ public class RemoveIsolationTest {
 		con.begin(level);
 
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
-				f.createLiteral("Alice"));
+			f.createLiteral("Alice"));
 
 		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
 			con.remove(stats);

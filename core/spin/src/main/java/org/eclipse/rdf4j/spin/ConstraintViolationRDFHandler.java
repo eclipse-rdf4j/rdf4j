@@ -71,7 +71,7 @@ public class ConstraintViolationRDFHandler extends RDFHandlerBase {
 			}
 			if (level == null) {
 				throw new RDFHandlerException("Invalid value " + levelValue + " for " + SPIN.VIOLATION_LEVEL_PROPERTY
-						+ ": " + st.getSubject());
+					+ ": " + st.getSubject());
 			}
 		}
 	}

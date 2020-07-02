@@ -78,11 +78,11 @@ public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 			try {
 				if (c == 'u') {
 					buffer[bufpos] = c = (char) (hexval(ReadByte()) << 12 | hexval(ReadByte()) << 8
-							| hexval(ReadByte()) << 4 | hexval(ReadByte()));
+						| hexval(ReadByte()) << 4 | hexval(ReadByte()));
 					column += 4;
 				} else if (c == 'U') {
 					String hex = new String(new char[] { ReadByte(), ReadByte(), ReadByte(), ReadByte(), ReadByte(),
-							ReadByte(), ReadByte(), ReadByte() });
+						ReadByte(), ReadByte(), ReadByte() });
 					int cp = Integer.parseInt(hex, 16);
 					char[] chrs = Character.toChars(cp); // length of 1 or 2
 					buffer[bufpos] = c = chrs[0];

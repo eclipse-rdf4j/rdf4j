@@ -93,7 +93,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(InputStream in, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
@@ -119,7 +119,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {
@@ -254,13 +254,13 @@ public class NTriplesParser extends AbstractRDFParser {
 				throwEOFException();
 			} else if (c != '.') {
 				reportError("Expected '.', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			}
 
 			c = assertLineTerminates(c);
 		} catch (RDFParseException rdfpe) {
 			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)
-					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)) {
+				|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)) {
 				reportError(rdfpe, NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 				ignoredAnError = true;
 			} else {
@@ -353,7 +353,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	protected int parseUriRef(int c, StringBuilder uriRef) throws IOException, RDFParseException {
 		if (c != '<') {
 			reportError("Supplied char should be a '<', is: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+				NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 		// Read up to the next '>' character
 		c = readCodePoint();
@@ -363,7 +363,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			}
 			if (c == ' ') {
 				reportError("IRI included an unencoded space: " + new String(Character.toChars(c)),
-						BasicParserSettings.VERIFY_URI_SYNTAX);
+					BasicParserSettings.VERIFY_URI_SYNTAX);
 			}
 			uriRef.append(Character.toChars(c));
 
@@ -391,7 +391,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	protected int parseNodeID(int c, StringBuilder name) throws IOException, RDFParseException {
 		if (c != '_') {
 			reportError("Supplied char should be a '_', is: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+				NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 
 		c = readCodePoint();
@@ -399,7 +399,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		} else if (c != ':') {
 			reportError("Expected ':', found: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+				NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 
 		c = readCodePoint();
@@ -407,7 +407,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			throwEOFException();
 		} else if (!ASCIIUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
 			reportError("Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+				NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 		name.append(Character.toChars(c));
 
@@ -455,10 +455,10 @@ public class NTriplesParser extends AbstractRDFParser {
 	}
 
 	private int parseLiteral(int c, StringBuilder value, StringBuilder lang, StringBuilder datatype)
-			throws IOException, RDFParseException {
+		throws IOException, RDFParseException {
 		if (c != '"') {
 			reportError("Supplied char should be a '\"', is: " + c,
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+				NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
 
 		// Read up to the next '"' character
@@ -490,7 +490,7 @@ public class NTriplesParser extends AbstractRDFParser {
 
 			if (!ASCIIUtil.isLetter(c)) {
 				reportError("Expected a letter, found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			}
 
 			while (c != -1 && c != '.' && c != '^' && c != ' ' && c != '\t') {
@@ -506,7 +506,7 @@ public class NTriplesParser extends AbstractRDFParser {
 				throwEOFException();
 			} else if (c != '^') {
 				reportError("Expected '^', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			}
 
 			c = readCodePoint();
@@ -516,7 +516,7 @@ public class NTriplesParser extends AbstractRDFParser {
 				throwEOFException();
 			} else if (c != '<') {
 				reportError("Expected '<', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 			}
 
 			c = parseUriRef(c, datatype);

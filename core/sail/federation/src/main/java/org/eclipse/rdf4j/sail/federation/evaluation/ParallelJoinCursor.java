@@ -51,7 +51,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	private volatile boolean closed;
 
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
-			1024);
+		1024);
 
 	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();
 
@@ -60,8 +60,8 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	 *--------------*/
 
 	public ParallelJoinCursor(EvaluationStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, TupleExpr rightArg)
-			throws QueryEvaluationException {
+		CloseableIteration<BindingSet, QueryEvaluationException> leftIter, TupleExpr rightArg)
+		throws QueryEvaluationException {
 		super();
 		this.strategy = strategy;
 		this.leftIter = leftIter;
@@ -80,7 +80,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 				synchronized (this) {
 					if (!closed && !isClosed() && leftIter.hasNext()) {
 						CloseableIteration<BindingSet, QueryEvaluationException> evaluate = strategy.evaluate(rightArg,
-								leftIter.next());
+							leftIter.next());
 						toCloseList.add(evaluate);
 						rightQueue.put(evaluate);
 					} else {

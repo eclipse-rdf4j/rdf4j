@@ -138,8 +138,8 @@ public class StrBeforeTest {
 			fail("operand with incompatible datatype, should have resulted in error");
 		} catch (ValueExprEvaluationException e) {
 			assertEquals(
-					"incompatible operands for STRBEFORE: \"foobar\", \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
-					e.getMessage());
+				"incompatible operands for STRBEFORE: \"foobar\", \"b\"^^<http://www.w3.org/2001/XMLSchema#date>",
+				e.getMessage());
 		}
 	}
 
@@ -155,7 +155,7 @@ public class StrBeforeTest {
 			fail("operand with incompatible datatype, should have resulted in error");
 		} catch (ValueExprEvaluationException e) {
 			assertEquals("incompatible operands for STRBEFORE: \"10\"^^<http://www.w3.org/2001/XMLSchema#int>, \"b\"",
-					e.getMessage());
+				e.getMessage());
 		}
 	}
 

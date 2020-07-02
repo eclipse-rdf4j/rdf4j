@@ -66,7 +66,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 	}
 
 	public SPARQLSyntaxComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			boolean positiveTest) {
+		boolean positiveTest) {
 
 		super(displayName, testURI, name);
 		this.queryFileURL = queryFileURL;
@@ -79,9 +79,9 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(
-				SPARQLSyntaxComplianceTest.class.getClassLoader()
-						.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
-						.toExternalForm());
+			SPARQLSyntaxComplianceTest.class.getClassLoader()
+				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLSyntaxManifest manifest = new SPARQLSyntaxManifest(pop);
@@ -110,13 +110,13 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-						+ "SELECT DISTINCT ?manifestFile "
-						+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+					+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+					+ "SELECT DISTINCT ?manifestFile "
+					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
 				try (TupleQueryResult manifestResults = connection
-						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
-						.evaluate()) {
+					.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)
+					.evaluate()) {
 					for (BindingSet bindingSet : manifestResults) {
 						String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
 						if (includeSubManifest(subManifestFile, excludedSubdirs)) {
@@ -136,7 +136,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 				query.append("                 mf:action ?Action ;");
 				query.append("                 dawgt:approval dawgt:Approved . ");
 				query.append(
-						"        FILTER(?Type IN (mf:PositiveSyntaxTest, mf:NegativeSyntaxTest, mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
+					"        FILTER(?Type IN (mf:PositiveSyntaxTest, mf:NegativeSyntaxTest, mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
 				query.append(" } ");
 
 				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {
@@ -144,25 +144,25 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("Name").stringValue();
 						String displayName = filename.substring(
-								filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(),
-								filename.lastIndexOf("/"))
-								+ ": " + testName;
+							filename.lastIndexOf("testcases-sparql-1.1-w3c/")
+								+ "testcases-sparql-1.1-w3c/".length(),
+							filename.lastIndexOf("/"))
+							+ ": " + testName;
 
 						IRI testURI = (IRI) bs.getValue("TestURI");
 						Value action = bs.getValue("Action");
 						String type = bs.getValue("Type").toString();
 						boolean positiveTest = type
-								.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
-								|| type.equals(
-										"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+							.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+							|| type.equals(
+								"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
 
 						tests.add(new Object[] {
-								displayName,
-								testURI.stringValue(),
-								testName,
-								action.stringValue(),
-								positiveTest });
+							displayName,
+							testURI.stringValue(),
+							testName,
+							action.stringValue(),
+							positiveTest });
 					}
 				}
 

@@ -28,9 +28,9 @@ public class CustomGraphQueryInferencerRepositoryConnectionTest extends Reposito
 
 	@Override
 	protected Repository createRepository()
-			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
+		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
 		return new SailRepository(new CustomGraphQueryInferencer(new MemoryStore(), QueryLanguage.SPARQL,
-				ResourceUtil.getString("/custom-query-inferencing/rule.rq"),
-				ResourceUtil.getString("/custom-query-inferencing/match.rq")));
+			ResourceUtil.getString("/custom-query-inferencing/rule.rq"),
+			ResourceUtil.getString("/custom-query-inferencing/match.rq")));
 	}
 }

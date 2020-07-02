@@ -80,7 +80,7 @@ public interface LanguageHandler {
 	 *                              be normalized due to an error.
 	 */
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
-			throws LiteralUtilException;
+		throws LiteralUtilException;
 
 	/**
 	 * A unique key for this language handler to identify it in the LanguageHandlerRegistry.

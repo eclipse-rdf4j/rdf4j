@@ -49,7 +49,7 @@ public class RemoteRepositoryRepositoryInformation extends RepositoryInformation
 
 	public RemoteRepositoryRepositoryInformation(String repositoryServer, String repositoryName) {
 		super("remote_" + repositoryName, "http://" + repositoryName, repositoryServer + "/" + repositoryName,
-				EndpointType.RemoteRepository);
+			EndpointType.RemoteRepository);
 		setProperty("repositoryServer", repositoryServer);
 		setProperty("repositoryName", repositoryName);
 	}
@@ -61,7 +61,7 @@ public class RemoteRepositoryRepositoryInformation extends RepositoryInformation
 
 		// repositoryServer / location
 		Model repositoryServer = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_SERVER,
-				null);
+			null);
 		String repoLocation = repositoryServer.iterator().next().getObject().stringValue();
 		setProperty("location", repoLocation);
 		setProperty("repositoryServer", repoLocation);

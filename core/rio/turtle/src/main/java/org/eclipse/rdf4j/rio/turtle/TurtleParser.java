@@ -120,7 +120,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(InputStream in, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream must not be 'null'");
 		}
@@ -146,7 +146,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
+		throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {
@@ -367,7 +367,7 @@ public class TurtleParser extends AbstractRDFParser {
 			int c = skipWSC();
 
 			if (c == '.' || // end of triple
-					c == ']' || c == '}') // end of predicateObjectList inside
+				c == ']' || c == '}') // end of predicateObjectList inside
 			// blank
 			// node
 			{
@@ -617,7 +617,7 @@ public class TurtleParser extends AbstractRDFParser {
 			boolean verifyLanguageTag = getParserConfig().get(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 			if (verifyLanguageTag && !TurtleUtil.isLanguageStartChar(c)) {
 				reportError("Expected a letter, found '" + new String(Character.toChars(c)) + "'",
-						BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+					BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 			}
 
 			appendCodepoint(lang, c);
@@ -635,7 +635,7 @@ public class TurtleParser extends AbstractRDFParser {
 				}
 				if (verifyLanguageTag && !TurtleUtil.isLanguageChar(c)) {
 					reportError("Illegal language tag char: '" + new String(Character.toChars(c)) + "'",
-							BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+						BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 				}
 				appendCodepoint(lang, c);
 				c = readCodePoint();
@@ -957,7 +957,7 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 		if (c != ':' && !TurtleUtil.isPrefixStartChar(c)) {
 			reportError("Expected a ':' or a letter, found '" + new String(Character.toChars(c)) + "'",
-					BasicParserSettings.VERIFY_RELATIVE_URIS);
+				BasicParserSettings.VERIFY_RELATIVE_URIS);
 		}
 
 		String namespace = null;
@@ -1045,7 +1045,7 @@ public class TurtleParser extends AbstractRDFParser {
 		for (int i = 0; i < localNameString.length(); i++) {
 			if (localNameString.charAt(i) == '%') {
 				if (i > localNameString.length() - 3 || !ASCIIUtil.isHex(localNameString.charAt(i + 1))
-						|| !ASCIIUtil.isHex(localNameString.charAt(i + 2))) {
+					|| !ASCIIUtil.isHex(localNameString.charAt(i + 2))) {
 					reportFatalError("Found incomplete percent-encoded sequence: " + localNameString);
 				}
 			}
@@ -1066,7 +1066,7 @@ public class TurtleParser extends AbstractRDFParser {
 			return (char) c;
 		} else {
 			throw new RDFParseException("found '" + new String(Character.toChars(c)) + "', expected one of: "
-					+ Arrays.toString(TurtleUtil.LOCAL_ESCAPED_CHARS));
+				+ Arrays.toString(TurtleUtil.LOCAL_ESCAPED_CHARS));
 		}
 	}
 

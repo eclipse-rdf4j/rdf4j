@@ -61,7 +61,7 @@ public class StrictEvaluationStrategyTest {
 		constants.addBinding("y", vf.createLiteral("Y"));
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
-				constants);
+			constants);
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bs = result.next();
@@ -92,26 +92,26 @@ public class StrictEvaluationStrategyTest {
 	public void testEvaluateRegexFlags() throws Exception {
 
 		String query = "SELECT ?a WHERE { "
-				+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
-				+ "FILTER REGEX(str(?a), \"foo.bar\")}";
+			+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
+			+ "FILTER REGEX(str(?a), \"foo.bar\")}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+			new EmptyBindingSet());
 
 		List<BindingSet> bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(2);
 
 		// match with q flag
 		query = "SELECT ?a WHERE { "
-				+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
-				+ "FILTER REGEX(str(?a), \"foo.bar\", \"q\")}";
+			+ "VALUES ?a { \"foo.bar\" \"foo bar\" } \n"
+			+ "FILTER REGEX(str(?a), \"foo.bar\", \"q\")}";
 
 		pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
 		result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+			new EmptyBindingSet());
 
 		bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(1);
@@ -119,13 +119,13 @@ public class StrictEvaluationStrategyTest {
 
 		// match with i and q flag
 		query = "SELECT ?a WHERE { "
-				+ "VALUES ?a { \"foo.bar\" \"FOO.BAR\" \"foo bar\" } \n"
-				+ "FILTER REGEX(str(?a), \"foo.bar\", \"iq\")}";
+			+ "VALUES ?a { \"foo.bar\" \"FOO.BAR\" \"foo bar\" } \n"
+			+ "FILTER REGEX(str(?a), \"foo.bar\", \"iq\")}";
 
 		pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 
 		result = strategy.evaluate(pq.getTupleExpr(),
-				new EmptyBindingSet());
+			new EmptyBindingSet());
 
 		bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(2);

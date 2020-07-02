@@ -57,7 +57,7 @@ public class SpinTupleFunctionAsFunctionParser implements FunctionParser {
 			public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 				try {
 					try (CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = tupleFunc
-							.evaluate(valueFactory, args)) {
+						.evaluate(valueFactory, args)) {
 						if (iter.hasNext()) {
 							return iter.next().get(0);
 						} else {

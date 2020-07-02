@@ -55,7 +55,7 @@ public class SailConnectionTupleQuery extends SailConnectionQuery implements Tup
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+		throws QueryEvaluationException, TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

@@ -65,14 +65,14 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	private final TupleAndGraphQueryEvaluator evaluator;
 
 	private final List<String> sparqlQueryStart = Arrays
-			.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
+		.asList(new String[] { "select", "construct", "describe", "ask", "prefix", "base" });
 
 	private final long MAX_INPUT = 1_000_000;
 
 	// [INFILE="input file"[,enc]] [OUTPUT="out/file"]
 	private final static Pattern PATTERN_IO = Pattern.compile(
-			"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?" + "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
-			Pattern.CASE_INSENSITIVE);
+		"^(?<in>INFILE=\"(?<i>[^\"]+)\"" + ",?(?<enc>\\w[\\w-]+)?)? ?" + "(?<out>OUTFILE=\"(?<o>[^\"]+)\")?",
+		Pattern.CASE_INSENSITIVE);
 
 	/**
 	 * Constructor
@@ -103,8 +103,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	@Override
 	public String[] usesSettings() {
 		return new String[] { ConsoleWidth.NAME,
-				Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
-				WorkDir.NAME };
+			Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
+			WorkDir.NAME };
 	}
 
 	/**
@@ -239,7 +239,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 		}
 		try {
 			writeln("Enter multi-line " + queryLn.getName() + " query "
-					+ "(terminate with line containing single '.')");
+				+ "(terminate with line containing single '.')");
 			return consoleIO.readMultiLineInput();
 		} catch (IOException e) {
 			writeError("Failed to read query", e);
@@ -363,8 +363,8 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 */
 	private OutputStream getOutputStream(Path path) throws IOException {
 		return (path != null) ? Files.newOutputStream(path, StandardOpenOption.CREATE,
-				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
-				: new UncloseableOutputStream(consoleIO.getOutputStream());
+			StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
+			: new UncloseableOutputStream(consoleIO.getOutputStream());
 	}
 
 	/**
@@ -379,7 +379,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	 * @throws UpdateExecutionException
 	 */
 	private void evaluateQuery(QueryLanguage queryLn, ParsedOperation query, Path path)
-			throws MalformedQueryException, QueryEvaluationException, UpdateExecutionException {
+		throws MalformedQueryException, QueryEvaluationException, UpdateExecutionException {
 
 		String queryString = query.getSourceString();
 
@@ -393,7 +393,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 			} else if (query instanceof ParsedGraphQuery) {
 				RDFWriter writer = getRDFWriter(path, os);
 				evaluator.evaluateGraphQuery(queryLn, queryString, writer,
-						getShowPrefix() ? getPrefixes() : Collections.emptySet());
+					getShowPrefix() ? getPrefixes() : Collections.emptySet());
 			} else if (query instanceof ParsedUpdate) {
 				// no outputstream for updates, can only be console output
 				if (path != null) {

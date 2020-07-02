@@ -157,7 +157,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		// prepare the test endpoints (i.e. load data)
 		if (sparqlEndpointData.size() > MAX_ENDPOINTS) {
 			throw new RuntimeException("MAX_ENDPOINTs to low, " + sparqlEndpointData.size()
-					+ " repositories needed. Adjust configuration");
+				+ " repositories needed. Adjust configuration");
 		}
 
 		int i = 1; // endpoint id, start with 1
@@ -185,7 +185,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 * @throws IOException
 	 */
 	protected void loadDataSet(Repository rep, String datasetFile)
-			throws RDFParseException, RepositoryException, IOException {
+		throws RDFParseException, RepositoryException, IOException {
 		log.debug("loading dataset...");
 		InputStream dataset = SPARQLServerBaseTest.class.getResourceAsStream(datasetFile);
 
@@ -215,12 +215,12 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 	protected void assumeNativeStore() {
 		Assumptions.assumeTrue(server instanceof NativeStoreServer,
-				"Test can be executed with native store federation only.");
+			"Test can be executed with native store federation only.");
 	}
 
 	protected void assumeSparqlEndpoint() {
 		Assumptions.assumeTrue(repositoryType == REPOSITORY_TYPE.SPARQLREPOSITORY,
-				"Test can be executed for SPARQL Repository only.");
+			"Test can be executed for SPARQL Repository only.");
 	}
 
 	/**

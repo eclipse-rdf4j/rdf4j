@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  */
 public class ExclusiveTupleExprOptimizer extends AbstractQueryModelVisitor<OptimizationException>
-		implements FedXOptimizer {
+	implements FedXOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {
@@ -36,7 +36,7 @@ public class ExclusiveTupleExprOptimizer extends AbstractQueryModelVisitor<Optim
 		if (node.getPathExpression() instanceof ExclusiveStatement) {
 			ExclusiveStatement st = (ExclusiveStatement) node.getPathExpression();
 			ExclusiveArbitraryLengthPath eNode = new ExclusiveArbitraryLengthPath(node, st.getOwner(),
-					st.getQueryInfo());
+				st.getQueryInfo());
 			node.replaceWith(eNode);
 			return;
 		}

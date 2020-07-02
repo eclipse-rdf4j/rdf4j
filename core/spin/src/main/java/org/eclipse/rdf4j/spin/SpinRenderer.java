@@ -137,11 +137,11 @@ public class SpinRenderer {
 
 	public SpinRenderer(Output output) {
 		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI,
-				ValueFactoryImpl.getInstance());
+			ValueFactoryImpl.getInstance());
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,
-			Function<String, IRI> wellKnownFuncMapper, ValueFactory vf) {
+		Function<String, IRI> wellKnownFuncMapper, ValueFactory vf) {
 		this.output = output;
 		this.wellKnownVars = wellKnownVarMapper;
 		this.wellKnownFunctions = wellKnownFuncMapper;
@@ -180,7 +180,7 @@ public class SpinRenderer {
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.ASK_CLASS));
 		if (output.text) {
 			handler.handleStatement(valueFactory.createStatement(querySubj, SP.TEXT_PROPERTY,
-					valueFactory.createLiteral(query.getSourceString())));
+				valueFactory.createLiteral(query.getSourceString())));
 		}
 		if (output.rdf) {
 			Resource whereBNode = valueFactory.createBNode();
@@ -199,7 +199,7 @@ public class SpinRenderer {
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.SELECT_CLASS));
 		if (output.text) {
 			handler.handleStatement(valueFactory.createStatement(querySubj, SP.TEXT_PROPERTY,
-					valueFactory.createLiteral(query.getSourceString())));
+				valueFactory.createLiteral(query.getSourceString())));
 		}
 		if (output.rdf) {
 			TupleExpr expr = query.getTupleExpr();
@@ -216,7 +216,7 @@ public class SpinRenderer {
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.DESCRIBE_CLASS));
 		if (output.text) {
 			handler.handleStatement(valueFactory.createStatement(querySubj, SP.TEXT_PROPERTY,
-					valueFactory.createLiteral(query.getSourceString())));
+				valueFactory.createLiteral(query.getSourceString())));
 		}
 		if (output.rdf) {
 			TupleExpr expr = query.getTupleExpr();
@@ -233,7 +233,7 @@ public class SpinRenderer {
 		handler.handleStatement(valueFactory.createStatement(querySubj, RDF.TYPE, SP.CONSTRUCT_CLASS));
 		if (output.text) {
 			handler.handleStatement(valueFactory.createStatement(querySubj, SP.TEXT_PROPERTY,
-					valueFactory.createLiteral(query.getSourceString())));
+				valueFactory.createLiteral(query.getSourceString())));
 		}
 		if (output.rdf) {
 			TupleExpr expr = query.getTupleExpr();
@@ -282,7 +282,7 @@ public class SpinRenderer {
 			handler.handleStatement(valueFactory.createStatement(updateSubj, RDF.TYPE, updateClass));
 			if (output.text) {
 				handler.handleStatement(valueFactory.createStatement(updateSubj, SP.TEXT_PROPERTY,
-						valueFactory.createLiteral(sourceStrings[i])));
+					valueFactory.createLiteral(sourceStrings[i])));
 			}
 			if (output.rdf) {
 				SpinVisitor visitor = new SpinVisitor(handler, null, updateSubj, dataset);
@@ -367,7 +367,7 @@ public class SpinRenderer {
 				String varName = node.getSourceName();
 				ValueExpr valueExpr = inlineBindings.getValueExpr(varName);
 				Value value = (valueExpr instanceof ValueConstant) ? ((ValueConstant) valueExpr).getValue()
-						: getVar(varName);
+					: getVar(varName);
 				String targetName = node.getTargetName();
 				IRI pred;
 				if ("subject".equals(targetName)) {
@@ -536,7 +536,7 @@ public class SpinRenderer {
 			// structure
 			for (Map.Entry<String, BNode> entry : varBNodes.entrySet()) {
 				handler.handleStatement(valueFactory.createStatement(entry.getValue(), SP.VAR_NAME_PROPERTY,
-						valueFactory.createLiteral(entry.getKey())));
+					valueFactory.createLiteral(entry.getKey())));
 			}
 		}
 
@@ -1046,11 +1046,11 @@ public class SpinRenderer {
 			node.getArg().visit(this);
 			if (node.hasLimit()) {
 				handler.handleStatement(valueFactory.createStatement(subject, SP.LIMIT_PROPERTY,
-						valueFactory.createLiteral(Long.toString(node.getLimit()), XMLSchema.INTEGER)));
+					valueFactory.createLiteral(Long.toString(node.getLimit()), XMLSchema.INTEGER)));
 			}
 			if (node.hasOffset()) {
 				handler.handleStatement(valueFactory.createStatement(subject, SP.OFFSET_PROPERTY,
-						valueFactory.createLiteral(Long.toString(node.getOffset()), XMLSchema.INTEGER)));
+					valueFactory.createLiteral(Long.toString(node.getOffset()), XMLSchema.INTEGER)));
 			}
 		}
 
@@ -1183,7 +1183,7 @@ public class SpinRenderer {
 				if (insertExpr != null) {
 					Resource insertList = valueFactory.createBNode();
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.INSERT_PATTERN_PROPERTY, insertList));
+						valueFactory.createStatement(subject, SP.INSERT_PATTERN_PROPERTY, insertList));
 					ListContext insertCtx = newList(insertList);
 					insertExpr.visit(this);
 					endList(insertCtx);
@@ -1191,7 +1191,7 @@ public class SpinRenderer {
 				if (deleteExpr != null) {
 					Resource deleteList = valueFactory.createBNode();
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DELETE_PATTERN_PROPERTY, deleteList));
+						valueFactory.createStatement(subject, SP.DELETE_PATTERN_PROPERTY, deleteList));
 					ListContext deleteCtx = newList(deleteList);
 					deleteExpr.visit(this);
 					endList(deleteCtx);
@@ -1241,9 +1241,9 @@ public class SpinRenderer {
 					}
 					listEntry();
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.SUBJECT_PROPERTY, st.getSubject()));
+						valueFactory.createStatement(subject, SP.SUBJECT_PROPERTY, st.getSubject()));
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.PREDICATE_PROPERTY, st.getPredicate()));
+						valueFactory.createStatement(subject, SP.PREDICATE_PROPERTY, st.getPredicate()));
 					handler.handleStatement(valueFactory.createStatement(subject, SP.OBJECT_PROPERTY, st.getObject()));
 					if (ctxList != null) {
 						restoreNamedGraph(ctxList);
@@ -1264,10 +1264,10 @@ public class SpinRenderer {
 						listEntry();
 						handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
 						handler.handleStatement(
-								valueFactory.createStatement(subject, SP.GRAPH_NAME_NODE_PROPERTY, context));
+							valueFactory.createStatement(subject, SP.GRAPH_NAME_NODE_PROPERTY, context));
 						Resource elementsList = valueFactory.createBNode();
 						handler.handleStatement(
-								valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
+							valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 						currentCtx = newList(elementsList);
 						namedGraphContext = save();
 						namedGraphLists.put(context, namedGraphContext);
@@ -1293,9 +1293,9 @@ public class SpinRenderer {
 		@Override
 		public void meet(Load node) throws RDFHandlerException {
 			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.DOCUMENT_PROPERTY, node.getSource().getValue()));
+				valueFactory.createStatement(subject, SP.DOCUMENT_PROPERTY, node.getSource().getValue()));
 			handler.handleStatement(
-					valueFactory.createStatement(subject, SP.INTO_PROPERTY, node.getGraph().getValue()));
+				valueFactory.createStatement(subject, SP.INTO_PROPERTY, node.getGraph().getValue()));
 		}
 
 		@Override
@@ -1306,16 +1306,16 @@ public class SpinRenderer {
 
 			if (node.getGraph() != null) {
 				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
+					valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
 			} else if (node.getScope() != null) {
 				switch (node.getScope()) {
 				case DEFAULT_CONTEXTS:
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DEFAULT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DEFAULT_PROPERTY, BooleanLiteral.TRUE));
 					break;
 				case NAMED_CONTEXTS:
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.NAMED_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.NAMED_PROPERTY, BooleanLiteral.TRUE));
 					break;
 				}
 			} else {
@@ -1331,7 +1331,7 @@ public class SpinRenderer {
 
 			if (node.getGraph() != null) {
 				handler.handleStatement(
-						valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
+					valueFactory.createStatement(subject, SP.GRAPH_IRI_PROPERTY, node.getGraph().getValue()));
 			}
 		}
 
@@ -1342,7 +1342,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.COUNT_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1355,7 +1355,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MAX_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1368,7 +1368,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MIN_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1381,7 +1381,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SUM_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1394,7 +1394,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.AVG_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1407,7 +1407,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.GROUP_CONCAT_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);
@@ -1420,7 +1420,7 @@ public class SpinRenderer {
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SAMPLE_CLASS));
 				if (node.isDistinct()) {
 					handler.handleStatement(
-							valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
+						valueFactory.createStatement(subject, SP.DISTINCT_PROPERTY, BooleanLiteral.TRUE));
 				}
 				Resource oldSubject = subject;
 				super.meet(node);

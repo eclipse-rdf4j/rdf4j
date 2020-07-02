@@ -67,7 +67,7 @@ public abstract class AbstractParserHandlingTest {
 	 * Test URI used for testing unknown datatype support.
 	 */
 	private static final IRI UNKNOWN_DATATYPE_URI = SimpleValueFactory.getInstance()
-			.createIRI("urn:test:unknowndatatype");
+		.createIRI("urn:test:unknowndatatype");
 
 	/**
 	 * Test value used for testing unknown datatype value handling.
@@ -363,7 +363,7 @@ public abstract class AbstractParserHandlingTest {
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		testParser.getParserConfig()
-				.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
+			.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 
 		testParser.parse(input, BASE_URI);
 
@@ -520,7 +520,7 @@ public abstract class AbstractParserHandlingTest {
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
 		testParser.getParserConfig()
-				.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
+			.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 
 		testParser.parse(input, BASE_URI);
 
@@ -672,7 +672,7 @@ public abstract class AbstractParserHandlingTest {
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
 		testParser.getParserConfig()
-				.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES));
+			.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES));
 
 		testParser.parse(input, BASE_URI);
 
@@ -829,7 +829,7 @@ public abstract class AbstractParserHandlingTest {
 
 		testParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
 		testParser.getParserConfig()
-				.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES));
+			.setNonFatalErrors(Collections.<RioSetting<?>>singleton(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES));
 
 		testParser.parse(input, BASE_URI);
 
@@ -905,9 +905,9 @@ public abstract class AbstractParserHandlingTest {
 		Model expectedModel = new LinkedHashModel();
 		BNode subj = vf.createBNode();
 		expectedModel
-				.add(vf.createStatement(subj, RDF.VALUE, vf.createLiteral(KNOWN_DATATYPE_VALUE, KNOWN_DATATYPE_URI)));
+			.add(vf.createStatement(subj, RDF.VALUE, vf.createLiteral(KNOWN_DATATYPE_VALUE, KNOWN_DATATYPE_URI)));
 		expectedModel
-				.add(vf.createStatement(subj, RDF.VALUE, vf.createLiteral(KNOWN_LANGUAGE_VALUE, KNOWN_LANGUAGE_TAG)));
+			.add(vf.createStatement(subj, RDF.VALUE, vf.createLiteral(KNOWN_LANGUAGE_VALUE, KNOWN_LANGUAGE_TAG)));
 		InputStream input = getKnownDatatypeStream(expectedModel);
 
 		testParser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, "http://example.com");
@@ -924,13 +924,13 @@ public abstract class AbstractParserHandlingTest {
 	public final void testRDFStarCompatibility() throws Exception {
 		Model expectedModel = new LinkedHashModel();
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
-				vf.createLiteral("example", vf.createIRI("http://example.com/3")));
+			vf.createLiteral("example", vf.createIRI("http://example.com/3")));
 		expectedModel.add(vf.createStatement(t1, DC.SOURCE, vf.createIRI("http://example.com/4")));
 		Triple t2 = vf.createTriple(t1, DC.DATE, vf.createLiteral(new Date()));
 		expectedModel.add(vf.createStatement(vf.createIRI("http://example.com/5"), DC.RELATION, t2));
 		Triple t3 = vf.createTriple(vf.createTriple(vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE,
-				vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
-				vf.createIRI("urn:f"));
+			vf.createIRI("urn:b")), vf.createIRI("urn:c"), vf.createIRI("urn:d")), vf.createIRI("urn:e"),
+			vf.createIRI("urn:f"));
 		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
 
 		// Default: formats with RDF* support handle it natively and non-RDF* use a compatibility encoding
@@ -952,11 +952,11 @@ public abstract class AbstractParserHandlingTest {
 			assertModel(expectedModel);
 		} else {
 			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t1), DC.SOURCE,
-					vf.createIRI("http://example.com/4")));
+				vf.createIRI("http://example.com/4")));
 			assertTrue(testStatements.contains(vf.createIRI("http://example.com/5"), DC.RELATION,
-					RDFStarUtil.toRDFEncodedValue(t2)));
+				RDFStarUtil.toRDFEncodedValue(t2)));
 			assertTrue(testStatements.contains(RDFStarUtil.toRDFEncodedValue(t3), vf.createIRI("urn:same"),
-					RDFStarUtil.toRDFEncodedValue(t3)));
+				RDFStarUtil.toRDFEncodedValue(t3)));
 			assertEquals(3, testStatements.size());
 		}
 	}

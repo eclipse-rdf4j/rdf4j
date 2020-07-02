@@ -133,11 +133,11 @@ public class ValidationResult {
 	@Override
 	public String toString() {
 		return "ValidationResult{" +
-				"sourceConstraintComponent=" + sourceConstraintComponent +
-				", sourceShape=" + sourceShape +
-				", path=" + path +
-				", detail=" + detail +
-				", focusNode=" + focusNode +
-				'}';
+			"sourceConstraintComponent=" + sourceConstraintComponent +
+			", sourceShape=" + sourceShape +
+			", path=" + path +
+			", detail=" + detail +
+			", focusNode=" + focusNode +
+			'}';
 	}
 }

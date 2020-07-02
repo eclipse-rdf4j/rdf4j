@@ -53,7 +53,7 @@ public class Service extends UnaryTupleOperator {
 	 *--------------*/
 
 	public Service(Var serviceRef, TupleExpr serviceExpr, String serviceExpressionString,
-			Map<String, String> prefixDeclarations, String baseURI, boolean silent) {
+		Map<String, String> prefixDeclarations, String baseURI, boolean silent) {
 		super(serviceExpr);
 		setServiceRef(serviceRef);
 		setExpressionString(serviceExpressionString);
@@ -285,7 +285,7 @@ public class Service extends UnaryTupleOperator {
 
 		if (serviceExpression.toLowerCase().startsWith("service")) {
 			return serviceExpression.substring(serviceExpression.indexOf('{') + 1, serviceExpression.lastIndexOf('}'))
-					.trim();
+				.trim();
 		}
 		return serviceExpression;
 	}

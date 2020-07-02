@@ -17,7 +17,7 @@ public abstract class UnaryFunction implements Function {
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
-					String.format("%s requires 1 argument, got %d", getURI(), args.length));
+				String.format("%s requires 1 argument, got %d", getURI(), args.length));
 		}
 
 		return evaluate(valueFactory, args[0]);

@@ -35,8 +35,8 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(UniqueLangPropertyShape.class);
 
 	UniqueLangPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path,
-			boolean uniqueLang) {
+		PathPropertyShape parent, Resource path,
+		boolean uniqueLang) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.uniqueLang = uniqueLang;
@@ -46,7 +46,7 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -58,8 +58,8 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 
 		if (overrideTargetNode != null) {
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
-					connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
-					"?c");
+				connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
+				"?c");
 
 			PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
@@ -102,8 +102,8 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 		PlanNode allRelevantTargets = new Unique(trimmed);
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets,
-				connectionsGroup.getBaseConnection(),
-				getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
+			connectionsGroup.getBaseConnection(),
+			getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
 
 		PlanNode planNode = new NonUniqueTargetLang(relevantTargetsWithPath);
 
@@ -144,10 +144,10 @@ public class UniqueLangPropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "UniqueLangPropertyShape{" +
-				"uniqueLang=" + uniqueLang +
-				", path=" + getPath() +
-				", id=" + id +
-				'}';
+			"uniqueLang=" + uniqueLang +
+			", path=" + getPath() +
+			", id=" + id +
+			'}';
 	}
 
 	@Override

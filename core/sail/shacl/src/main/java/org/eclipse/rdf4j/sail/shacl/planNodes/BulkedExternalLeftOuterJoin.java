@@ -36,11 +36,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
-			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
+		boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+			.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -74,7 +74,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 				}
 
 				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection,
-						variables);
+					variables);
 
 			}
 
@@ -103,7 +103,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 						Tuple rightPeek = right.peekLast();
 
 						if (rightPeek.line.get(0) == leftPeek.line.get(0)
-								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+							|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
 							// we have a join !
 							joined = TupleHelper.join(leftPeek, rightPeek);
 							right.removeLast();
@@ -152,23 +152,23 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		printed = true;
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"right\"]").append("\n");
+				+ getId() + " [label=\"right\"]").append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
-					.append("\n");
+				.append("\n");
 		}
 
 		if (skipBasedOnPreviousConnection) {
 			stringBuilder
-					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-							+ " [label=\"skip if not present\"]")
-					.append("\n");
+				.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+					+ " [label=\"skip if not present\"]")
+				.append("\n");
 
 		}
 
@@ -179,7 +179,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	@Override
 	public String toString() {
 		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ")
-				+ '}';
+			+ '}';
 	}
 
 	@Override

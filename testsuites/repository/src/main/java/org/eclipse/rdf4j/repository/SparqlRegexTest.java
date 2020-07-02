@@ -30,22 +30,22 @@ public abstract class SparqlRegexTest {
 	}
 
 	public String queryInline = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
-			+ "         FILTER regex(str(?mbox), \"@Work.example\", \"i\") }";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
+		+ "         FILTER regex(str(?mbox), \"@Work.example\", \"i\") }";
 
 	public String queryBinding = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
-			+ "         FILTER regex(str(?mbox), ?pattern) }";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
+		+ "         FILTER regex(str(?mbox), ?pattern) }";
 
 	public String queryBindingFlags = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
-			+ "         FILTER regex(str(?mbox), ?pattern, ?flags) }";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
+		+ "         FILTER regex(str(?mbox), ?pattern, ?flags) }";
 
 	public String queryExpr = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name ?mbox\n"
-			+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
-			+ "         ?y <http://example.org/ns#pattern>  ?pattern .\n"
-			+ "         ?y <http://example.org/ns#flags>  ?flags .\n"
-			+ "         FILTER regex(str(?mbox), ?pattern, ?flags) }";
+		+ " WHERE { ?x foaf:name  ?name ;\n" + "            foaf:mbox  ?mbox .\n"
+		+ "         ?y <http://example.org/ns#pattern>  ?pattern .\n"
+		+ "         ?y <http://example.org/ns#flags>  ?flags .\n"
+		+ "         FILTER regex(str(?mbox), ?pattern, ?flags) }";
 
 	private Repository repository;
 

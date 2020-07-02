@@ -401,7 +401,7 @@ public class Literals {
 	 * @throws NullPointerException If the object was null.
 	 */
 	private static Literal createLiteral(ValueFactory valueFactory, Object object, boolean throwExceptionOnFailure)
-			throws LiteralUtilException {
+		throws LiteralUtilException {
 		if (object == null) {
 			throw new NullPointerException("Cannot create a literal from a null");
 		}
@@ -451,8 +451,8 @@ public class Literals {
 		}
 
 		if (object instanceof Boolean || object instanceof Byte || object instanceof Double || object instanceof Float
-				|| object instanceof Integer || object instanceof Long || object instanceof Short
-				|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String) {
+			|| object instanceof Integer || object instanceof Long || object instanceof Short
+			|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String) {
 			return true;
 		}
 

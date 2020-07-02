@@ -33,7 +33,7 @@ public class ParallelPreparedUnionTask extends ParallelTaskBase<BindingSet> {
 	protected final QueryInfo queryInfo;
 
 	public ParallelPreparedUnionTask(ParallelExecutor<BindingSet> unionControl, String preparedQuery, Endpoint endpoint,
-			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
+		BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
 		this.endpoint = endpoint;
 		this.preparedQuery = preparedQuery;
 		this.bindings = bindings;

@@ -83,7 +83,7 @@ public abstract class ModelNamespacesTest {
 		assertEquals(1, namespaces.size());
 
 		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(RDF.PREFIX, RDF.NAMESPACE)));
+			namespaces.contains(new SimpleNamespace(RDF.PREFIX, RDF.NAMESPACE)));
 	}
 
 	/**
@@ -141,7 +141,7 @@ public abstract class ModelNamespacesTest {
 		assertEquals(1, namespaces.size());
 
 		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE)));
+			namespaces.contains(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE)));
 
 		assertFalse(testModel.getNamespace(RDF.PREFIX).isPresent());
 		assertEquals(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE), testModel.getNamespace(RDFS.PREFIX).get());
@@ -261,7 +261,7 @@ public abstract class ModelNamespacesTest {
 		assertEquals(1, namespaces.size());
 
 		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(DC.PREFIX, DC.NAMESPACE)));
+			namespaces.contains(new SimpleNamespace(DC.PREFIX, DC.NAMESPACE)));
 
 		assertFalse(testModel.removeNamespace(RDF.NAMESPACE).isPresent());
 		assertFalse(testModel.removeNamespace(RDFS.NAMESPACE).isPresent());
@@ -297,7 +297,7 @@ public abstract class ModelNamespacesTest {
 		assertEquals(new SimpleNamespace(DC.PREFIX, DC.NAMESPACE), testModel.removeNamespace(DC.PREFIX).get());
 		assertEquals(new SimpleNamespace(SKOS.PREFIX, SKOS.NAMESPACE), testModel.removeNamespace(SKOS.PREFIX).get());
 		assertEquals(new SimpleNamespace(SESAME.PREFIX, SESAME.NAMESPACE),
-				testModel.removeNamespace(SESAME.PREFIX).get());
+			testModel.removeNamespace(SESAME.PREFIX).get());
 
 		Set<Namespace> namespacesAfter = testModel.getNamespaces();
 

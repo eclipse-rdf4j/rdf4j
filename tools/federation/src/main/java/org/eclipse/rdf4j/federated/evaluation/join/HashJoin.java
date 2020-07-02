@@ -35,9 +35,9 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 public class HashJoin extends JoinExecutorBase<BindingSet> {
 
 	public HashJoin(FederationEvalStrategy strategy,
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
-			throws QueryEvaluationException {
+		CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+		TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
+		throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 		setJoinVars(joinVars);
 	}
@@ -54,7 +54,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 		// evaluate the right join argument
 		// Note: wrapped in lazy mutable iteration for repetitive reading
 		try (LazyMutableClosableIteration rightArgIter = new LazyMutableClosableIteration(
-				strategy.evaluate(rightArg, bindings))) {
+			strategy.evaluate(rightArg, bindings))) {
 
 			while (!closed && leftIter.hasNext()) {
 
@@ -103,7 +103,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	 * @param freeVariablesRight
 	 */
 	protected void performJoin(Collection<BindingSet> leftBlock, Collection<BindingSet> rightBlock,
-			Set<String> joinVariables, Collection<String> freeVariablesRight) {
+		Set<String> joinVariables, Collection<String> freeVariablesRight) {
 		addResult(join(leftBlock, rightBlock, joinVariables, freeVariablesRight));
 	}
 
@@ -121,7 +121,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 	 * @return the merged binding result
 	 */
 	static CloseableIteration<BindingSet, QueryEvaluationException> join(Collection<BindingSet> leftBlock,
-			Collection<BindingSet> rightBlock, Set<String> joinVariables, Collection<String> freeVariablesRight) {
+		Collection<BindingSet> rightBlock, Set<String> joinVariables, Collection<String> freeVariablesRight) {
 		List<BindingSet> res = new LinkedList<>();
 
 		for (BindingSet left : leftBlock) {

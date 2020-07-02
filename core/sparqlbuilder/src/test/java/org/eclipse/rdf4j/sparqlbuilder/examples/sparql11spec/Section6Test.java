@@ -28,7 +28,7 @@ public class Section6Test extends BaseExamples {
 		Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
 
 		GraphPatternNotTriples where = GraphPatterns.and(x.has(foaf.iri("name"), name),
-				GraphPatterns.optional(x.has(foaf.iri("mbox"), mbox)));
+			GraphPatterns.optional(x.has(foaf.iri("mbox"), mbox)));
 
 		query.prefix(foaf).select(name, mbox).where(where);
 		p();
@@ -40,8 +40,8 @@ public class Section6Test extends BaseExamples {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.lt(price, 30))
-				.optional();
+			.filter(Expressions.lt(price, 30))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		p();
@@ -56,9 +56,9 @@ public class Section6Test extends BaseExamples {
 		TriplePattern namePattern = x.has(foaf.iri("name"), name);
 
 		query.prefix(foaf)
-				.select(name, mbox, hpage)
-				.where(namePattern, GraphPatterns.and(x.has(foaf.iri("mbox"), mbox)).optional(),
-						GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
+			.select(name, mbox, hpage)
+			.where(namePattern, GraphPatterns.and(x.has(foaf.iri("mbox"), mbox)).optional(),
+				GraphPatterns.and(x.has(foaf.iri("homepage"), hpage)).optional());
 		p();
 	}
 }

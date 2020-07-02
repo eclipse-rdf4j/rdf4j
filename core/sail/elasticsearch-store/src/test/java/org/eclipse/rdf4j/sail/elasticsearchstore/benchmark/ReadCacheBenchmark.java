@@ -82,15 +82,15 @@ public class ReadCacheBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		repoWithoutCache = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex1",
-						false));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex1",
+				false));
 
 		repoWithCache = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex2",
-						true));
+			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex2",
+				true));
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -128,8 +128,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithoutCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+				.prepareTupleQuery(query1)
+				.evaluate());
 		}
 	}
 
@@ -138,8 +138,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+				.prepareTupleQuery(query1)
+				.evaluate());
 		}
 	}
 
@@ -149,8 +149,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+				.prepareTupleQuery(query1)
+				.evaluate());
 		}
 	}
 
@@ -159,8 +159,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithoutCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query5)
-					.evaluate());
+				.prepareTupleQuery(query5)
+				.evaluate());
 		}
 	}
 
@@ -169,8 +169,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query5)
-					.evaluate());
+				.prepareTupleQuery(query5)
+				.evaluate());
 		}
 	}
 
@@ -180,8 +180,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query5)
-					.evaluate());
+				.prepareTupleQuery(query5)
+				.evaluate());
 		}
 	}
 
@@ -190,8 +190,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithoutCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query6)
-					.evaluate());
+				.prepareTupleQuery(query6)
+				.evaluate());
 		}
 	}
 
@@ -200,8 +200,8 @@ public class ReadCacheBenchmark {
 
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 			return Iterations.asList(connection
-					.prepareTupleQuery(query6)
-					.evaluate());
+				.prepareTupleQuery(query6)
+				.evaluate());
 		}
 	}
 
@@ -213,8 +213,8 @@ public class ReadCacheBenchmark {
 		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
 
 			return Iterations.asList(connection
-					.prepareTupleQuery(query6)
-					.evaluate());
+				.prepareTupleQuery(query6)
+				.evaluate());
 		}
 	}
 

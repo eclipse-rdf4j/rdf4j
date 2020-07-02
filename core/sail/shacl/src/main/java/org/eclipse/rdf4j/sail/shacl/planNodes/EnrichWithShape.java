@@ -78,10 +78,10 @@ public class EnrichWithShape implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId())
-				.append(" [label=\"")
-				.append(StringEscapeUtils.escapeJava(this.toString()))
-				.append("\"];")
-				.append("\n");
+			.append(" [label=\"")
+			.append(StringEscapeUtils.escapeJava(this.toString()))
+			.append("\"];")
+			.append("\n");
 		stringBuilder.append(parent.getId()).append(" -> ").append(getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}

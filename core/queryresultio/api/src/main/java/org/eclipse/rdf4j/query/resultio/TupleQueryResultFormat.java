@@ -41,48 +41,48 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results XML Format.
 	 */
 	public static final TupleQueryResultFormat SPARQL = new TupleQueryResultFormat("SPARQL/XML",
-			Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
-			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI, NO_RDF_STAR);
+		Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
+		Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI, NO_RDF_STAR);
 
 	/**
 	 * Binary RDF results table format.
 	 */
 	public static final TupleQueryResultFormat BINARY = new TupleQueryResultFormat("BINARY",
-			"application/x-binary-rdf-results-table", null, "brt", SUPPORTS_RDF_STAR);
+		"application/x-binary-rdf-results-table", null, "brt", SUPPORTS_RDF_STAR);
 
 	/**
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final TupleQueryResultFormat JSON = new TupleQueryResultFormat("SPARQL/JSON",
-			Arrays.asList("application/sparql-results+json", "application/json"), StandardCharsets.UTF_8,
-			Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI, NO_RDF_STAR);
+		Arrays.asList("application/sparql-results+json", "application/json"), StandardCharsets.UTF_8,
+		Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI, NO_RDF_STAR);
 
 	/**
 	 * SPARQL* Query Results JSON Format (like SPARQL JSON but with RDF* support).
 	 */
 	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL/JSON*",
-			Arrays.asList("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
-			Arrays.asList("srjs"), null, SUPPORTS_RDF_STAR);
+		Arrays.asList("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
+		Arrays.asList("srjs"), null, SUPPORTS_RDF_STAR);
 
 	/**
 	 * SPARQL Query Result CSV Format.
 	 */
 	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV", Arrays.asList("text/csv"),
-			StandardCharsets.UTF_8, Arrays.asList("csv"), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
+		StandardCharsets.UTF_8, Arrays.asList("csv"), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
 
 	/**
 	 * SPARQL Query Result TSV Format.
 	 */
 	public static final TupleQueryResultFormat TSV = new TupleQueryResultFormat("SPARQL/TSV",
-			Arrays.asList("text/tab-separated-values"), StandardCharsets.UTF_8, Arrays.asList("tsv"),
-			SPARQL_RESULTS_TSV_URI, NO_RDF_STAR);
+		Arrays.asList("text/tab-separated-values"), StandardCharsets.UTF_8, Arrays.asList("tsv"),
+		SPARQL_RESULTS_TSV_URI, NO_RDF_STAR);
 
 	/**
 	 * SPARQL* Query Results TSV Format (like SPARQL TSV but with RDF* support).
 	 */
 	public static final TupleQueryResultFormat TSV_STAR = new TupleQueryResultFormat("SPARQL*/TSV",
-			Arrays.asList("text/x-tab-separated-values-star", "application/x-sparqlstar-results+tsv"),
-			StandardCharsets.UTF_8, Arrays.asList("tsvs"), null, SUPPORTS_RDF_STAR);
+		Arrays.asList("text/x-tab-separated-values-star", "application/x-sparqlstar-results+tsv"),
+		StandardCharsets.UTF_8, Arrays.asList("tsvs"), null, SUPPORTS_RDF_STAR);
 
 	/*-----------*
 	 * Variables *
@@ -150,7 +150,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, String mimeType, Charset charset, String fileExt,
-			boolean supportsRDFStar) {
+		boolean supportsRDFStar) {
 		super(name, mimeType, charset, fileExt);
 		this.supportsRDFStar = supportsRDFStar;
 	}
@@ -167,7 +167,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 *                       list is interpreted as the default file extension for the format.
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions) {
+		Collection<String> fileExtensions) {
 		this(name, mimeTypes, charset, fileExtensions, NO_RDF_STAR);
 	}
 
@@ -186,7 +186,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions, boolean supportsRDFStar) {
+		Collection<String> fileExtensions, boolean supportsRDFStar) {
 		super(name, mimeTypes, charset, fileExtensions);
 		this.supportsRDFStar = supportsRDFStar;
 	}
@@ -206,7 +206,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions, IRI standardURI) {
+		Collection<String> fileExtensions, IRI standardURI) {
 		this(name, mimeTypes, charset, fileExtensions, standardURI, NO_RDF_STAR);
 	}
 
@@ -227,7 +227,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-			Collection<String> fileExtensions, IRI standardURI, boolean supportsRDFStar) {
+		Collection<String> fileExtensions, IRI standardURI, boolean supportsRDFStar) {
 		super(name, mimeTypes, charset, fileExtensions, standardURI);
 		this.supportsRDFStar = supportsRDFStar;
 	}

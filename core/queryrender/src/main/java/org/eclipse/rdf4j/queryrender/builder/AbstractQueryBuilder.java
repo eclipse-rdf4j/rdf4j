@@ -302,7 +302,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(final String theSubj, final Value thePred, final Value theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred),
-					GroupBuilder.valueToVar(theObj)));
+				GroupBuilder.valueToVar(theObj)));
 		}
 
 		return this;
@@ -315,7 +315,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(final String theSubj, final String thePred, final Value theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns
-					.add(new StatementPattern(new Var(theSubj), new Var(thePred), GroupBuilder.valueToVar(theObj)));
+				.add(new StatementPattern(new Var(theSubj), new Var(thePred), GroupBuilder.valueToVar(theObj)));
 		}
 
 		return this;
@@ -328,7 +328,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(String theSubj, IRI thePred, Value theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred),
-					GroupBuilder.valueToVar(theObj)));
+				GroupBuilder.valueToVar(theObj)));
 		}
 
 		return this;
@@ -341,7 +341,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(IRI theSubj, String thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns
-					.add(new StatementPattern(GroupBuilder.valueToVar(theSubj), new Var(thePred), new Var(theObj)));
+				.add(new StatementPattern(GroupBuilder.valueToVar(theSubj), new Var(thePred), new Var(theObj)));
 		}
 
 		return this;
@@ -354,7 +354,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(IRI theSubj, IRI thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns.add(new StatementPattern(GroupBuilder.valueToVar(theSubj),
-					GroupBuilder.valueToVar(thePred), new Var(theObj)));
+				GroupBuilder.valueToVar(thePred), new Var(theObj)));
 		}
 
 		return this;
@@ -367,7 +367,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 	public QueryBuilder<T> addProjectionStatement(String theSubj, IRI thePred, String theObj) {
 		if (isConstruct()) {
 			mProjectionPatterns
-					.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred), new Var(theObj)));
+				.add(new StatementPattern(new Var(theSubj), GroupBuilder.valueToVar(thePred), new Var(theObj)));
 		}
 
 		return this;
@@ -424,7 +424,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 				}
 
 				aExt.addElements(new ExtensionElem(new ValueConstant(aPattern.getSubjectVar().getValue()),
-						aPattern.getSubjectVar().getName()));
+					aPattern.getSubjectVar().getName()));
 			}
 
 			if (aPattern.getPredicateVar().hasValue()) {
@@ -433,7 +433,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 				}
 
 				aExt.addElements(new ExtensionElem(new ValueConstant(aPattern.getPredicateVar().getValue()),
-						aPattern.getPredicateVar().getName()));
+					aPattern.getPredicateVar().getName()));
 			}
 
 			if (aPattern.getObjectVar().hasValue()) {
@@ -442,7 +442,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 				}
 
 				aExt.addElements(new ExtensionElem(new ValueConstant(aPattern.getObjectVar().getValue()),
-						aPattern.getObjectVar().getName()));
+					aPattern.getObjectVar().getName()));
 			}
 
 			aProjection.addProjection(aList);
@@ -519,7 +519,7 @@ public class AbstractQueryBuilder<T extends ParsedQuery> implements QueryBuilder
 			}
 
 			if (aExpr instanceof Filter
-					&& (((Filter) aExpr).getArg() == null || ((Filter) aExpr).getArg() instanceof EmptySet)) {
+				&& (((Filter) aExpr).getArg() == null || ((Filter) aExpr).getArg() instanceof EmptySet)) {
 				if (aFilter == null) {
 					aFilter = (Filter) aExpr;
 				} else {

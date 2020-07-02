@@ -60,7 +60,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	private final EvaluationStrategy evaluationStrategy;
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
-			Value obj, Var contextVar, BindingSet bindings) {
+		Value obj, Var contextVar, BindingSet bindings) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		result = new QueryBindingSet(bindings);
 		this.subjectVar = subjectVar;

@@ -95,7 +95,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	@Override
 	public CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+		Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		return wrappedCon.evaluate(tupleExpr, dataset, bindings, includeInferred);
 	}
 
@@ -106,7 +106,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
+		boolean includeInferred, Resource... contexts) throws SailException {
 		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
 
@@ -150,13 +150,13 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	@Override
 	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		wrappedCon.addStatement(modify, subj, pred, obj, contexts);
 	}
 
 	@Override
 	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		wrappedCon.removeStatement(modify, subj, pred, obj, contexts);
 	}
 
@@ -202,7 +202,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		return wrappedCon.explain(level, tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
 	}
 

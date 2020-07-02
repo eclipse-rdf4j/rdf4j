@@ -39,7 +39,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 	}
 
 	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, int index,
-			On on) {
+		On on) {
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
@@ -76,16 +76,16 @@ public class ExternalFilterByPredicate implements PlanNode {
 				if (node instanceof Resource && on == On.Subject) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
-							.findFirst()
-							.orElse(null);
+						.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
+						.findFirst()
+						.orElse(null);
 
 				} else if (on == On.Object) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement(null, predicate, node, true))
-							.findFirst()
-							.orElse(null);
+						.filter(predicate -> connection.hasStatement(null, predicate, node, true))
+						.findFirst()
+						.orElse(null);
 
 				}
 				return null;
@@ -131,15 +131,15 @@ public class ExternalFilterByPredicate implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"filter source\"]").append("\n");
+				+ getId() + " [label=\"filter source\"]").append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
-					.append("\n");
+				.append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -148,8 +148,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterByPredicate{" + "filterOnPredicates="
-				+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray())
-				+ '}';
+			+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray())
+			+ '}';
 	}
 
 	@Override

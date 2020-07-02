@@ -97,7 +97,7 @@ public class SimpleTriple implements Triple {
 		if (o instanceof Triple) {
 			Triple that = (Triple) o;
 			return Objects.equals(subject, that.getSubject()) && Objects.equals(predicate, that.getPredicate())
-					&& Objects.equals(object, that.getObject());
+				&& Objects.equals(object, that.getObject());
 		}
 		return false;
 	}

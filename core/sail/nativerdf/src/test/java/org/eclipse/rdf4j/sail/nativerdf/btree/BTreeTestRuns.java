@@ -40,7 +40,7 @@ public class BTreeTestRuns {
 				btree.insert(value);
 				if (i % 50000 == 0) {
 					System.out.println(
-							"Inserted " + i + " values in " + (System.currentTimeMillis() - startTime) + " ms");
+						"Inserted " + i + " values in " + (System.currentTimeMillis() - startTime) + " ms");
 				}
 			}
 
@@ -56,7 +56,7 @@ public class BTreeTestRuns {
 				}
 			}
 			System.out.println("Iteration over " + count + " items finished in "
-					+ (System.currentTimeMillis() - startTime) + " ms");
+				+ (System.currentTimeMillis() - startTime) + " ms");
 
 			// byte[][] values = new byte[count][13];
 			//

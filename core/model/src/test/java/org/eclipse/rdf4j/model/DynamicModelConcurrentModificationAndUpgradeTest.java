@@ -51,11 +51,11 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 	private Exception runTest() throws InterruptedException {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		List<Statement> statements = Arrays.asList(
-				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
-				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
-				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
-				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
-				vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE));
+			vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
+			vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
+			vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
+			vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE),
+			vf.createStatement(vf.createBNode(), RDF.TYPE, RDFS.RESOURCE));
 
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 

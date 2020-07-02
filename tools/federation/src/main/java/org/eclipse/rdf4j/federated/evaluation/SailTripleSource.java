@@ -56,10 +56,10 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			StatementPattern stmt,
-			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		StatementPattern stmt,
+		final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
 		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);
@@ -71,7 +71,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			// the API and require to write as query
 
 			RepositoryResult<Statement> repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
-					queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
+				queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
 
 			// XXX implementation remark and TODO taken from Sesame
 			// The same variable might have been used multiple times in this
@@ -83,7 +83,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			// if filter is set, apply it
 			if (filterExpr != null) {
 				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
-						SailTripleSource.this.strategy);
+					SailTripleSource.this.strategy);
 				if (!filteredRes.hasNext()) {
 					Iterations.closeCloseable(filteredRes);
 					resultHolder.set(new EmptyIteration<>());
@@ -96,14 +96,14 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	@Override
 	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
-			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
-			throws RepositoryException,
-			MalformedQueryException, QueryEvaluationException {
+		Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+		throws RepositoryException,
+		MalformedQueryException, QueryEvaluationException {
 
 		return withConnection((conn, resultHolder) -> {
 
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
-					queryInfo.getIncludeInferred(), contexts);
+				queryInfo.getIncludeInferred(), contexts);
 
 			// XXX implementation remark and TODO taken from Sesame
 			// The same variable might have been used multiple times in this
@@ -120,9 +120,9 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 	@Override
 	public boolean hasStatements(StatementPattern stmt,
-			BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
 		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);
@@ -132,7 +132,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			return conn.hasStatement((Resource) subjValue, (IRI) predValue, objValue, queryInfo.getIncludeInferred(),
-					contexts);
+				contexts);
 		}
 	}
 
@@ -159,10 +159,10 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(
-			TupleExpr preparedQuery,
-			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
+		TupleExpr preparedQuery,
+		BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+		throws RepositoryException, MalformedQueryException,
+		QueryEvaluationException {
 
 		/*
 		 * Implementation note:
@@ -180,16 +180,16 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 				// optimization attempt: use precompiled query
 				PrecompiledQueryNode precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);
 				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(precompiledQueryNode,
-						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
+					null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 
 			} catch (Exception e) {
 				log.warn(
-						"Precompiled query optimization for native store could not be applied: " + e.getMessage());
+					"Precompiled query optimization for native store could not be applied: " + e.getMessage());
 				log.debug("Details:", e);
 
 				// fallback: attempt the original tuple expression
 				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
-						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
+					null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 			}
 
 			if (bindings.size() > 0) {

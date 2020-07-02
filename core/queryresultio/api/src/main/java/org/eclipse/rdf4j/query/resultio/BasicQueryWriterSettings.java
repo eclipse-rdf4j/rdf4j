@@ -24,7 +24,7 @@ public class BasicQueryWriterSettings {
 	 * Defaults to false.
 	 */
 	public final static RioSetting<Boolean> ADD_SESAME_QNAME = new RioSettingImpl<>(
-			"org.eclipse.rdf4j.query.resultio.addsesameqname", "Add Sesame QName", false);
+		"org.eclipse.rdf4j.query.resultio.addsesameqname", "Add Sesame QName", false);
 
 	/**
 	 * Specifies a callback function name for wrapping JSON results to support the JSONP cross-origin request
@@ -33,7 +33,7 @@ public class BasicQueryWriterSettings {
 	 * Defaults to "sesamecallback".
 	 */
 	public static final RioSetting<String> JSONP_CALLBACK = new RioSettingImpl<>(
-			"org.eclipse.rdf4j.query.resultio.jsonpcallback", "JSONP callback function", "sesamecallback");
+		"org.eclipse.rdf4j.query.resultio.jsonpcallback", "JSONP callback function", "sesamecallback");
 
 	/**
 	 * Private default constructor

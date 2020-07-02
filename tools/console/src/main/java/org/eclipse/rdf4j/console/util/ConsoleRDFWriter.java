@@ -32,7 +32,7 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 	private String separatorLine = "";
 	private String header = "";
 	private RDFFormat rdfFormat = new RDFFormat("Console RDF", "application/x-dummy", StandardCharsets.UTF_8,
-			"dummy", true, false, true);
+		"dummy", true, false, true);
 
 	/**
 	 * Constructor

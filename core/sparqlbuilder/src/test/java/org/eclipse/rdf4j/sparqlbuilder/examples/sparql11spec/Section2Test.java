@@ -33,7 +33,7 @@ public class Section2Test extends BaseExamples {
 		Variable title = SparqlBuilder.var("title");
 
 		TriplePattern book1_has_title = GraphPatterns.tp(Rdf.iri(EXAMPLE_ORG_BOOK_NS, "book1"), Rdf.iri(DC_NS, "title"),
-				title);
+			title);
 
 		query.select(title).where(book1_has_title);
 
@@ -116,7 +116,7 @@ public class Section2Test extends BaseExamples {
 		String datatype = "specialDatatype";
 		Variable v = query.var(), p = query.var();
 		TriplePattern v_hasP_abc_dt = GraphPatterns.tp(v, p,
-				Rdf.literalOfType("abc", Rdf.iri(EXAMPLE_DATATYPE_NS, datatype)));
+			Rdf.literalOfType("abc", Rdf.iri(EXAMPLE_DATATYPE_NS, datatype)));
 
 		query.select(v).where(v_hasP_abc_dt);
 		p();
@@ -149,13 +149,13 @@ public class Section2Test extends BaseExamples {
 	public void example_2_5() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS));
 		Variable G = SparqlBuilder.var("G"), P = SparqlBuilder.var("P"), S = SparqlBuilder.var("S"),
-				name = SparqlBuilder.var("name");
+			name = SparqlBuilder.var("name");
 
 		Assignment concatAsName = SparqlBuilder.as(Expressions.concat(G, Rdf.literalOf(" "), S), name);
 
 		query.prefix(foaf)
-				.select(concatAsName)
-				.where(GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
+			.select(concatAsName)
+			.where(GraphPatterns.tp(P, foaf.iri("givenName"), G).andHas(foaf.iri("surname"), S));
 		p();
 
 		// TODO add BIND() capability in graph patterns (also show example of
@@ -166,7 +166,7 @@ public class Section2Test extends BaseExamples {
 	@Test
 	public void example_2_6() {
 		Prefix foaf = SparqlBuilder.prefix("foaf", Rdf.iri(FOAF_NS)),
-				org = SparqlBuilder.prefix("org", Rdf.iri(EXAMPLE_COM_NS));
+			org = SparqlBuilder.prefix("org", Rdf.iri(EXAMPLE_COM_NS));
 		PrefixDeclarations prefixes = SparqlBuilder.prefixes(foaf, org);
 
 		ConstructQuery graphQuery = Queries.CONSTRUCT();

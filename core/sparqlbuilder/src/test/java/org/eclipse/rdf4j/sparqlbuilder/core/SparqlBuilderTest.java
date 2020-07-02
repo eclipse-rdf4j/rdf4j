@@ -42,10 +42,10 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.or(Expressions.lt(price, Rdf.literalOf(20)),
-						Expressions.and(Expressions.lt(price, Rdf.literalOf(50)),
-								Expressions.gt(price, Rdf.literalOf(30)))))
-				.optional();
+			.filter(Expressions.or(Expressions.lt(price, Rdf.literalOf(20)),
+				Expressions.and(Expressions.lt(price, Rdf.literalOf(50)),
+					Expressions.gt(price, Rdf.literalOf(30)))))
+			.optional();
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 50 && ?price > 30 )"));
 	}
@@ -56,15 +56,15 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.or(Expressions.lt(price, Rdf.literalOf(20)),
-						Expressions.and(Expressions.gt(price, Rdf.literalOf(50)),
-								Expressions.or(Expressions.gt(price, Rdf.literalOf(60)),
-										Expressions.lt(price, Rdf.literalOf(70))))))
-				.optional();
+			.filter(Expressions.or(Expressions.lt(price, Rdf.literalOf(20)),
+				Expressions.and(Expressions.gt(price, Rdf.literalOf(50)),
+					Expressions.or(Expressions.gt(price, Rdf.literalOf(60)),
+						Expressions.lt(price, Rdf.literalOf(70))))))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ?price < 20 || ( ?price > 50 &&" +
-				" ( ?price > 60 || ?price < 70 ) ) )"));
+			" ( ?price > 60 || ?price < 70 ) ) )"));
 	}
 
 	@Test
@@ -73,10 +73,10 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.or(Expressions.lt(price, Expressions.subtract(Rdf.literalOf(20),
-						Expressions.multiply(Rdf.literalOf(2), Rdf.literalOf(5)))),
-						Expressions.lt(price, 50)))
-				.optional();
+			.filter(Expressions.or(Expressions.lt(price, Expressions.subtract(Rdf.literalOf(20),
+				Expressions.multiply(Rdf.literalOf(2), Rdf.literalOf(5)))),
+				Expressions.lt(price, 50)))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 - ( 2 * 5 ) )"));
@@ -88,10 +88,10 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.or(Expressions.lt(price, Expressions.add(Rdf.literalOf(20),
-						Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
-						Expressions.lt(price, 50)))
-				.optional();
+			.filter(Expressions.or(Expressions.lt(price, Expressions.add(Rdf.literalOf(20),
+				Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
+				Expressions.lt(price, 50)))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) )"));
@@ -103,9 +103,9 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.lt(price, Expressions.multiply(Expressions.subtract(Rdf.literalOf(20),
-						Rdf.literalOf(2)), Rdf.literalOf(5))))
-				.optional();
+			.filter(Expressions.lt(price, Expressions.multiply(Expressions.subtract(Rdf.literalOf(20),
+				Rdf.literalOf(2)), Rdf.literalOf(5))))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( ( 20 - 2 ) * 5 ) )"));
@@ -117,10 +117,10 @@ public class SparqlBuilderTest {
 		Variable title = SparqlBuilder.var("title"), price = SparqlBuilder.var("price"), x = SparqlBuilder.var("x");
 
 		GraphPatternNotTriples pricePattern = GraphPatterns.and(x.has(ns.iri("price"), price))
-				.filter(Expressions.or(Expressions.lt(price, Expressions.add(Rdf.literalOf(20),
-						Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
-						Expressions.lt(Rdf.literalOf(30), Rdf.literalOf(50))))
-				.optional();
+			.filter(Expressions.or(Expressions.lt(price, Expressions.add(Rdf.literalOf(20),
+				Expressions.divide(Rdf.literalOf(10), Rdf.literalOf(5)))),
+				Expressions.lt(Rdf.literalOf(30), Rdf.literalOf(50))))
+			.optional();
 
 		query.prefix(dc, ns).select(title, price).where(x.has(dc.iri("title"), title), pricePattern);
 		Assert.assertThat(query.getQueryString(), CoreMatchers.containsString("( 20 + ( 10 / 5 ) ) || 30 < 50 )"));
