@@ -29,11 +29,11 @@ public class Demo2 {
 		repo.init();
 
 		String q = "SELECT ?Drug ?IntDrug ?IntEffect WHERE { "
-			+ "?Drug <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Drug> . "
-			+ "?y <http://www.w3.org/2002/07/owl#sameAs> ?Drug . "
-			+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug1> ?y . "
-			+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug2> ?IntDrug . "
-			+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/text> ?IntEffect . }";
+				+ "?Drug <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Drug> . "
+				+ "?y <http://www.w3.org/2002/07/owl#sameAs> ?Drug . "
+				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug1> ?y . "
+				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/interactionDrug2> ?IntDrug . "
+				+ "?Int <http://www4.wiwiss.fu-berlin.de/drugbank/resource/drugbank/text> ?IntEffect . }";
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);

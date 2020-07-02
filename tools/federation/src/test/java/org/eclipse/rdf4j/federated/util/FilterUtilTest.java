@@ -29,8 +29,8 @@ public class FilterUtilTest {
 		ConjunctiveFilterExpr expr = new ConjunctiveFilterExpr(left, right);
 
 		Assertions.assertEquals(
-			"( ( ?age > '15'^^<http://www.w3.org/2001/XMLSchema#int> ) && ( ?age < '25'^^<http://www.w3.org/2001/XMLSchema#int> ) )",
-			FilterUtils.toSparqlString(expr));
+				"( ( ?age > '15'^^<http://www.w3.org/2001/XMLSchema#int> ) && ( ?age < '25'^^<http://www.w3.org/2001/XMLSchema#int> ) )",
+				FilterUtils.toSparqlString(expr));
 	}
 
 	private FilterExpr createFilterExpr(String leftVarName, int rightConstant, CompareOp operator) {

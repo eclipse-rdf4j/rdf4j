@@ -303,7 +303,7 @@ public class JavaCharStream {
 				}
 
 				buffer[bufpos] = c = (char) (hexval(c) << 12 | hexval(ReadByte()) << 8 | hexval(ReadByte()) << 4
-					| hexval(ReadByte()));
+						| hexval(ReadByte()));
 
 				column += 4;
 			} catch (java.io.IOException e) {
@@ -422,9 +422,9 @@ public class JavaCharStream {
 
 	/** Constructor. */
 	public JavaCharStream(java.io.InputStream dstream, String encoding, int startline, int startcolumn, int buffersize)
-		throws java.io.UnsupportedEncodingException {
+			throws java.io.UnsupportedEncodingException {
 		this(encoding == null ? new java.io.InputStreamReader(dstream)
-			: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
+				: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
 	}
 
 	/** Constructor. */
@@ -434,7 +434,7 @@ public class JavaCharStream {
 
 	/** Constructor. */
 	public JavaCharStream(java.io.InputStream dstream, String encoding, int startline, int startcolumn)
-		throws java.io.UnsupportedEncodingException {
+			throws java.io.UnsupportedEncodingException {
 		this(dstream, encoding, startline, startcolumn, 4096);
 	}
 
@@ -455,9 +455,9 @@ public class JavaCharStream {
 
 	/** Reinitialise. */
 	public void ReInit(java.io.InputStream dstream, String encoding, int startline, int startcolumn, int buffersize)
-		throws java.io.UnsupportedEncodingException {
+			throws java.io.UnsupportedEncodingException {
 		ReInit(encoding == null ? new java.io.InputStreamReader(dstream)
-			: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
+				: new java.io.InputStreamReader(dstream, encoding), startline, startcolumn, buffersize);
 	}
 
 	/** Reinitialise. */
@@ -467,7 +467,7 @@ public class JavaCharStream {
 
 	/** Reinitialise. */
 	public void ReInit(java.io.InputStream dstream, String encoding, int startline, int startcolumn)
-		throws java.io.UnsupportedEncodingException {
+			throws java.io.UnsupportedEncodingException {
 		ReInit(dstream, encoding, startline, startcolumn, 4096);
 	}
 

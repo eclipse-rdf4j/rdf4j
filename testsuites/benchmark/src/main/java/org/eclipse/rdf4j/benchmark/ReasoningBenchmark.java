@@ -139,8 +139,8 @@ public class ReasoningBenchmark {
 	private int getSize(SailRepository sail) {
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 			try (TupleQueryResult evaluate = connection
-				.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
-				.evaluate()) {
+					.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
+					.evaluate()) {
 				return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
 
 			}

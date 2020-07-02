@@ -73,8 +73,8 @@ public class Create extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE + "create <template>   Create a new repository using this configuration template\n"
-			+ "  built-in: \n" + Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
-			+ "  template-dir (" + templatesDir + "):\n" + Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
+				+ "  built-in: \n" + Util.formatToWidth(80, "    ", getBuiltinTemplates(), ", ") + "\n"
+				+ "  template-dir (" + templatesDir + "):\n" + Util.formatToWidth(80, "    ", getUserTemplates(), ", ");
 	}
 
 	/**
@@ -107,12 +107,12 @@ public class Create extends ConsoleCommand {
 	private String getOrderedTemplates(Path path) throws IOException {
 		try (Stream<Path> walk = Files.walk(path)) {
 			return walk
-				.filter(Files::isRegularFile)
-				.map(f -> f.getFileName().toString())
-				.filter(s -> s.endsWith(FILE_EXT))
-				.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
-				.sorted()
-				.collect(Collectors.joining(", "));
+					.filter(Files::isRegularFile)
+					.map(f -> f.getFileName().toString())
+					.filter(s -> s.endsWith(FILE_EXT))
+					.map(s -> s.substring(0, s.length() - FILE_EXT.length()))
+					.sorted()
+					.collect(Collectors.joining(", "));
 		}
 	}
 
@@ -170,7 +170,7 @@ public class Create extends ConsoleCommand {
 			final File templateFile = new File(templatesDir, templateFileName);
 
 			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,
-				templateFile);
+					templateFile);
 			if (templateStream != null) {
 				String template;
 				try {
@@ -192,22 +192,22 @@ public class Create extends ConsoleCommand {
 					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);
 
 					final Resource repositoryNode = Models
-						.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
-						.orElseThrow(() -> new RepositoryConfigException("missing repository node"));
+							.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
+							.orElseThrow(() -> new RepositoryConfigException("missing repository node"));
 
 					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);
 					repConfig.validate();
 
 					String overwrite = "WARNING: you are about to overwrite the configuration of an existing repository!";
 					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(repConfig.getID())
-						? askProceed(overwrite, false)
-						: true;
+							? askProceed(overwrite, false)
+							: true;
 
 					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());
 					String invalid = "WARNING: There are potentially incompatible characters in the repository id.";
 					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())
-						? askProceed(invalid, false)
-						: true;
+							? askProceed(invalid, false)
+							: true;
 
 					if (proceedInvalid && proceedOverwrite) {
 						try {
@@ -244,7 +244,7 @@ public class Create extends ConsoleCommand {
 	 * @throws IOException
 	 */
 	private boolean inputParameters(final Map<String, String> valueMap, final Map<String, List<String>> variableMap,
-		Map<String, String> multilineInput) throws IOException {
+			Map<String, String> multilineInput) throws IOException {
 		if (!variableMap.isEmpty()) {
 			writeln("Please specify values for the following variables:");
 		}
@@ -272,7 +272,7 @@ public class Create extends ConsoleCommand {
 			}
 			String prompt = sb.append(": ").toString();
 			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput(prompt)
-				: consoleIO.readln(prompt);
+					: consoleIO.readln(prompt);
 			eof = (value == null);
 			if (eof) {
 				break; // for loop
@@ -299,7 +299,7 @@ public class Create extends ConsoleCommand {
 	 * @throws FileNotFoundException
 	 */
 	private InputStream createTemplateStream(final String templateName, final String templateFileName,
-		final File templatesDir, final File templateFile) throws FileNotFoundException {
+			final File templatesDir, final File templateFile) throws FileNotFoundException {
 		InputStream templateStream = null;
 		if (templateFile.exists()) {
 			if (templateFile.canRead()) {

@@ -89,13 +89,13 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;

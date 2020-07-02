@@ -113,7 +113,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	private ExecutorService createExecutorService() {
 
 		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,
-			new NamingThreadFactory(name));
+				new NamingThreadFactory(name));
 		executor.allowCoreThreadTimeOut(true);
 		return executor;
 	}
@@ -211,7 +211,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 					return;
 				}
 				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
-					+ t.getMessage());
+						+ t.getMessage());
 				taskControl.toss(ExceptionUtil.toException(t));
 			}
 

@@ -132,7 +132,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	public MemoryStore() {
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
-			IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
 	}
 
@@ -308,7 +308,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 					logger.debug("Initializing data file...");
 					try (SailDataset explicit = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
-						SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
+							SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
 					}
 					logger.debug("Data file initialized");
@@ -443,7 +443,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 				try {
 					IsolationLevels level = IsolationLevels.SNAPSHOT;
 					try (SailDataset explicit = store.getExplicitSailSource().dataset(level);
-						SailDataset inferred = store.getInferredSailSource().dataset(level)) {
+							SailDataset inferred = store.getInferredSailSource().dataset(level)) {
 						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);
 					}
 					contentsChanged = false;

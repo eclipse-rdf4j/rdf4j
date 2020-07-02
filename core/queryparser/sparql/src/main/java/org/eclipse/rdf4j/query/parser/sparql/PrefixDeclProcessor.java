@@ -73,11 +73,11 @@ public class PrefixDeclProcessor {
 
 		// insert some default prefixes (if not explicitly defined in the query)
 		final int defaultPrefixesAdded = insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE)
-			+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
-			+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
-			+ insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE)
-			+ insertDefaultPrefix(prefixMap, "xsd", XMLSchema.NAMESPACE)
-			+ insertDefaultPrefix(prefixMap, "fn", FN.NAMESPACE);
+				+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "xsd", XMLSchema.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "fn", FN.NAMESPACE);
 
 		ASTUnparsedQuadDataBlock dataBlock = null;
 		if (qc.getOperation() instanceof ASTInsertData) {
@@ -166,7 +166,7 @@ public class PrefixDeclProcessor {
 			// process escaped special chars.
 			StringBuffer unescaped = new StringBuffer();
 			Pattern escapedCharPattern = Pattern
-				.compile("\\\\[_~\\.\\-!\\$\\&\\'\\(\\)\\*\\+\\,\\;\\=\\:\\/\\?#\\@\\%]");
+					.compile("\\\\[_~\\.\\-!\\$\\&\\'\\(\\)\\*\\+\\,\\;\\=\\:\\/\\?#\\@\\%]");
 			Matcher m = escapedCharPattern.matcher(localName);
 			boolean result = m.find();
 			while (result) {

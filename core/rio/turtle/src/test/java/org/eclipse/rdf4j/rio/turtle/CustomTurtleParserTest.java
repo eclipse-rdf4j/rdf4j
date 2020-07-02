@@ -92,7 +92,7 @@ public class CustomTurtleParserTest {
 			// NOTE: Bad things may happen when VERIFY_LANGUAGE_TAGS is turned off
 			// on a file of this structure
 			Rio.parse(new StringReader("<urn:a> <http://www.example.net/test> \"Foo\"@."), "", RDFFormat.TURTLE,
-				settingsNoVerifyLangTag, vf, errors);
+					settingsNoVerifyLangTag, vf, errors);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
 			assertTrue(e.getMessage().contains("Unexpected end of file"));
@@ -102,7 +102,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887Whitespace() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <http://www.example.net/test> \"Foo\"@fr-FR ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -111,7 +111,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887Period() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <http://www.example.net/test> \"Foo\"@fr-FR."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -120,8 +120,8 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887Semicolon() throws Exception {
 		Model model = Rio.parse(new StringReader(
-			"<urn:a> <http://www.example.net/test> \"Foo\"@fr-FR;<http://other.example.org>\"Blah\"@en-AU."), "",
-			RDFFormat.TURTLE);
+				"<urn:a> <http://www.example.net/test> \"Foo\"@fr-FR;<http://other.example.org>\"Blah\"@en-AU."), "",
+				RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -131,7 +131,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887Comma() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <http://www.example.net/test> \"Foo\"@fr-FR,\"Blah\"@en-AU."),
-			"", RDFFormat.TURTLE);
+				"", RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -141,7 +141,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887CloseParentheses() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <http://www.example.net/test> (\"Foo\"@fr-FR)."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(3, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -150,7 +150,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1887CloseSquareBracket() throws Exception {
 		Model model = Rio.parse(new StringReader("[<http://www.example.net/test> \"Foo\"@fr-FR]."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(null, null, vf.createLiteral("Foo", "fr-FR")));
@@ -224,7 +224,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1988BlankNodePeriodURI() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> _:blank.<urn:c> <urn:d> <urn:e>."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
 	}
@@ -232,7 +232,7 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES1988BlankNodePeriodBNode() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> _:blank._:blank <urn:d> <urn:e>."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
 	}
@@ -281,17 +281,17 @@ public class CustomTurtleParserTest {
 		assertEquals(5, statementCollector.getStatements().size());
 
 		Models.isomorphic(statementCollector.getStatements(),
-			Rio.parse(this.getClass().getResourceAsStream("/testcases/turtle/turtle-long-literals-test.nt"), "",
-				RDFFormat.NTRIPLES));
+				Rio.parse(this.getClass().getResourceAsStream("/testcases/turtle/turtle-long-literals-test.nt"), "",
+						RDFFormat.NTRIPLES));
 	}
 
 	@Test
 	public void testSES2086PeriodEndingLocalNamesFailure1() throws Exception {
 		try {
 			Rio.parse(
-				new StringReader(
-					"@prefix : <http://example.org> .\n <urn:a> <http://www.example.net/test> :test. ."),
-				"", RDFFormat.TURTLE);
+					new StringReader(
+							"@prefix : <http://example.org> .\n <urn:a> <http://www.example.net/test> :test. ."),
+					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
 			System.out.println(e.getMessage());
@@ -303,13 +303,13 @@ public class CustomTurtleParserTest {
 	public void testSES2086PeriodEndingLocalNamesFailure2() throws Exception {
 		try {
 			Rio.parse(new StringReader(
-				"@prefix ns: <http://example.org/data/> . ns:uriWithDot. a ns:Product ; ns:title \"An example subject ending with a dot.\" . "),
-				"", RDFFormat.TURTLE);
+					"@prefix ns: <http://example.org/data/> . ns:uriWithDot. a ns:Product ; ns:title \"An example subject ending with a dot.\" . "),
+					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
 			System.out.println(e.getMessage());
 			assertTrue(e.getMessage()
-				.contains("Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
+					.contains("Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
 		}
 	}
 
@@ -317,8 +317,8 @@ public class CustomTurtleParserTest {
 	public void testSES2086PeriodEndingLocalNamesFailure3() throws Exception {
 		try {
 			Rio.parse(new StringReader(
-				"@prefix ns: <http://example.org/data/> . ns:1 a ns:Product ; ns:affects ns:4 , ns:16 , ns:uriWithDot. ; ns:title \"An example entity with uriWithDot as an object\" . "),
-				"", RDFFormat.TURTLE);
+					"@prefix ns: <http://example.org/data/> . ns:1 a ns:Product ; ns:affects ns:4 , ns:16 , ns:uriWithDot. ; ns:title \"An example entity with uriWithDot as an object\" . "),
+					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
 			System.out.println(e.getMessage());
@@ -330,8 +330,8 @@ public class CustomTurtleParserTest {
 	public void testSES2086PeriodEndingLocalNamesFailure4() throws Exception {
 		try {
 			Rio.parse(new StringReader(
-				"@prefix ns: <http://example.org/data/> . ns:1 a ns:uriWithDot. ; ns:title \"An example entity with uriWithDot as an object\" . "),
-				"", RDFFormat.TURTLE);
+					"@prefix ns: <http://example.org/data/> . ns:1 a ns:uriWithDot. ; ns:title \"An example entity with uriWithDot as an object\" . "),
+					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
 			System.out.println(e.getMessage());
@@ -342,51 +342,51 @@ public class CustomTurtleParserTest {
 	@Test
 	public void testSES2165LiteralSpaceDatatypeNewline() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> \"testliteral\"^^\n<urn:datatype> ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
-			vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
 	public void testSES2165LiteralSpaceDatatypeTab() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> \"testliteral\"^^\t<urn:datatype> ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
-			vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
 	public void testSES2165LiteralSpaceDatatypeCarriageReturn() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> \"testliteral\"^^\r<urn:datatype> ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
-			vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
 	public void testSES2165LiteralSpaceDatatypeSpace() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> \"testliteral\"^^ <urn:datatype> ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
-			vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
 	public void testSES2165LiteralSpaceDatatypeComment() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> <urn:b> \"testliteral\"^^#comment\n<urn:datatype> ."), "",
-			RDFFormat.TURTLE);
+				RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:b"),
-			vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
+				vf.createLiteral("testliteral", vf.createIRI("urn:datatype"))));
 	}
 
 	@Test
@@ -402,10 +402,10 @@ public class CustomTurtleParserTest {
 		ParserConfig aConfig = new ParserConfig();
 
 		aConfig.set(BasicParserSettings.NAMESPACES,
-			Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
+				Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
 
 		Model model = Rio.parse(new StringReader("<urn:a> foo:broader <urn:b>."), "", RDFFormat.TURTLE, aConfig, vf,
-			new ParseErrorLogger());
+				new ParseErrorLogger());
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createURI("urn:a"), SKOS.BROADER, vf.createURI("urn:b")));
@@ -416,10 +416,10 @@ public class CustomTurtleParserTest {
 		ParserConfig aConfig = new ParserConfig();
 
 		aConfig.set(BasicParserSettings.NAMESPACES,
-			Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
+				Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
 
 		Model model = Rio.parse(new StringReader("@prefix skos : <urn:not_skos:> ." + "<urn:a> skos:broader <urn:b>."),
-			"", RDFFormat.TURTLE, aConfig, vf, new ParseErrorLogger());
+				"", RDFFormat.TURTLE, aConfig, vf, new ParseErrorLogger());
 
 		assertEquals(1, model.size());
 		assertTrue(model.contains(vf.createIRI("urn:a"), vf.createIRI("urn:not_skos:broader"), vf.createIRI("urn:b")));
@@ -435,12 +435,12 @@ public class CustomTurtleParserTest {
 			// Invalid IRI
 		}
 		Model model = Rio.parse(new StringReader(ttl), "", RDFFormat.TURTLE,
-			new ParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false), SimpleValueFactory.getInstance(),
-			new ParseErrorLogger());
+				new ParserConfig().set(BasicParserSettings.VERIFY_URI_SYNTAX, false), SimpleValueFactory.getInstance(),
+				new ParseErrorLogger());
 		assertEquals(1, model.size());
 		model.filter(null, RDF.TYPE, null)
-			.objects()
-			.forEach(obj -> assertEquals("http://purl.bioontology.org/ontology/UATC/ SERINE  ", obj.stringValue()));
+				.objects()
+				.forEach(obj -> assertEquals("http://purl.bioontology.org/ontology/UATC/ SERINE  ", obj.stringValue()));
 	}
 
 	@Test

@@ -40,25 +40,25 @@ public class OrderComparatorTest {
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-			throws QueryEvaluationException {
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return null;
 		}
 
 		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 

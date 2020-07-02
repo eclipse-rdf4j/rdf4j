@@ -441,7 +441,7 @@ class SailSourceBranch implements SailSource {
 		try {
 			semaphore.lock();
 			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset
-				&& !isChanged((Changeset) sink)) {
+					&& !isChanged((Changeset) sink)) {
 				// one change to apply that is not in use to an empty Changeset
 				Changeset dst = (Changeset) sink;
 				dst.setChangeset(changes.pop());

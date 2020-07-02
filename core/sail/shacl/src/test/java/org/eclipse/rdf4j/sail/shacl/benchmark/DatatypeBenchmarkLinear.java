@@ -77,7 +77,7 @@ public class DatatypeBenchmarkLinear {
 				IRI iri = vf.createIRI("http://example.com/" + i + "_" + j);
 				statements.add(vf.createStatement(iri, RDF.TYPE, RDFS.RESOURCE));
 				statements.add(vf.createStatement(iri, FOAF.AGE,
-					vf.createLiteral(i)));
+						vf.createLiteral(i)));
 			}
 		}
 		System.gc();

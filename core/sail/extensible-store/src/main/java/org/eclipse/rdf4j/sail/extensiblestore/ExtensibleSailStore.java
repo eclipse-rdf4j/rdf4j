@@ -40,8 +40,8 @@ public class ExtensibleSailStore implements SailStore {
 	private volatile boolean closed;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure,
-		NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
-		ExtensibleStatementHelper extensibleStatementHelper) {
+			NamespaceStoreInterface namespaceStore, EvaluationStatisticsEnum evaluationStatisticsEnum,
+			ExtensibleStatementHelper extensibleStatementHelper) {
 
 		this.evaluationStatisticsEnum = evaluationStatisticsEnum;
 		this.evaluationStatistics = evaluationStatisticsEnum.getInstance(this);
@@ -117,7 +117,7 @@ public class ExtensibleSailStore implements SailStore {
 	}
 
 	private void addToStats(DynamicStatistics instance,
-		CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
+			CloseableIteration<? extends ExtensibleStatement, SailException> statements) {
 
 		long estimatedSize = dataStructure.getEstimatedSize();
 
@@ -161,7 +161,7 @@ public class ExtensibleSailStore implements SailStore {
 					if (staleness > 0.2) {
 						long formattedStaleness = Math.round(staleness * 100);
 						logger.info("Evaluation statistics is stale ({}%) and needs to be recalculated",
-							formattedStaleness);
+								formattedStaleness);
 						startRecalculateStatistics();
 					}
 

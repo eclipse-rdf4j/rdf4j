@@ -156,7 +156,7 @@ class MemorySailStore implements SailStore {
 	 * StatementIterator will assume the specified read mode.
 	 */
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
-		Boolean explicit, int snapshot, Resource... contexts) {
+			Boolean explicit, int snapshot, Resource... contexts) {
 		// Perform look-ups for value-equivalents of the specified values
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
@@ -239,7 +239,7 @@ class MemorySailStore implements SailStore {
 	 * context.
 	 */
 	private CloseableIteration<MemTriple, SailException> createTripleIterator(Resource subj, IRI pred, Value obj,
-		int snapshot) {
+			int snapshot) {
 		// Perform look-ups for value-equivalents of the specified values
 
 		MemResource memSubj = valueFactory.getMemResource(subj);
@@ -355,7 +355,7 @@ class MemorySailStore implements SailStore {
 				};
 
 				toCheckSnapshotCleanupThread = snapshotCleanupThread = new Thread(runnable,
-					"MemoryStore snapshot cleanup");
+						"MemoryStore snapshot cleanup");
 				toCheckSnapshotCleanupThread.setDaemon(true);
 				toCheckSnapshotCleanupThread.start();
 			}
@@ -443,13 +443,13 @@ class MemorySailStore implements SailStore {
 						contexts = new Resource[] { (Resource) ctxVar.getValue() };
 					}
 					try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-						null, -1, contexts);) {
+							null, -1, contexts);) {
 						while (iter.hasNext()) {
 							MemStatement st = iter.next();
 							int since = st.getSinceSnapshot();
 							int till = st.getTillSnapshot();
 							if (serializable < since && since < nextSnapshot
-								|| serializable < till && till < nextSnapshot) {
+									|| serializable < till && till < nextSnapshot) {
 								throw new SailConflictException("Observed State has Changed");
 							}
 						}
@@ -503,19 +503,19 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+				throws SailException {
 			if (observations == null) {
 				observations = new HashSet<>();
 			}
 			if (contexts == null) {
 				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-					new Var("g", null)));
+						new Var("g", null)));
 			} else if (contexts.length == 0) {
 				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
 			} else {
 				for (Resource ctx : contexts) {
 					observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", ctx)));
+							new Var("g", ctx)));
 				}
 			}
 		}
@@ -525,7 +525,7 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
-				explicit, nextSnapshot, contexts);) {
+					explicit, nextSnapshot, contexts);) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);
@@ -546,23 +546,23 @@ class MemorySailStore implements SailStore {
 			if (statement instanceof MemStatement) {
 				MemStatement toDeprecate = (MemStatement) statement;
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
-					&& toDeprecate.isExplicit() == explicit) {
+						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
-				&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
+					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
 				// The Changeset uses a LinkedHashModel to store it's changes. It still keeps a reference to the
 				// original statement that can be retrieved here.
 				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
-					&& toDeprecate.isExplicit() == explicit) {
+						&& toDeprecate.isExplicit() == explicit) {
 					toDeprecate.setTillSnapshot(nextSnapshot);
 				}
 			} else {
 				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
-					statement.getSubject(),
-					statement.getPredicate(), statement.getObject(),
-					explicit, nextSnapshot, statement.getContext())) {
+						statement.getSubject(),
+						statement.getPredicate(), statement.getObject(),
+						explicit, nextSnapshot, statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
 						st.setTillSnapshot(nextSnapshot);
@@ -580,7 +580,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
-			throws SailException {
+				throws SailException {
 			// Get or create MemValues for the operands
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
@@ -588,12 +588,12 @@ class MemorySailStore implements SailStore {
 			MemResource memContext = (context == null) ? null : valueFactory.getOrCreateMemResource(context);
 
 			if (memSubj.hasStatements() && memPred.hasStatements() && memObj.hasStatements()
-				&& (memContext == null || memContext.hasStatements())) {
+					&& (memContext == null || memContext.hasStatements())) {
 				// All values are used in at least one statement. Possibly, the
 				// statement is already present. Check this.
 
 				try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
-					memObj, null, Integer.MAX_VALUE - 1, memContext);) {
+						memObj, null, Integer.MAX_VALUE - 1, memContext);) {
 					if (stIter.hasNext()) {
 						// statement is already present, update its transaction
 						// status if appropriate
@@ -625,7 +625,7 @@ class MemorySailStore implements SailStore {
 			boolean deprecated = false;
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-				explicit, nextSnapshot, contexts)) {
+					explicit, nextSnapshot, contexts)) {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
@@ -731,7 +731,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws SailException {
+				Resource... contexts) throws SailException {
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
 			CloseableIteration<? extends Statement, SailException> stIter2 = null;
 			boolean allGood = false;
@@ -762,7 +762,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-			throws SailException {
+				throws SailException {
 			CloseableIteration<? extends Triple, SailException> stIter1 = null;
 			CloseableIteration<? extends Triple, SailException> stIter2 = null;
 			boolean allGood = false;
@@ -810,7 +810,7 @@ class MemorySailStore implements SailStore {
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
 			try (MemStatementIterator<SailException> iter = new MemStatementIterator<>(contextStatements, null, null,
-				null, null, snapshot);) {
+					null, null, snapshot);) {
 				return iter.hasNext();
 			}
 		}

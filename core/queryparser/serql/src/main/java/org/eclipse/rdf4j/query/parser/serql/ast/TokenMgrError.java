@@ -102,11 +102,11 @@ public class TokenMgrError extends Error {
 	 * customize the lexical error message by modifying this method.
 	 */
 	protected static String LexicalError(boolean EOFSeen, int lexState, int errorLine, int errorColumn,
-		String errorAfter, char curChar) {
+			String errorAfter, char curChar) {
 		return ("Lexical error at line " + errorLine + ", column " + errorColumn + ".  Encountered: "
-			+ (EOFSeen ? "<EOF> "
-				: ("\"" + addEscapes(String.valueOf(curChar)) + "\"") + " (" + (int) curChar + "), ")
-			+ "after : \"" + addEscapes(errorAfter) + "\"");
+				+ (EOFSeen ? "<EOF> "
+						: ("\"" + addEscapes(String.valueOf(curChar)) + "\"") + " (" + (int) curChar + "), ")
+				+ "after : \"" + addEscapes(errorAfter) + "\"");
 	}
 
 	/**
@@ -136,7 +136,7 @@ public class TokenMgrError extends Error {
 
 	/** Full Constructor. */
 	public TokenMgrError(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter, char curChar,
-		int reason) {
+			int reason) {
 		this(LexicalError(EOFSeen, lexState, errorLine, errorColumn, errorAfter, curChar), reason);
 	}
 }

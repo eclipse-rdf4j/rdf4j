@@ -26,13 +26,13 @@ public class TriGStarMimeTypeRDFFormatTest {
 	@Test
 	public void testApplicationXTrigStar() {
 		assertEquals(expectedRDFFormat, Rio.getParserFormatForMIMEType("application/x-trigstar")
-			.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
+				.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
 	}
 
 	@Test
 	public void testApplicationXTrigStarUtf8() {
 		assertEquals(RDFFormat.TRIGSTAR, Rio.getParserFormatForMIMEType("application/x-trigstar;charset=UTF-8")
-			.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
+				.orElseThrow(Rio.unsupportedFormat(expectedRDFFormat)));
 	}
 
 	@Test

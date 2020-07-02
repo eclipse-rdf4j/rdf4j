@@ -88,7 +88,7 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 		// if there are default graphs in the SPARQL update but it's not a WITH
 		// clause, it's a USING clause
 		final boolean hasUsingClause = !hasWithClause && sparqlDefaultGraphs != null ? sparqlDefaultGraphs.size() > 0
-			: false;
+				: false;
 
 		final Set<IRI> sparqlNamedGraphs = sparqlDefinedDataset.getNamedGraphs();
 		final boolean hasUsingNamedClause = sparqlNamedGraphs != null ? sparqlNamedGraphs.size() > 0 : false;

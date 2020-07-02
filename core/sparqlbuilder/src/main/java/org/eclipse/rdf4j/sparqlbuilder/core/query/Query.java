@@ -104,7 +104,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 */
 	public T groupBy(Groupable... groupables) {
 		groupBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(groupBy, SparqlBuilder::groupBy,
-			gb -> gb.by(groupables));
+				gb -> gb.by(groupables));
 
 		return (T) this;
 	}
@@ -131,7 +131,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 */
 	public T orderBy(Orderable... conditions) {
 		orderBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(orderBy, SparqlBuilder::orderBy,
-			ob -> ob.by(conditions));
+				ob -> ob.by(conditions));
 
 		return (T) this;
 	}
@@ -158,7 +158,7 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 */
 	public T having(Expression<?>... constraints) {
 		having = SparqlBuilderUtils.getOrCreateAndModifyOptional(having, SparqlBuilder::having,
-			h -> h.having(constraints));
+				h -> h.having(constraints));
 
 		return (T) this;
 	}

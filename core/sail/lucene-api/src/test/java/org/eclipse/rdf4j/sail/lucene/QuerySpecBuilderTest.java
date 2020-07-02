@@ -99,7 +99,7 @@ public class QuerySpecBuilderTest {
 				// Matched the first
 				assertEquals("sub1", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals("my Lucene query",
-					((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+						((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 				assertEquals("score1", querySpec.getScorePattern().getObjectVar().getName());
 				assertEquals("snippet1", querySpec.getSnippetPattern().getObjectVar().getName());
 				assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
@@ -110,7 +110,7 @@ public class QuerySpecBuilderTest {
 				// and the second
 				assertEquals("sub2", querySpec.getMatchesPattern().getSubjectVar().getName());
 				assertEquals("second lucene query",
-					((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
+						((Literal) querySpec.getQueryPattern().getObjectVar().getValue()).getLabel());
 				assertEquals("score2", querySpec.getScorePattern().getObjectVar().getName());
 				assertEquals("snippet2", querySpec.getSnippetPattern().getObjectVar().getName());
 				assertEquals(LUCENE_QUERY, querySpec.getTypePattern().getObjectVar().getValue());
@@ -138,20 +138,20 @@ public class QuerySpecBuilderTest {
 	public void testIncompleteFail() throws Exception {
 		// default works
 		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE
-			+ "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
-			+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
+				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		checkQuery(queryString);
 
 		// minimal works
 		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
-			+ "<" + QUERY + "> {\"my Lucene query\"} ";
+				+ "<" + QUERY + "> {\"my Lucene query\"} ";
 		checkQuery(queryString);
 
 		// matches missing
 		queryString = "SELECT sub1, score1, snippet1 FROM "
-			// + "{sub1} <" + MATCHES + "> {} "
-			+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
-			+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				// + "{sub1} <" + MATCHES + "> {} "
+				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
+				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		try {
 			checkQuery(queryString);
 			fail("invalid query ignored");
@@ -162,8 +162,8 @@ public class QuerySpecBuilderTest {
 		// type missing
 		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} "
 		// +"<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
-			+ "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE + "> {score1}; " + "<" + SNIPPET
-			+ "> {snippet1}";
+				+ "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE + "> {score1}; " + "<" + SNIPPET
+				+ "> {snippet1}";
 		try {
 			checkQuery(queryString);
 			// excellent
@@ -173,9 +173,9 @@ public class QuerySpecBuilderTest {
 
 		// query missing
 		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<"
-			+ LUCENE_QUERY + ">}; "
-			// +"<" + QUERY + "> {\"my Lucene query\"}; "
-			+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ LUCENE_QUERY + ">}; "
+				// +"<" + QUERY + "> {\"my Lucene query\"}; "
+				+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
 		try {
 			checkQuery(queryString);
 			fail("invalid missing query not detected");
@@ -198,7 +198,7 @@ public class QuerySpecBuilderTest {
 	}
 
 	private Collection<SearchQueryEvaluator> process(SearchQueryInterpreter interpreter, TupleExpr tupleExpr)
-		throws SailException {
+			throws SailException {
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 		interpreter.process(tupleExpr, new QueryBindingSet(), queries);
 		return queries;

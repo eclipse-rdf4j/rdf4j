@@ -59,7 +59,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 	// keep most recently used blocks in memory as decoded values
 	private final LinkedHashMap<Integer, ArrayList<byte[]>> cache = new LinkedHashMap<Integer, ArrayList<byte[]>>(100,
-		1, true) {
+			1, true) {
 		@Override
 		protected boolean removeEldestEntry(Map.Entry eldest) {
 			return size() > 99;
@@ -107,7 +107,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
+				CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {
 
 			long val = VByte.decode(cis);
 			if (totalStrings > Integer.MAX_VALUE) {
@@ -124,7 +124,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 			val = VByte.decode(cis);
 			if (val > Integer.MAX_VALUE) {
 				throw new UnsupportedOperationException(
-					getDebugPartStr() + "max number of strings per exceeded: " + val);
+						getDebugPartStr() + "max number of strings per exceeded: " + val);
 			}
 			stringsBlock = (int) val;
 
@@ -137,7 +137,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
+				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 
 			buffer = new byte[buflen];
 			cis.read(buffer);

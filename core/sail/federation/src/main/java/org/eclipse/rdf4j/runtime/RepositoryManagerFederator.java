@@ -84,7 +84,7 @@ public class RepositoryManagerFederator {
 	 * @throws RDF4JException        if a problem otherwise occurs while creating the federation
 	 */
 	public void addFed(String fedID, String description, Collection<String> members, boolean readonly, boolean distinct)
-		throws MalformedURLException, RDF4JException {
+			throws MalformedURLException, RDF4JException {
 		if (members.contains(fedID)) {
 			throw new RepositoryConfigException("A federation member may not have the same ID as the federation.");
 		}
@@ -101,16 +101,16 @@ public class RepositoryManagerFederator {
 	}
 
 	private void addImplementation(Collection<String> members, Model graph, BNode fedRepoNode, boolean readonly,
-		boolean distinct) throws RDF4JException, MalformedURLException {
+			boolean distinct) throws RDF4JException, MalformedURLException {
 		BNode implRoot = valueFactory.createBNode();
 		addToGraph(graph, fedRepoNode, RepositoryConfigSchema.REPOSITORYIMPL, implRoot);
 		addToGraph(graph, implRoot, RepositoryConfigSchema.REPOSITORYTYPE,
-			valueFactory.createLiteral(SailRepositoryFactory.REPOSITORY_TYPE));
+				valueFactory.createLiteral(SailRepositoryFactory.REPOSITORY_TYPE));
 		addSail(members, graph, implRoot, readonly, distinct);
 	}
 
 	private void addSail(Collection<String> members, Model graph, BNode implRoot, boolean readonly, boolean distinct)
-		throws RDF4JException, MalformedURLException {
+			throws RDF4JException, MalformedURLException {
 		BNode sailRoot = valueFactory.createBNode();
 		addToGraph(graph, implRoot, SailRepositorySchema.SAILIMPL, sailRoot);
 		addToGraph(graph, sailRoot, SailConfigSchema.SAILTYPE, valueFactory.createLiteral(FederationFactory.SAIL_TYPE));
@@ -122,19 +122,19 @@ public class RepositoryManagerFederator {
 	}
 
 	private void addMember(Model graph, BNode sailRoot, String identifier)
-		throws RDF4JException, MalformedURLException {
+			throws RDF4JException, MalformedURLException {
 		LOGGER.debug("Adding member: {}", identifier);
 		BNode memberNode = valueFactory.createBNode();
 		addToGraph(graph, sailRoot, FederationConfig.MEMBER, memberNode);
 		String memberRepoType = manager.getRepositoryConfig(identifier).getRepositoryImplConfig().getType();
 		if (!(SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)
-			|| HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType))) {
+				|| HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType))) {
 			memberRepoType = ProxyRepositoryFactory.REPOSITORY_TYPE;
 		}
 		addToGraph(graph, memberNode, RepositoryConfigSchema.REPOSITORYTYPE,
-			valueFactory.createLiteral(memberRepoType));
+				valueFactory.createLiteral(memberRepoType));
 		addToGraph(graph, memberNode, getLocationPredicate(memberRepoType),
-			getMemberLocator(identifier, memberRepoType));
+				getMemberLocator(identifier, memberRepoType));
 		LOGGER.debug("Added member {}: ", identifier);
 	}
 
@@ -151,16 +151,16 @@ public class RepositoryManagerFederator {
 	}
 
 	private Value getMemberLocator(String identifier, String memberRepoType)
-		throws MalformedURLException, RepositoryConfigException, RDF4JException {
+			throws MalformedURLException, RepositoryConfigException, RDF4JException {
 		Value locator;
 		if (HTTPRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
 			locator = valueFactory.createIRI(
-				((HTTPRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
-					.getURL());
+					((HTTPRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
+							.getURL());
 		} else if (SPARQLRepositoryFactory.REPOSITORY_TYPE.equals(memberRepoType)) {
 			locator = valueFactory.createIRI(
-				((SPARQLRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
-					.getQueryEndpointUrl());
+					((SPARQLRepositoryConfig) manager.getRepositoryConfig(identifier).getRepositoryImplConfig())
+							.getQueryEndpointUrl());
 		} else {
 			locator = valueFactory.createLiteral(identifier);
 		}

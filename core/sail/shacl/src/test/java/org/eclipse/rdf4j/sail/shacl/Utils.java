@@ -68,7 +68,7 @@ public class Utils {
 	}
 
 	public static void loadShapeData(SailRepository repo, URL resourceName)
-		throws RDF4JException, UnsupportedRDFormatException, IOException {
+			throws RDF4JException, UnsupportedRDFormatException, IOException {
 		((ShaclSail) repo.getSail()).disableValidation();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -82,7 +82,7 @@ public class Utils {
 	}
 
 	public static SailRepository getInitializedShaclRepository(String shapeData,
-		boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
+			boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
 		SailRepository repo = new SailRepository(sail);

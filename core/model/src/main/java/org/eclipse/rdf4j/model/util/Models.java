@@ -93,10 +93,10 @@ public class Models {
 	 */
 	public static Optional<Literal> objectLiteral(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof Literal)
-			.map(l -> (Literal) l)
-			.findAny();
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.findAny();
 	}
 
 	/**
@@ -124,10 +124,10 @@ public class Models {
 	 */
 	public static Set<Literal> objectLiterals(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof Literal)
-			.map(l -> (Literal) l)
-			.collect(Collectors.toSet());
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Literal)
+				.map(l -> (Literal) l)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -156,10 +156,10 @@ public class Models {
 	 */
 	public static Optional<Resource> objectResource(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof Resource)
-			.map(r -> (Resource) r)
-			.findAny();
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.findAny();
 	}
 
 	/**
@@ -188,10 +188,10 @@ public class Models {
 	 */
 	public static Set<Resource> objectResources(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof Resource)
-			.map(r -> (Resource) r)
-			.collect(Collectors.toSet());
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof Resource)
+				.map(r -> (Resource) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -219,10 +219,10 @@ public class Models {
 	 */
 	public static Optional<IRI> objectIRI(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof IRI)
-			.map(r -> (IRI) r)
-			.findAny();
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.findAny();
 	}
 
 	/**
@@ -250,10 +250,10 @@ public class Models {
 	 */
 	public static Set<IRI> objectIRIs(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject())
-			.filter(o -> o instanceof IRI)
-			.map(r -> (IRI) r)
-			.collect(Collectors.toSet());
+				.map(st -> st.getObject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -308,8 +308,8 @@ public class Models {
 	 */
 	public static Set<String> objectStrings(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getObject().stringValue())
-			.collect(Collectors.toSet());
+				.map(st -> st.getObject().stringValue())
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -364,10 +364,10 @@ public class Models {
 	 */
 	public static Optional<IRI> subjectIRI(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getSubject())
-			.filter(s -> s instanceof IRI)
-			.map(s -> (IRI) s)
-			.findAny();
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof IRI)
+				.map(s -> (IRI) s)
+				.findAny();
 	}
 
 	/**
@@ -393,10 +393,10 @@ public class Models {
 	 */
 	public static Set<IRI> subjectIRIs(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getSubject())
-			.filter(o -> o instanceof IRI)
-			.map(r -> (IRI) r)
-			.collect(Collectors.toSet());
+				.map(st -> st.getSubject())
+				.filter(o -> o instanceof IRI)
+				.map(r -> (IRI) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -422,10 +422,10 @@ public class Models {
 	 */
 	public static Optional<BNode> subjectBNode(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getSubject())
-			.filter(s -> s instanceof BNode)
-			.map(s -> (BNode) s)
-			.findAny();
+				.map(st -> st.getSubject())
+				.filter(s -> s instanceof BNode)
+				.map(s -> (BNode) s)
+				.findAny();
 	}
 
 	/**
@@ -451,10 +451,10 @@ public class Models {
 	 */
 	public static Set<BNode> subjectBNodes(Iterable<Statement> statements) {
 		return StreamSupport.stream(statements.spliterator(), false)
-			.map(st -> st.getSubject())
-			.filter(o -> o instanceof BNode)
-			.map(r -> (BNode) r)
-			.collect(Collectors.toSet());
+				.map(st -> st.getSubject())
+				.filter(o -> o instanceof BNode)
+				.map(r -> (BNode) r)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -568,7 +568,7 @@ public class Models {
 	 * @return a property value Resource from the given model, or {@link Optional#empty()} if no such value exists.
 	 */
 	public static Optional<Resource> getPropertyResource(Model m, Resource subject, IRI property,
-		Resource... contexts) {
+			Resource... contexts) {
 		Objects.requireNonNull(m, "model may not be null");
 		Objects.requireNonNull(subject, "subject may not be null");
 		Objects.requireNonNull(property, "property may not be null");
@@ -900,7 +900,7 @@ public class Models {
 			if (subject != null || object != null) {
 				// Triples within triples, replace them in the map
 				Triple nt = vf.createTriple(subject != null ? subject : t.getSubject(), t.getPredicate(),
-					object != null ? object : t.getObject());
+						object != null ? object : t.getObject());
 				e.setValue(nt);
 			}
 		}
@@ -916,11 +916,11 @@ public class Models {
 				// Statement not part of detected reification, add it as is
 				consumer.accept(s);
 			} else if (subjectTriple == null || ((!RDF.TYPE.equals(predicate) || !RDF.STATEMENT.equals(object))
-				&& !RDF.SUBJECT.equals(predicate) && !RDF.PREDICATE.equals(predicate)
-				&& !RDF.OBJECT.equals(predicate))) {
+					&& !RDF.SUBJECT.equals(predicate) && !RDF.PREDICATE.equals(predicate)
+					&& !RDF.OBJECT.equals(predicate))) {
 				// Statement uses reified data and needs to be converted
 				Statement ns = vf.createStatement(subjectTriple != null ? subjectTriple : s.getSubject(),
-					s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());
+						s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());
 				consumer.accept(ns);
 			} // else: Statement part of reification and needs to be removed (skipped)
 		});
@@ -1064,7 +1064,7 @@ public class Models {
 	}
 
 	private static Map<Resource, Resource> createNewBnodeMapping(Map<Resource, Resource> bNodeMapping, Statement st1,
-		Statement st2) {
+			Statement st2) {
 		Map<Resource, Resource> newBNodeMapping = new HashMap<>(bNodeMapping);
 
 		if (isBlank(st1.getSubject()) && isBlank(st2.getSubject())) {
@@ -1082,7 +1082,7 @@ public class Models {
 	}
 
 	private static List<Statement> findMatchingStatements(Statement st, Model model,
-		Map<Resource, Resource> bNodeMapping) {
+			Map<Resource, Resource> bNodeMapping) {
 		Resource s = isBlank(st.getSubject()) ? null : st.getSubject();
 		IRI p = st.getPredicate();
 		Value o = isBlank(st.getObject()) ? null : st.getObject();

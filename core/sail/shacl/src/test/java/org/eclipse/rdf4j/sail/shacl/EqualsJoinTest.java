@@ -118,9 +118,9 @@ public class EqualsJoinTest {
 	public void testSimple06() {
 
 		PlanNode left = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"), Arrays.asList("b", "1"),
-			Arrays.asList("c", "1"));
+				Arrays.asList("c", "1"));
 		PlanNode right = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("b", "1"),
-			Arrays.asList("b", "1"), Arrays.asList("c", "1"));
+				Arrays.asList("b", "1"), Arrays.asList("c", "1"));
 
 		EqualsJoin equalsJoin = new EqualsJoin(left, right, true);
 
@@ -135,12 +135,12 @@ public class EqualsJoinTest {
 		System.out.println(actual);
 
 		Set<Tuple> collect = Arrays.stream(expect)
-			.map(strings -> strings.stream()
-				.map(SimpleValueFactory.getInstance()::createLiteral)
-				.map(l -> (Value) l)
-				.collect(Collectors.toList()))
-			.map(Tuple::new)
-			.collect(Collectors.toSet());
+				.map(strings -> strings.stream()
+						.map(SimpleValueFactory.getInstance()::createLiteral)
+						.map(l -> (Value) l)
+						.collect(Collectors.toList()))
+				.map(Tuple::new)
+				.collect(Collectors.toSet());
 
 		Set<Tuple> actualSet = new HashSet<>(actual);
 

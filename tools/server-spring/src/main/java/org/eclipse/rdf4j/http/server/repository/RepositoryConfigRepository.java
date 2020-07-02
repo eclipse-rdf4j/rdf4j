@@ -117,15 +117,15 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj,
-				boolean includeInferred, Resource... contexts) throws RepositoryException {
+					boolean includeInferred, Resource... contexts) throws RepositoryException {
 				CloseableIteration<Statement, RepositoryException> iter = new CloseableIteratorIteration<>(
-					committed.getStatements(subj, pred, obj, contexts).iterator());
+						committed.getStatements(subj, pred, obj, contexts).iterator());
 				return new RepositoryResult<>(iter);
 			}
 
 			@Override
 			public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-				RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException {
+					RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException {
 				Model model = committed.filter(subj, pred, obj, contexts);
 				handler.startRDF();
 				model.getNamespaces().forEach(ns -> {
@@ -237,43 +237,43 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			@Override
 			public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException, MalformedQueryException {
+					throws RepositoryException, MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException, MalformedQueryException {
+					throws RepositoryException, MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException, MalformedQueryException {
+					throws RepositoryException, MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-				throws RepositoryException, MalformedQueryException {
+					throws RepositoryException, MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-				throws RepositoryException, MalformedQueryException {
+					throws RepositoryException, MalformedQueryException {
 				throw unsupported();
 			}
 
 			@Override
 			protected void addWithoutCommit(Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws RepositoryException {
+					throws RepositoryException {
 				added.add(subj, pred, obj, contexts);
 			}
 
 			@Override
 			protected void removeWithoutCommit(Resource subj, IRI pred, Value obj, Resource... contexts)
-				throws RepositoryException {
+					throws RepositoryException {
 				Model model = committed.filter(subj, pred, obj, contexts);
 				removed.addAll(model);
 			}

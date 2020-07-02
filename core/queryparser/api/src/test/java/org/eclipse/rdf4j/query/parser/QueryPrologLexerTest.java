@@ -100,7 +100,7 @@ public class QueryPrologLexerTest {
 	@Test
 	public void testFinalTokenWithMultilineComment() {
 		Token t = QueryPrologLexer
-			.getRestOfQueryToken("# COMMENT \n# COMMENT (continued) \nSELECT * WHERE {?s ?p ?o} ");
+				.getRestOfQueryToken("# COMMENT \n# COMMENT (continued) \nSELECT * WHERE {?s ?p ?o} ");
 		assertNotNull(t);
 		assertTrue(t.getType().equals(TokenType.REST_OF_QUERY));
 		assertEquals("SELECT * WHERE {?s ?p ?o} ", t.s);
@@ -109,7 +109,7 @@ public class QueryPrologLexerTest {
 	@Test
 	public void testFinalTokenWithMultilineComment2() {
 		Token t = QueryPrologLexer
-			.getRestOfQueryToken("#comment1\n#another comment\n" + "SELECT * WHERE { ?s ?p ?o } LIMIT 1");
+				.getRestOfQueryToken("#comment1\n#another comment\n" + "SELECT * WHERE { ?s ?p ?o } LIMIT 1");
 		assertNotNull(t);
 		assertTrue(t.getType().equals(TokenType.REST_OF_QUERY));
 		assertEquals("SELECT * WHERE { ?s ?p ?o } LIMIT 1", t.s);
@@ -141,7 +141,7 @@ public class QueryPrologLexerTest {
 
 		try {
 			List<Token> tokens = QueryPrologLexer
-				.lex("BASE <foobar # missing closing bracket \nSELECT * WHERE {?s ?p ?o} ");
+					.lex("BASE <foobar # missing closing bracket \nSELECT * WHERE {?s ?p ?o} ");
 		} catch (Exception e) {
 			fail("malformed query should not make lexer fail");
 
@@ -157,7 +157,7 @@ public class QueryPrologLexerTest {
 
 		try {
 			Token t = QueryPrologLexer
-				.getRestOfQueryToken("BASE <foobar # missing closing bracket \nSELECT * WHERE {?s ?p ?o} ");
+					.getRestOfQueryToken("BASE <foobar # missing closing bracket \nSELECT * WHERE {?s ?p ?o} ");
 		} catch (Exception e) {
 			fail("malformed query should not make lexer fail");
 		}

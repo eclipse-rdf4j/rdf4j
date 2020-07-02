@@ -167,7 +167,7 @@ public abstract class SPARQLUpdateTest {
 		}
 
 		assertTrue(
-			con.hasStatement((Resource) null, RDF.TYPE, con.getValueFactory().createIRI("urn:TestSubject"), true));
+				con.hasStatement((Resource) null, RDF.TYPE, con.getValueFactory().createIRI("urn:TestSubject"), true));
 	}
 
 	@Test
@@ -423,7 +423,7 @@ public abstract class SPARQLUpdateTest {
 		sts.close();
 
 		String query = getNamespaceDeclarations()
-			+ " SELECT ?bn ?age ?l WHERE { ex:bob ex:complexAge ?bn. ?bn rdf:value ?age. ?bn rdfs:label ?l .} ";
+				+ " SELECT ?bn ?age ?l WHERE { ex:bob ex:complexAge ?bn. ?bn rdf:value ?age. ?bn rdfs:label ?l .} ";
 
 		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();
 
@@ -849,7 +849,7 @@ public abstract class SPARQLUpdateTest {
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append(
-			"INSERT DATA { ex:book1 dc:title \"the number four\"^^<http://www.w3.org/2001/XMLSchema#integer> . }; ");
+				"INSERT DATA { ex:book1 dc:title \"the number four\"^^<http://www.w3.org/2001/XMLSchema#integer> . }; ");
 
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 
@@ -897,11 +897,11 @@ public abstract class SPARQLUpdateTest {
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 		operation.execute();
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 	}
 
 	@Test
@@ -917,11 +917,11 @@ public abstract class SPARQLUpdateTest {
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 		operation.execute();
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 	}
 
 	@Test
@@ -938,17 +938,17 @@ public abstract class SPARQLUpdateTest {
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertFalse(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 
 		assertFalse(con.hasStatement(f.createIRI("urn:s2"), f.createIRI("urn:p2"), f.createIRI("urn:o2"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 		operation.execute();
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), RDF.TYPE, null, true, (Resource) null));
 		assertTrue(con.hasStatement(f.createIRI("urn:s2"), RDF.TYPE, null, true, (Resource) null));
 		assertTrue(con.hasStatement(f.createIRI("urn:s1"), f.createIRI("urn:p1"), f.createIRI("urn:o1"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 		assertTrue(con.hasStatement(f.createIRI("urn:s2"), f.createIRI("urn:p2"), f.createIRI("urn:o2"), true,
-			f.createIRI("urn:g1")));
+				f.createIRI("urn:g1")));
 	}
 
 	@Test
@@ -967,11 +967,11 @@ public abstract class SPARQLUpdateTest {
 		operation.execute();
 
 		RepositoryResult<Statement> titleStatements = con.getStatements(null, DC.TITLE, f.createLiteral("book 1"),
-			true);
+				true);
 		assertNotNull(titleStatements);
 
 		RepositoryResult<Statement> creatorStatements = con.getStatements(null, DC.CREATOR, f.createLiteral("Ringo"),
-			true);
+				true);
 		assertNotNull(creatorStatements);
 
 		BNode bookNode = null;
@@ -1007,7 +1007,7 @@ public abstract class SPARQLUpdateTest {
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append(
-			"INSERT DATA { ex:book1 dc:title \"book 1\". ex:book1 dc:creator \"Ringo\" . ex:book2 dc:creator \"George\". } ");
+				"INSERT DATA { ex:book1 dc:title \"book 1\". ex:book1 dc:creator \"Ringo\" . ex:book2 dc:creator \"George\". } ");
 
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 
@@ -1055,7 +1055,7 @@ public abstract class SPARQLUpdateTest {
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append(
-			"INSERT DATA { GRAPH ex:graph1 { ex:Human rdfs:subClassOf ex:Mammal. ex:Mammal rdfs:subClassOf ex:Animal. ex:george a ex:Human. ex:ringo a ex:Human. } } ");
+				"INSERT DATA { GRAPH ex:graph1 { ex:Human rdfs:subClassOf ex:Mammal. ex:Mammal rdfs:subClassOf ex:Animal. ex:george a ex:Human. ex:ringo a ex:Human. } } ");
 
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 
@@ -1632,7 +1632,7 @@ public abstract class SPARQLUpdateTest {
 		StringBuilder update = new StringBuilder();
 		update.append(getNamespaceDeclarations());
 		update.append(
-			"INSERT { GRAPH ex:graph2 { ?s ?p ?o } } WHERE { GRAPH ex:graph1 { ?s ?p ?o . FILTER (?s = ex:bob) } }; ");
+				"INSERT { GRAPH ex:graph2 { ?s ?p ?o } } WHERE { GRAPH ex:graph1 { ?s ?p ?o . FILTER (?s = ex:bob) } }; ");
 		update.append("WITH ex:graph1 DELETE { ?s ?p ?o } WHERE {?s ?p ?o . FILTER (?s = ex:bob) } ");
 
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
@@ -1704,24 +1704,24 @@ public abstract class SPARQLUpdateTest {
 	public void testUpdateSequenceWithRelativeIRI() throws Exception {
 		logger.debug("executing testUpdateSequenceWithRelativeIRI");
 		String update = "base <http://example.com/resource/>\n" + "prefix em: <http://example.com/resource/ontology/>\n" //
-			+ "insert {\n" //
-			+ "  graph <relations> { ?company em:parent ?other. ?other em:subsidiary ?company }\n" + "} where {\n" //
-			+ "  values ?type {<relation/parent> <relation/acquisition>}\n"
-			+ "  [em:type ?type; em:company ?company; em:investor ?other]\n" //
-			+ "};\n" // inherit base <http://example.com/resource/>
-			+ "insert {\n" //
-			+ "  graph <relations> { ?company em:hasCompetitor ?other. ?other em:hasCompetitor ?company. }\n"
-			+ "} where {\n" //
-			+ "  [em:type <relation/competition>; em:company ?company; em:company ?other]\n"
-			+ "  filter(str(?company)<str(?other)) \n" //
-			+ "};";
+				+ "insert {\n" //
+				+ "  graph <relations> { ?company em:parent ?other. ?other em:subsidiary ?company }\n" + "} where {\n" //
+				+ "  values ?type {<relation/parent> <relation/acquisition>}\n"
+				+ "  [em:type ?type; em:company ?company; em:investor ?other]\n" //
+				+ "};\n" // inherit base <http://example.com/resource/>
+				+ "insert {\n" //
+				+ "  graph <relations> { ?company em:hasCompetitor ?other. ?other em:hasCompetitor ?company. }\n"
+				+ "} where {\n" //
+				+ "  [em:type <relation/competition>; em:company ?company; em:company ?other]\n"
+				+ "  filter(str(?company)<str(?other)) \n" //
+				+ "};";
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
 		operation.execute();
 	}
 
 	@Test
 	public void contextualInsertDeleteData()
-		throws RepositoryException, MalformedQueryException, UpdateExecutionException {
+			throws RepositoryException, MalformedQueryException, UpdateExecutionException {
 		StringBuilder insert = new StringBuilder();
 		insert.append(getNamespaceDeclarations());
 		insert.append("INSERT DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \"alice@example.org\" .} ");

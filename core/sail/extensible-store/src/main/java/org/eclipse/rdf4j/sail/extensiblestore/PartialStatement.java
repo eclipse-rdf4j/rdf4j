@@ -40,10 +40,10 @@ public class PartialStatement {
 		}
 		PartialStatement that = (PartialStatement) o;
 		return inferred == that.inferred &&
-			Objects.equals(subject, that.subject) &&
-			Objects.equals(predicate, that.predicate) &&
-			Objects.equals(object, that.object) &&
-			Arrays.equals(context, that.context);
+				Objects.equals(subject, that.subject) &&
+				Objects.equals(predicate, that.predicate) &&
+				Objects.equals(object, that.object) &&
+				Arrays.equals(context, that.context);
 	}
 
 	@Override

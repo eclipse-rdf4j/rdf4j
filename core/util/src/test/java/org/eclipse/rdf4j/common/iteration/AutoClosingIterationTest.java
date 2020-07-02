@@ -18,8 +18,8 @@ public class AutoClosingIterationTest {
 		CloseableIterationForTesting iterator = getIterator(Arrays.asList("a", "b", "c"));
 
 		List<String> collect = iterator.stream()
-			.filter(s -> s.equals("a"))
-			.collect(Collectors.toList());
+				.filter(s -> s.equals("a"))
+				.collect(Collectors.toList());
 
 		assertTrue(iterator.closed);
 
@@ -32,12 +32,12 @@ public class AutoClosingIterationTest {
 
 		try {
 			List<String> collect = iterator
-				.stream()
-				.filter(s -> {
-					assertEquals("a", s);
-					return s.equals("a");
-				})
-				.collect(Collectors.toList());
+					.stream()
+					.filter(s -> {
+						assertEquals("a", s);
+						return s.equals("a");
+					})
+					.collect(Collectors.toList());
 		} catch (Throwable ignored) {
 
 		}
@@ -53,12 +53,12 @@ public class AutoClosingIterationTest {
 
 		try {
 			List<String> collect = iterator
-				.stream()
-				.filter(s -> {
-					assertEquals("a", s);
-					return s.equals("a");
-				})
-				.collect(Collectors.toList());
+					.stream()
+					.filter(s -> {
+						assertEquals("a", s);
+						return s.equals("a");
+					})
+					.collect(Collectors.toList());
 		} catch (Throwable ignored) {
 
 		} finally {

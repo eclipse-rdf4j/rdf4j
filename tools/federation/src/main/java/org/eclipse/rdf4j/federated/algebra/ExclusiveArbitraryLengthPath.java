@@ -26,7 +26,7 @@ import com.google.common.collect.Lists;
  *
  */
 public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
-	implements ExclusiveTupleExpr, ExclusiveTupleExprRenderer {
+		implements ExclusiveTupleExpr, ExclusiveTupleExprRenderer {
 
 	private static final long serialVersionUID = 5743134085306940200L;
 
@@ -38,7 +38,7 @@ public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
 
 	public ExclusiveArbitraryLengthPath(ArbitraryLengthPath path, StatementSource owner, QueryInfo queryInfo) {
 		super(path.getScope(), path.getSubjectVar(), path.getPathExpression(), path.getObjectVar(),
-			path.getContextVar(), path.getMinLength());
+				path.getContextVar(), path.getMinLength());
 		this.owner = owner;
 		this.queryInfo = queryInfo;
 		this.freeVars = computeFreeVars();

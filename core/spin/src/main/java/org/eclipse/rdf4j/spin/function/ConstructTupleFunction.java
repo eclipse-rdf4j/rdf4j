@@ -51,7 +51,7 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-		ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length == 0 || !(args[0] instanceof Resource)) {
 			throw new QueryEvaluationException("First argument must be a resource");

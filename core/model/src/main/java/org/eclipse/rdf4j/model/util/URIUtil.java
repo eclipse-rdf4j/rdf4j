@@ -28,14 +28,14 @@ public class URIUtil {
 	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
 	 */
 	private static final Set<Character> reserved = new HashSet<>(
-		Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
+			Arrays.asList(new Character[] { ';', '/', '?', ':', '@', '&', '=', '+', '$', ',' }));
 
 	/**
 	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
 	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
 	 */
 	private static final Set<Character> mark = new HashSet<>(
-		Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
+			Arrays.asList(new Character[] { '-', '_', '.', '!', '~', '*', '\'', '(', ')' }));
 
 	/**
 	 * Regular expression pattern for matching unicode control characters.
@@ -113,7 +113,7 @@ public class URIUtil {
 			// correct split if local name has no ':' and URI contains no '#' or
 			// '/'
 			return localName.indexOf(':') == -1 && localName.indexOf('#') == -1 && localName.indexOf('/') == -1
-				&& namespace.indexOf('#') == -1 && namespace.indexOf('/') == -1;
+					&& namespace.indexOf('#') == -1 && namespace.indexOf('/') == -1;
 		}
 
 		return false;

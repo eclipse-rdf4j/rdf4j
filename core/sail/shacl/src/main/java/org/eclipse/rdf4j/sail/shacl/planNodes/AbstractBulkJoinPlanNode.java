@@ -29,10 +29,10 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	ValidationExecutionLogger validationExecutionLogger;
 
 	void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,
-		ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
-		String[] variables) {
+			ParsedQuery parsedQuery, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			String[] variables) {
 		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
-			previousStateConnection);
+				previousStateConnection);
 
 		if (!newBindindingset.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingset);
@@ -41,14 +41,14 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	}
 
 	private static void executeQuery(ArrayDeque<Tuple> right, SailConnection connection, ParsedQuery parsedQuery,
-		String[] variables) {
+			String[] variables) {
 
 		try (Stream<? extends BindingSet> stream = connection
-			.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)
-			.stream()) {
+				.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true)
+				.stream()) {
 			stream
-				.map(t -> new Tuple(t, variables))
-				.forEachOrdered(right::addFirst);
+					.map(t -> new Tuple(t, variables))
+					.forEachOrdered(right::addFirst);
 		}
 
 	}
@@ -56,40 +56,40 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset) {
 		try {
 			parsedQuery.getTupleExpr()
-				.visitChildren(new AbstractQueryModelVisitor<Exception>() {
-					@Override
-					public void meet(BindingSetAssignment node) {
-						node.setBindingSets(newBindindingset);
-					}
-				});
+					.visitChildren(new AbstractQueryModelVisitor<Exception>() {
+						@Override
+						public void meet(BindingSetAssignment node) {
+							node.setBindingSets(newBindindingset);
+						}
+					});
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
 
 	private List<BindingSet> buildBindingSets(ArrayDeque<Tuple> left, SailConnection connection,
-		boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
+			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection) {
 		return left.stream()
 
-			.filter(tuple -> {
-				if (!skipBasedOnPreviousConnection) {
-					return true;
-				}
+				.filter(tuple -> {
+					if (!skipBasedOnPreviousConnection) {
+						return true;
+					}
 
-				boolean hasStatement = previousStateConnection.hasStatement(((Resource) tuple.line.get(0)), null,
-					null, true);
+					boolean hasStatement = previousStateConnection.hasStatement(((Resource) tuple.line.get(0)), null,
+							null, true);
 
-				if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
-					validationExecutionLogger.log(depth(),
-						this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this,
-						getId());
-				}
-				return hasStatement;
+					if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
+						validationExecutionLogger.log(depth(),
+								this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this,
+								getId());
+					}
+					return hasStatement;
 
-			})
-			.map(tuple -> (Resource) tuple.line.get(0))
-			.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
-			.collect(Collectors.toList());
+				})
+				.map(tuple -> (Resource) tuple.line.get(0))
+				.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+				.collect(Collectors.toList());
 	}
 
 }

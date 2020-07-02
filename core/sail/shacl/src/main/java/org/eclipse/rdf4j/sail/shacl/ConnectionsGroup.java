@@ -47,8 +47,8 @@ public class ConnectionsGroup implements Closeable {
 	private final Map<PlanNode, BufferedSplitter> selectNodeCache = new HashMap<>();
 
 	ConnectionsGroup(ShaclSail sail, SailConnection baseConnection,
-		SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
-		Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider) {
+			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
+			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider) {
 		this.sail = sail;
 		this.baseConnection = baseConnection;
 		this.previousStateConnection = previousStateConnection;

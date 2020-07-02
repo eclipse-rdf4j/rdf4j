@@ -47,7 +47,7 @@ public class CookieCacheControlFilter implements Filter {
 
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
-		throws IOException, ServletException {
+			throws IOException, ServletException {
 		CacheAwareRequest request = new CacheAwareRequest(req);
 		CacheAwareResponse response = new CacheAwareResponse(req, resp);
 		chain.doFilter(request, response);

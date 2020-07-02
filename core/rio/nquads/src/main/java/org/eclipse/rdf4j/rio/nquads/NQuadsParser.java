@@ -42,7 +42,7 @@ public class NQuadsParser extends NTriplesParser {
 
 	@Override
 	public synchronized void parse(final InputStream inputStream, final String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (inputStream == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
@@ -58,7 +58,7 @@ public class NQuadsParser extends NTriplesParser {
 
 	@Override
 	public synchronized void parse(final Reader reader, final String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		clear();
 
 		try {

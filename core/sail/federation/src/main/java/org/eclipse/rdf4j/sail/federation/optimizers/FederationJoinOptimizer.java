@@ -70,12 +70,12 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	private Dataset dataset;
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
-		PrefixHashSet localSpace) {
+			PrefixHashSet localSpace) {
 		this(members, distinct, localSpace, c -> AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 	}
 
 	public FederationJoinOptimizer(Collection<? extends RepositoryConnection> members, boolean distinct,
-		PrefixHashSet localSpace, Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters) {
+			PrefixHashSet localSpace, Function<? super Repository, ? extends RepositoryBloomFilter> bloomFilters) {
 		this.members = members;
 		this.localSpace = localSpace;
 		this.bloomFilters = bloomFilters;
@@ -83,7 +83,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private static Map<Resource, List<RepositoryConnection>> createContextToMemberMap(
-		Collection<? extends RepositoryConnection> members) throws RepositoryException {
+			Collection<? extends RepositoryConnection> members) throws RepositoryException {
 		Map<Resource, List<RepositoryConnection>> contextToMemberMap = new HashMap<>(members.size() + 1);
 		for (RepositoryConnection member : members) {
 			try (RepositoryResult<Resource> res = member.getContextIDs()) {
@@ -163,7 +163,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 		super.meet(node);
 		List<Owned<TupleExpr>> ows = new ArrayList<>();
 		for (TupleExpr arg : new TupleExpr[] { node.getLeftArg(), // NOPMD
-			node.getRightArg() }) {
+				node.getRightArg() }) {
 			RepositoryConnection member = getSingleOwner(arg);
 			int idx = ows.size() - 1;
 			if ((!ows.isEmpty()) && ows.get(idx).getOwner() == member) {
@@ -297,7 +297,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 		}
 
 		private RepositoryConnection getSingleOwner(Resource subj, IRI pred, Value obj, Resource[] ctx)
-			throws RepositoryException {
+				throws RepositoryException {
 			RepositoryConnection result = null;
 
 			// Avoid querying repositories if given a set of explicit contexts only belonging to one federation member
@@ -329,8 +329,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				// but hopefully we narrowed it down to results
 				for (RepositoryConnection member : results) {
 					RepositoryBloomFilter bloomFilter = MoreObjects.firstNonNull(
-						bloomFilters.apply(member.getRepository()),
-						AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
+							bloomFilters.apply(member.getRepository()),
+							AccurateRepositoryBloomFilter.INCLUDE_INFERRED_INSTANCE);
 					if (bloomFilter.mayHaveStatement(member, subj, pred, obj, ctx)) {
 						if (result == null) {
 							result = member;
@@ -494,7 +494,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private AbstractQueryModelNode optimizeReplacementJoin(AbstractQueryModelNode candidate, NaryJoin join)
-		throws RepositoryException {
+			throws RepositoryException {
 		boolean multipleOwners = false;
 		RepositoryConnection owner = null;
 		for (TupleExpr expr : join.getArgs()) {
@@ -542,7 +542,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				TupleExpr union = null;
 				for (RepositoryConnection member : members) {
 					TupleExpr arg = new OwnedTupleExpr(member, e.getJoin() // NOPMD
-						.clone());
+							.clone());
 					union = union == null ? arg : new Union(union, arg); // NOPMD
 				}
 				if (union != null) {
@@ -596,13 +596,13 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private void addOwners(LeftJoin node, RepositoryConnection leftOwner, RepositoryConnection rightOwner,
-		boolean local) {
+			boolean local) {
 		if (leftOwner == null && rightOwner == null) {
 			if (local) {
 				TupleExpr union = null;
 				for (RepositoryConnection member : members) {
 					OwnedTupleExpr arg = new OwnedTupleExpr(member, // NOPMD
-						node.clone());
+							node.clone());
 					union = union == null ? arg : new Union(union, arg); // NOPMD
 				}
 				node.replaceWith(union);
@@ -619,7 +619,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private void addDistinctOwnersNonLocal(LeftJoin node, RepositoryConnection leftOwner,
-		RepositoryConnection rightOwner) {
+			RepositoryConnection rightOwner) {
 		if (leftOwner != null) {
 			node.getLeftArg().replaceWith(new OwnedTupleExpr(leftOwner, node.getLeftArg().clone()));
 		}
@@ -629,7 +629,7 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 	}
 
 	private void addDistinctOwnersLocal(LeftJoin node, RepositoryConnection leftOwner,
-		RepositoryConnection rightOwner) {
+			RepositoryConnection rightOwner) {
 		if (rightOwner == null) {
 			node.replaceWith(new OwnedTupleExpr(leftOwner, node.clone()));
 		} else if (leftOwner == null) {
@@ -637,11 +637,11 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 			for (RepositoryConnection member : members) {
 				if (rightOwner == member) {
 					OwnedTupleExpr arg = new OwnedTupleExpr(member, // NOPMD
-						node.clone());
+							node.clone());
 					union = union == null ? arg : new Union(union, arg); // NOPMD
 				} else {
 					OwnedTupleExpr arg = new OwnedTupleExpr(member, // NOPMD
-						node.getLeftArg().clone());
+							node.getLeftArg().clone());
 					union = union == null ? arg : new Union(union, arg); // NOPMD
 				}
 			}
@@ -671,8 +671,8 @@ public class FederationJoinOptimizer extends AbstractQueryModelVisitor<Repositor
 				} else {
 					OwnedTupleExpr arg = new OwnedTupleExpr(owner, union); // NOPMD
 					replacement = replacement == null ? arg
-						: new Union( // NOPMD
-							replacement, arg);
+							: new Union( // NOPMD
+									replacement, arg);
 				}
 			}
 			node.replaceWith(replacement);

@@ -56,7 +56,7 @@ public class InferredContextTest {
 			assertTrue(connection.hasStatement(bNode, RDF.TYPE, RDFS.RESOURCE, true, context));
 
 			try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(bNode,
-				RDF.TYPE, RDFS.RESOURCE, true)) {
+					RDF.TYPE, RDFS.RESOURCE, true)) {
 				while (statements.hasNext()) {
 					Statement next = statements.next();
 					assertEquals("Context should be equal", context, next.getContext());
@@ -71,7 +71,7 @@ public class InferredContextTest {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
 
 		assertFalse("Current default behaviour should be to add all statements to default context",
-			sail.isAddInferredStatementsToDefaultContext());
+				sail.isAddInferredStatementsToDefaultContext());
 
 	}
 

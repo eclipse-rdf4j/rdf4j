@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.util.Models;
  * @author Herko ter Horst
  */
 public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRepositoryImplConfig
-	implements DelegatingRepositoryImplConfig {
+		implements DelegatingRepositoryImplConfig {
 
 	private RepositoryImplConfig delegate;
 
@@ -78,6 +78,6 @@ public abstract class AbstractDelegatingRepositoryImplConfig extends AbstractRep
 		super.parse(model, resource);
 
 		Models.objectResource(model.getStatements(resource, DELEGATE, null))
-			.ifPresent(delegate -> setDelegate(create(model, delegate)));
+				.ifPresent(delegate -> setDelegate(create(model, delegate)));
 	}
 }

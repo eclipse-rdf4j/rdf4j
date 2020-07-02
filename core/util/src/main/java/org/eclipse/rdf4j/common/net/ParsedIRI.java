@@ -87,14 +87,14 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private static int EOF = 0;
 
 	private static int[][] iprivate = { new int[] { 0xE000, 0xF8FF }, new int[] { 0xF0000, 0xFFFFD },
-		new int[] { 0x100000, 0x10FFFD } };
+			new int[] { 0x100000, 0x10FFFD } };
 
 	private static int[][] ucschar = { new int[] { 0x00A0, 0xD7FF }, new int[] { 0xF900, 0xFDCF },
-		new int[] { 0xFDF0, 0xFFEF }, new int[] { 0x10000, 0x1FFFD }, new int[] { 0x20000, 0x2FFFD },
-		new int[] { 0x30000, 0x3FFFD }, new int[] { 0x40000, 0x4FFFD }, new int[] { 0x50000, 0x5FFFD },
-		new int[] { 0x60000, 0x6FFFD }, new int[] { 0x70000, 0x7FFFD }, new int[] { 0x80000, 0x8FFFD },
-		new int[] { 0x90000, 0x9FFFD }, new int[] { 0xA0000, 0xAFFFD }, new int[] { 0xB0000, 0xBFFFD },
-		new int[] { 0xC0000, 0xCFFFD }, new int[] { 0xD0000, 0xDFFFD }, new int[] { 0xE1000, 0xEFFFD } };
+			new int[] { 0xFDF0, 0xFFEF }, new int[] { 0x10000, 0x1FFFD }, new int[] { 0x20000, 0x2FFFD },
+			new int[] { 0x30000, 0x3FFFD }, new int[] { 0x40000, 0x4FFFD }, new int[] { 0x50000, 0x5FFFD },
+			new int[] { 0x60000, 0x6FFFD }, new int[] { 0x70000, 0x7FFFD }, new int[] { 0x80000, 0x8FFFD },
+			new int[] { 0x90000, 0x9FFFD }, new int[] { 0xA0000, 0xAFFFD }, new int[] { 0xB0000, 0xBFFFD },
+			new int[] { 0xC0000, 0xCFFFD }, new int[] { 0xD0000, 0xDFFFD }, new int[] { 0xE1000, 0xEFFFD } };
 
 	private static int[][] ALPHA = { new int[] { 'A', 'Z' }, new int[] { 'a', 'z' } };
 
@@ -127,7 +127,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	private static int[] ascii = flatten(union(unreserved_rfc3986, reserved, '%'));
 
 	private static int[] common = flatten(
-		union(unreserved_rfc3986, reserved, '%', '<', '>', '"', ' ', '{', '}', '|', '\\', '^', '`'));
+			union(unreserved_rfc3986, reserved, '%', '<', '>', '"', ' ', '{', '}', '|', '\\', '^', '`'));
 
 	private static String[] common_pct = pctEncode(common);
 
@@ -286,7 +286,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	 * @param fragment Fragment
 	 */
 	public ParsedIRI(String scheme, String userInfo, String host, int port, String path, String query,
-		String fragment) {
+			String fragment) {
 		this.iri = buildIRI(scheme, userInfo, host, port, path, query, fragment);
 		this.scheme = scheme;
 		this.userInfo = userInfo;
@@ -516,11 +516,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 		boolean optionalPort = isScheme("http") && 80 == port || isScheme("https") && 443 == port;
 		int _port = optionalPort ? -1 : port;
 		boolean localhost = isScheme("file") && userInfo == null && -1 == port
-			&& ("".equals(host) || "localhost".equals(host));
+				&& ("".equals(host) || "localhost".equals(host));
 		String _host = localhost ? null
-			: host == null || host.length() == 0 ? host
-				: IDN.toUnicode(pctEncodingNormalization(toLowerCase(host)),
-					IDN.USE_STD3_ASCII_RULES | IDN.ALLOW_UNASSIGNED);
+				: host == null || host.length() == 0 ? host
+						: IDN.toUnicode(pctEncodingNormalization(toLowerCase(host)),
+								IDN.USE_STD3_ASCII_RULES | IDN.ALLOW_UNASSIGNED);
 		String _path = _scheme != null && path == null ? "" : normalizePath(path);
 		String _userInfo = pctEncodingNormalization(userInfo);
 		String _query = pctEncodingNormalization(query);
@@ -589,7 +589,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			String fragment = relative.getFragment();
 
 			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(), this.getPath(),
-				this.getQuery(), fragment);
+					this.getQuery(), fragment);
 		} else if (relative.getHost() == null && relative.getPath().length() == 0) {
 
 			// Inherit any query or fragment from relURI
@@ -597,7 +597,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			String fragment = relative.getFragment();
 
 			return new ParsedIRI(this.getScheme(), this.getUserInfo(), this.getHost(), this.getPort(), this.getPath(),
-				query, fragment);
+					query, fragment);
 		}
 
 		// We can start combining the URIs
@@ -817,7 +817,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private String buildIRI(String scheme, String userInfo, String host, int port, String path, String query,
-		String fragment) {
+			String fragment) {
 		StringBuilder sb = new StringBuilder();
 		if (scheme != null) {
 			sb.append(scheme).append(':');
@@ -1079,7 +1079,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	private boolean isScheme(String scheme) {
 		return scheme.equalsIgnoreCase(this.scheme) || this.scheme != null && this.scheme.indexOf(':') == 3
-			&& this.scheme.equalsIgnoreCase("jar:" + scheme);
+				&& this.scheme.equalsIgnoreCase("jar:" + scheme);
 	}
 
 	private String normalizePath(String path) {
@@ -1090,11 +1090,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 				// replace "/c:\path\to\file" with "/c:/path/to/file"
 				return normalizePath(path.replace("%5C", "/"));
 			} else if (!path.startsWith("/") && isMember(ALPHA, path.codePointAt(0))
-				&& (':' == path.charAt(1) || path.length() >= 4 && "%7C".equals(path.substring(1, 4)))) {
+					&& (':' == path.charAt(1) || path.length() >= 4 && "%7C".equals(path.substring(1, 4)))) {
 				// replace "c:/path/to/file" with "/c:/path/to/file"
 				return normalizePath("/" + path);
 			} else if (path.length() >= 5 && "%7C".equals(path.substring(2, 5))
-				&& isMember(ALPHA, path.codePointAt(1))) {
+					&& isMember(ALPHA, path.codePointAt(1))) {
 				// replace "/c|/path/to/file" with "/c:/path/to/file"
 				return normalizePath(path.substring(0, 2) + ':' + path.substring(5));
 			}
@@ -1130,7 +1130,7 @@ public class ParsedIRI implements Cloneable, Serializable {
 			// optimize common encoded members by grouping separately
 			if (Arrays.binarySearch(common_pct, path.substring(pct, pct + 3)) < 0) {
 				while (pct + 3 < path.length() && path.charAt(pct + 3) == '%'
-					&& Arrays.binarySearch(common_pct, path.substring(pct + 3, pct + 6)) < 0) {
+						&& Arrays.binarySearch(common_pct, path.substring(pct + 3, pct + 6)) < 0) {
 					pct += 3;
 				}
 			}

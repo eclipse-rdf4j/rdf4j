@@ -77,7 +77,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 */
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection<SearchQueryEvaluator> result)
-		throws SailException {
+			throws SailException {
 		// find Lucene-related StatementPatterns
 		PatternFilter filter = new PatternFilter();
 		tupleExpr.visit(filter);
@@ -88,7 +88,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			// Resource
 			Var subjectVar = matchesPattern.getSubjectVar();
 			Value subjectValue = subjectVar.hasValue() ? subjectVar.getValue()
-				: bindings.getValue(subjectVar.getName());
+					: bindings.getValue(subjectVar.getName());
 
 			if (subjectValue != null && !(subjectValue instanceof Resource)) {
 				failOrWarn(MATCHES + " properties should have Resource subjects: " + subjectVar.getValue());
@@ -135,7 +135,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			if (propertyPattern != null) {
 				Var propertyVar = propertyPattern.getObjectVar();
 				Value propertyValue = propertyVar.hasValue() ? propertyVar.getValue()
-					: bindings.getValue(propertyVar.getName());
+						: bindings.getValue(propertyVar.getName());
 
 				// if property is a restriction, it should be an URI
 				if (propertyValue instanceof IRI) {
@@ -144,7 +144,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 				// otherwise, it should be a variable
 				else if (propertyValue != null) {
 					failOrWarn(PROPERTY + " should have a property URI or a variable as object: "
-						+ propertyVar.getValue());
+							+ propertyVar.getValue());
 					continue;
 				}
 			}
@@ -169,7 +169,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 			}
 
 			QuerySpec querySpec = new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,
-				snippetPattern, typePattern, subject, queryString, propertyURI);
+					snippetPattern, typePattern, subject, queryString, propertyURI);
 
 			if (querySpec.isEvaluable()) {
 				// constant optimizer
@@ -237,7 +237,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 	 * the patter from the arraylist, to be able to check if some patterns are added without a MATCHES property.
 	 */
 	private StatementPattern getPattern(Var subjectVar, ArrayList<StatementPattern> patterns)
-		throws IllegalArgumentException {
+			throws IllegalArgumentException {
 		StatementPattern result = null;
 
 		for (StatementPattern pattern : patterns) {
@@ -246,7 +246,7 @@ public class QuerySpecBuilder implements SearchQueryInterpreter {
 					result = pattern;
 				} else {
 					throw new IllegalArgumentException(
-						"multiple StatementPatterns with the same subject: " + result + ", " + pattern);
+							"multiple StatementPatterns with the same subject: " + result + ", " + pattern);
 				}
 			}
 		}

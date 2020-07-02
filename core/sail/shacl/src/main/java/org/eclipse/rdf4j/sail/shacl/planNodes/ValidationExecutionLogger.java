@@ -93,9 +93,9 @@ class LogStatement {
 	public String toString() {
 
 		return StringUtils.leftPad(id, 14) + "\t"
-			+ leadingSpace(depth) + name
-			+ ":  " + tuple.toString()
-			+ " :  " + planNode.toString();
+				+ leadingSpace(depth) + name
+				+ ":  " + tuple.toString()
+				+ " :  " + planNode.toString();
 
 	}
 

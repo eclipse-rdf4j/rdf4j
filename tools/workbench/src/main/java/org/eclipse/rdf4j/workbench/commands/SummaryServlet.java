@@ -37,7 +37,7 @@ public class SummaryServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.transform(xslPath, "summary.xsl");
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(Arrays.asList(INFO));

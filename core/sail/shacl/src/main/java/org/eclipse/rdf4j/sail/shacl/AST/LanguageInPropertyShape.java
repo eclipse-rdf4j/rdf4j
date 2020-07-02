@@ -33,8 +33,8 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
 	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-		PathPropertyShape parent, Resource path,
-		Resource languageIn) {
+			PathPropertyShape parent, Resource path,
+			Resource languageIn) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
@@ -42,7 +42,7 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -51,7 +51,7 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-			(parent) -> new LanguageInFilter(parent, languageIn), this, overrideTargetNode, negateThisPlan);
+				(parent) -> new LanguageInFilter(parent, languageIn), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -90,10 +90,10 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "LanguageInPropertyShape{" +
-			"languageIn=" + Arrays.toString(languageIn.toArray()) +
-			", path=" + getPath() +
-			", id=" + id +
+				"languageIn=" + Arrays.toString(languageIn.toArray()) +
+				", path=" + getPath() +
+				", id=" + id +
 
-			'}';
+				'}';
 	}
 }

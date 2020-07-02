@@ -55,7 +55,7 @@ public class ExceptionUtil {
 	 * @return a modified exception with endpoint source
 	 */
 	public static QueryEvaluationException traceExceptionSource(Endpoint endpoint, Throwable ex,
-		String additionalInfo) {
+			String additionalInfo) {
 
 		String eID;
 
@@ -82,7 +82,7 @@ public class ExceptionUtil {
 		}
 
 		QueryEvaluationException res = new QueryEvaluationException(
-			"@ " + eID + " - " + message + ". " + additionalInfo, ex.getCause());
+				"@ " + eID + " - " + message + ". " + additionalInfo, ex.getCause());
 		res.setStackTrace(ex.getStackTrace());
 		return res;
 	}
@@ -95,7 +95,7 @@ public class ExceptionUtil {
 	 * @return the exception
 	 */
 	public static QueryEvaluationException traceExceptionSourceAndRepair(Endpoint endpoint, Throwable ex,
-		String additionalInfo) {
+			String additionalInfo) {
 		return traceExceptionSource(endpoint, ex, additionalInfo);
 	}
 
@@ -132,11 +132,11 @@ public class ExceptionUtil {
 			constructor = exClazz.getConstructor(new Class<?>[] { String.class, Throwable.class });
 		} catch (SecurityException e) {
 			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName()
-				+ " due to SecurityException: " + e.getMessage());
+					+ " due to SecurityException: " + e.getMessage());
 			return ex;
 		} catch (NoSuchMethodException e) {
 			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName()
-				+ ": Constructor <String, Throwable> not found.");
+					+ ": Constructor <String, Throwable> not found.");
 			return ex;
 		}
 
@@ -145,7 +145,7 @@ public class ExceptionUtil {
 			newEx = constructor.newInstance(new Object[] { msgPrefix + "." + ex.getMessage(), ex.getCause() });
 		} catch (Exception e) {
 			log.warn("Cannot change the message of exception class " + exClazz.getCanonicalName() + " due to "
-				+ e.getClass().getSimpleName() + ": " + e.getMessage());
+					+ e.getClass().getSimpleName() + ": " + e.getMessage());
 			return ex;
 		}
 		newEx.setStackTrace(ex.getStackTrace());

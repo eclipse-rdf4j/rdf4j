@@ -23,8 +23,8 @@ public class QueryCostEstimatesTest {
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?s ?p ?o ?x where {" + " ex:s1 ex:pred ?v. "
-			+ " ex:s2 ex:pred 'bah'. {" + "  ?s ?p ?o. " + "  optional {"
-			+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
+				+ " ex:s2 ex:pred 'bah'. {" + "  ?s ?p ?o. " + "  optional {"
+				+ "   values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "  }" + " }" + "}";
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
@@ -33,32 +33,32 @@ public class QueryCostEstimatesTest {
 		opt.optimize(optRoot, null, null);
 
 		assertEquals("QueryRoot\n" +
-			"   Projection\n" +
-			"      ProjectionElemList\n" +
-			"         ProjectionElem \"s\"\n" +
-			"         ProjectionElem \"p\"\n" +
-			"         ProjectionElem \"o\"\n" +
-			"         ProjectionElem \"x\"\n" +
-			"      Extension\n" +
-			"         ExtensionElem (x)\n" +
-			"            Var (name=x)\n" +
-			"         Join\n" +
-			"            StatementPattern (costEstimate=1, resultSizeEstimate=1)\n" +
-			"               Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)\n" +
-			"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
-			"               Var (name=_const_17c09_lit_e2eec718_0, value=\"bah\", anonymous)\n" +
-			"            Join\n" +
-			"               StatementPattern (costEstimate=10, resultSizeEstimate=10)\n" +
-			"                  Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)\n" +
-			"                  Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
-			"                  Var (name=v)\n" +
-			"               LeftJoin (new scope) (costEstimate=1000, resultSizeEstimate=1000)\n" +
-			"                  StatementPattern (resultSizeEstimate=1000)\n" +
-			"                     Var (name=s)\n" +
-			"                     Var (name=p)\n" +
-			"                     Var (name=o)\n" +
-			"                  BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n",
-			optRoot.toString());
+				"   Projection\n" +
+				"      ProjectionElemList\n" +
+				"         ProjectionElem \"s\"\n" +
+				"         ProjectionElem \"p\"\n" +
+				"         ProjectionElem \"o\"\n" +
+				"         ProjectionElem \"x\"\n" +
+				"      Extension\n" +
+				"         ExtensionElem (x)\n" +
+				"            Var (name=x)\n" +
+				"         Join\n" +
+				"            StatementPattern (costEstimate=1, resultSizeEstimate=1)\n" +
+				"               Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)\n" +
+				"               Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
+				"               Var (name=_const_17c09_lit_e2eec718_0, value=\"bah\", anonymous)\n" +
+				"            Join\n" +
+				"               StatementPattern (costEstimate=10, resultSizeEstimate=10)\n" +
+				"                  Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)\n" +
+				"                  Var (name=_const_af00e088_uri, value=ex:pred, anonymous)\n" +
+				"                  Var (name=v)\n" +
+				"               LeftJoin (new scope) (costEstimate=1000, resultSizeEstimate=1000)\n" +
+				"                  StatementPattern (resultSizeEstimate=1000)\n" +
+				"                     Var (name=s)\n" +
+				"                     Var (name=p)\n" +
+				"                     Var (name=o)\n" +
+				"                  BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n",
+				optRoot.toString());
 
 	}
 

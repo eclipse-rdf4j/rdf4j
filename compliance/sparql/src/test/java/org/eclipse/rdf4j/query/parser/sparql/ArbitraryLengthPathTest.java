@@ -96,11 +96,11 @@ public class ArbitraryLengthPathTest extends TestCase {
 		con.add(vf.createIRI("urn:test:c"), RDFS.SUBCLASSOF, vf.createIRI("urn:test:e"));
 		con.add(vf.createIRI("urn:test:d"), RDFS.SUBCLASSOF, vf.createIRI("urn:test:f"));
 		String sparql = "ASK { \n"
-			+ "   values (?expectedTargetClass55555 ?expectedTargetClass5544T) {(<urn:test:e> <urn:test:f>)}.\n"
-			+ "   <urn:test:a> a ?linkTargetClass55555 .\n"
-			+ "   ?linkTargetClass55555 rdfs:subClassOf* ?expectedTargetClass55555 .\n"
-			+ "   <urn:test:b> a ?linkTargetClass55556 .\n"
-			+ "   ?linkTargetClass55556 rdfs:subClassOf* ?expectedTargetClass5544T . }";
+				+ "   values (?expectedTargetClass55555 ?expectedTargetClass5544T) {(<urn:test:e> <urn:test:f>)}.\n"
+				+ "   <urn:test:a> a ?linkTargetClass55555 .\n"
+				+ "   ?linkTargetClass55555 rdfs:subClassOf* ?expectedTargetClass55555 .\n"
+				+ "   <urn:test:b> a ?linkTargetClass55556 .\n"
+				+ "   ?linkTargetClass55556 rdfs:subClassOf* ?expectedTargetClass5544T . }";
 		assertTrue(con.prepareBooleanQuery(QueryLanguage.SPARQL, sparql).evaluate());
 	}
 
@@ -108,7 +108,7 @@ public class ArbitraryLengthPathTest extends TestCase {
 		ValueFactory vf = con.getValueFactory();
 		for (int i = 0; i < n; i++) {
 			con.add(vf.createIRI("urn:test:root"), vf.createIRI("urn:test:hasChild"),
-				vf.createIRI("urn:test:node" + i));
+					vf.createIRI("urn:test:node" + i));
 		}
 		con.add(vf.createIRI("urn:test:root"), vf.createIRI("urn:test:hasChild"), vf.createIRI("urn:test:node-end"));
 	}

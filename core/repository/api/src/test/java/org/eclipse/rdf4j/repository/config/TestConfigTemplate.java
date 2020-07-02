@@ -31,10 +31,10 @@ public class TestConfigTemplate {
 	public final void testEscapeOfSpecifiedMultilineDelimiter() {
 		String value = "I contain a '''multiline\nstring''' that should be escaped.";
 		assertEquals(ConfigTemplate.escapeMultilineQuotes("'''", value),
-			"I contain a \\'\\'\\'multiline\nstring\\'\\'\\' that should be escaped.");
+				"I contain a \\'\\'\\'multiline\nstring\\'\\'\\' that should be escaped.");
 		value = "I contain a \"\"\"multiline\nstring\"\"\" that should be escaped.";
 		assertEquals(ConfigTemplate.escapeMultilineQuotes("\"\"\"", value),
-			"I contain a \\\"\\\"\\\"multiline\nstring\\\"\\\"\\\" that should be escaped.");
+				"I contain a \\\"\\\"\\\"multiline\nstring\\\"\\\"\\\" that should be escaped.");
 	}
 
 	@Test

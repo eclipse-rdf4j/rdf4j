@@ -24,9 +24,9 @@ public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {
 	@Parameterized.Parameters(name = "{0}")
 	public static IsolationLevel[] parameters() {
 		return new IsolationLevel[] {
-			IsolationLevels.NONE,
-			IsolationLevels.READ_UNCOMMITTED,
-			IsolationLevels.READ_COMMITTED
+				IsolationLevels.NONE,
+				IsolationLevels.READ_UNCOMMITTED,
+				IsolationLevels.READ_COMMITTED
 		};
 	}
 

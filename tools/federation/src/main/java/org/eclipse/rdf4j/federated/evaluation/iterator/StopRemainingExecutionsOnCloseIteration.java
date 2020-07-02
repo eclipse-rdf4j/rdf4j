@@ -28,13 +28,13 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  *
  */
 public class StopRemainingExecutionsOnCloseIteration
-	extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
+		extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	protected final CloseableIteration<? extends BindingSet, QueryEvaluationException> inner;
 	protected final QueryInfo queryInfo;
 
 	public StopRemainingExecutionsOnCloseIteration(
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;

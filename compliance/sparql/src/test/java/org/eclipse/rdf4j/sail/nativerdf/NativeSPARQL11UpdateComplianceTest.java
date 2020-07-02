@@ -25,10 +25,10 @@ import org.junit.rules.TemporaryFolder;
 public class NativeSPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
 	public NativeSPARQL11UpdateComplianceTest(String displayName, String testURI, String name, String requestFile,
-		IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-		Map<String, IRI> resultNamedGraphs) {
+			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+			Map<String, IRI> resultNamedGraphs) {
 		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-			resultNamedGraphs);
+				resultNamedGraphs);
 		// TODO Auto-generated constructor stub
 	}
 

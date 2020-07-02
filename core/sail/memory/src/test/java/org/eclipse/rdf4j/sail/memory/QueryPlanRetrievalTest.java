@@ -37,25 +37,25 @@ import org.junit.Test;
 public class QueryPlanRetrievalTest {
 
 	public static final String MAIN_QUERY = String.join("\n", "",
-		"{",
-		"    {",
-		"        OPTIONAL {",
-		"            ?d ?e ?f",
-		"        }",
-		"    } ",
-		"    ?a a ?c, ?d. ",
-		"    FILTER(?c != ?d) ",
-		"    OPTIONAL{",
-		"        ?d ?e ?f",
-		"    } ",
-		"}");
+			"{",
+			"    {",
+			"        OPTIONAL {",
+			"            ?d ?e ?f",
+			"        }",
+			"    } ",
+			"    ?a a ?c, ?d. ",
+			"    FILTER(?c != ?d) ",
+			"    OPTIONAL{",
+			"        ?d ?e ?f",
+			"    } ",
+			"}");
 
 	public static final String TUPLE_QUERY = "SELECT ?a WHERE " + MAIN_QUERY;
 	public static final String ASK_QUERY = "ASK WHERE " + MAIN_QUERY;
 	public static final String CONSTRUCT_QUERY = "CONSTRUCT {?a a ?c, ?d} WHERE " + MAIN_QUERY;
 
 	public static final String SUB_QUERY = "select ?a where {{select ?a where {?a a ?type}} {SELECT ?a WHERE "
-		+ MAIN_QUERY + "}}";
+			+ MAIN_QUERY + "}}";
 
 	public static final String UNION_QUERY = "select ?a where {?a a ?type. {?a ?b ?c, ?c2. {?c2 a ?type1}UNION{?c2 a ?type2}} UNION {?type ?d ?c}}";
 
@@ -87,35 +87,35 @@ public class QueryPlanRetrievalTest {
 			String actual = query.explain(Explanation.Level.Unoptimized).toString();
 
 			String expected = "Projection\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   Filter\n" +
-				"      Compare (!=)\n" +
-				"         Var (name=c)\n" +
-				"         Var (name=d)\n" +
-				"      LeftJoin\n" +
-				"         Join\n" +
-				"            Join\n" +
-				"               LeftJoin (new scope)\n" +
-				"                  SingletonSet\n" +
-				"                  StatementPattern\n" +
-				"                     Var (name=d)\n" +
-				"                     Var (name=e)\n" +
-				"                     Var (name=f)\n" +
-				"               StatementPattern\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=c)\n" +
-				"            StatementPattern\n" +
-				"               Var (name=a)\n" +
-				"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"               Var (name=d)\n" +
-				"         StatementPattern\n" +
-				"            Var (name=d)\n" +
-				"            Var (name=e)\n" +
-				"            Var (name=f)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   Filter\n" +
+					"      Compare (!=)\n" +
+					"         Var (name=c)\n" +
+					"         Var (name=d)\n" +
+					"      LeftJoin\n" +
+					"         Join\n" +
+					"            Join\n" +
+					"               LeftJoin (new scope)\n" +
+					"                  SingletonSet\n" +
+					"                  StatementPattern\n" +
+					"                     Var (name=d)\n" +
+					"                     Var (name=e)\n" +
+					"                     Var (name=f)\n" +
+					"               StatementPattern\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=c)\n" +
+					"            StatementPattern\n" +
+					"               Var (name=a)\n" +
+					"               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"               Var (name=d)\n" +
+					"         StatementPattern\n" +
+					"            Var (name=d)\n" +
+					"            Var (name=e)\n" +
+					"            Var (name=f)\n";
 
 			Assert.assertEquals(expected, actual);
 
@@ -132,35 +132,35 @@ public class QueryPlanRetrievalTest {
 			TupleQuery query = connection.prepareTupleQuery(TUPLE_QUERY);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 			String expected = "Projection\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   LeftJoin (LeftJoinIterator)\n" +
-				"      Join (JoinIterator)\n" +
-				"         StatementPattern (costEstimate=1, resultSizeEstimate=4)\n" +
-				"            Var (name=a)\n" +
-				"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"            Var (name=d)\n" +
-				"         Filter\n" +
-				"            Compare (!=)\n" +
-				"               Var (name=c)\n" +
-				"               Var (name=d)\n" +
-				"            Join\n" +
-				"               StatementPattern (costEstimate=2, resultSizeEstimate=4)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=c)\n" +
-				"               LeftJoin (new scope) (costEstimate=5, resultSizeEstimate=12)\n" +
-				"                  SingletonSet\n" +
-				"                  StatementPattern (resultSizeEstimate=12)\n" +
-				"                     Var (name=d)\n" +
-				"                     Var (name=e)\n" +
-				"                     Var (name=f)\n" +
-				"      StatementPattern (resultSizeEstimate=12)\n" +
-				"         Var (name=d)\n" +
-				"         Var (name=e)\n" +
-				"         Var (name=f)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   LeftJoin (LeftJoinIterator)\n" +
+					"      Join (JoinIterator)\n" +
+					"         StatementPattern (costEstimate=1, resultSizeEstimate=4)\n" +
+					"            Var (name=a)\n" +
+					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"            Var (name=d)\n" +
+					"         Filter\n" +
+					"            Compare (!=)\n" +
+					"               Var (name=c)\n" +
+					"               Var (name=d)\n" +
+					"            Join\n" +
+					"               StatementPattern (costEstimate=2, resultSizeEstimate=4)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=c)\n" +
+					"               LeftJoin (new scope) (costEstimate=5, resultSizeEstimate=12)\n" +
+					"                  SingletonSet\n" +
+					"                  StatementPattern (resultSizeEstimate=12)\n" +
+					"                     Var (name=d)\n" +
+					"                     Var (name=e)\n" +
+					"                     Var (name=f)\n" +
+					"      StatementPattern (resultSizeEstimate=12)\n" +
+					"         Var (name=d)\n" +
+					"         Var (name=e)\n" +
+					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -206,36 +206,36 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Projection (resultSizeActual=2)\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-				"      Join (JoinIterator) (resultSizeActual=2)\n" +
-				"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
-				"            Var (name=a)\n" +
-				"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"            Var (name=d)\n" +
-				"         Filter (resultSizeActual=2)\n" +
-				"            Compare (!=)\n" +
-				"               Var (name=c)\n" +
-				"               Var (name=d)\n" +
-				"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
-				"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=c)\n" +
-				"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
-				+
-				"                  SingletonSet (resultSizeActual=4)\n" +
-				"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
-				"                     Var (name=d)\n" +
-				"                     Var (name=e)\n" +
-				"                     Var (name=f)\n" +
-				"      StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
-				"         Var (name=d)\n" +
-				"         Var (name=e)\n" +
-				"         Var (name=f)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
+					"      Join (JoinIterator) (resultSizeActual=2)\n" +
+					"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"            Var (name=a)\n" +
+					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"            Var (name=d)\n" +
+					"         Filter (resultSizeActual=2)\n" +
+					"            Compare (!=)\n" +
+					"               Var (name=c)\n" +
+					"               Var (name=d)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=c)\n" +
+					"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
+					+
+					"                  SingletonSet (resultSizeActual=4)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
+					"                     Var (name=d)\n" +
+					"                     Var (name=e)\n" +
+					"                     Var (name=f)\n" +
+					"      StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
+					"         Var (name=d)\n" +
+					"         Var (name=e)\n" +
+					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -253,36 +253,36 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toGenericPlanNode().toString();
 			String expected = "Projection (resultSizeActual=2)\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-				"      Join (JoinIterator) (resultSizeActual=2)\n" +
-				"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
-				"            Var (name=a)\n" +
-				"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"            Var (name=d)\n" +
-				"         Filter (resultSizeActual=2)\n" +
-				"            Compare (!=)\n" +
-				"               Var (name=c)\n" +
-				"               Var (name=d)\n" +
-				"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
-				"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=c)\n" +
-				"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
-				+
-				"                  SingletonSet (resultSizeActual=4)\n" +
-				"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
-				"                     Var (name=d)\n" +
-				"                     Var (name=e)\n" +
-				"                     Var (name=f)\n" +
-				"      StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
-				"         Var (name=d)\n" +
-				"         Var (name=e)\n" +
-				"         Var (name=f)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
+					"      Join (JoinIterator) (resultSizeActual=2)\n" +
+					"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"            Var (name=a)\n" +
+					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"            Var (name=d)\n" +
+					"         Filter (resultSizeActual=2)\n" +
+					"            Compare (!=)\n" +
+					"               Var (name=c)\n" +
+					"               Var (name=d)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=c)\n" +
+					"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
+					+
+					"                  SingletonSet (resultSizeActual=4)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
+					"                     Var (name=d)\n" +
+					"                     Var (name=e)\n" +
+					"                     Var (name=f)\n" +
+					"      StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
+					"         Var (name=d)\n" +
+					"         Var (name=e)\n" +
+					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 		}
 		sailRepository.shutDown();
@@ -299,100 +299,100 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toJson();
 			String expected = "{\n" +
-				"  \"type\" : \"Projection\",\n" +
-				"  \"resultSizeActual\" : 2,\n" +
-				"  \"plans\" : [ {\n" +
-				"    \"type\" : \"ProjectionElemList\",\n" +
-				"    \"plans\" : [ {\n" +
-				"      \"type\" : \"ProjectionElem \\\"a\\\"\"\n" +
-				"    } ]\n" +
-				"  }, {\n" +
-				"    \"type\" : \"LeftJoin\",\n" +
-				"    \"resultSizeActual\" : 2,\n" +
-				"    \"algorithm\" : \"LeftJoinIterator\",\n" +
-				"    \"plans\" : [ {\n" +
-				"      \"type\" : \"Join\",\n" +
-				"      \"resultSizeActual\" : 2,\n" +
-				"      \"algorithm\" : \"JoinIterator\",\n" +
-				"      \"plans\" : [ {\n" +
-				"        \"type\" : \"StatementPattern\",\n" +
-				"        \"costEstimate\" : 1.3333333333333333,\n" +
-				"        \"resultSizeEstimate\" : 4.0,\n" +
-				"        \"resultSizeActual\" : 4,\n" +
-				"        \"plans\" : [ {\n" +
-				"          \"type\" : \"Var (name=a)\"\n" +
-				"        }, {\n" +
-				"          \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-				+
-				"        }, {\n" +
-				"          \"type\" : \"Var (name=d)\"\n" +
-				"        } ]\n" +
-				"      }, {\n" +
-				"        \"type\" : \"Filter\",\n" +
-				"        \"resultSizeActual\" : 2,\n" +
-				"        \"plans\" : [ {\n" +
-				"          \"type\" : \"Compare (!=)\",\n" +
-				"          \"plans\" : [ {\n" +
-				"            \"type\" : \"Var (name=c)\"\n" +
-				"          }, {\n" +
-				"            \"type\" : \"Var (name=d)\"\n" +
-				"          } ]\n" +
-				"        }, {\n" +
-				"          \"type\" : \"Join\",\n" +
-				"          \"resultSizeActual\" : 6,\n" +
-				"          \"algorithm\" : \"HashJoinIteration\",\n" +
-				"          \"plans\" : [ {\n" +
-				"            \"type\" : \"StatementPattern\",\n" +
-				"            \"costEstimate\" : 2.0,\n" +
-				"            \"resultSizeEstimate\" : 4.0,\n" +
-				"            \"resultSizeActual\" : 6,\n" +
-				"            \"plans\" : [ {\n" +
-				"              \"type\" : \"Var (name=a)\"\n" +
-				"            }, {\n" +
-				"              \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
-				+
-				"            }, {\n" +
-				"              \"type\" : \"Var (name=c)\"\n" +
-				"            } ]\n" +
-				"          }, {\n" +
-				"            \"type\" : \"LeftJoin\",\n" +
-				"            \"costEstimate\" : 5.241482788417793,\n" +
-				"            \"resultSizeEstimate\" : 12.0,\n" +
-				"            \"resultSizeActual\" : 4,\n" +
-				"            \"newScope\" : true,\n" +
-				"            \"algorithm\" : \"BadlyDesignedLeftJoinIterator\",\n" +
-				"            \"plans\" : [ {\n" +
-				"              \"type\" : \"SingletonSet\",\n" +
-				"              \"resultSizeActual\" : 4\n" +
-				"            }, {\n" +
-				"              \"type\" : \"StatementPattern\",\n" +
-				"              \"resultSizeEstimate\" : 12.0,\n" +
-				"              \"resultSizeActual\" : 48,\n" +
-				"              \"plans\" : [ {\n" +
-				"                \"type\" : \"Var (name=d)\"\n" +
-				"              }, {\n" +
-				"                \"type\" : \"Var (name=e)\"\n" +
-				"              }, {\n" +
-				"                \"type\" : \"Var (name=f)\"\n" +
-				"              } ]\n" +
-				"            } ]\n" +
-				"          } ]\n" +
-				"        } ]\n" +
-				"      } ]\n" +
-				"    }, {\n" +
-				"      \"type\" : \"StatementPattern\",\n" +
-				"      \"resultSizeEstimate\" : 12.0,\n" +
-				"      \"resultSizeActual\" : 2,\n" +
-				"      \"plans\" : [ {\n" +
-				"        \"type\" : \"Var (name=d)\"\n" +
-				"      }, {\n" +
-				"        \"type\" : \"Var (name=e)\"\n" +
-				"      }, {\n" +
-				"        \"type\" : \"Var (name=f)\"\n" +
-				"      } ]\n" +
-				"    } ]\n" +
-				"  } ]\n" +
-				"}";
+					"  \"type\" : \"Projection\",\n" +
+					"  \"resultSizeActual\" : 2,\n" +
+					"  \"plans\" : [ {\n" +
+					"    \"type\" : \"ProjectionElemList\",\n" +
+					"    \"plans\" : [ {\n" +
+					"      \"type\" : \"ProjectionElem \\\"a\\\"\"\n" +
+					"    } ]\n" +
+					"  }, {\n" +
+					"    \"type\" : \"LeftJoin\",\n" +
+					"    \"resultSizeActual\" : 2,\n" +
+					"    \"algorithm\" : \"LeftJoinIterator\",\n" +
+					"    \"plans\" : [ {\n" +
+					"      \"type\" : \"Join\",\n" +
+					"      \"resultSizeActual\" : 2,\n" +
+					"      \"algorithm\" : \"JoinIterator\",\n" +
+					"      \"plans\" : [ {\n" +
+					"        \"type\" : \"StatementPattern\",\n" +
+					"        \"costEstimate\" : 1.3333333333333333,\n" +
+					"        \"resultSizeEstimate\" : 4.0,\n" +
+					"        \"resultSizeActual\" : 4,\n" +
+					"        \"plans\" : [ {\n" +
+					"          \"type\" : \"Var (name=a)\"\n" +
+					"        }, {\n" +
+					"          \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
+					+
+					"        }, {\n" +
+					"          \"type\" : \"Var (name=d)\"\n" +
+					"        } ]\n" +
+					"      }, {\n" +
+					"        \"type\" : \"Filter\",\n" +
+					"        \"resultSizeActual\" : 2,\n" +
+					"        \"plans\" : [ {\n" +
+					"          \"type\" : \"Compare (!=)\",\n" +
+					"          \"plans\" : [ {\n" +
+					"            \"type\" : \"Var (name=c)\"\n" +
+					"          }, {\n" +
+					"            \"type\" : \"Var (name=d)\"\n" +
+					"          } ]\n" +
+					"        }, {\n" +
+					"          \"type\" : \"Join\",\n" +
+					"          \"resultSizeActual\" : 6,\n" +
+					"          \"algorithm\" : \"HashJoinIteration\",\n" +
+					"          \"plans\" : [ {\n" +
+					"            \"type\" : \"StatementPattern\",\n" +
+					"            \"costEstimate\" : 2.0,\n" +
+					"            \"resultSizeEstimate\" : 4.0,\n" +
+					"            \"resultSizeActual\" : 6,\n" +
+					"            \"plans\" : [ {\n" +
+					"              \"type\" : \"Var (name=a)\"\n" +
+					"            }, {\n" +
+					"              \"type\" : \"Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\"\n"
+					+
+					"            }, {\n" +
+					"              \"type\" : \"Var (name=c)\"\n" +
+					"            } ]\n" +
+					"          }, {\n" +
+					"            \"type\" : \"LeftJoin\",\n" +
+					"            \"costEstimate\" : 5.241482788417793,\n" +
+					"            \"resultSizeEstimate\" : 12.0,\n" +
+					"            \"resultSizeActual\" : 4,\n" +
+					"            \"newScope\" : true,\n" +
+					"            \"algorithm\" : \"BadlyDesignedLeftJoinIterator\",\n" +
+					"            \"plans\" : [ {\n" +
+					"              \"type\" : \"SingletonSet\",\n" +
+					"              \"resultSizeActual\" : 4\n" +
+					"            }, {\n" +
+					"              \"type\" : \"StatementPattern\",\n" +
+					"              \"resultSizeEstimate\" : 12.0,\n" +
+					"              \"resultSizeActual\" : 48,\n" +
+					"              \"plans\" : [ {\n" +
+					"                \"type\" : \"Var (name=d)\"\n" +
+					"              }, {\n" +
+					"                \"type\" : \"Var (name=e)\"\n" +
+					"              }, {\n" +
+					"                \"type\" : \"Var (name=f)\"\n" +
+					"              } ]\n" +
+					"            } ]\n" +
+					"          } ]\n" +
+					"        } ]\n" +
+					"      } ]\n" +
+					"    }, {\n" +
+					"      \"type\" : \"StatementPattern\",\n" +
+					"      \"resultSizeEstimate\" : 12.0,\n" +
+					"      \"resultSizeActual\" : 2,\n" +
+					"      \"plans\" : [ {\n" +
+					"        \"type\" : \"Var (name=d)\"\n" +
+					"      }, {\n" +
+					"        \"type\" : \"Var (name=e)\"\n" +
+					"      }, {\n" +
+					"        \"type\" : \"Var (name=f)\"\n" +
+					"      } ]\n" +
+					"    } ]\n" +
+					"  } ]\n" +
+					"}";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -410,34 +410,34 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Slice (limit=1) (resultSizeActual=1)\n" +
-				"   LeftJoin (LeftJoinIterator) (resultSizeActual=1)\n" +
-				"      Join (JoinIterator) (resultSizeActual=1)\n" +
-				"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=3)\n" +
-				"            Var (name=a)\n" +
-				"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"            Var (name=d)\n" +
-				"         Filter (resultSizeActual=1)\n" +
-				"            Compare (!=)\n" +
-				"               Var (name=c)\n" +
-				"               Var (name=d)\n" +
-				"            Join (HashJoinIteration) (resultSizeActual=4)\n" +
-				"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=c)\n" +
-				"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=3)\n"
-				+
-				"                  SingletonSet (resultSizeActual=3)\n" +
-				"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=36)\n" +
-				"                     Var (name=d)\n" +
-				"                     Var (name=e)\n" +
-				"                     Var (name=f)\n" +
-				"      StatementPattern (resultSizeEstimate=12, resultSizeActual=1)\n" +
-				"         Var (name=d)\n" +
-				"         Var (name=e)\n" +
-				"         Var (name=f)\n";
+					"   LeftJoin (LeftJoinIterator) (resultSizeActual=1)\n" +
+					"      Join (JoinIterator) (resultSizeActual=1)\n" +
+					"         StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=3)\n" +
+					"            Var (name=a)\n" +
+					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"            Var (name=d)\n" +
+					"         Filter (resultSizeActual=1)\n" +
+					"            Compare (!=)\n" +
+					"               Var (name=c)\n" +
+					"               Var (name=d)\n" +
+					"            Join (HashJoinIteration) (resultSizeActual=4)\n" +
+					"               StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=c)\n" +
+					"               LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=3)\n"
+					+
+					"                  SingletonSet (resultSizeActual=3)\n" +
+					"                  StatementPattern (resultSizeEstimate=12, resultSizeActual=36)\n" +
+					"                     Var (name=d)\n" +
+					"                     Var (name=e)\n" +
+					"                     Var (name=f)\n" +
+					"      StatementPattern (resultSizeEstimate=12, resultSizeActual=1)\n" +
+					"         Var (name=d)\n" +
+					"         Var (name=e)\n" +
+					"         Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -455,47 +455,47 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Reduced (resultSizeActual=3)\n" +
-				"   MultiProjection (resultSizeActual=4)\n" +
-				"      ProjectionElemList\n" +
-				"         ProjectionElem \"a\" AS \"subject\"\n" +
-				"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
-				"         ProjectionElem \"c\" AS \"object\"\n" +
-				"      ProjectionElemList\n" +
-				"         ProjectionElem \"a\" AS \"subject\"\n" +
-				"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
-				"         ProjectionElem \"d\" AS \"object\"\n" +
-				"      Extension (resultSizeActual=2)\n" +
-				"         ExtensionElem (_const_f5e5585a_uri)\n" +
-				"            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n" +
-				"         LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-				"            Join (JoinIterator) (resultSizeActual=2)\n" +
-				"               StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=d)\n" +
-				"               Filter (resultSizeActual=2)\n" +
-				"                  Compare (!=)\n" +
-				"                     Var (name=c)\n" +
-				"                     Var (name=d)\n" +
-				"                  Join (HashJoinIteration) (resultSizeActual=6)\n" +
-				"                     StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n"
-				+
-				"                        Var (name=a)\n" +
-				"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                        Var (name=c)\n" +
-				"                     LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
-				+
-				"                        SingletonSet (resultSizeActual=4)\n" +
-				"                        StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
-				"                           Var (name=d)\n" +
-				"                           Var (name=e)\n" +
-				"                           Var (name=f)\n" +
-				"            StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
-				"               Var (name=d)\n" +
-				"               Var (name=e)\n" +
-				"               Var (name=f)\n";
+					"   MultiProjection (resultSizeActual=4)\n" +
+					"      ProjectionElemList\n" +
+					"         ProjectionElem \"a\" AS \"subject\"\n" +
+					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+					"         ProjectionElem \"c\" AS \"object\"\n" +
+					"      ProjectionElemList\n" +
+					"         ProjectionElem \"a\" AS \"subject\"\n" +
+					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
+					"         ProjectionElem \"d\" AS \"object\"\n" +
+					"      Extension (resultSizeActual=2)\n" +
+					"         ExtensionElem (_const_f5e5585a_uri)\n" +
+					"            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n" +
+					"         LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
+					"            Join (JoinIterator) (resultSizeActual=2)\n" +
+					"               StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=d)\n" +
+					"               Filter (resultSizeActual=2)\n" +
+					"                  Compare (!=)\n" +
+					"                     Var (name=c)\n" +
+					"                     Var (name=d)\n" +
+					"                  Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"                     StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n"
+					+
+					"                        Var (name=a)\n" +
+					"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                        Var (name=c)\n" +
+					"                     LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
+					+
+					"                        SingletonSet (resultSizeActual=4)\n" +
+					"                        StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
+					"                           Var (name=d)\n" +
+					"                           Var (name=e)\n" +
+					"                           Var (name=f)\n" +
+					"            StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
+					"               Var (name=d)\n" +
+					"               Var (name=e)\n" +
+					"               Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -511,13 +511,13 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(QueryPlanRetrievalTest.class.getClassLoader()
-				.getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
+					.getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
 		}
 
 		String query1 = IOUtils.toString(
-			QueryPlanRetrievalTest.class.getClassLoader().getResourceAsStream("benchmarkFiles/query1.qr"),
-			StandardCharsets.UTF_8);
+				QueryPlanRetrievalTest.class.getClassLoader().getResourceAsStream("benchmarkFiles/query1.qr"),
+				StandardCharsets.UTF_8);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			String s = connection.prepareTupleQuery(query1).explain(Explanation.Level.Timed).toString();
@@ -538,47 +538,47 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Projection (resultSizeActual=4)\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   Join (HashJoinIteration) (resultSizeActual=4)\n" +
-				"      Projection (new scope) (resultSizeActual=4)\n" +
-				"         ProjectionElemList\n" +
-				"            ProjectionElem \"a\"\n" +
-				"         StatementPattern (resultSizeActual=4)\n" +
-				"            Var (name=a)\n" +
-				"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"            Var (name=type)\n" +
-				"      Projection (new scope) (resultSizeActual=2)\n" +
-				"         ProjectionElemList\n" +
-				"            ProjectionElem \"a\"\n" +
-				"         LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-				"            Join (JoinIterator) (resultSizeActual=2)\n" +
-				"               Filter (resultSizeActual=44)\n" +
-				"                  Compare (!=)\n" +
-				"                     Var (name=c)\n" +
-				"                     Var (name=d)\n" +
-				"                  Join (JoinIterator) (resultSizeActual=48)\n" +
-				"                     LeftJoin (new scope) (LeftJoinIterator) (resultSizeActual=12)\n" +
-				"                        SingletonSet (resultSizeActual=1)\n" +
-				"                        StatementPattern (resultSizeActual=12)\n" +
-				"                           Var (name=d)\n" +
-				"                           Var (name=e)\n" +
-				"                           Var (name=f)\n" +
-				"                     StatementPattern (resultSizeActual=48)\n" +
-				"                        Var (name=a)\n" +
-				"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                        Var (name=c)\n" +
-				"               StatementPattern (resultSizeActual=2)\n" +
-				"                  Var (name=a)\n" +
-				"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                  Var (name=d)\n" +
-				"            StatementPattern (resultSizeActual=2)\n" +
-				"               Var (name=d)\n" +
-				"               Var (name=e)\n" +
-				"               Var (name=f)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   Join (HashJoinIteration) (resultSizeActual=4)\n" +
+					"      Projection (new scope) (resultSizeActual=4)\n" +
+					"         ProjectionElemList\n" +
+					"            ProjectionElem \"a\"\n" +
+					"         StatementPattern (resultSizeActual=4)\n" +
+					"            Var (name=a)\n" +
+					"            Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"            Var (name=type)\n" +
+					"      Projection (new scope) (resultSizeActual=2)\n" +
+					"         ProjectionElemList\n" +
+					"            ProjectionElem \"a\"\n" +
+					"         LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
+					"            Join (JoinIterator) (resultSizeActual=2)\n" +
+					"               Filter (resultSizeActual=44)\n" +
+					"                  Compare (!=)\n" +
+					"                     Var (name=c)\n" +
+					"                     Var (name=d)\n" +
+					"                  Join (JoinIterator) (resultSizeActual=48)\n" +
+					"                     LeftJoin (new scope) (LeftJoinIterator) (resultSizeActual=12)\n" +
+					"                        SingletonSet (resultSizeActual=1)\n" +
+					"                        StatementPattern (resultSizeActual=12)\n" +
+					"                           Var (name=d)\n" +
+					"                           Var (name=e)\n" +
+					"                           Var (name=f)\n" +
+					"                     StatementPattern (resultSizeActual=48)\n" +
+					"                        Var (name=a)\n" +
+					"                        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                        Var (name=c)\n" +
+					"               StatementPattern (resultSizeActual=2)\n" +
+					"                  Var (name=a)\n" +
+					"                  Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                  Var (name=d)\n" +
+					"            StatementPattern (resultSizeActual=2)\n" +
+					"               Var (name=d)\n" +
+					"               Var (name=e)\n" +
+					"               Var (name=f)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -597,50 +597,50 @@ public class QueryPlanRetrievalTest {
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Projection (resultSizeActual=0)\n" +
-				"   ProjectionElemList\n" +
-				"      ProjectionElem \"a\"\n" +
-				"   Join (HashJoinIteration) (resultSizeActual=0)\n" +
-				"      StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
-				"         Var (name=a)\n" +
-				"         Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"         Var (name=type)\n" +
-				"      Union (new scope) (resultSizeActual=24)\n" +
-				"         Join (HashJoinIteration) (resultSizeActual=12)\n" +
-				"            StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=12)\n" +
-				"               Var (name=a)\n" +
-				"               Var (name=b)\n" +
-				"               Var (name=c2)\n" +
-				"            Union (new scope) (resultSizeActual=96)\n" +
-				"               Join (JoinIterator) (resultSizeActual=48)\n" +
-				"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
-				+
-				"                     Var (name=c2)\n" +
-				"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                     Var (name=type1)\n" +
-				"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
-				+
-				"                     Var (name=a)\n" +
-				"                     Var (name=b)\n" +
-				"                     Var (name=c)\n" +
-				"               Join (JoinIterator) (resultSizeActual=48)\n" +
-				"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
-				+
-				"                     Var (name=c2)\n" +
-				"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-				+
-				"                     Var (name=type2)\n" +
-				"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
-				+
-				"                     Var (name=a)\n" +
-				"                     Var (name=b)\n" +
-				"                     Var (name=c)\n" +
-				"         StatementPattern (new scope) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=12)\n"
-				+
-				"            Var (name=type)\n" +
-				"            Var (name=d)\n" +
-				"            Var (name=c)\n";
+					"   ProjectionElemList\n" +
+					"      ProjectionElem \"a\"\n" +
+					"   Join (HashJoinIteration) (resultSizeActual=0)\n" +
+					"      StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
+					"         Var (name=a)\n" +
+					"         Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"         Var (name=type)\n" +
+					"      Union (new scope) (resultSizeActual=24)\n" +
+					"         Join (HashJoinIteration) (resultSizeActual=12)\n" +
+					"            StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=12)\n" +
+					"               Var (name=a)\n" +
+					"               Var (name=b)\n" +
+					"               Var (name=c2)\n" +
+					"            Union (new scope) (resultSizeActual=96)\n" +
+					"               Join (JoinIterator) (resultSizeActual=48)\n" +
+					"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
+					+
+					"                     Var (name=c2)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=type1)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
+					+
+					"                     Var (name=a)\n" +
+					"                     Var (name=b)\n" +
+					"                     Var (name=c)\n" +
+					"               Join (JoinIterator) (resultSizeActual=48)\n" +
+					"                  StatementPattern (new scope) (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n"
+					+
+					"                     Var (name=c2)\n" +
+					"                     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+
+					"                     Var (name=type2)\n" +
+					"                  StatementPattern (costEstimate=2, resultSizeEstimate=12, resultSizeActual=48)\n"
+					+
+					"                     Var (name=a)\n" +
+					"                     Var (name=b)\n" +
+					"                     Var (name=c)\n" +
+					"         StatementPattern (new scope) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=12)\n"
+					+
+					"            Var (name=type)\n" +
+					"            Var (name=d)\n" +
+					"            Var (name=c)\n";
 			Assert.assertEquals(expected, actual);
 
 		}
@@ -666,17 +666,17 @@ public class QueryPlanRetrievalTest {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(String.join("\n", "",
-				"select * where {",
-				"	?a (a|^a)* ?type.   ",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
-				"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
-				"}"));
+					"select * where {",
+					"	?a (a|^a)* ?type.   ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type} ",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"	FILTER NOT EXISTS{?a (a|^a)* ?type}",
+					"}"));
 
 			query.setMaxExecutionTime(1);
 

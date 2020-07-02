@@ -95,9 +95,9 @@ public abstract class GraphQueryResultTest {
 
 		emptyConstructQuery = "CONSTRUCT { <urn:test:non-existent-uri> ?p ?o . } WHERE { <urn:test:non-existent-uri> ?p ?o . }";
 		singleConstructQuery = "CONSTRUCT { ?s ?p <" + OWL.THING.stringValue() + "> . } WHERE { ?s ?p <"
-			+ OWL.THING.stringValue() + "> . }";
+				+ OWL.THING.stringValue() + "> . }";
 		multipleConstructQuery = "CONSTRUCT { ?s ?p <" + OWL.CLASS.stringValue() + "> . } WHERE { ?s ?p <"
-			+ OWL.CLASS.stringValue() + "> . }";
+				+ OWL.CLASS.stringValue() + "> . }";
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {

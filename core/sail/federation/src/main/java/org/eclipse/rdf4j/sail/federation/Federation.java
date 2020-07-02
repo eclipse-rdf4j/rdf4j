@@ -59,7 +59,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
  */
 @Deprecated
 public class Federation implements Sail, Executor, FederatedServiceResolverClient, RepositoryResolverClient,
-	HttpClientDependent, SessionManagerDependent {
+		HttpClientDependent, SessionManagerDependent {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
@@ -68,7 +68,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
 	private final ExecutorService executor = Executors
-		.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
+			.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
 
 	private PrefixHashSet localPropertySpace; // NOPMD
 
@@ -322,7 +322,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 				connections.add(member.getConnection());
 			}
 			SailConnection result = readOnly ? new ReadOnlyConnection(this, connections)
-				: new WritableConnection(this, connections);
+					: new WritableConnection(this, connections);
 			allGood = true;
 			return result;
 		} catch (RepositoryException e) {
@@ -336,7 +336,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-		FederatedServiceResolver resolver) {
+			FederatedServiceResolver resolver) {
 		return new FederationStrategy(this, tripleSource, dataset, getFederatedServiceResolver());
 	}
 

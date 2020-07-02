@@ -46,18 +46,18 @@ public class TargetNode extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
 		PlanNode parent = connectionsGroup.getCachedNodeFor(new Select(connectionsGroup.getBaseConnection(),
-			getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
+				getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 
 		return new ValuesBackedNode(targetNodeSet);
 
@@ -65,9 +65,9 @@ public class TargetNode extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode parent = connectionsGroup.getCachedNodeFor(
-			new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
@@ -78,31 +78,31 @@ public class TargetNode extends NodeShape {
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		StringBuilder sb = new StringBuilder();
 		sb.append("VALUES ( ").append(subjectVariable).append(" ) {\n");
 
 		targetNodeSet.stream()
-			.map(targetNode -> {
-				if (targetNode instanceof Resource) {
-					return "<" + targetNode + ">";
-				}
-				if (targetNode instanceof Literal) {
-					IRI datatype = ((Literal) targetNode).getDatatype();
-					if (datatype == null) {
-						return "\"" + targetNode.stringValue() + "\"";
+				.map(targetNode -> {
+					if (targetNode instanceof Resource) {
+						return "<" + targetNode + ">";
 					}
-					if (((Literal) targetNode).getLanguage().isPresent()) {
-						return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+					if (targetNode instanceof Literal) {
+						IRI datatype = ((Literal) targetNode).getDatatype();
+						if (datatype == null) {
+							return "\"" + targetNode.stringValue() + "\"";
+						}
+						if (((Literal) targetNode).getLanguage().isPresent()) {
+							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+						}
+						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
 					}
-					return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
-				}
 
-				throw new IllegalStateException(targetNode.getClass().getSimpleName());
+					throw new IllegalStateException(targetNode.getClass().getSimpleName());
 
-			})
-			.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
+				})
+				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
 
 		sb.append("}\n");
 
@@ -138,8 +138,8 @@ public class TargetNode extends NodeShape {
 	@Override
 	public String toString() {
 		return "TargetNode{" +
-			"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
-			", id=" + id +
-			'}';
+				"targetNodeSet=" + Arrays.toString(targetNodeSet.toArray()) +
+				", id=" + id +
+				'}';
 	}
 }

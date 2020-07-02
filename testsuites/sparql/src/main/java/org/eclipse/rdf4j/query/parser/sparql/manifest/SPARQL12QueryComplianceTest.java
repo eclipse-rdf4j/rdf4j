@@ -62,7 +62,7 @@ public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceT
 	}
 
 	public SPARQL12QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-		String resultFileURL, Dataset dataset, boolean ordered) {
+			String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 

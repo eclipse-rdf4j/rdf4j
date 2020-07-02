@@ -23,10 +23,10 @@ import org.junit.Ignore;
 public class W3CApprovedSPARQL11UpdateTest extends SPARQL11UpdateComplianceTest {
 
 	public W3CApprovedSPARQL11UpdateTest(String displayName, String testURI, String name, String requestFile,
-		IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-		Map<String, IRI> resultNamedGraphs) {
+			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+			Map<String, IRI> resultNamedGraphs) {
 		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-			resultNamedGraphs);
+				resultNamedGraphs);
 	}
 
 	@Override

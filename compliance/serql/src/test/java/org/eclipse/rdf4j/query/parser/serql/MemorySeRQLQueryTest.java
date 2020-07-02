@@ -22,14 +22,14 @@ public class MemorySeRQLQueryTest extends SeRQLQueryTestCase {
 
 			@Override
 			public Test createTest(String name, String dataFile, List<String> graphNames, String queryFile,
-				String resultFile, String entailment) {
+					String resultFile, String entailment) {
 				return new MemorySeRQLQueryTest(name, dataFile, graphNames, queryFile, resultFile, entailment);
 			}
 		});
 	}
 
 	public MemorySeRQLQueryTest(String name, String dataFile, List<String> graphNames, String queryFile,
-		String resultFile, String entailment) {
+			String resultFile, String entailment) {
 		super(name, dataFile, graphNames, queryFile, resultFile, entailment);
 	}
 

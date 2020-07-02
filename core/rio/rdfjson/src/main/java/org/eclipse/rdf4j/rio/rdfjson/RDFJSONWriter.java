@@ -137,7 +137,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @throws JSONException
 	 */
 	public static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg)
-		throws JsonGenerationException, IOException {
+			throws JsonGenerationException, IOException {
 		jg.writeStartObject();
 		if (object instanceof Literal) {
 			jg.writeObjectField(RDFJSONUtility.VALUE, object.stringValue());
@@ -190,14 +190,14 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
-		final JsonGenerator jg) throws IOException, JsonGenerationException {
+			final JsonGenerator jg) throws IOException, JsonGenerationException {
 		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 			// SES-2011: Always use \n for consistency
 			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
 			// By default Jackson does not pretty print, so enable this unless
 			// PRETTY_PRINT setting is disabled
 			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-				.withObjectIndenter(indenter);
+					.withObjectIndenter(indenter);
 			jg.setPrettyPrinter(pp);
 		}
 		jg.writeStartObject();

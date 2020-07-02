@@ -46,7 +46,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	private int currentIndex = 0;
 
 	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 
 		innerIter = iter;
 

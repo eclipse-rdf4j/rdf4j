@@ -88,7 +88,7 @@ public abstract class InferencingTest {
 		// Read output data
 		try (InputStream stream = getClass().getResourceAsStream(outputData)) {
 			expectedStatements = Rio.parse(stream, "",
-				Rio.getParserFormatForFileName(outputData).orElse(RDFFormat.NTRIPLES));
+					Rio.getParserFormatForFileName(outputData).orElse(RDFFormat.NTRIPLES));
 		}
 
 		// Check whether all expected statements are present in the entailment

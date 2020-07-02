@@ -61,7 +61,7 @@ public class ExtensibleDynamicEvaluationStatisticsLowMemBenchmark {
 	@Benchmark
 	public ExtensibleDynamicEvaluationStatistics addStatements() throws IOException, InterruptedException {
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-			null);
+				null);
 
 		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 		parser.setRDFHandler(new RDFHandler() {
@@ -83,7 +83,7 @@ public class ExtensibleDynamicEvaluationStatisticsLowMemBenchmark {
 			@Override
 			public void handleStatement(Statement st) throws RDFHandlerException {
 				extensibleDynamicEvaluationStatistics
-					.add(ExtensibleStatementHelper.getDefaultImpl().fromStatement(st, false));
+						.add(ExtensibleStatementHelper.getDefaultImpl().fromStatement(st, false));
 			}
 
 			@Override

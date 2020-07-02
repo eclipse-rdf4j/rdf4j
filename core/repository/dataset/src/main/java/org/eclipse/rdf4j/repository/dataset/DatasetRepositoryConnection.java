@@ -41,25 +41,25 @@ public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareBooleanQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareGraphQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareQuery(ql, query, baseURI));
 	}
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return wrap(delegate.prepareTupleQuery(ql, query, baseURI));
 	}
 

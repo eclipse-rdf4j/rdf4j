@@ -174,7 +174,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					// document and add a new Document without this triple
 					SearchDocument newDocument = newDocument(id, resourceId, contextId);
 					boolean mutated = copyDocument(newDocument, document,
-						Collections.singletonMap(fieldName, Collections.singleton(text)));
+							Collections.singletonMap(fieldName, Collections.singleton(text)));
 					if (mutated) {
 						updateDocument(newDocument);
 					}
@@ -192,7 +192,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 */
 	@Override
 	public final synchronized void addRemoveStatements(Collection<Statement> added, Collection<Statement> removed)
-		throws IOException {
+			throws IOException {
 		// Buffer per resource
 		MapOfListMaps<Resource, String, Statement> rsAdded = new MapOfListMaps<>();
 		MapOfListMaps<Resource, String, Statement> rsRemoved = new MapOfListMaps<>();
@@ -250,8 +250,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 					// THERE SHOULD BE NO DELETED TRIPLES ON A NEWLY ADDED RESOURCE
 					if (stmtsToRemove.containsKey(contextId)) {
 						logger.info(
-							"Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.",
-							resource, contextId);
+								"Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.",
+								resource, contextId);
 					}
 				} else {
 					// update the Document
@@ -323,7 +323,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * indexed data gets lost when doing an IndexWriter.updateDocument with it.
 	 */
 	private boolean copyDocument(SearchDocument newDocument, SearchDocument document,
-		Map<String, Set<String>> removedProperties) {
+			Map<String, Set<String>> removedProperties) {
 		// track if newDocument is actually different from document
 		boolean mutated = false;
 		for (String oldFieldName : document.getPropertyNames()) {
@@ -445,7 +445,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			return generateBindingSets(query, result);
 		} else {
 			throw new IllegalArgumentException("Unsupported " + SearchQueryEvaluator.class.getSimpleName() + ": "
-				+ evaluator.getClass().getName());
+					+ evaluator.getClass().getName());
 		}
 	}
 
@@ -476,7 +476,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			}
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating query '" + query.getQueryString() + "' for property '"
-				+ query.getPropertyURI() + "!", e);
+					+ query.getPropertyURI() + "!", e);
 		}
 
 		return hits;
@@ -490,7 +490,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	 * @throws SailException
 	 */
 	private Collection<BindingSet> generateBindingSets(QuerySpec query, Iterable<? extends DocumentScore> hits)
-		throws SailException {
+			throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -578,8 +578,8 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 						}
 					} else {
 						logger.warn(
-							"Lucene Query requests snippet, but no highlighter was generated for it, no snippets will be generated!\n{}",
-							query);
+								"Lucene Query requests snippet, but no highlighter was generated for it, no snippets will be generated!\n{}",
+								query);
 						bindingSets.add(derivedBindings);
 					}
 				} else {
@@ -611,7 +611,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			hits = geoQuery(geoProperty, p, units, distance, query.getDistanceVar(), query.getContextVar());
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating distance query 'within " + distance + getUnitSymbol(units)
-				+ " of " + from.getLabel() + "'!", e);
+					+ " of " + from.getLabel() + "'!", e);
 		}
 
 		return hits;
@@ -626,7 +626,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	}
 
 	private Collection<BindingSet> generateBindingSets(DistanceQuerySpec query,
-		Iterable<? extends DocumentDistance> hits) throws SailException {
+			Iterable<? extends DocumentDistance> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -720,14 +720,14 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			hits = geoRelationQuery(query.getRelation(), geoProperty, qshape, query.getContextVar());
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating spatial relation query '" + query.getRelation() + " "
-				+ qgeom.getLabel() + "'!", e);
+					+ qgeom.getLabel() + "'!", e);
 		}
 
 		return hits;
 	}
 
 	private Collection<BindingSet> generateBindingSets(GeoRelationQuerySpec query,
-		Iterable<? extends DocumentResult> hits) throws SailException {
+			Iterable<? extends DocumentResult> hits) throws SailException {
 		// Since one resource can be returned many times, it can lead now to
 		// multiple occurrences
 		// of the same binding tuple in the BINDINGS clause. This in turn leads to
@@ -824,13 +824,13 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	protected abstract SearchQuery parseQuery(String q, IRI property) throws MalformedQueryException;
 
 	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
-		boolean highlight) throws MalformedQueryException, IOException;
+			boolean highlight) throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentDistance> geoQuery(IRI geoProperty, Point p, IRI units,
-		double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;
+			double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
-		Shape shape, Var context) throws MalformedQueryException, IOException;
+			Shape shape, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract BulkUpdater newBulkUpdate();
 }

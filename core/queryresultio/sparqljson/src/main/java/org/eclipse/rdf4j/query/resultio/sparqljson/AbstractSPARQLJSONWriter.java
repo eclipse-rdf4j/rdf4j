@@ -211,7 +211,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				// By default Jackson does not pretty print, so enable this unless
 				// PRETTY_PRINT setting is disabled
 				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
-					.withObjectIndenter(indenter);
+						.withObjectIndenter(indenter);
 				jg.setPrettyPrinter(pp);
 			}
 

@@ -43,7 +43,7 @@ class ConstructorBuilder {
 	}
 
 	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
-		boolean distinct, boolean reduced) {
+			boolean distinct, boolean reduced) {
 		TupleExpr result = bodyExpr;
 
 		// Retrieve all StatementPattern's from the construct expression

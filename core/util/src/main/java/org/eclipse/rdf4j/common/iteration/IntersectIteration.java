@@ -55,7 +55,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
 	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
-		boolean distinct) {
+			boolean distinct) {
 		super(arg1);
 
 		assert arg2 != null;

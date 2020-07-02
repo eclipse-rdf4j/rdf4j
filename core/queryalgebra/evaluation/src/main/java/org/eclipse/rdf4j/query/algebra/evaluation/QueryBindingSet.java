@@ -126,9 +126,9 @@ public class QueryBindingSet extends AbstractBindingSet {
 	@Override
 	public Iterator<Binding> iterator() {
 		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet()
-			.stream()
-			.filter(entry -> entry.getValue() != null)
-			.iterator();
+				.stream()
+				.filter(entry -> entry.getValue() != null)
+				.iterator();
 
 		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
 

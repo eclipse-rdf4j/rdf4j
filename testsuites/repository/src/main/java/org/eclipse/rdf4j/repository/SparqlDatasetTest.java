@@ -34,11 +34,11 @@ public abstract class SparqlDatasetTest {
 	}
 
 	public String queryNoFrom = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
-		+ "SELECT (COUNT(DISTINCT ?name) as ?c) \n" + " WHERE { ?x foaf:name  ?name . } ";
+			+ "SELECT (COUNT(DISTINCT ?name) as ?c) \n" + " WHERE { ?x foaf:name  ?name . } ";
 
 	public String queryWithFrom = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
-		+ "SELECT (COUNT(DISTINCT ?name) as ?c) \n" + " FROM <http://example.org/graph1> "
-		+ " WHERE { ?x foaf:name  ?name . } ";
+			+ "SELECT (COUNT(DISTINCT ?name) as ?c) \n" + " FROM <http://example.org/graph1> "
+			+ " WHERE { ?x foaf:name  ?name . } ";
 
 	private Repository repository;
 

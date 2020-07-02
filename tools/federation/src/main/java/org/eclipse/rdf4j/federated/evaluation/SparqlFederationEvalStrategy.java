@@ -61,8 +61,8 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern(
-		StatementTupleExpr stmt, List<BindingSet> bindings)
-		throws QueryEvaluationException {
+			StatementTupleExpr stmt, List<BindingSet> bindings)
+			throws QueryEvaluationException {
 
 		// we can omit the bound join handling
 		if (bindings.size() == 1) {
@@ -76,7 +76,7 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
-			filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = null;
 		try {
@@ -106,8 +106,8 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 	 * @deprecated
 	 */
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateBoundJoinStatementPattern_UNION(
-		StatementTupleExpr stmt, List<BindingSet> bindings)
-		throws QueryEvaluationException {
+			StatementTupleExpr stmt, List<BindingSet> bindings)
+			throws QueryEvaluationException {
 
 		// we can omit the bound join handling
 		if (bindings.size() == 1) {
@@ -121,10 +121,10 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 		Boolean isEvaluated = false;
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundUnion((StatementPattern) stmt, bindings,
-			filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-			stmt.getStatementSources(), stmt.getQueryInfo());
+				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		// apply filter and/or convert to original bindings
 		if (filterExpr != null && !isEvaluated) {
@@ -142,31 +142,31 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateGroupedCheck(
-		CheckStatementPattern stmt, List<BindingSet> bindings)
-		throws QueryEvaluationException {
+			CheckStatementPattern stmt, List<BindingSet> bindings)
+			throws QueryEvaluationException {
 
 		if (bindings.size() == 1) {
 			return stmt.evaluate(bindings.get(0));
 		}
 
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundCheck(stmt.getStatementPattern(), bindings,
-			stmt.getQueryInfo().getDataset());
+				stmt.getQueryInfo().getDataset());
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluateAtStatementSources(preparedQuery,
-			stmt.getStatementSources(), stmt.getQueryInfo());
+				stmt.getStatementSources(), stmt.getQueryInfo());
 
 		return new GroupedCheckConversionIteration(result, bindings);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> executeJoin(
-		ControlledWorkerScheduler<BindingSet> joinScheduler,
-		CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-		TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
-		throws QueryEvaluationException {
+			ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
+			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
+			throws QueryEvaluationException {
 
 		ControlledWorkerBoundJoin join = new ControlledWorkerBoundJoin(joinScheduler, this, leftIter, rightArg,
-			bindings, queryInfo);
+				bindings, queryInfo);
 		join.setJoinVars(joinVars);
 		executor.execute(join);
 		return join;
@@ -174,17 +174,17 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateExclusiveGroup(
-		ExclusiveGroup group, BindingSet bindings) throws RepositoryException,
-		MalformedQueryException, QueryEvaluationException {
+			ExclusiveGroup group, BindingSet bindings) throws RepositoryException,
+			MalformedQueryException, QueryEvaluationException {
 
 		TripleSource tripleSource = group.getOwnedEndpoint().getTripleSource();
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 
 		try {
 			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
-				isEvaluated, group.getQueryInfo().getDataset());
+					isEvaluated, group.getQueryInfo().getDataset());
 			return tripleSource.getStatements(preparedQuery, bindings,
-				(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
+					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {
 			/* no projection vars, e.g. local vars only, can occur in joins */
 			if (tripleSource.hasStatements(group, bindings)) {

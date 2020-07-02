@@ -39,7 +39,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
 	@Override
 	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection<SearchQueryEvaluator> results)
-		throws SailException {
+			throws SailException {
 
 		tupleExpr.visit(new AbstractQueryModelVisitor<SailException>() {
 
@@ -89,7 +89,7 @@ public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 			public void meet(StatementPattern sp) {
 				IRI propertyName = (IRI) sp.getPredicateVar().getValue();
 				if (propertyName != null && index.isGeoField(SearchFields.getPropertyField(propertyName))
-					&& !sp.getObjectVar().hasValue()) {
+						&& !sp.getObjectVar().hasValue()) {
 					String objectVarName = sp.getObjectVar().getName();
 					GeoRelationQuerySpec spec = specs.remove(objectVarName);
 					if (spec != null && isChildOf(sp, spec.getFilter())) {

@@ -214,7 +214,7 @@ public class MemTriple implements Triple, MemResource {
 		if (other instanceof Triple) {
 			Triple that = (Triple) other;
 			return this.subject.equals(that.getSubject()) && this.predicate.equals(that.getPredicate())
-				&& this.object.equals(that.getObject());
+					&& this.object.equals(that.getObject());
 		}
 
 		return false;

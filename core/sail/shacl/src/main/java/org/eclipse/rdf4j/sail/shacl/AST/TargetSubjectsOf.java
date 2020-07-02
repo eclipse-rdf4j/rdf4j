@@ -45,25 +45,25 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
 		PlanNode parent = connectionsGroup
-			.getCachedNodeFor(
-				new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?c"));
+				.getCachedNodeFor(
+						new Select(connectionsGroup.getBaseConnection(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connection,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {
 			IRI iri = targetSubjectsOf.stream().findAny().get();
 			select = new Sort(new UnorderedSelect(connection.getAddedStatements(), null, iri, null,
-				UnorderedSelect.OutputPattern.SubjectPredicateObject));
+					UnorderedSelect.OutputPattern.SubjectPredicateObject));
 		} else {
 			select = new Select(connection.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c");
 		}
@@ -75,13 +75,13 @@ public class TargetSubjectsOf extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connection,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 
 		PlanNode select;
 		if (targetSubjectsOf.size() == 1) {
 			IRI iri = targetSubjectsOf.stream().findAny().get();
 			select = new Sort(new UnorderedSelect(connection.getRemovedStatements(), null, iri, null,
-				UnorderedSelect.OutputPattern.SubjectPredicateObject));
+					UnorderedSelect.OutputPattern.SubjectPredicateObject));
 		} else {
 			select = new Select(connection.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?b1", "?c");
 		}
@@ -97,26 +97,26 @@ public class TargetSubjectsOf extends NodeShape {
 			return false;
 		}
 		return targetSubjectsOf.stream()
-			.map(target -> addedStatements.hasStatement(null, target, null, false))
-			.reduce((a, b) -> a || b)
-			.orElseThrow(IllegalStateException::new);
+				.map(target -> addedStatements.hasStatement(null, target, null, false))
+				.reduce((a, b) -> a || b)
+				.orElseThrow(IllegalStateException::new);
 
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return targetSubjectsOf.stream()
-			.map(target -> "\n { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable
-				+ ".  } \n")
-			.reduce((a, b) -> a + " UNION " + b)
-			.get();
+				.map(target -> "\n { BIND(<" + target + "> as ?b1) \n " + subjectVariable + " ?b1 " + objectVariable
+						+ ".  } \n")
+				.reduce((a, b) -> a + " UNION " + b)
+				.get();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(SailConnection connection, PlanNode parent) {
 		return new ExternalFilterByPredicate(connection, targetSubjectsOf, parent, 0,
-			ExternalFilterByPredicate.On.Subject);
+				ExternalFilterByPredicate.On.Subject);
 	}
 
 	@Override
@@ -142,8 +142,8 @@ public class TargetSubjectsOf extends NodeShape {
 	@Override
 	public String toString() {
 		return "TargetSubjectsOf{" +
-			"targetSubjectsOf=" + Arrays.toString(targetSubjectsOf.toArray()) +
-			", id=" + id +
-			'}';
+				"targetSubjectsOf=" + Arrays.toString(targetSubjectsOf.toArray()) +
+				", id=" + id +
+				'}';
 	}
 }

@@ -56,13 +56,13 @@ public class Select implements PlanNode {
 			{
 
 				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-					.get(QueryLanguage.SPARQL)
-					.get();
+						.get(QueryLanguage.SPARQL)
+						.get();
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-						new MapBindingSet(), true);
+							new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
 					throw e;
@@ -103,12 +103,12 @@ public class Select implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
-				.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
-				.append("\n");
+					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
+					.append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
@@ -141,12 +141,12 @@ public class Select implements PlanNode {
 		Select select = (Select) o;
 
 		return Objects.equals(
-			connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
-				: connection,
-			select.connection instanceof MemoryStoreConnection
-				? ((MemoryStoreConnection) select.connection).getSail()
-				: select.connection)
-			&& query.equals(select.query);
+				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
+						: connection,
+				select.connection instanceof MemoryStoreConnection
+						? ((MemoryStoreConnection) select.connection).getSail()
+						: select.connection)
+				&& query.equals(select.query);
 	}
 
 	@Override

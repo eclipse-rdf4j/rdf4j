@@ -61,7 +61,7 @@ public class GraphController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -90,7 +90,7 @@ public class GraphController extends AbstractController {
 			logger.info("DELETE data request finished.");
 		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-				"Method not allowed: " + reqMethod);
+					"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
@@ -106,7 +106,7 @@ public class GraphController extends AbstractController {
 				IRI graph = ProtocolUtil.parseGraphParam(request, vf);
 				if (graph == null) {
 					throw new ClientHTTPException(HttpServletResponse.SC_BAD_REQUEST,
-						"Named or default graph expected for indirect reference request.");
+							"Named or default graph expected for indirect reference request.");
 				}
 				return graph;
 			}
@@ -114,7 +114,7 @@ public class GraphController extends AbstractController {
 		} else {
 			if (queryString != null) {
 				throw new ClientHTTPException(HttpServletResponse.SC_BAD_REQUEST,
-					"No parameters epxected for direct reference request.");
+						"No parameters epxected for direct reference request.");
 			}
 			return vf.createIRI(requestURL);
 		}
@@ -126,7 +126,7 @@ public class GraphController extends AbstractController {
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws ClientHTTPException {
+			HttpServletResponse response) throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -134,7 +134,7 @@ public class GraphController extends AbstractController {
 		IRI graph = getGraphName(request, vf);
 
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
-			RDFWriterRegistry.getInstance());
+				RDFWriterRegistry.getInstance());
 
 		Map<String, Object> model = new HashMap<>();
 
@@ -149,15 +149,15 @@ public class GraphController extends AbstractController {
 	 * Upload data to the graph.
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response, boolean replaceCurrent)
-		throws IOException, ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response, boolean replaceCurrent)
+			throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)
-			.orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
+				.orElseThrow(
+						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 		final IRI graph = getGraphName(request, vf);
@@ -188,7 +188,7 @@ public class GraphController extends AbstractController {
 			return new ModelAndView(EmptySuccessView.getInstance());
 		} catch (UnsupportedRDFormatException e) {
 			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-				"No RDF parser available for format " + rdfFormat.getName());
+					"No RDF parser available for format " + rdfFormat.getName());
 		} catch (RDFParseException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
@@ -203,7 +203,7 @@ public class GraphController extends AbstractController {
 	 * Delete data from the graph.
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response) throws ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();

@@ -109,16 +109,16 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 						}
 
 						aQuery.append(mExtensions.containsKey(aElem.getSourceName())
-							? mValueExprRenderer.render(mExtensions.get(aElem.getSourceName()))
-							: aElem.getSourceName());
+								? mValueExprRenderer.render(mExtensions.get(aElem.getSourceName()))
+								: aElem.getSourceName());
 
 						if (!aElem.getSourceName().equals(aElem.getTargetName())
-							|| (mExtensions.containsKey(aElem.getTargetName())
-								&& !mExtensions.containsKey(aElem.getSourceName()))) {
+								|| (mExtensions.containsKey(aElem.getTargetName())
+										&& !mExtensions.containsKey(aElem.getSourceName()))) {
 							aQuery.append(" as ")
-								.append(mExtensions.containsKey(aElem.getTargetName())
-									? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
-									: aElem.getTargetName());
+									.append(mExtensions.containsKey(aElem.getTargetName())
+											? mValueExprRenderer.render(mExtensions.get(aElem.getTargetName()))
+											: aElem.getTargetName());
 						}
 					}
 				}
@@ -251,7 +251,7 @@ class SerqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 */
 	private String renderPattern(StatementPattern thePattern) throws Exception {
 		return "{" + renderValueExpr(thePattern.getSubjectVar()) + "} " + renderValueExpr(thePattern.getPredicateVar())
-			+ " " + "{" + renderValueExpr(thePattern.getObjectVar()) + "} ";
+				+ " " + "{" + renderValueExpr(thePattern.getObjectVar()) + "} ";
 
 	}
 

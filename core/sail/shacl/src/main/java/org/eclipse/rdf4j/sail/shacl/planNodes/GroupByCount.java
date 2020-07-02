@@ -77,7 +77,7 @@ public class GroupByCount implements PlanNode {
 
 				// Arrays.asList(...) is immutable, wrap in ArrayList to make it mutable
 				List<Value> line = new ArrayList<>(
-					Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
+						Arrays.asList(subject, SimpleValueFactory.getInstance().createLiteral(count)));
 
 				next.line = line;
 
@@ -125,7 +125,7 @@ public class GroupByCount implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}

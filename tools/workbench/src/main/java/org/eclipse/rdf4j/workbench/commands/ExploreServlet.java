@@ -46,7 +46,7 @@ public class ExploreServlet extends TupleServlet {
 
 	@Override
 	public void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws Exception {
+			throws Exception {
 		try {
 			super.service(req, resp, xslPath);
 		} catch (BadRequestException exc) {
@@ -62,7 +62,7 @@ public class ExploreServlet extends TupleServlet {
 
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final TupleResultBuilder builder,
-		final RepositoryConnection con) throws BadRequestException, RDF4JException {
+			final RepositoryConnection con) throws BadRequestException, RDF4JException {
 		final Value value = req.getValue("resource");
 		logger.debug("resource = {}", value);
 
@@ -97,7 +97,7 @@ public class ExploreServlet extends TupleServlet {
 	 * @return The count of all triples in the repository using the given value.
 	 */
 	protected ResultCursor processResource(final RepositoryConnection con, final TupleResultBuilder builder,
-		final Value value, final int offset, final int limit, final boolean render) throws RDF4JException {
+			final Value value, final int offset, final int limit, final boolean render) throws RDF4JException {
 		final ResultCursor cursor = new ResultCursor(offset, limit, render);
 		boolean resource = value instanceof Resource;
 		if (resource) {
@@ -141,15 +141,15 @@ public class ExploreServlet extends TupleServlet {
 	 * @param context the triple context
 	 */
 	private void export(RepositoryConnection con, TupleResultBuilder builder, ResultCursor cursor, Resource subj,
-		IRI pred, Value obj, Resource... context)
-		throws RDF4JException, MalformedQueryException, QueryEvaluationException {
+			IRI pred, Value obj, Resource... context)
+			throws RDF4JException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryResult<Statement> result = con.getStatements(subj, pred, obj, true, context)) {
 			while (result.hasNext()) {
 				Statement statement = result.next();
 				if (isFirstTimeSeen(statement, pred, obj, context)) {
 					if (cursor.mayRender()) {
 						builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-							statement.getContext());
+								statement.getContext());
 					}
 					cursor.advance();
 				}
@@ -167,7 +167,7 @@ public class ExploreServlet extends TupleServlet {
 	 * @return true, if this is the first time the quad has been seen, false otherwise
 	 */
 	private boolean isFirstTimeSeen(Statement result, IRI patternPredicate, Value patternObject,
-		Resource... patternContext) {
+			Resource... patternContext) {
 		Resource resultSubject = result.getSubject();
 		IRI resultPredicate = result.getPredicate();
 		Value resultObject = result.getObject();

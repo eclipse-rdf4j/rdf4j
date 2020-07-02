@@ -66,7 +66,7 @@ public class QueryResults extends Iterations {
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return asModel(iteration, new DynamicModelFactory());
 	}
 
@@ -80,8 +80,8 @@ public class QueryResults extends Iterations {
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
 	public static Model asModel(CloseableIteration<? extends Statement, ? extends RDF4JException> iteration,
-		ModelFactory modelFactory)
-		throws QueryEvaluationException {
+			ModelFactory modelFactory)
+			throws QueryEvaluationException {
 		Model model = modelFactory.createEmptyModel();
 		addAll(iteration, model);
 		return model;
@@ -197,7 +197,7 @@ public class QueryResults extends Iterations {
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
 	 */
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
-		throws UnsupportedRDFormatException {
+			throws UnsupportedRDFormatException {
 		return parseGraphBackground(in, baseURI, Rio.createParser(format));
 	}
 
@@ -215,7 +215,7 @@ public class QueryResults extends Iterations {
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser) {
 		RDFFormat format = parser.getRDFFormat();
 		BackgroundGraphResult result = new BackgroundGraphResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
-			parser, in, format.getCharset(), baseURI);
+				parser, in, format.getCharset(), baseURI);
 		boolean allGood = false;
 		try {
 			ForkJoinPool.commonPool().submit(result);
@@ -239,7 +239,7 @@ public class QueryResults extends Iterations {
 	 * @throws TupleQueryResultHandlerException If such an exception is thrown by the used query result writer.
 	 */
 	public static void report(TupleQueryResult tqr, QueryResultHandler handler)
-		throws TupleQueryResultHandlerException, QueryEvaluationException {
+			throws TupleQueryResultHandlerException, QueryEvaluationException {
 
 		try {
 			handler.startQueryResult(tqr.getBindingNames());
@@ -265,7 +265,7 @@ public class QueryResults extends Iterations {
 	 * @throws QueryEvaluationException
 	 */
 	public static void report(GraphQueryResult gqr, RDFHandler rdfHandler)
-		throws RDFHandlerException, QueryEvaluationException {
+			throws RDFHandlerException, QueryEvaluationException {
 		try {
 			rdfHandler.startRDF();
 
@@ -338,7 +338,7 @@ public class QueryResults extends Iterations {
 	}
 
 	private static boolean matchBindingSets(List<? extends BindingSet> queryResult1,
-		Iterable<? extends BindingSet> queryResult2) {
+			Iterable<? extends BindingSet> queryResult2) {
 		return matchBindingSets(queryResult1, queryResult2, new HashMap<>(), 0);
 	}
 
@@ -350,7 +350,7 @@ public class QueryResults extends Iterations {
 	 * @return true if a complete mapping has been found, false otherwise.
 	 */
 	private static boolean matchBindingSets(List<? extends BindingSet> queryResult1,
-		Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx) {
+			Iterable<? extends BindingSet> queryResult2, Map<BNode, BNode> bNodeMapping, int idx) {
 		boolean result = false;
 
 		if (idx < queryResult1.size()) {
@@ -388,7 +388,7 @@ public class QueryResults extends Iterations {
 	}
 
 	private static List<BindingSet> findMatchingBindingSets(BindingSet st, Iterable<? extends BindingSet> model,
-		Map<BNode, BNode> bNodeMapping) {
+			Map<BNode, BNode> bNodeMapping) {
 		List<BindingSet> result = new ArrayList<>();
 
 		for (BindingSet modelSt : model) {
@@ -439,8 +439,8 @@ public class QueryResults extends Iterations {
 					IRI dt2 = rightLit.getDatatype();
 
 					if (dt1 != null && dt2 != null && dt1.equals(dt2)
-						&& XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)
-						&& XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {
+							&& XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)
+							&& XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {
 						Integer compareResult = null;
 						if (dt1.equals(XMLSchema.DOUBLE)) {
 							compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());
@@ -505,7 +505,7 @@ public class QueryResults extends Iterations {
 	}
 
 	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement, QueryEvaluationException>
-		implements GraphQueryResult {
+			implements GraphQueryResult {
 
 		private final DistinctIteration<Statement, QueryEvaluationException> filter;
 
@@ -573,7 +573,7 @@ public class QueryResults extends Iterations {
 	}
 
 	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
-		implements TupleQueryResult {
+			implements TupleQueryResult {
 
 		private final DistinctIteration<BindingSet, QueryEvaluationException> filter;
 

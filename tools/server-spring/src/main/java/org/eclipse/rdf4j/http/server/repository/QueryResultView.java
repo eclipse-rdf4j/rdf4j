@@ -71,7 +71,7 @@ public abstract class QueryResultView implements View {
 
 	@SuppressWarnings("rawtypes")
 	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
-		throws IOException;
+			throws IOException;
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat) throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();
@@ -84,7 +84,7 @@ public abstract class QueryResultView implements View {
 
 	@SuppressWarnings("rawtypes")
 	protected void setContentDisposition(Map model, HttpServletResponse response, FileFormat fileFormat)
-		throws IOException {
+			throws IOException {
 		// Report as attachment to make use in browser more convenient
 		String filename = (String) model.get(FILENAME_HINT_KEY);
 

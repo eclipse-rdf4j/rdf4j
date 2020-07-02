@@ -34,13 +34,13 @@ public class SfEqualsTest extends GeometricRelationFunctionTest {
 	public void matchesMultiPolygonWKT() throws IOException {
 
 		String polygon = IOUtils.toString(
-			getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/query/algebra/evaluation/function/geosparql/sfequals_polygon.txt"),
-			Charset.defaultCharset());
+				getClass().getResourceAsStream(
+						"/org/eclipse/rdf4j/query/algebra/evaluation/function/geosparql/sfequals_polygon.txt"),
+				Charset.defaultCharset());
 		String multiPolygon = IOUtils.toString(
-			getClass().getResourceAsStream(
-				"/org/eclipse/rdf4j/query/algebra/evaluation/function/geosparql/sfequals_multipolygon.txt"),
-			Charset.defaultCharset());
+				getClass().getResourceAsStream(
+						"/org/eclipse/rdf4j/query/algebra/evaluation/function/geosparql/sfequals_multipolygon.txt"),
+				Charset.defaultCharset());
 
 		Literal polygonLit = f.createLiteral(polygon, GEO.WKT_LITERAL);
 		Literal multiPolygonLit = f.createLiteral(multiPolygon, GEO.WKT_LITERAL);

@@ -36,7 +36,7 @@ public class UpdateServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
-		throws Exception, IOException {
+			throws Exception, IOException {
 		// All POST requests are expected to contain a SPARQL/Update 'update' parameter.
 		try {
 			String updateString = req.getParameter("update");
@@ -59,8 +59,8 @@ public class UpdateServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			try {
 				con
-					.prepareUpdate(QueryLanguage.SPARQL, updateString)
-					.execute();
+						.prepareUpdate(QueryLanguage.SPARQL, updateString)
+						.execute();
 			} catch (RepositoryException | MalformedQueryException | UpdateExecutionException e) {
 				throw new BadRequestException(e.getMessage());
 			}
@@ -69,7 +69,7 @@ public class UpdateServlet extends TransformationServlet {
 
 	@Override
 	public void service(TupleResultBuilder builder, String xslPath)
-		throws RepositoryException, QueryResultHandlerException {
+			throws RepositoryException, QueryResultHandlerException {
 		// All GET requests are assumed to be to present the update editor page.
 		builder.transform(xslPath, "update.xsl");
 		builder.start();

@@ -219,7 +219,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
 		a.commit();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
@@ -261,7 +261,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
 		a.commit();
 		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));
 		b.commit();
@@ -310,7 +310,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting }", NS).execute();
 		a.commit();
 		try {
 			int size = size(b, null, PAINTS, null, false);
@@ -336,7 +336,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
+				"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
 				b.add((Resource) painting, RDF.TYPE, PAINTING);
@@ -360,7 +360,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter> "
-			+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
 		a.commit();
 		b.commit();
 		assertEquals(9, size(a, null, null, null, false));
@@ -380,7 +380,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
+				"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
 				b.add((Resource) painting, RDF.TYPE, PAINTING);
@@ -405,7 +405,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter> "
-			+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
 		a.commit();
 		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));
 		b.commit();
@@ -425,7 +425,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
+				"SELECT ?painting " + "WHERE { ?painter a <Painter> " + "OPTIONAL { ?painter <paints> ?painting } }");
 		for (Value painting : result) {
 			if (painting != null) {
 				b.add((Resource) painting, RDF.TYPE, PAINTING);
@@ -457,7 +457,7 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL, "INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter> "
-			+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
+				+ "OPTIONAL { ?painter <paints> ?painting } }", NS).execute();
 		a.commit();
 		try {
 			int size = size(b, null, PAINTS, null, false);
@@ -483,8 +483,8 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
+				"SELECT ?painting " + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }");
 		for (Value painting : result) {
 			b.add((Resource) painting, RDF.TYPE, PAINTING);
 		}
@@ -505,9 +505,9 @@ public class SnapshotTest {
 		a.add(PICASSO, PAINTS, GUERNICA);
 		a.add(PICASSO, PAINTS, JACQUELINE);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
-				+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
-			NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { ?painter a <Painter>; <paints> ?painting "
+						+ "FILTER  regex(str(?painter), \"rem\", \"i\") }",
+				NS).execute();
 		a.commit();
 		b.commit();
 		assertEquals(10, size(a, null, null, null, false));
@@ -527,7 +527,7 @@ public class SnapshotTest {
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
 		List<Value> result = eval("painting", b, "SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting "
-			+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
+				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
 		for (Value painting : result) {
 			if (painting != null) {
 				b.add((Resource) painting, RDF.TYPE, PAINTING);
@@ -553,9 +553,9 @@ public class SnapshotTest {
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
-				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
-			NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
+						+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
+				NS).execute();
 		a.commit();
 		assertEquals(5, size(b, null, PAINTS, null, false));
 		b.commit();
@@ -576,7 +576,7 @@ public class SnapshotTest {
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
 		List<Value> result = eval("painting", b, "SELECT ?painting " + "WHERE { [a <Painter>] <paints> ?painting "
-			+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
+				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }");
 		assertEquals(5, result.size());
 		for (Value painting : result) {
 			if (painting != null) {
@@ -610,9 +610,9 @@ public class SnapshotTest {
 		a.add(GUERNICA, RDF.TYPE, PAINTING);
 		a.add(JACQUELINE, RDF.TYPE, PAINTING);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
-				+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
-			NS).execute();
+				"INSERT { ?painting a <Painting> }\n" + "WHERE { [a <Painter>] <paints> ?painting "
+						+ "OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }",
+				NS).execute();
 		a.commit();
 		try {
 			int size = size(b, null, RDF.TYPE, PAINTING, false);
@@ -642,8 +642,8 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
 			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
@@ -670,10 +670,10 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
-			NS).execute();
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		a.add(REMBRANDT, PAINTS, NIGHTWATCH);
 		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));
 		a.commit();
@@ -697,8 +697,8 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
 			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
@@ -726,10 +726,10 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
-			NS).execute();
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
 		a.commit();
@@ -754,8 +754,8 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		List<Value> result = eval("painting", b,
-			"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
+				"SELECT ?painting " + "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }");
 		for (Value painting : result) {
 			b.add((Resource) painting, PERIOD, lf.createLiteral("First Amsterdam period"));
 		}
@@ -790,10 +790,10 @@ public class SnapshotTest {
 		a.begin(level);
 		b.begin(level);
 		b.prepareUpdate(QueryLanguage.SPARQL,
-			"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
-				+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
-				+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
-			NS).execute();
+				"INSERT { ?painting <period> \"First Amsterdam period\" }\n"
+						+ "WHERE { <rembrandt> <paints> ?painting . ?painting <year> ?year "
+						+ "FILTER  (1631 <= ?year && ?year <= 1635) }",
+				NS).execute();
 		a.add(REMBRANDT, PAINTS, BELSHAZZAR);
 		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));
 		a.commit();
@@ -810,7 +810,7 @@ public class SnapshotTest {
 	}
 
 	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx)
-		throws Exception {
+			throws Exception {
 		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();
 	}
 

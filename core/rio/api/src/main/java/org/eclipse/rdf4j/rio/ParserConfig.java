@@ -51,7 +51,7 @@ public class ParserConfig extends RioConfig implements Serializable {
 	 */
 	@Deprecated
 	public ParserConfig(boolean verifyData, boolean stopAtFirstError, boolean preserveBNodeIDs,
-		DatatypeHandling datatypeHandling) {
+			DatatypeHandling datatypeHandling) {
 		this();
 
 		this.set(BasicParserSettings.PRESERVE_BNODE_IDS, preserveBNodeIDs);

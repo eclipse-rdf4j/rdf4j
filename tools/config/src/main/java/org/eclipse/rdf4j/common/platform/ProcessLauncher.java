@@ -184,7 +184,7 @@ public final class ProcessLauncher {
 	public String getStandardOutput() {
 		if (!this.listeners.isEmpty()) {
 			throw new IllegalStateException(
-				"Cannot get standard output, because outputlisteners have been registered.");
+					"Cannot get standard output, because outputlisteners have been registered.");
 		}
 		return this.out.toString();
 	}

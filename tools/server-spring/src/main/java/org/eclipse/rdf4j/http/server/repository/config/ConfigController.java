@@ -58,7 +58,7 @@ public class ConfigController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		switch (request.getMethod()) {
 		case METHOD_GET:
 		case METHOD_HEAD:
@@ -71,10 +71,10 @@ public class ConfigController extends AbstractController {
 	}
 
 	private ModelAndView handleQuery(HttpServletRequest request, HttpServletResponse response)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
-			RDFWriterRegistry.getInstance());
+				RDFWriterRegistry.getInstance());
 		String repId = RepositoryInterceptor.getRepositoryID(request);
 		RepositoryConfig repositoryConfig = repositoryManager.getRepositoryConfig(repId);
 
@@ -91,12 +91,12 @@ public class ConfigController extends AbstractController {
 	}
 
 	private ModelAndView handleUpdate(HttpServletRequest request, HttpServletResponse response)
-		throws RDFParseException, UnsupportedRDFormatException, IOException, HTTPException {
+			throws RDFParseException, UnsupportedRDFormatException, IOException, HTTPException {
 		String repId = RepositoryInterceptor.getRepositoryID(request);
 		Model model = Rio.parse(request.getInputStream(), "",
-			Rio.getParserFormatForMIMEType(request.getContentType())
-				.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
-					"unrecognized content type " + request.getContentType())));
+				Rio.getParserFormatForMIMEType(request.getContentType())
+						.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
+								"unrecognized content type " + request.getContentType())));
 		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, repId);
 		repositoryManager.addRepositoryConfig(config);
 		return new ModelAndView(EmptySuccessView.getInstance());

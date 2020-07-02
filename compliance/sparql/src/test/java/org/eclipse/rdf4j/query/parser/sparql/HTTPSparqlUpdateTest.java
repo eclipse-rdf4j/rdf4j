@@ -102,7 +102,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 		// transaction isolation is not supported for HTTP connections. disabling
 		// test.
 		System.err.println(
-			"temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
+				"temporarily disabled testConsecutiveUpdatesInSameTransaction() for HTTPRepository. See SES-1652");
 	}
 
 	@Ignore

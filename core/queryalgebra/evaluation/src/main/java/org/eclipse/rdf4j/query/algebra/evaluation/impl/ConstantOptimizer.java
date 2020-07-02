@@ -255,9 +255,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 		 */
 		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
 			Function function = FunctionRegistry.getInstance()
-				.get(functionCall.getURI())
-				.orElseThrow(() -> new QueryEvaluationException(
-					"Unable to find function with the URI: " + functionCall.getURI()));
+					.get(functionCall.getURI())
+					.orElseThrow(() -> new QueryEvaluationException(
+							"Unable to find function with the URI: " + functionCall.getURI()));
 
 			// we treat constant functions as the 'regular case' and make
 			// exceptions for specific SPARQL built-in functions that require

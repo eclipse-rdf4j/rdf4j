@@ -402,8 +402,8 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (memTriple == null) {
 			// Create a MemTriple and add it to the registry
 			memTriple = new MemTriple(this, getOrCreateMemResource(triple
-				.getSubject()),
-				getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+					.getSubject()),
+					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
 			boolean wasNew = tripleRegistry.add(memTriple);
 		}
 

@@ -81,8 +81,8 @@ public class SPARQLRepositoryInformation extends RepositoryInformation {
 			SparqlEndpointConfiguration c = new SparqlEndpointConfiguration();
 
 			if (graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES, FedXUtil.literal("false"))
-				|| graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES,
-					FedXUtil.valueFactory().createLiteral(false))) {
+					|| graph.contains(repNode, Vocabulary.FEDX.SUPPORTS_ASK_QUERIES,
+							FedXUtil.valueFactory().createLiteral(false))) {
 				c.setSupportsASKQueries(false);
 			}
 

@@ -30,7 +30,7 @@ public class StringCast extends CastFunction {
 	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
-				getXsdName() + " cast requires exactly 1 argument, got " + args.length);
+					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
 		}
 
 		if (args[0] instanceof Literal) {
@@ -67,7 +67,7 @@ public class StringCast extends CastFunction {
 				return valueFactory.createLiteral(literal.getLabel(), XMLSchema.STRING);
 			} else if (!Literals.isLanguageLiteral(literal)) {
 				if (XMLDatatypeUtil.isNumericDatatype(datatype) || datatype.equals(XMLSchema.BOOLEAN)
-					|| datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATETIMESTAMP)) {
+						|| datatype.equals(XMLSchema.DATETIME) || datatype.equals(XMLSchema.DATETIMESTAMP)) {
 					// FIXME Slightly simplified wrt the spec, we just always use the
 					// canonical value of the
 					// source literal as the target lexical value. This is not 100%

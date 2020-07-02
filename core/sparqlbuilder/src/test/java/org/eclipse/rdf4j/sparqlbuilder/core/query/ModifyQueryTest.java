@@ -33,13 +33,13 @@ public class ModifyQueryTest extends BaseExamples {
 		TriplePattern whereTriple2 = subject.has(iri("http://my-example.com/anyIRI/"), obj);
 
 		modify.with(g1)
-			.delete(delTriple1, delTriple2)
-			.where(and(GraphPatterns.optional(whereTriple1), GraphPatterns.optional(whereTriple2)));
+				.delete(delTriple1, delTriple2)
+				.where(and(GraphPatterns.optional(whereTriple1), GraphPatterns.optional(whereTriple2)));
 
 		assertEquals(modify.getQueryString(), "WITH <g1>\n" +
-			"DELETE { ?subject <http://my-example.com/anyIRI/> ?object .\n" +
-			"?subject ?predicate <http://my-example.com/anyIRI/> . }\n" +
-			"WHERE { OPTIONAL { ?subject ?predicate <http://my-example.com/anyIRI/> . }\n" +
-			"OPTIONAL { ?subject <http://my-example.com/anyIRI/> ?object . } }");
+				"DELETE { ?subject <http://my-example.com/anyIRI/> ?object .\n" +
+				"?subject ?predicate <http://my-example.com/anyIRI/> . }\n" +
+				"WHERE { OPTIONAL { ?subject ?predicate <http://my-example.com/anyIRI/> . }\n" +
+				"OPTIONAL { ?subject <http://my-example.com/anyIRI/> ?object . } }");
 	}
 }

@@ -36,6 +36,6 @@ public class Cast extends BinaryFunction {
 		IRI targetDatatype = (IRI) arg2;
 		Function func = FunctionRegistry.getInstance().get(targetDatatype.stringValue()).orElse(null);
 		return (func != null) ? func.evaluate(valueFactory, value)
-			: valueFactory.createLiteral(value.getLabel(), targetDatatype);
+				: valueFactory.createLiteral(value.getLabel(), targetDatatype);
 	}
 }

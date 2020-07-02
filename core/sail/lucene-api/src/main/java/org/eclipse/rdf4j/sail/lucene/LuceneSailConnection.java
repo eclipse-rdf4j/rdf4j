@@ -89,7 +89,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	@SuppressWarnings("unchecked")
 	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(Projection.class,
-		MultiProjection.class);
+			MultiProjection.class);
 
 	private final Logger logger = LoggerFactory.getLogger(LuceneSailConnection.class);
 
@@ -159,8 +159,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();
 			if (!(resolver instanceof AbstractFederatedServiceResolver)) {
 				throw new IllegalArgumentException(
-					"SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of "
-						+ AbstractFederatedServiceResolver.class.getName());
+						"SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of "
+								+ AbstractFederatedServiceResolver.class.getName());
 			}
 			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver) resolver;
 		} else {
@@ -176,7 +176,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		super.addStatement(subj, pred, obj, contexts);
 	}
 
@@ -243,8 +243,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 			}
 		} catch (Exception e) {
 			logger.error("Committing operations in lucenesail, encountered exception " + e
-				+ ". Only some operations were stored, " + buffer.operations().size()
-				+ " operations are discarded. Lucene Index is now corrupt.", e);
+					+ ". Only some operations were stored, " + buffer.operations().size()
+					+ " operations are discarded. Lucene Index is now corrupt.", e);
 			throw new SailException(e);
 		} finally {
 			buffer.reset();
@@ -281,7 +281,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public synchronized CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-		Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		QueryContext qctx = new QueryContext();
 		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);
 
@@ -299,7 +299,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	}
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
-		Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		// Don't modify the original tuple expression
 		tupleExpr = tupleExpr.clone();
 
@@ -327,8 +327,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {
 			ValueFactory vf = sail.getValueFactory();
 			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(
-				new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),
-				sail.getTupleFunctionRegistry());
+					new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),
+					sail.getTupleFunctionRegistry());
 
 			// do standard optimizations
 			new BindingAssigner().optimize(tupleExpr, dataset, bindings);
@@ -395,7 +395,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		super.removeStatements(subj, pred, obj, contexts);
 	}
 

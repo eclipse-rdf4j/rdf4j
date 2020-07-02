@@ -62,8 +62,8 @@ public class SPARQLStarResultsJSONParser extends SPARQLResultsJSONParser {
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
 			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 				throw new QueryResultParseException("Did not find triple attribute in triple value",
-					jp.getCurrentLocation().getLineNr(),
-					jp.getCurrentLocation().getColumnNr());
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
 			}
 			String posName = jp.getCurrentName();
 			if (SUBJECT.equals(posName)) {
@@ -74,8 +74,8 @@ public class SPARQLStarResultsJSONParser extends SPARQLResultsJSONParser {
 				object = parseValue(jp, fieldName + ":" + posName);
 			} else {
 				throw new QueryResultParseException("Unexpected field name in triple value: " + posName,
-					jp.getCurrentLocation().getLineNr(),
-					jp.getCurrentLocation().getColumnNr());
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
 			}
 		}
 
@@ -83,8 +83,8 @@ public class SPARQLStarResultsJSONParser extends SPARQLResultsJSONParser {
 			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
 		} else {
 			throw new QueryResultParseException("Incomplete or invalid triple value",
-				jp.getCurrentLocation().getLineNr(),
-				jp.getCurrentLocation().getColumnNr());
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
 		}
 	}
 
@@ -92,8 +92,8 @@ public class SPARQLStarResultsJSONParser extends SPARQLResultsJSONParser {
 	protected boolean checkTripleType(JsonParser jp, String type) {
 		if (!TRIPLE.equals(type)) {
 			throw new QueryResultParseException("Found a triple value but unexpected type: " + type,
-				jp.getCurrentLocation().getLineNr(),
-				jp.getCurrentLocation().getColumnNr());
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
 		}
 
 		return true;

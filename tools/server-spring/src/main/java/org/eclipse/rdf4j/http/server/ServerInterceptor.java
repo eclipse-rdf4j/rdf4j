@@ -25,7 +25,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
-		throws Exception {
+			throws Exception {
 		origThreadName = Thread.currentThread().getName();
 		Thread.currentThread().setName(getThreadName());
 
@@ -36,7 +36,7 @@ public abstract class ServerInterceptor extends HandlerInterceptorAdapter {
 
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
-		Exception exception) throws Exception {
+			Exception exception) throws Exception {
 		try {
 			cleanUpResources();
 		} finally {

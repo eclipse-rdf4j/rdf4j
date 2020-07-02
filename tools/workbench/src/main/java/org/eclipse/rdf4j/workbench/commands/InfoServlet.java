@@ -48,8 +48,8 @@ public class InfoServlet extends TransformationServlet {
 		}
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.start("id", "description", "location", "server", "readable", "writeable", "default-limit",
-			"default-queryLn", "default-infer", "default-Accept", "default-Content-Type", "upload-format",
-			"query-format", "graph-download-format", "tuple-download-format", "boolean-download-format");
+				"default-queryLn", "default-infer", "default-Accept", "default-Content-Type", "upload-format",
+				"query-format", "graph-download-format", "tuple-download-format", "boolean-download-format");
 		String desc = info.getDescription();
 		URL loc = info.getLocation();
 		URL server = getServer();

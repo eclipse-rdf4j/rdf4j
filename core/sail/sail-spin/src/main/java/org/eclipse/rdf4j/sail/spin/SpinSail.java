@@ -152,7 +152,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	@Override
 	public SpinSailConnection getConnection()
-		throws SailException {
+			throws SailException {
 		InferencerConnection con = (InferencerConnection) super.getConnection();
 		return new SpinSailConnection(this, con);
 	}
@@ -161,7 +161,7 @@ public class SpinSail extends AbstractForwardChainingInferencer {
 
 	@Override
 	synchronized public void initialize()
-		throws SailException {
+			throws SailException {
 		super.initialize();
 
 		initializing = true;

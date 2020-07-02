@@ -38,7 +38,7 @@ final class SortedRecordCache extends RecordCache {
 	}
 
 	public SortedRecordCache(File cacheDir, int recordSize, long maxRecords, RecordComparator comparator)
-		throws IOException {
+			throws IOException {
 		super(maxRecords);
 		btree = new BTree(cacheDir, "txncache", 4096, recordSize, comparator);
 	}

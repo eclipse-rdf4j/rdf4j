@@ -28,7 +28,7 @@ public class SpinMemoryRepositoryConnectionTest extends RepositoryConnectionTest
 
 	@Override
 	protected Repository createRepository()
-		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
+			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException, IOException {
 		return new SailRepository(new SpinSail(new MemoryStore()));
 	}
 

@@ -57,8 +57,8 @@ import com.google.common.collect.Maps;
 public class FedXPerformanceTest extends SPARQLBaseTest {
 
 	static final String[] queries = new String[] {
-		"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
-		"query10", "query11" /* , "query12" */
+			"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
+			"query10", "query11" /* , "query12" */
 	};
 
 	@Test
@@ -68,7 +68,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",
-			basePackage + "data4.ttl"));
+				basePackage + "data4.ttl"));
 
 		// warm-up
 		for (String query : queries) {
@@ -122,7 +122,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",
-			basePackage + "data4.ttl"));
+				basePackage + "data4.ttl"));
 
 		String query = "query12";
 		execute(basePackage + query + ".rq", basePackage + query + ".srx", false);

@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  *      <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#assignment"> SPARQL Assignments</a>
  */
 public abstract class Expression<T extends Expression<T>> extends StandardQueryElementCollection<Operand>
-	implements Operand, Orderable, Groupable, Assignable {
+		implements Operand, Orderable, Groupable, Assignable {
 	private static final Function<String, String> WRAPPER = SparqlBuilderUtils::getParenthesizedString;
 
 	protected SparqlOperator operator;

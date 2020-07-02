@@ -184,7 +184,7 @@ public abstract class TupleQueryResultTest {
 		con.begin();
 		while (count < testStatementCount) {
 			con.add(vf.createIRI("urn:test:" + subjectIndex), vf.createIRI("urn:test:" + predicateIndex),
-				vf.createIRI("urn:test:" + objectIndex));
+					vf.createIRI("urn:test:" + objectIndex));
 			if (Math.round(Math.random()) > 0) {
 				subjectIndex++;
 			}
@@ -200,11 +200,11 @@ public abstract class TupleQueryResultTest {
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
 			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
-				RepositoryConnection nextCon = rep.getConnection();) {
+					RepositoryConnection nextCon = rep.getConnection();) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
-					stream);
+						stream);
 				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,
-					"SELECT ?s ?p ?o WHERE { ?s ?p ?o . }");
+						"SELECT ?s ?p ?o WHERE { ?s ?p ?o . }");
 				tupleQuery.setIncludeInferred(false);
 				tupleQuery.evaluate(sparqlWriter);
 			}
@@ -222,7 +222,7 @@ public abstract class TupleQueryResultTest {
 		con.begin();
 		while (count < testStatementCount) {
 			con.add(vf.createIRI("urn:test:" + subjectIndex), vf.createIRI("urn:test:" + predicateIndex),
-				vf.createIRI("urn:test:" + objectIndex));
+					vf.createIRI("urn:test:" + objectIndex));
 			if (Math.round(Math.random()) > 0) {
 				subjectIndex++;
 			}

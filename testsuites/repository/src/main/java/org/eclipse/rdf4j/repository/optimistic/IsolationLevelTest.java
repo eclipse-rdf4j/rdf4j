@@ -301,7 +301,7 @@ public class IsolationLevelTest {
 			}
 			int counter = 0;
 			try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(null, null,
-				null, false);) {
+					null, false);) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
 					counter++;
@@ -424,7 +424,7 @@ public class IsolationLevelTest {
 	}
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
-		final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
+			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
 		return new Thread(() -> {
 			try (RepositoryConnection con = store.getConnection();) {
 				start.countDown();
@@ -457,9 +457,9 @@ public class IsolationLevelTest {
 	}
 
 	protected long count(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws RepositoryException {
+			Resource... contexts) throws RepositoryException {
 		try (CloseableIteration<Statement, RepositoryException> stmts = con.getStatements(subj, pred, obj,
-			includeInferred, contexts);) {
+				includeInferred, contexts);) {
 			long counter = 0;
 			while (stmts.hasNext()) {
 				stmts.next();
@@ -471,7 +471,7 @@ public class IsolationLevelTest {
 
 	protected Literal readLiteral(RepositoryConnection con, final IRI subj, final IRI pred) throws RepositoryException {
 		try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(subj, pred, null,
-			false);) {
+				false);) {
 			if (!stmts.hasNext()) {
 				return null;
 			}
@@ -487,7 +487,7 @@ public class IsolationLevelTest {
 		ValueFactory vf = connection.getValueFactory();
 		Literal lit = vf.createLiteral(Integer.toString(i), XMLSchema.INTEGER);
 		connection.add(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
-			vf.createIRI("http://test#context_" + i));
+				vf.createIRI("http://test#context_" + i));
 	}
 
 	protected synchronized void fail(String message, Throwable t) {

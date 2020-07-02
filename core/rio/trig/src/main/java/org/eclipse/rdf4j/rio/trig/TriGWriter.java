@@ -117,7 +117,7 @@ public class TriGWriter extends TurtleWriter {
 
 	@Override
 	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
-		boolean canShortenObject) {
+			boolean canShortenObject) {
 		// Avoid accidentally writing statements early, but don't lose track of
 		// them if they are sent here
 		if (prettyPrintModel != null && !endRDFCalled) {
@@ -140,7 +140,7 @@ public class TriGWriter extends TurtleWriter {
 					boolean canShortenContext = false;
 					if (context instanceof BNode) {
 						if (prettyPrintModel != null && !prettyPrintModel.contains(context, null, null)
-							&& !prettyPrintModel.contains(null, null, context)) {
+								&& !prettyPrintModel.contains(null, null, context)) {
 							canShortenContext = true;
 						}
 					}

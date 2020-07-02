@@ -132,10 +132,10 @@ public abstract class SeRQLParserTestCase extends TestCase {
 		con.add(manifestURL, base(manifestURL.toExternalForm()), format);
 
 		String query = "SELECT testName, query, result " + "FROM {} mf:name {testName}; "
-			+ "        mf:action {query}; " + "        mf:result {result} " + "USING NAMESPACE "
-			+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-			+ "  mfx = <http://www.openrdf.org/test-manifest-extensions#>, "
-			+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+				+ "        mf:action {query}; " + "        mf:result {result} " + "USING NAMESPACE "
+				+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
+				+ "  mfx = <http://www.openrdf.org/test-manifest-extensions#>, "
+				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
 
 		TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
 		while (tests.hasNext()) {

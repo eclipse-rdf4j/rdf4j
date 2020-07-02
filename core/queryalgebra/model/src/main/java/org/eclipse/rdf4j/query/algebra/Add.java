@@ -59,7 +59,7 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 		if (other instanceof Add) {
 			Add o = (Add) other;
 			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
-				&& nullEquals(destinationGraph, o.destinationGraph);
+					&& nullEquals(destinationGraph, o.destinationGraph);
 		}
 		return false;
 	}

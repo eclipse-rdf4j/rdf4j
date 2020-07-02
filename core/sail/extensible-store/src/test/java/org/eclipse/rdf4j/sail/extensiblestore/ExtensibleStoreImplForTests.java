@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class ExtensibleStoreImplForTests
-	extends ExtensibleStore<NaiveHashSetDataStructure, SimpleMemoryNamespaceStore> {
+		extends ExtensibleStore<NaiveHashSetDataStructure, SimpleMemoryNamespaceStore> {
 
 	public ExtensibleStoreImplForTests() {
 	}

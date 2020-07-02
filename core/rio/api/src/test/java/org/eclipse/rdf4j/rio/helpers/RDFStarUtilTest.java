@@ -53,8 +53,8 @@ public class RDFStarUtilTest {
 
 		Triple triple = vf.createTriple(iri, RDF.TYPE, literal1);
 		assertEquals(vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-			+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-"),
-			RDFStarUtil.<Value>toRDFEncodedValue(triple));
+				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-"),
+				RDFStarUtil.<Value>toRDFEncodedValue(triple));
 		assertFalse(RDFStarUtil.isEncodedTriple(triple));
 		assertTrue(RDFStarUtil.isEncodedTriple(RDFStarUtil.toRDFEncodedValue(triple)));
 	}
@@ -79,7 +79,7 @@ public class RDFStarUtilTest {
 		assertSame(bNode, RDFStarUtil.fromRDFEncodedValue(bNode));
 
 		IRI encoded = vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-			+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-");
+				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-");
 		Value decoded = RDFStarUtil.fromRDFEncodedValue(encoded);
 		assertTrue(decoded instanceof Triple);
 		assertEquals(iri, ((Triple) decoded).getSubject());
@@ -90,16 +90,16 @@ public class RDFStarUtilTest {
 	@Test
 	public void testInvalidEncodedValue() {
 		IRI[] invalidValues = {
-			vf.createIRI("urn:rdf4j:triple:"),
-			vf.createIRI("urn:rdf4j:triple:foo"),
-			vf.createIRI("urn:rdf4j:triple:кирилица"),
-			vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-"),
-			// Missing final -
-			vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4"),
-			// Extra x at the end
-			vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
-				+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-x"),
+				vf.createIRI("urn:rdf4j:triple:"),
+				vf.createIRI("urn:rdf4j:triple:foo"),
+				vf.createIRI("urn:rdf4j:triple:кирилица"),
+				vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-"),
+				// Missing final -
+				vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
+						+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4"),
+				// Extra x at the end
+				vf.createIRI("urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1ze"
+						+ "W50YXgtbnMjdHlwZT4gInBsYWluIj4-x"),
 		};
 
 		for (IRI invalidValue : invalidValues) {

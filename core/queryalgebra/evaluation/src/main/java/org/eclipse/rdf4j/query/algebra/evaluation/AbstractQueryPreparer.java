@@ -80,11 +80,11 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 	}
 
 	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-		Dataset dataset, BindingSet bindings, boolean includeInferred, int maxExecutionTime)
-		throws QueryEvaluationException;
+			Dataset dataset, BindingSet bindings, boolean includeInferred, int maxExecutionTime)
+			throws QueryEvaluationException;
 
 	protected abstract void execute(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
-		boolean includeInferred, int maxExecutionTime) throws UpdateExecutionException;
+			boolean includeInferred, int maxExecutionTime) throws UpdateExecutionException;
 
 	class BooleanQueryImpl extends AbstractParserQuery implements BooleanQuery {
 
@@ -111,7 +111,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				}
 
 				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, dataset, getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
+						getIncludeInferred(), getMaxExecutionTime());
 				bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 
 				return bindingsIter2.hasNext();
@@ -154,7 +154,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 			try {
 				TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
+						getIncludeInferred(), getMaxExecutionTime());
 				bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 				result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter2);
 				allGood = true;
@@ -182,7 +182,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 		@Override
 		public void evaluate(TupleQueryResultHandler handler)
-			throws QueryEvaluationException, TupleQueryResultHandlerException {
+				throws QueryEvaluationException, TupleQueryResultHandlerException {
 			TupleQueryResult queryResult = evaluate();
 			QueryResults.report(queryResult, handler);
 		}
@@ -216,7 +216,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 			try {
 				TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 				bindingsIter1 = AbstractQueryPreparer.this.evaluate(tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), getMaxExecutionTime());
+						getIncludeInferred(), getMaxExecutionTime());
 
 				// Filters out all partial and invalid matches
 				bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
@@ -226,9 +226,9 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 						Value context = bindingSet.getValue("context");
 
 						return bindingSet.getValue("subject") instanceof Resource
-							&& bindingSet.getValue("predicate") instanceof IRI
-							&& bindingSet.getValue("object") instanceof Value
-							&& (context == null || context instanceof Resource);
+								&& bindingSet.getValue("predicate") instanceof IRI
+								&& bindingSet.getValue("object") instanceof Value
+								&& (context == null || context instanceof Resource);
 					}
 				};
 
@@ -318,7 +318,7 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 
 				try {
 					AbstractQueryPreparer.this.execute(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
-						getMaxExecutionTime());
+							getMaxExecutionTime());
 				} catch (UpdateExecutionException e) {
 					if (!updateExpr.isSilent()) {
 						throw e;

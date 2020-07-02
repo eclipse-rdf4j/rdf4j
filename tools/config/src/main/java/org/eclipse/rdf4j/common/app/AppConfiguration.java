@@ -338,7 +338,7 @@ public class AppConfiguration implements Configuration {
 	 * @throws InstantiationException
 	 */
 	private LogConfiguration loadLogConfiguration()
-		throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
 		String classname = this.properties.getProperty("feature.logging.impl");
 		if (classname == null) {
 			classname = DEFAULT_LOGGING;

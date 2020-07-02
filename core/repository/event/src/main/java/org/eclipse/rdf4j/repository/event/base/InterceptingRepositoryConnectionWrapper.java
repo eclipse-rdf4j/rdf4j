@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
  * @see InterceptingRepositoryWrapper
  */
 public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
-	implements InterceptingRepositoryConnection {
+		implements InterceptingRepositoryConnection {
 
 	/*-----------*
 	 * Variables *
@@ -89,7 +89,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	@Override
 	public void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		boolean denied = false;
 		if (activated) {
 			for (RepositoryConnectionInterceptor interceptor : interceptors) {
@@ -170,7 +170,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	@Override
 	public void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		boolean denied = false;
 		if (activated) {
 			for (RepositoryConnectionInterceptor interceptor : interceptors) {
@@ -271,7 +271,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	@Override
 	public Update prepareUpdate(final QueryLanguage ql, final String update, final String baseURI)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		if (activated) {
 			return new Update() {
 

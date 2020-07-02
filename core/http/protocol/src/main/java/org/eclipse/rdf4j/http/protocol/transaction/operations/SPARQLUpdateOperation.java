@@ -45,7 +45,7 @@ public class SPARQLUpdateOperation implements TransactionOperation, Serializable
 	}
 
 	public SPARQLUpdateOperation(String updateString, String baseURI, boolean includeInferred, Dataset dataset,
-		Binding... bindings) {
+			Binding... bindings) {
 		this.setUpdateString(updateString);
 		this.setBaseURI(baseURI);
 		this.setIncludeInferred(includeInferred);

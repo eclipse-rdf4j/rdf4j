@@ -52,7 +52,7 @@ public class RepositoryConnectionInterceptorAdapter implements RepositoryConnect
 
 	@Override
 	public boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-		Resource... contexts) {
+			Resource... contexts) {
 		return false;
 	}
 
@@ -79,7 +79,7 @@ public class RepositoryConnectionInterceptorAdapter implements RepositoryConnect
 
 	@Override
 	public boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-		Update operation) {
+			Update operation) {
 		return false;
 	}
 

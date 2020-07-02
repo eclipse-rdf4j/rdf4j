@@ -24,7 +24,7 @@ public class RDFaParserSettings {
 	 * Defaults to {@link RDFaVersion#RDFA_1_0}.
 	 */
 	public static final RioSetting<RDFaVersion> RDFA_COMPATIBILITY = new RioSettingImpl<>(
-		"org.eclipse.rdf4j.rio.rdfa.version", "RDFa Version Compatibility", RDFaVersion.RDFA_1_0);
+			"org.eclipse.rdf4j.rio.rdfa.version", "RDFa Version Compatibility", RDFaVersion.RDFA_1_0);
 
 	/**
 	 * Enables or disables <a href= "http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion" >vocabulary
@@ -37,7 +37,7 @@ public class RDFaParserSettings {
 	 * @see <a href="http://www.w3.org/TR/2012/REC-rdfa-core-20120607/#s_vocab_expansion">RDFa Vocabulary Expansion</a>
 	 */
 	public static final RioSetting<Boolean> VOCAB_EXPANSION_ENABLED = new BooleanRioSetting(
-		"org.eclipse.rdf4j.rio.rdfa.vocab_expansion", "Vocabulary Expansion", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.rdfa.vocab_expansion", "Vocabulary Expansion", Boolean.FALSE);
 
 	/**
 	 * Boolean setting for parser to determine whether the published RDFa prefixes are used to substitute for undefined
@@ -51,7 +51,7 @@ public class RDFaParserSettings {
 	 */
 	@Deprecated
 	public static final RioSetting<Boolean> FAIL_ON_RDFA_UNDEFINED_PREFIXES = new BooleanRioSetting(
-		"org.eclipse.rdf4j.rio.rdfa.allow_undefined_prefixes", "Allow RDFa Undefined Prefixes", Boolean.FALSE);
+			"org.eclipse.rdf4j.rio.rdfa.allow_undefined_prefixes", "Allow RDFa Undefined Prefixes", Boolean.FALSE);
 
 	/**
 	 * Private default constructor.

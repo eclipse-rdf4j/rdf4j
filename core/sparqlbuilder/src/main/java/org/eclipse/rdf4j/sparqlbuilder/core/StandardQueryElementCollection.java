@@ -52,7 +52,7 @@ public abstract class StandardQueryElementCollection<T extends QueryElement> ext
 	}
 
 	protected StandardQueryElementCollection(String operatorName, String delimiter,
-		Function<String, String> wrapperMethod, Collection<T> collection) {
+			Function<String, String> wrapperMethod, Collection<T> collection) {
 		super(delimiter, collection);
 		setOperatorName(operatorName);
 		setWrapperMethod(wrapperMethod);

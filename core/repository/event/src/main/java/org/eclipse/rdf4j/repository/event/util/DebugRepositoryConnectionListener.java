@@ -113,7 +113,7 @@ public class DebugRepositoryConnectionListener implements RepositoryConnectionLi
 	public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (printing) {
 			stream.println("ADD (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", " + object + ", "
-				+ Arrays.toString(contexts));
+					+ Arrays.toString(contexts));
 		}
 		if (dumpingStack) {
 			Thread.dumpStack();
@@ -124,7 +124,7 @@ public class DebugRepositoryConnectionListener implements RepositoryConnectionLi
 	public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (printing) {
 			stream.println("REMOVE (" + getConnectionID(conn) + ") " + subject + ", " + predicate + ", " + object + ", "
-				+ Arrays.toString(contexts));
+					+ Arrays.toString(contexts));
 		}
 		if (dumpingStack) {
 			Thread.dumpStack();

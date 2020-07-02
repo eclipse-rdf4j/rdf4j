@@ -22,11 +22,11 @@ import org.xml.sax.XMLReader;
 public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 
 	private final static Set<RioSetting<Boolean>> compulsoryXmlFeatureSettings = new HashSet<>(
-		Arrays.asList(XMLParserSettings.SECURE_PROCESSING, XMLParserSettings.DISALLOW_DOCTYPE_DECL,
-			XMLParserSettings.EXTERNAL_GENERAL_ENTITIES, XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES));
+			Arrays.asList(XMLParserSettings.SECURE_PROCESSING, XMLParserSettings.DISALLOW_DOCTYPE_DECL,
+					XMLParserSettings.EXTERNAL_GENERAL_ENTITIES, XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES));
 
 	private final static Set<RioSetting<Boolean>> optionalXmlFeatureSettings = new HashSet<>(
-		Arrays.asList(XMLParserSettings.LOAD_EXTERNAL_DTD));
+			Arrays.asList(XMLParserSettings.LOAD_EXTERNAL_DTD));
 
 	protected XMLReaderBasedParser(ValueFactory f) {
 		super(f);

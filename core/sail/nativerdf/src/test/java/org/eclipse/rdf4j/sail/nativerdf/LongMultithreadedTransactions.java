@@ -120,7 +120,7 @@ public class LongMultithreadedTransactions {
 							}
 							if (i == 1) {
 								connection1.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
-									vf.createLiteral("a"));
+										vf.createLiteral("a"));
 							}
 							if (i == 2) {
 								try {
@@ -133,7 +133,7 @@ public class LongMultithreadedTransactions {
 							}
 							if (i == 3) {
 								connection3.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
-									vf.createLiteral("a"));
+										vf.createLiteral("a"));
 							}
 
 						});

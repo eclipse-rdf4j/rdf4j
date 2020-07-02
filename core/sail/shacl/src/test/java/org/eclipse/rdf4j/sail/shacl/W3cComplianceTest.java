@@ -95,23 +95,23 @@ public class W3cComplianceTest {
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				try (Stream<Statement> stream = connection
-					.getStatements(null,
-						connection.getValueFactory()
-							.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
-						null)
-					.stream()) {
+						.getStatements(null,
+								connection.getValueFactory()
+										.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
+								null)
+						.stream()) {
 					include = stream
-						.map(Statement::getObject)
-						.map(Value::stringValue)
-						.map(v -> {
-							try {
-								return new URL(v);
-							} catch (MalformedURLException e) {
+							.map(Statement::getObject)
+							.map(Value::stringValue)
+							.map(v -> {
+								try {
+									return new URL(v);
+								} catch (MalformedURLException e) {
 
-								throw new RuntimeException(e);
-							}
-						})
-						.collect(Collectors.toList());
+									throw new RuntimeException(e);
+								}
+							})
+							.collect(Collectors.toList());
 				}
 			}
 
@@ -156,11 +156,11 @@ public class W3cComplianceTest {
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				try (Stream<Statement> stream = connection.getStatements(null, SHACL.CONFORMS, null).stream()) {
 					conforms = stream
-						.map(Statement::getObject)
-						.map(o -> (Literal) o)
-						.map(Literal::booleanValue)
-						.findFirst()
-						.get();
+							.map(Statement::getObject)
+							.map(o -> (Literal) o)
+							.map(Literal::booleanValue)
+							.findFirst()
+							.get();
 				}
 			}
 		}

@@ -78,7 +78,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 * @param contexts      context(s) of pattern.
 	 */
 	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
-		Boolean explicit, int snapshot, MemResource... contexts) {
+			Boolean explicit, int snapshot, MemResource... contexts) {
 		this.statementList = statementList;
 		this.subject = subject;
 		this.predicate = predicate;
@@ -108,8 +108,8 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 			MemStatement st = statementList.get(statementIdx);
 
 			if (isInSnapshot(st) && (subject == null || subject == st.getSubject())
-				&& (predicate == null || predicate == st.getPredicate())
-				&& (object == null || object == st.getObject())) {
+					&& (predicate == null || predicate == st.getPredicate())
+					&& (object == null || object == st.getObject())) {
 				// A matching statement has been found, check if it should be
 				// skipped due to explicitOnly, contexts and readMode requirements
 

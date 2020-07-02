@@ -33,16 +33,16 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 
 	@Override
 	public Endpoint loadEndpoint(SPARQLRepositoryInformation repoInfo)
-		throws FedXException {
+			throws FedXException {
 
 		try {
 			SPARQLRepository repo = new SPARQLRepository(repoInfo.getLocation());
 			HttpClientBuilder httpClientBuilder = HttpClients.custom()
-				.useSystemProperties()
-				.setMaxConnTotal(20)
-				.setMaxConnPerRoute(20);
+					.useSystemProperties()
+					.setMaxConnTotal(20)
+					.setMaxConnPerRoute(20);
 			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
-				.setHttpClientBuilder(httpClientBuilder);
+					.setHttpClientBuilder(httpClientBuilder);
 			try {
 				repo.init();
 			} finally {
@@ -59,7 +59,7 @@ public class SPARQLProvider implements EndpointProvider<SPARQLRepositoryInformat
 			return res;
 		} catch (RepositoryException e) {
 			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
-				e);
+					e);
 		}
 	}
 

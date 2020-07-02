@@ -80,6 +80,6 @@ public class BaseExamples {
 		String[] tokens = name.split("_");
 
 		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length))
-			.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
+				.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
 	}
 }

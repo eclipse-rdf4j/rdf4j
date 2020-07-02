@@ -63,7 +63,7 @@ public final class SearchFields {
 	public static final String HIGHLIGHTER_POST_TAG = "</B>";
 
 	public static final Pattern HIGHLIGHTER_PATTERN = Pattern
-		.compile("(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
+			.compile("(" + HIGHLIGHTER_PRE_TAG + ".+?" + HIGHLIGHTER_POST_TAG + ")");
 
 	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 
@@ -138,9 +138,9 @@ public final class SearchFields {
 	 */
 	public static boolean isPropertyField(String fieldName) {
 		return !ID_FIELD_NAME.equals(fieldName) && !URI_FIELD_NAME.equals(fieldName)
-			&& !TEXT_FIELD_NAME.equals(fieldName) && !CONTEXT_FIELD_NAME.equals(fieldName)
-			// geo/internal fields
-			&& fieldName.charAt(0) != '_';
+				&& !TEXT_FIELD_NAME.equals(fieldName) && !CONTEXT_FIELD_NAME.equals(fieldName)
+				// geo/internal fields
+				&& fieldName.charAt(0) != '_';
 	}
 
 	public static String formIdString(String resourceId, String contextId) {

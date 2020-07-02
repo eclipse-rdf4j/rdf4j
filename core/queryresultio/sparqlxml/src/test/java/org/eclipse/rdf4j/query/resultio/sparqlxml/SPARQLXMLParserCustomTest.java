@@ -40,8 +40,8 @@ public class SPARQLXMLParserCustomTest {
 		QueryResultCollector handler = new QueryResultCollector();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		QueryResultParser aParser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
-			.setQueryResultHandler(handler)
-			.setParseErrorListener(errorCollector);
+				.setQueryResultHandler(handler)
+				.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at
@@ -70,9 +70,9 @@ public class SPARQLXMLParserCustomTest {
 		QueryResultCollector handler = new QueryResultCollector();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		QueryResultParser aParser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
-			.setQueryResultHandler(handler)
-			.setParserConfig(config)
-			.setParseErrorListener(errorCollector);
+				.setQueryResultHandler(handler)
+				.setParserConfig(config)
+				.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at
@@ -100,9 +100,9 @@ public class SPARQLXMLParserCustomTest {
 		QueryResultCollector handler = new QueryResultCollector();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		QueryResultParser aParser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
-			.setQueryResultHandler(handler)
-			.set(XMLParserSettings.SECURE_PROCESSING, true)
-			.setParseErrorListener(errorCollector);
+				.setQueryResultHandler(handler)
+				.set(XMLParserSettings.SECURE_PROCESSING, true)
+				.setParseErrorListener(errorCollector);
 
 		try {
 			// this should trigger a SAX parse exception that will blow up at
@@ -135,9 +135,9 @@ public class SPARQLXMLParserCustomTest {
 		QueryResultCollector handler = new QueryResultCollector();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
 		QueryResultParser aParser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
-			.setQueryResultHandler(handler)
-			.set(XMLParserSettings.SECURE_PROCESSING, false)
-			.setParseErrorListener(errorCollector);
+				.setQueryResultHandler(handler)
+				.set(XMLParserSettings.SECURE_PROCESSING, false)
+				.setParseErrorListener(errorCollector);
 
 		try {
 			// IMPORTANT: This will not use the entity limit

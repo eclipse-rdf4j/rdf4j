@@ -62,7 +62,7 @@ import org.eclipse.rdf4j.sail.SailReadOnlyException;
  * @author Arjohn Kampman
  */
 public class SailRepositoryConnection extends AbstractRepositoryConnection implements FederatedServiceResolverClient,
-	RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Variables *
@@ -207,21 +207,21 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.TUPLE, queryString,
-				baseURI);
+					baseURI);
 			if (sailTupleExpr.isPresent()) {
 				parsedQuery = new ParsedTupleQuery(queryString, sailTupleExpr.get());
 			}
 			return new SailTupleQuery((ParsedTupleQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedGraphQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.GRAPH, queryString,
-				baseURI);
+					baseURI);
 			if (sailTupleExpr.isPresent()) {
 				parsedQuery = new ParsedGraphQuery(queryString, sailTupleExpr.get());
 			}
 			return new SailGraphQuery((ParsedGraphQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedBooleanQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.BOOLEAN, queryString,
-				baseURI);
+					baseURI);
 			if (sailTupleExpr.isPresent()) {
 				parsedQuery = new ParsedBooleanQuery(queryString, sailTupleExpr.get());
 			}
@@ -233,48 +233,48 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException {
+			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.TUPLE, queryString,
-			baseURI);
+				baseURI);
 
 		ParsedTupleQuery parsedQuery = sailTupleExpr
-			.map(expr -> new ParsedTupleQuery(queryString, expr))
-			.orElse(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI));
+				.map(expr -> new ParsedTupleQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI));
 		return new SailTupleQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException {
+			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.GRAPH, queryString,
-			baseURI);
+				baseURI);
 		ParsedGraphQuery parsedQuery = sailTupleExpr
-			.map(expr -> new ParsedGraphQuery(queryString, expr))
-			.orElse(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI));
+				.map(expr -> new ParsedGraphQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI));
 		return new SailGraphQuery(parsedQuery, this);
 	}
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
-		throws MalformedQueryException {
+			throws MalformedQueryException {
 		Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.BOOLEAN, queryString,
-			baseURI);
+				baseURI);
 		ParsedBooleanQuery parsedQuery = sailTupleExpr
-			.map(expr -> new ParsedBooleanQuery(queryString, expr))
-			.orElse(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI));
+				.map(expr -> new ParsedBooleanQuery(queryString, expr))
+				.orElse(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI));
 		return new SailBooleanQuery(parsedQuery, this);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-		throws RepositoryException, MalformedQueryException {
+			throws RepositoryException, MalformedQueryException {
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
 		return new SailUpdate(parsedUpdate, this);
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		return sailConnection.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
@@ -289,7 +289,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws RepositoryException {
+			Resource... contexts) throws RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		try {
@@ -307,11 +307,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
-		Resource... contexts) throws RepositoryException, RDFHandlerException {
+			Resource... contexts) throws RepositoryException, RDFHandlerException {
 		handler.startRDF();
 
 		try ( // Export namespace information
-			CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
+				CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
 			while (nsIter.hasNext()) {
 				Namespace ns = nsIter.next();
 				handler.handleNamespace(ns.getPrefix(), ns.getName());
@@ -321,7 +321,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		// Export statements
 
 		try (CloseableIteration<? extends Statement, RepositoryException> stIter = getStatements(subj, pred, obj,
-			includeInferred, contexts)) {
+				includeInferred, contexts)) {
 			while (stIter.hasNext()) {
 				handler.handleStatement(stIter.next());
 			}
@@ -341,7 +341,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		try {
 			sailConnection.addStatement(subject, predicate, object, contexts);
 		} catch (SailReadOnlyException e) {
@@ -353,7 +353,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		try {
 			if (subject == null && predicate == null && object == null) {
 				sailConnection.clear(contexts);

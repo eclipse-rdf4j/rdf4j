@@ -68,8 +68,8 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
 		// Formats without native RDF* support obey the ENCODE_RDF_STAR setting and may encode RDF* triples to IRIs
 		encodeRDFStar = this instanceof TupleQueryResultWriter
-			&& !((TupleQueryResultWriter) this).getTupleQueryResultFormat().supportsRDFStar()
-			&& getWriterConfig().get(BasicWriterSettings.ENCODE_RDF_STAR);
+				&& !((TupleQueryResultWriter) this).getTupleQueryResultFormat().supportsRDFStar()
+				&& getWriterConfig().get(BasicWriterSettings.ENCODE_RDF_STAR);
 	}
 
 	@Override

@@ -302,7 +302,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 					if (datatype == null) {
 						reportError(DATATYPE_ATT + " attribute missing for typed literal",
-							TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
+								TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
 						valueList.add(createLiteral(text, null, null));
 					} else {
 						IRI dtURI = createURI(datatype);
@@ -315,13 +315,13 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 							// context information
 							if (valueList.size() > 1) {
 								reportError("At most 1 resource can be specified for the context",
-									TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 							} else if (valueList.size() == 1) {
 								try {
 									currentContext = (Resource) valueList.get(0);
 								} catch (ClassCastException e) {
 									reportError("Context identifier should be a URI or blank node",
-										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+											TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 								}
 							}
 						} finally {
@@ -354,7 +354,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 			try {
 				if (valueList.size() != 3) {
 					reportError("exactly 3 values are required for a triple",
-						TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -366,7 +366,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 					subj = (Resource) valueList.get(0);
 				} catch (ClassCastException e) {
 					reportError("First value for a triple should be a URI or blank node",
-						TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 
@@ -374,7 +374,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 					pred = (IRI) valueList.get(1);
 				} catch (ClassCastException e) {
 					reportError("Second value for a triple should be a URI",
-						TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
 					return;
 				}
 

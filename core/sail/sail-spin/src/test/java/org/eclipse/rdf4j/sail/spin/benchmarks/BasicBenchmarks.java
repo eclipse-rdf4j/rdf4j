@@ -108,8 +108,8 @@ public class BasicBenchmarks {
 
 			loadRDF("/schema/spif.ttl", conn);
 			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
@@ -130,8 +130,8 @@ public class BasicBenchmarks {
 
 			loadRDF("/schema/spif.ttl", conn);
 			BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
-				"prefix spif: <http://spinrdf.org/spif#> "
-					+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
+					"prefix spif: <http://spinrdf.org/spif#> "
+							+ "ask where {filter(spif:canInvoke(spif:indexOf, 'foobar', 2))}");
 			assertFalse(bq.evaluate());
 
 		}
@@ -281,7 +281,7 @@ public class BasicBenchmarks {
 	}
 
 	private void loadRDF(String path, SailRepositoryConnection conn)
-		throws IOException {
+			throws IOException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);

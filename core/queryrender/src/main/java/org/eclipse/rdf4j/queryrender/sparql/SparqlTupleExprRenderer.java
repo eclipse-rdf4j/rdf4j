@@ -125,7 +125,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 		// try and reverse engineer the original scoping intent of the query
 		final boolean aNeedsNewScope = theJoin.getParentNode() != null
-			&& (theJoin.getParentNode() instanceof Join || theJoin.getParentNode() instanceof LeftJoin);
+				&& (theJoin.getParentNode() instanceof Join || theJoin.getParentNode() instanceof LeftJoin);
 
 		if (aNeedsNewScope) {
 			mJoinBuffer.append("{\n");
@@ -196,19 +196,19 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		}
 
 		mJoinBuffer.append(indent())
-			.append("{\n")
-			.append(aLeft)
-			.append("\n")
-			.append(indent())
-			.append("}\n")
-			.append(indent())
-			.append("union\n")
-			.append(indent())
-			.append("{\n")
-			.append(aRight)
-			.append("\n")
-			.append(indent())
-			.append("}.\n");
+				.append("{\n")
+				.append(aLeft)
+				.append("\n")
+				.append(indent())
+				.append("}\n")
+				.append(indent())
+				.append("union\n")
+				.append(indent())
+				.append("{\n")
+				.append(aRight)
+				.append("\n")
+				.append(indent())
+				.append("}.\n");
 
 		ctxClose(theOp);
 	}
@@ -222,12 +222,12 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
 		mJoinBuffer.append("\n{")
-			.append(aLeft)
-			.append("}")
-			.append("\nminus\n")
-			.append("{")
-			.append(aRight)
-			.append("}.\n");
+				.append(aLeft)
+				.append("}")
+				.append("\nminus\n")
+				.append("{")
+				.append(aRight)
+				.append("}.\n");
 	}
 
 	/**
@@ -239,12 +239,12 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
 		mJoinBuffer.append("\n")
-			.append(aLeft)
-			.append("}")
-			.append("\nintersection\n")
-			.append("{")
-			.append(aRight)
-			.append("}.\n");
+				.append(aLeft)
+				.append("}")
+				.append("\nintersection\n")
+				.append("{")
+				.append(aRight)
+				.append("}.\n");
 	}
 
 	/**
@@ -260,7 +260,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 		// try and reverse engineer the original scoping intent of the query
 		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-			&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
+				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
 
 		String aFilter = renderValueExpr(theFilter.getCondition());
 		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {
@@ -303,7 +303,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
 		return renderValueExpr(thePattern.getSubjectVar()) + " " + renderValueExpr(thePattern.getPredicateVar()) + " "
-			+ "" + renderValueExpr(thePattern.getObjectVar()) + ".\n";
+				+ "" + renderValueExpr(thePattern.getObjectVar()) + ".\n";
 
 	}
 }

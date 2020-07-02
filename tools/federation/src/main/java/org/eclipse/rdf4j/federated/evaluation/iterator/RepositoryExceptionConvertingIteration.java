@@ -20,10 +20,10 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * @param <T>
  */
 public class RepositoryExceptionConvertingIteration<T>
-	extends ExceptionConvertingIteration<T, QueryEvaluationException> {
+		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
 
 	public RepositoryExceptionConvertingIteration(
-		Iteration<? extends T, ? extends Exception> iter) {
+			Iteration<? extends T, ? extends Exception> iter) {
 		super(iter);
 	}
 

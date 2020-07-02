@@ -48,28 +48,28 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		assert !negateSubPlans : "There are no subplans!";
 		assert !negateThisPlan;
 
 		PlanNode parent = connectionsGroup.getCachedNodeFor(new Select(connectionsGroup.getBaseConnection(),
-			getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
+				getQuery("?a", "?c", connectionsGroup.getRdfsSubClassOfReasoner()), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-					RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
+							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
-				new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+					new Select(connectionsGroup.getAddedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		}
 
 		return new Unique(new TrimTuple(planNode, 0, 1));
@@ -78,16 +78,16 @@ public class TargetClass extends NodeShape {
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
-		PlaneNodeWrapper planeNodeWrapper) {
+			PlaneNodeWrapper planeNodeWrapper) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-					RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
+					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
+							RDF.TYPE, clazz, UnorderedSelect.OutputPattern.SubjectPredicateObject)));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
-				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
+					new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		}
 		return new Unique(new TrimTuple(planNode, 0, 1));
 	}
@@ -95,32 +95,32 @@ public class TargetClass extends NodeShape {
 	@Override
 	public boolean requiresEvaluation(SailConnection addedStatements, SailConnection removedStatements, Stats stats) {
 		return targetClass.stream()
-			.map(target -> addedStatements.hasStatement(null, RDF.TYPE, target, false))
-			.reduce((a, b) -> a || b)
-			.orElseThrow(IllegalStateException::new);
+				.map(target -> addedStatements.hasStatement(null, RDF.TYPE, target, false))
+				.reduce((a, b) -> a || b)
+				.orElseThrow(IllegalStateException::new);
 
 	}
 
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
-		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		Set<Resource> targets = targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
 			targets = new HashSet<>(targets);
 
 			targets = targets.stream()
-				.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
-				.collect(Collectors.toSet());
+					.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
+					.collect(Collectors.toSet());
 		}
 
 		assert targets.size() >= 1;
 
 		return targets.stream()
-			.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable
-				+ " ?b1 " + objectVariable + ". } \n")
-			.reduce((l, r) -> l + " UNION " + r)
-			.get();
+				.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable
+						+ " ?b1 " + objectVariable + ". } \n")
+				.reduce((l, r) -> l + " UNION " + r)
+				.get();
 
 	}
 
@@ -152,8 +152,8 @@ public class TargetClass extends NodeShape {
 	@Override
 	public String toString() {
 		return "TargetClass{" +
-			"targetClass=" + Arrays.asList(targetClass.toArray()) +
-			", id=" + id +
-			'}';
+				"targetClass=" + Arrays.asList(targetClass.toArray()) +
+				", id=" + id +
+				'}';
 	}
 }

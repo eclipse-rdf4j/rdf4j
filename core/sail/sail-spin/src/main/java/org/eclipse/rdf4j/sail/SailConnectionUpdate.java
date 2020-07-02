@@ -34,7 +34,7 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 	private final ParserConfig parserConfig;
 
 	public SailConnectionUpdate(ParsedUpdate parsedUpdate, SailConnection con, ValueFactory vf,
-		ParserConfig parserConfig) {
+			ParserConfig parserConfig) {
 		super(parsedUpdate);
 		this.con = con;
 		this.vf = vf;
@@ -64,7 +64,7 @@ public class SailConnectionUpdate extends AbstractParserUpdate {
 				}
 
 				executor.executeUpdate(updateExpr, activeDataset, getBindings(), getIncludeInferred(),
-					getMaxExecutionTime());
+						getMaxExecutionTime());
 
 				if (localTransaction) {
 					commitLocalTransaction();

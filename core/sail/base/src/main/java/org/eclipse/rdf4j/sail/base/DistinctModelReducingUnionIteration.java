@@ -37,8 +37,8 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 	private final Supplier<Iterable<Statement>> approvedSupplier;
 
 	DistinctModelReducingUnionIteration(CloseableIteration<? extends Statement, SailException> iterator,
-		Consumer<Statement> approvedRemover,
-		Supplier<Iterable<Statement>> approvedSupplier) {
+			Consumer<Statement> approvedRemover,
+			Supplier<Iterable<Statement>> approvedSupplier) {
 		this.iterator = iterator;
 		this.approvedRemover = approvedRemover;
 		this.approvedSupplier = approvedSupplier;

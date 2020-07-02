@@ -236,7 +236,7 @@ public class LuceneIndexTest {
 		index.commit();
 
 		try ( // check that it arrived properly
-			DirectoryReader reader = DirectoryReader.open(directory)) {
+				DirectoryReader reader = DirectoryReader.open(directory)) {
 			assertEquals(2, reader.numDocs());
 		}
 
@@ -305,7 +305,7 @@ public class LuceneIndexTest {
 
 		try ( // now add the statements through the repo
 				// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -357,7 +357,7 @@ public class LuceneIndexTest {
 
 		try ( // now add the statements through the repo
 				// add statements with context
-			SailRepositoryConnection connection = repository.getConnection()) {
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());

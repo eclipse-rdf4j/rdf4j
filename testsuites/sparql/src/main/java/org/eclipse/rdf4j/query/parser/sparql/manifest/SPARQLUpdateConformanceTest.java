@@ -90,7 +90,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	 *--------------*/
 
 	public SPARQLUpdateConformanceTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
-		Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs) {
+			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs) {
 		super(name);
 
 		this.testURI = testURI;
@@ -132,15 +132,15 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 			if (inputDefaultGraph != null) {
 				URL graphURL = new URL(inputDefaultGraph.stringValue());
 				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-					.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
 			}
 
 			for (String ng : inputNamedGraphs.keySet()) {
 				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());
 				conn.add(graphURL, null,
-					Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-					dataRep.getValueFactory().createIRI(ng));
+						Rio.getParserFormatForFileName(graphURL.toString())
+								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+						dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 
@@ -152,15 +152,15 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 			if (resultDefaultGraph != null) {
 				URL graphURL = new URL(resultDefaultGraph.stringValue());
 				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())
-					.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
+						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));
 			}
 
 			for (String ng : resultNamedGraphs.keySet()) {
 				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());
 				conn.add(graphURL, null,
-					Rio.getParserFormatForFileName(graphURL.toString())
-						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
-					dataRep.getValueFactory().createIRI(ng));
+						Rio.getParserFormatForFileName(graphURL.toString())
+								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),
+						dataRep.getValueFactory().createIRI(ng));
 			}
 		}
 	}
@@ -205,13 +205,13 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 			// check default graph
 			logger.info("checking default graph");
 			compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),
-				Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
+					Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));
 
 			for (String namedGraph : inputNamedGraphs.keySet()) {
 				logger.info("checking named graph {}", namedGraph);
 				IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll("\"", ""));
 				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),
-					Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
+						Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));
 			}
 		} catch (Exception e) {
 			if (con.isActive()) {
@@ -225,7 +225,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	private void compareGraphs(Iterable<? extends Statement> actual, Iterable<? extends Statement> expected)
-		throws Exception {
+			throws Exception {
 		if (!Models.isomorphic(expected, actual)) {
 			StringBuilder message = new StringBuilder(128);
 			message.append("\n============ ");
@@ -266,8 +266,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	public interface Factory {
 
 		SPARQLUpdateConformanceTest createSPARQLUpdateConformanceTest(String testURI, String name, String requestFile,
-			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
-			Map<String, IRI> resultNamedGraphs);
+				IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+				Map<String, IRI> resultNamedGraphs);
 
 	}
 
@@ -294,7 +294,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		// select those test cases that are mentioned in the list.
 		StringBuilder query = new StringBuilder(512);
 		query.append(
-			" SELECT DISTINCT testURI, testName, result, action, requestFile, defaultGraph, resultDefaultGraph ");
+				" SELECT DISTINCT testURI, testName, result, action, requestFile, defaultGraph, resultDefaultGraph ");
 		query.append(" FROM {} rdf:first {testURI} rdf:type {mf:UpdateEvaluationTest}; ");
 		if (approvedOnly) {
 			query.append("                          dawgt:approval {dawgt:Approved}; ");
@@ -370,8 +370,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 			}
 
 			SPARQLUpdateConformanceTest test = factory.createSPARQLUpdateConformanceTest(testURI.toString(), testName,
-				requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-				resultNamedGraphs);
+					requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
+					resultNamedGraphs);
 
 			if (test != null) {
 				suite.addTest(test);
@@ -387,10 +387,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
-		throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,
-			"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
+				"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
 		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
 		try {

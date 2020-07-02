@@ -36,7 +36,7 @@ public abstract class SPARQL11SyntaxComplianceTest extends SPARQLSyntaxComplianc
 	}
 
 	public SPARQL11SyntaxComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-		boolean positiveTest) {
+			boolean positiveTest) {
 		super(displayName, testURI, name, queryFileURL, positiveTest);
 	}
 
@@ -46,9 +46,9 @@ public abstract class SPARQL11SyntaxComplianceTest extends SPARQLSyntaxComplianc
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(
-			SPARQL11SyntaxComplianceTest.class.getClassLoader()
-				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
-				.toExternalForm());
+				SPARQL11SyntaxComplianceTest.class.getClassLoader()
+						.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+						.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLSyntaxManifest manifest = new SPARQLSyntaxManifest(pop);

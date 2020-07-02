@@ -63,7 +63,7 @@ public class NativeStoreBenchmark {
 	public void setUp() {
 		System.gc();
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-			.setLevel(ch.qos.logback.classic.Level.ERROR);
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 	}
 
@@ -241,7 +241,7 @@ public class NativeStoreBenchmark {
 
 	private InputStream getFile(String s) {
 		return NativeStoreBenchmark.class.getClassLoader()
-			.getResourceAsStream(s);
+				.getResourceAsStream(s);
 	}
 
 }

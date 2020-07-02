@@ -91,11 +91,11 @@ public class QueryBenchmark {
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-			"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
 
 		repository = new SailRepository(
-			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
-				false));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+						false));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
@@ -128,8 +128,8 @@ public class QueryBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return Iterations.asList(connection
-				.prepareTupleQuery(query1)
-				.evaluate());
+					.prepareTupleQuery(query1)
+					.evaluate());
 		}
 	}
 

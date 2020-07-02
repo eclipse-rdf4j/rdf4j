@@ -115,7 +115,7 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	}
 
 	private RepositoryServlet createServlet(String path)
-		throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException {
+			throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException {
 		Class<?> klass = Class.forName(config.getInitParameter(path));
 		RepositoryServlet servlet = (RepositoryServlet) klass.newInstance();
 		servlet.setRepositoryManager(manager);

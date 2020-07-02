@@ -236,7 +236,7 @@ public abstract class AbstractSail implements Sail {
 
 				if (stackTrace == null) {
 					logger.warn("Closing active connection due to shut down; consider setting the {} system property",
-						DEBUG_PROP);
+							DEBUG_PROP);
 				} else {
 					logger.warn("Closing active connection due to shut down, connection was acquired in", stackTrace);
 				}

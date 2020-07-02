@@ -162,7 +162,7 @@ public class TestExploreServlet {
 	}
 
 	private void addToFooContext(String pattern)
-		throws UpdateExecutionException, RepositoryException, MalformedQueryException {
+			throws UpdateExecutionException, RepositoryException, MalformedQueryException {
 		connection.prepareUpdate(QueryLanguage.SPARQL, PREFIX + pattern + SUFFIX).execute();
 	}
 
@@ -172,7 +172,7 @@ public class TestExploreServlet {
 	}
 
 	private void assertStatementCount(IRI uri, int limit, int expectedTotal, int expectedRendered)
-		throws RDF4JException {
+			throws RDF4JException {
 		ResultCursor cursor = servlet.processResource(connection, builder, uri, 0, limit, true);
 		assertThat(cursor.getTotalResultCount()).isEqualTo(expectedTotal);
 		assertThat(cursor.getRenderedResultCount()).isEqualTo(expectedRendered);

@@ -138,7 +138,7 @@ public class JSONLDParserCustomTest {
 
 		assertEquals(1, model.size());
 		assertTrue("model was not as expected: " + model.toString(),
-			model.contains(nextSubject, nextPredicate, nextObject));
+				model.contains(nextSubject, nextPredicate, nextObject));
 	}
 
 	@Test

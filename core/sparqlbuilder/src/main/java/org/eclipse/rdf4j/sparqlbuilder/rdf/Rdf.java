@@ -185,7 +185,7 @@ public class Rdf {
 	 * @return a new {@link RdfPredicateObjectListCollection}
 	 */
 	public static RdfPredicateObjectListCollection predicateObjectListCollection(RdfPredicate predicate,
-		RdfObject... objects) {
+			RdfObject... objects) {
 		return new RdfPredicateObjectListCollection().andHas(predicate, objects);
 	}
 
@@ -196,7 +196,7 @@ public class Rdf {
 	 * @return a new {@link RdfPredicateObjectListCollection}
 	 */
 	public static RdfPredicateObjectListCollection predicateObjectListCollection(
-		RdfPredicateObjectList... predicateObjectLists) {
+			RdfPredicateObjectList... predicateObjectLists) {
 		return new RdfPredicateObjectListCollection().andHas(predicateObjectLists);
 	}
 

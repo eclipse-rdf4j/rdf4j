@@ -55,7 +55,7 @@ public class NamespacesController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		String reqMethod = request.getMethod();
 		if (METHOD_GET.equals(reqMethod)) {
 			logger.info("GET namespace list");
@@ -73,7 +73,7 @@ public class NamespacesController extends AbstractController {
 	}
 
 	private ModelAndView getExportNamespacesResult(HttpServletRequest request, HttpServletResponse response)
-		throws ClientHTTPException, ServerHTTPException {
+			throws ClientHTTPException, ServerHTTPException {
 		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());
 
 		Map<String, Object> model = new HashMap<>();
@@ -85,7 +85,7 @@ public class NamespacesController extends AbstractController {
 				final ValueFactory vf = repositoryCon.getValueFactory();
 				try {
 					try (CloseableIteration<? extends Namespace, RepositoryException> iter = repositoryCon
-						.getNamespaces()) {
+							.getNamespaces()) {
 						while (iter.hasNext()) {
 							Namespace ns = iter.next();
 
@@ -104,7 +104,7 @@ public class NamespacesController extends AbstractController {
 		}
 
 		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,
-			TupleQueryResultWriterRegistry.getInstance());
+				TupleQueryResultWriterRegistry.getInstance());
 
 		model.put(QueryResultView.FILENAME_HINT_KEY, "namespaces");
 		model.put(QueryResultView.HEADERS_ONLY, headersOnly);
@@ -114,7 +114,7 @@ public class NamespacesController extends AbstractController {
 	}
 
 	private ModelAndView getClearNamespacesResult(HttpServletRequest request, HttpServletResponse response)
-		throws ServerHTTPException {
+			throws ServerHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			try {
 				repositoryCon.clearNamespaces();

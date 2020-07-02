@@ -70,7 +70,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	 * statements from the specified context scope.
 	 */
 	public ArbitraryLengthPath(Scope scope, Var subjVar, TupleExpr pathExpression, Var objVar, Var conVar,
-		long minLength) {
+			long minLength) {
 		setScope(scope);
 		setSubjectVar(subjVar);
 		setPathExpression(pathExpression);
@@ -230,8 +230,8 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		if (other instanceof ArbitraryLengthPath) {
 			ArbitraryLengthPath o = (ArbitraryLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && pathExpression.equals(o.getPathExpression())
-				&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
-				&& scope.equals(o.getScope());
+					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
+					&& scope.equals(o.getScope());
 		}
 		return false;
 	}

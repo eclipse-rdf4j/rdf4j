@@ -102,7 +102,7 @@ public class HDTParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(InputStream in, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream must not be 'null'");
 		}
@@ -198,7 +198,7 @@ public class HDTParser extends AbstractRDFParser {
 	 */
 	@Override
 	public synchronized void parse(Reader reader, String baseURI)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		throw new UnsupportedOperationException("HDT is binary, text readers not supported.");
 	}
 
@@ -212,7 +212,7 @@ public class HDTParser extends AbstractRDFParser {
 	 * @return subject or object
 	 */
 	private byte[] getSO(int pos, int size, HDTDictionarySection shared, HDTDictionarySection other)
-		throws IOException {
+			throws IOException {
 		return (pos <= size) ? shared.get(pos) : other.get(pos - size);
 	}
 
@@ -257,7 +257,7 @@ public class HDTParser extends AbstractRDFParser {
 					return valueFactory.createLiteral(new String(b, 1, i - 2, StandardCharsets.UTF_8), lang);
 				} else if (b[i] == '^') {
 					IRI datatype = valueFactory
-						.createIRI(new String(b, i + 2, b.length - i - 3, StandardCharsets.US_ASCII));
+							.createIRI(new String(b, i + 2, b.length - i - 3, StandardCharsets.US_ASCII));
 					return valueFactory.createLiteral(new String(b, 1, i - 3, StandardCharsets.UTF_8), datatype);
 				}
 			}

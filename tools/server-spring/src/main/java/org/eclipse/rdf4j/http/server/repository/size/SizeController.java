@@ -40,7 +40,7 @@ public class SizeController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		ProtocolUtil.logRequestParameters(request);
 
 		Map<String, Object> model = new HashMap<>();

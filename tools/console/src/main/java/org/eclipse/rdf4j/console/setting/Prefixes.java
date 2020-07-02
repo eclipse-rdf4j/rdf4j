@@ -61,9 +61,9 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	@Override
 	public String getHelpLong() {
 		return "set prefixes=<default>         Set the prefixes to a default list of prefixes\n"
-			+ "    prefixes=<none>            Remove all namespace prefixes\n"
-			+ "	prefixes=prefix ns-url     Set prefix for namespace\n"
-			+ "	prefixes=prefix <none>     Remove namespace prefix\n";
+				+ "    prefixes=<none>            Remove all namespace prefixes\n"
+				+ "	prefixes=prefix ns-url     Set prefix for namespace\n"
+				+ "	prefixes=prefix <none>     Remove namespace prefix\n";
 	}
 
 	/**

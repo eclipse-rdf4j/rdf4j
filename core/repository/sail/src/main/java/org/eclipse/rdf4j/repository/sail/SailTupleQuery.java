@@ -51,7 +51,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			IteratingTupleQueryResult result = new IteratingTupleQueryResult(
-				new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
+					new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
 			allGood = true;
 			return result;
 		} catch (SailException e) {
@@ -67,7 +67,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException {
+			throws QueryEvaluationException, TupleQueryResultHandlerException {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}

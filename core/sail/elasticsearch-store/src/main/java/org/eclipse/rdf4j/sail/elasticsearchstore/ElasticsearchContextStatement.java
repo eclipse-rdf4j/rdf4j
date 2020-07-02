@@ -20,7 +20,7 @@ class ElasticsearchContextStatement extends ExtensibleContextStatement implement
 	private String elasticsearchId;
 
 	ElasticsearchContextStatement(String elasticsearchId, Resource subject, IRI predicate, Value object,
-		Resource context, boolean inferred) {
+			Resource context, boolean inferred) {
 		super(subject, predicate, object, context, inferred);
 		this.elasticsearchId = elasticsearchId;
 	}

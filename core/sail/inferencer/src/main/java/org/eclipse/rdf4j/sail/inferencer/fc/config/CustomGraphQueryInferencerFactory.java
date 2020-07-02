@@ -51,7 +51,7 @@ public class CustomGraphQueryInferencerFactory implements SailFactory {
 			CustomGraphQueryInferencerConfig customConfig = (CustomGraphQueryInferencerConfig) config;
 			try {
 				sail.setFields(customConfig.getQueryLanguage(), customConfig.getRuleQuery(),
-					customConfig.getMatcherQuery());
+						customConfig.getMatcherQuery());
 			} catch (RDF4JException e) {
 				throw new SailConfigException("Problem occured parsing rule or matcher query text.", e);
 			}

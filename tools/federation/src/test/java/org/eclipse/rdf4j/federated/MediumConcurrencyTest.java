@@ -27,8 +27,8 @@ import org.junit.jupiter.api.Test;
 public class MediumConcurrencyTest extends SPARQLBaseTest {
 
 	static final String[] queries = new String[] {
-		"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
-		"query10", "query11", "query12"
+			"query01", "query02", "query03", "query04", "query05", "query06", "query07", "query08", "query09",
+			"query10", "query11", "query12"
 	};
 
 	private static ExecutorService executor;
@@ -51,7 +51,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons (2 endpoints) */
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
-			"/tests/medium/data4.ttl"));
+				"/tests/medium/data4.ttl"));
 
 		final int MAX_QUERIES = 500;
 		final Random rand = new Random(12345);

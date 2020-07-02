@@ -47,8 +47,8 @@ public class SPARQLTSVCustomTest {
 	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
 		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
-			Arrays.asList(new ListBindingSet(bindingNames,
-				SimpleValueFactory.getInstance().createLiteral("1", XMLSchema.STRING))));
+				Arrays.asList(new ListBindingSet(bindingNames,
+						SimpleValueFactory.getInstance().createLiteral("1", XMLSchema.STRING))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"^^<http://www.w3.org/2001/XMLSchema#string>\n", result);
 	}
@@ -62,13 +62,13 @@ public class SPARQLTSVCustomTest {
 	public void testSES2126QuotedLiteralIntegerAsStringImplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
 		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
-			Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
+				Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n\"1\"\n", result);
 	}
 
 	private String writeTupleResult(TupleQueryResult tqr)
-		throws IOException, TupleQueryResultHandlerException, QueryEvaluationException {
+			throws IOException, TupleQueryResultHandlerException, QueryEvaluationException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		QueryResultIO.writeTuple(tqr, TupleQueryResultFormat.TSV, output);
 		String result = new String(output.toByteArray(), StandardCharsets.UTF_8);

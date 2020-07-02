@@ -40,8 +40,8 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 	public void captureHeader(CSVReader reader) throws IOException {
 		// header is mandatory in SPARQL TSV
 		bindingNames = Stream.of(reader.readNext())
-			.map(s -> StringUtils.removeStart(s, "?"))
-			.collect(Collectors.toList());
+				.map(s -> StringUtils.removeStart(s, "?"))
+				.collect(Collectors.toList());
 	}
 
 	@Override

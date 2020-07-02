@@ -99,7 +99,7 @@ public class TestServer {
 
 		// create an inferencing memory store
 		SchemaCachingRDFSInferencerConfig inferMemStoreConfig = new SchemaCachingRDFSInferencerConfig(
-			new MemoryStoreConfig());
+				new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(inferMemStoreConfig);
 		repConfig = new RepositoryConfig(TEST_INFERENCE_REPO_ID, sailRepConfig);
 

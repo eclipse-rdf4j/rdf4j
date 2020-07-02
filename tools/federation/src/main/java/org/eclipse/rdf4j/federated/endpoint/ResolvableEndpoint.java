@@ -26,7 +26,7 @@ public class ResolvableEndpoint extends EndpointBase {
 	protected RepositoryResolver repositoryResolver;
 
 	public ResolvableEndpoint(RepositoryInformation repoInfo, String endpoint,
-		EndpointClassification endpointClassification) {
+			EndpointClassification endpointClassification) {
 		super(repoInfo, endpoint, endpointClassification);
 	}
 

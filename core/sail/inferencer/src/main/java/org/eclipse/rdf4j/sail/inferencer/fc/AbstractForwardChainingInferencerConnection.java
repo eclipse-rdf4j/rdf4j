@@ -22,7 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
-	implements SailConnectionListener {
+		implements SailConnectionListener {
 
 	/*-----------*
 	 * Constants *
@@ -124,10 +124,10 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
-			sail.getSupportedIsolationLevels());
+				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-				"Isolation level " + level + " not compatible with this Sail");
+					"Isolation level " + level + " not compatible with this Sail");
 		}
 		super.begin(compatibleLevel);
 	}

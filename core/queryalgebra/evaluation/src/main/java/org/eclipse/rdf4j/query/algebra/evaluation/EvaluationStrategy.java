@@ -60,7 +60,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @since 3.0
 	 */
 	TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
-		BindingSet bindings);
+			BindingSet bindings);
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
@@ -72,7 +72,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
 	 */
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-		CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
@@ -83,7 +83,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return A closeable iterator over the variable binding sets that match the tuple expression.
 	 */
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 	/**
 	 * Gets the value of this expression.
@@ -93,7 +93,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
 	 */
 	Value evaluate(ValueExpr expr, BindingSet bindings)
-		throws ValueExprEvaluationException, QueryEvaluationException;
+			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
 	 * Evaluates the boolean expression on the supplied TripleSource object.
@@ -106,7 +106,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 *                                      is neither <tt>true</tt> nor <tt>false</tt> , but unknown.
 	 */
 	boolean isTrue(ValueExpr expr, BindingSet bindings)
-		throws ValueExprEvaluationException, QueryEvaluationException;
+			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
 	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan

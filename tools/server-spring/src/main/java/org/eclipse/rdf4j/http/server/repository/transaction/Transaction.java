@@ -84,7 +84,7 @@ class Transaction implements AutoCloseable {
 	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
 	 */
 	private final ExecutorService executor = Executors
-		.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
+			.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
 	/**
 	 * Counter of the active operations submitted to the executor
@@ -166,7 +166,7 @@ class Transaction implements AutoCloseable {
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
-		throws InterruptedException, ExecutionException {
+			throws InterruptedException, ExecutionException {
 		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
 		return getFromFuture(result);
 	}
@@ -221,7 +221,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void exportStatements(Resource subj, IRI pred, Value obj, boolean useInferencing, RDFWriter rdfWriter,
-		Resource... contexts) throws InterruptedException, ExecutionException {
+			Resource... contexts) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 			return true;
@@ -252,7 +252,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void add(InputStream inputStream, String baseURI, RDFFormat format, boolean preserveBNodes, Resource... contexts)
-		throws InterruptedException, ExecutionException {
+			throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			logger.debug("executing add operation");
 			try {
@@ -288,7 +288,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
-		throws InterruptedException, ExecutionException {
+			throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			logger.debug("executing delete operation");
 			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
@@ -317,7 +317,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void executeUpdate(QueryLanguage queryLn, String sparqlUpdateString, String baseURI, boolean includeInferred,
-		Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
+			Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 			update.setIncludeInferred(includeInferred);

@@ -68,7 +68,7 @@ public class FederateTest extends AbstractCommandTest {
 	public void setUp() throws Exception {
 		manager = new LocalRepositoryManager(tempDir.newFolder("federate-test-repository-manager"));
 		addRepositories("federate", MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
-			SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
+				SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		when(mockConsoleState.getManager()).thenReturn(manager);
 		when(mockConsoleIO.readln("Federation Description (optional): ")).thenReturn(FED_DESCRIPTION);
 	}
@@ -179,7 +179,7 @@ public class FederateTest extends AbstractCommandTest {
 	public void testFullyHeterogeneousSuccess() throws Exception {
 		execute(FED_ID, SPARQL_MEMBER_ID, MEMORY_MEMBER_ID1, HTTP_MEMBER_ID);
 		verifySuccess(SPARQLRepositoryFactory.REPOSITORY_TYPE, ProxyRepositoryFactory.REPOSITORY_TYPE,
-			HTTPRepositoryFactory.REPOSITORY_TYPE);
+				HTTPRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	private void verifySuccess(String... memberTypes) throws Exception {
@@ -193,7 +193,7 @@ public class FederateTest extends AbstractCommandTest {
 		verify(mockConsoleIO, never()).writeError(anyString());
 		assertThat(manager.getRepositoryInfo(FED_ID).getDescription()).isEqualTo(FED_DESCRIPTION);
 		SailRepositoryConfig sailRepoConfig = (SailRepositoryConfig) manager.getRepositoryConfig(FED_ID)
-			.getRepositoryImplConfig();
+				.getRepositoryImplConfig();
 		FederationConfig fedSailConfig = (FederationConfig) sailRepoConfig.getSailImplConfig();
 		assertThat(fedSailConfig.isReadOnly()).isEqualTo(readonly);
 		assertThat(fedSailConfig.isDistinct()).isEqualTo(distinct);

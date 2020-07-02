@@ -55,34 +55,34 @@ public class FederationQueryTest {
 	@Parameters(name = "{index}:{0}")
 	public static Iterable<Object[]> data() {
 		return Arrays.asList(new Object[][] { { "JoinAA", "{ ?person a:spouse ?spouse ; a:parentOf ?child }" },
-			{ "JoinAC", "{ ?person a:spouse ?spouse ; c:job ?job }" },
-			{ "JoinBB", "{ ?person b:name ?name ; b:desc ?desc }" },
-			{ "JoinBC", "{ ?person b:name ?name ;  b:desc ?desc ; c:job ?job }" },
-			{ "JoinCC", "{ ?person c:livesIn ?home ; c:job ?job }" },
-			{ "LeftJoinAA", "{ ?person a:spouse ?spouse OPTIONAL { ?person a:parentOf ?child }}" },
-			{ "LeftJoinAC", "{ ?person a:spouse ?spouse OPTIONAL {?person c:job ?job }}" },
-			{ "LeftJoinAD", "{ ?person a:spouse ?spouse OPTIONAL {?person d:worksIn ?work }}" },
-			{ "LeftJoinBB", "{ ?person b:name ?name OPTIONAL { ?person b:desc ?desc }}" },
-			{ "LeftJoinBC", "{ ?person b:name ?name OPTIONAL {?person c:job ?job }}" },
-			{ "LeftJoinBD", "{ ?person b:name ?name OPTIONAL { ?person d:worksIn ?work }}" },
-			{ "LeftJoinCA", "{ ?person c:livesIn ?home OPTIONAL {?person a:mother ?mother }}" },
-			{ "LeftJoinCB", "{ ?person c:livesIn ?home OPTIONAL {?person b:desc ?desc }}" },
-			{ "LeftJoinCC", "{ ?person c:livesIn ?home OPTIONAL {?person c:job ?job }}" },
-			{ "LeftJoinCD", "{ ?person c:livesIn ?home OPTIONAL {?person d:worksIn ?work }}" },
-			{ "LeftJoinDA", "{ ?person d:worksIn ?work OPTIONAL {?person a:mother ?mother }}" },
-			{ "UnionAA", "{ {?person a:mother ?parent} UNION {?person a:father ?parent}}" },
-			{ "UnionCD", "{ {?person c:livesIn ?town} UNION {?person d:worksIn ?town}}" },
-			{ "UnionAC", "{ {?person a:parentOf ?child} UNION {?person c:job one:teacher}}" } });
+				{ "JoinAC", "{ ?person a:spouse ?spouse ; c:job ?job }" },
+				{ "JoinBB", "{ ?person b:name ?name ; b:desc ?desc }" },
+				{ "JoinBC", "{ ?person b:name ?name ;  b:desc ?desc ; c:job ?job }" },
+				{ "JoinCC", "{ ?person c:livesIn ?home ; c:job ?job }" },
+				{ "LeftJoinAA", "{ ?person a:spouse ?spouse OPTIONAL { ?person a:parentOf ?child }}" },
+				{ "LeftJoinAC", "{ ?person a:spouse ?spouse OPTIONAL {?person c:job ?job }}" },
+				{ "LeftJoinAD", "{ ?person a:spouse ?spouse OPTIONAL {?person d:worksIn ?work }}" },
+				{ "LeftJoinBB", "{ ?person b:name ?name OPTIONAL { ?person b:desc ?desc }}" },
+				{ "LeftJoinBC", "{ ?person b:name ?name OPTIONAL {?person c:job ?job }}" },
+				{ "LeftJoinBD", "{ ?person b:name ?name OPTIONAL { ?person d:worksIn ?work }}" },
+				{ "LeftJoinCA", "{ ?person c:livesIn ?home OPTIONAL {?person a:mother ?mother }}" },
+				{ "LeftJoinCB", "{ ?person c:livesIn ?home OPTIONAL {?person b:desc ?desc }}" },
+				{ "LeftJoinCC", "{ ?person c:livesIn ?home OPTIONAL {?person c:job ?job }}" },
+				{ "LeftJoinCD", "{ ?person c:livesIn ?home OPTIONAL {?person d:worksIn ?work }}" },
+				{ "LeftJoinDA", "{ ?person d:worksIn ?work OPTIONAL {?person a:mother ?mother }}" },
+				{ "UnionAA", "{ {?person a:mother ?parent} UNION {?person a:father ?parent}}" },
+				{ "UnionCD", "{ {?person c:livesIn ?town} UNION {?person d:worksIn ?town}}" },
+				{ "UnionAC", "{ {?person a:parentOf ?child} UNION {?person c:job one:teacher}}" } });
 	}
 
 	private static final String PREFIX = "PREFIX shared:<urn:shared:>		# subject namespace in all members\n"
-		+ "PREFIX one:<urn:member:one:>		# subject namespace in only member 1\n"
-		+ "PREFIX two:<urn:member:two:>		# subject namespace in only member 2\n"
-		+ "PREFIX three:<urn:member:three:>	# subject namespace in only member 3\n"
-		+ "PREFIX a:<urn:schema:a:>			# all members\n"
-		+ "PREFIX b:<urn:schema:b:>			# each subject is described in only one member\n"
-		+ "PREFIX c:<urn:schema:c:>			# member 2 exclusively\n"
-		+ "PREFIX d:<urn:schema:d:>			# member 2 exclusively and declared as local\n";
+			+ "PREFIX one:<urn:member:one:>		# subject namespace in only member 1\n"
+			+ "PREFIX two:<urn:member:two:>		# subject namespace in only member 2\n"
+			+ "PREFIX three:<urn:member:three:>	# subject namespace in only member 3\n"
+			+ "PREFIX a:<urn:schema:a:>			# all members\n"
+			+ "PREFIX b:<urn:schema:b:>			# each subject is described in only one member\n"
+			+ "PREFIX c:<urn:schema:c:>			# member 2 exclusively\n"
+			+ "PREFIX d:<urn:schema:d:>			# member 2 exclusively and declared as local\n";
 
 	private static final String WHERE = PREFIX + "SELECT * WHERE ";
 
@@ -142,7 +142,7 @@ public class FederationQueryTest {
 	}
 
 	private void compareTupleQueryResults(TupleQueryResult expectedResult, TupleQueryResult queryResult)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);

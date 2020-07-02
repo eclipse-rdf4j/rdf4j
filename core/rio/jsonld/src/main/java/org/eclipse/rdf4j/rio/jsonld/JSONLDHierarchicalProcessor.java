@@ -119,10 +119,10 @@ public class JSONLDHierarchicalProcessor {
 						ArrayList<Map<String, Object>> objectsPredSubjPairs = (ArrayList<Map<String, Object>>) object;
 						for (int i = 0; i < objectsPredSubjPairs.size(); i++) {
 							if (objectsPredSubjPairs.get(i) instanceof Map
-								&& objectsPredSubjPairs.get(i).get(ID) != null) {
+									&& objectsPredSubjPairs.get(i).get(ID) != null) {
 								String objectsPredId = objectsPredSubjPairs.get(i).get(ID).toString();
 								if (graph.containsKey(objectsPredId) && !currentNode.get(ID).equals(objectsPredId)
-									&& !currentTreeNode.hasPassedThrough(objectsPredId)) {
+										&& !currentTreeNode.hasPassedThrough(objectsPredId)) {
 									children.add(objectsPredId);
 									objectsPredSubjPairs.set(i, (Map<String, Object>) graph.get(objectsPredId));
 									frontier.add(new TreeNode(objectsPredSubjPairs.get(i), currentTreeNode));
@@ -170,10 +170,10 @@ public class JSONLDHierarchicalProcessor {
 	 */
 	private static List<String> getNodesOrder(Map<String, Object> graph) {
 		return graph.entrySet()
-			.stream()
-			.sorted(Map.Entry.comparingByValue((o1, o2) -> ((Map) o2).size() - ((Map) o1).size()))
-			.map(entry -> entry.getKey())
-			.collect(Collectors.toList());
+				.stream()
+				.sorted(Map.Entry.comparingByValue((o1, o2) -> ((Map) o2).size() - ((Map) o1).size()))
+				.map(entry -> entry.getKey())
+				.collect(Collectors.toList());
 	}
 
 	private static class TreeNode {

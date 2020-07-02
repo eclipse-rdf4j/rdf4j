@@ -57,8 +57,8 @@ public class FederationFactory implements SailFactory {
 		Federation sail = new Federation();
 		for (RepositoryImplConfig member : cfg.getMembers()) {
 			RepositoryFactory factory = RepositoryRegistry.getInstance()
-				.get(member.getType())
-				.orElseThrow(() -> new SailConfigException("Unsupported repository type: " + config.getType()));
+					.get(member.getType())
+					.orElseThrow(() -> new SailConfigException("Unsupported repository type: " + config.getType()));
 			try {
 				sail.addMember(factory.getRepository(member));
 			} catch (RepositoryConfigException e) {

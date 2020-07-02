@@ -111,13 +111,13 @@ public class RDFJSONParserCustomTest {
 	private final IRI testObjectIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
 
 	private final Literal testObjectLiteralNotANumber = SimpleValueFactory.getInstance()
-		.createLiteral("NaN", XMLSchema.DOUBLE);
+			.createLiteral("NaN", XMLSchema.DOUBLE);
 
 	private final Literal testObjectLiteralNumber = SimpleValueFactory.getInstance()
-		.createLiteral("42", XMLSchema.INTEGER);
+			.createLiteral("42", XMLSchema.INTEGER);
 
 	private final Literal testObjectLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
-		.createLiteral("42\u0009", XMLSchema.STRING);
+			.createLiteral("42\u0009", XMLSchema.STRING);
 
 	@Before
 	public void setUp() throws Exception {
@@ -135,7 +135,7 @@ public class RDFJSONParserCustomTest {
 
 		assertEquals(1, model.size());
 		assertTrue("model was not as expected: " + model.toString(),
-			model.contains(nextSubject, nextPredicate, nextObject));
+				model.contains(nextSubject, nextPredicate, nextObject));
 	}
 
 	@Test
@@ -398,7 +398,7 @@ public class RDFJSONParserCustomTest {
 		thrown.expect(RDFParseException.class);
 		// Extra checking inbuilt in this case. This verifies it moves past Jackson into RDFJSONParser
 		thrown.expectMessage(
-			"Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
+				"Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
 		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
 	}
@@ -416,7 +416,7 @@ public class RDFJSONParserCustomTest {
 		thrown.expect(RDFParseException.class);
 		// Extra checking inbuilt in this case. This verifies it moves past Jackson into RDFJSONParser
 		thrown.expectMessage(
-			"Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
+				"Multiple types found for a single object: subject=http://example.com/Subj1 predicate=http://example.com/prop1 [line 1, column 122]");
 		parser.set(JSONSettings.STRICT_DUPLICATE_DETECTION, false);
 		parser.parse(new StringReader(STRICT_DUPLICATE_DETECTION_TEST_STRING), "");
 	}

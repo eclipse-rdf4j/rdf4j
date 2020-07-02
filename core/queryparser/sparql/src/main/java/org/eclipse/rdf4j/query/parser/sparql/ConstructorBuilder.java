@@ -53,14 +53,14 @@ public class ConstructorBuilder {
 	}
 
 	public TupleExpr buildConstructor(TupleExpr bodyExpr, boolean distinct, boolean reduced)
-		throws MalformedQueryException {
+			throws MalformedQueryException {
 		// check that bodyExpr contains _only_ a basic graph pattern.
 		BasicPatternVerifier verifier = new BasicPatternVerifier();
 		bodyExpr.visit(verifier);
 
 		if (!verifier.isBasicPattern()) {
 			throw new MalformedQueryException(
-				"can not use shorthand CONSTRUCT: graph pattern in WHERE clause is not a basic pattern.");
+					"can not use shorthand CONSTRUCT: graph pattern in WHERE clause is not a basic pattern.");
 		}
 
 		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);
@@ -118,7 +118,7 @@ public class ConstructorBuilder {
 	}
 
 	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
-		boolean distinct, boolean reduced) {
+			boolean distinct, boolean reduced) {
 		TupleExpr result = bodyExpr;
 
 		// Retrieve all StatementPattern's from the construct expression

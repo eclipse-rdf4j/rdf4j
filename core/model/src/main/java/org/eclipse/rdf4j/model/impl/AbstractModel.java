@@ -571,7 +571,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	 * @param contexts an array of one context term to be removed or an empty array
 	 */
 	public abstract void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-		Resource... contexts);
+			Resource... contexts);
 
 	/**
 	 * Cleans up any resources used by this iterator. After this call the given iterator should not be used.

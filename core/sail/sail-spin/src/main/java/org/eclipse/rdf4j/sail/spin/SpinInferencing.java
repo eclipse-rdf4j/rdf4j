@@ -45,7 +45,7 @@ public class SpinInferencing {
 	}
 
 	public static int executeRule(Resource subj, Resource rule, QueryPreparer queryPreparer, SpinParser parser,
-		InferencerConnection conn) throws OpenRDFException {
+			InferencerConnection conn) throws OpenRDFException {
 		int nofInferred;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedOperation parsedOp = parser.parse(rule, tripleSource);
@@ -54,7 +54,7 @@ public class SpinInferencing {
 			GraphQuery queryOp = queryPreparer.prepare(graphQuery);
 			addBindings(subj, rule, graphQuery, queryOp, tripleSource, parser);
 			CountingRDFInferencerInserter handler = new CountingRDFInferencerInserter(conn,
-				tripleSource.getValueFactory());
+					tripleSource.getValueFactory());
 			queryOp.evaluate(handler);
 			nofInferred = handler.getStatementCount();
 		} else if (parsedOp instanceof ParsedUpdate) {
@@ -74,7 +74,7 @@ public class SpinInferencing {
 	}
 
 	public static ConstraintViolation checkConstraint(Resource subj, Resource constraint, QueryPreparer queryPreparer,
-		SpinParser parser) throws OpenRDFException {
+			SpinParser parser) throws OpenRDFException {
 		ConstraintViolation violation;
 		TripleSource tripleSource = queryPreparer.getTripleSource();
 		ParsedQuery parsedQuery = parser.parseQuery(constraint, tripleSource);
@@ -101,7 +101,7 @@ public class SpinInferencing {
 	}
 
 	private static void addBindings(Resource subj, Resource opResource, ParsedOperation parsedOp, Operation op,
-		TripleSource tripleSource, SpinParser parser) throws OpenRDFException {
+			TripleSource tripleSource, SpinParser parser) throws OpenRDFException {
 		if (!parser.isThisUnbound(opResource, tripleSource)) {
 			op.setBinding(THIS_VAR, subj);
 		}

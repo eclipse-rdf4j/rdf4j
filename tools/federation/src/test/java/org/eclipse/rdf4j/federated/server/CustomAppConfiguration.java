@@ -27,7 +27,7 @@ public class CustomAppConfiguration extends AppConfiguration {
 	public void load() throws IOException {
 		super.load();
 		getProperties().put("feature.logging.impl",
-			"org.eclipse.rdf4j.federated.server.CustomAppConfiguration$FedXLoggingConfiguration");
+				"org.eclipse.rdf4j.federated.server.CustomAppConfiguration$FedXLoggingConfiguration");
 	}
 
 	public static class FedXLoggingConfiguration extends AbstractLogConfiguration {

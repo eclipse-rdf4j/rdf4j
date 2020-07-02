@@ -107,7 +107,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	public LuceneSpinSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex,
-		LuceneSpinSail sail) {
+			LuceneSpinSail sail) {
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
 		this.sail = sail;
@@ -121,7 +121,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 
 	@Override
 	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		super.addStatement(subj, pred, obj, contexts);
 	}
 
@@ -188,8 +188,8 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 			}
 		} catch (Exception e) {
 			logger.error("Committing operations in lucenesail, encountered exception " + e
-				+ ". Only some operations were stored, " + buffer.operations().size()
-				+ " operations are discarded. Lucene Index is now corrupt.", e);
+					+ ". Only some operations were stored, " + buffer.operations().size()
+					+ " operations are discarded. Lucene Index is now corrupt.", e);
 			throw new SailException(e);
 		} finally {
 			buffer.reset();
@@ -227,7 +227,7 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 	 */
 	@Override
 	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		super.removeStatements(subj, pred, obj, contexts);
 	}
 

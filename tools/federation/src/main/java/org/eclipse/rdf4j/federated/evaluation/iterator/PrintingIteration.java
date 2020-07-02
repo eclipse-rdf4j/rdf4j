@@ -28,7 +28,7 @@ public class PrintingIteration extends AbstractCloseableIteration<BindingSet, Qu
 	protected boolean done = false;
 
 	public PrintingIteration(
-		CloseableIteration<BindingSet, QueryEvaluationException> inner) {
+			CloseableIteration<BindingSet, QueryEvaluationException> inner) {
 		super();
 		this.inner = inner;
 	}

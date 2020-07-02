@@ -85,8 +85,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private static final String CFG_FILE = "config." + CONFIG_FORMAT.getDefaultFileExtension();
 
 	private static final WriterConfig CFG_CONFIG = new WriterConfig().set(BasicWriterSettings.BASE_DIRECTIVE, false)
-		.set(BasicWriterSettings.PRETTY_PRINT, true)
-		.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+			.set(BasicWriterSettings.PRETTY_PRINT, true)
+			.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 
 	/*-----------*
 	 * Variables *
@@ -273,8 +273,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 */
 	private Repository createRepositoryStack(RepositoryImplConfig config) throws RepositoryConfigException {
 		RepositoryFactory factory = RepositoryRegistry.getInstance()
-			.get(config.getType())
-			.orElseThrow(() -> new RepositoryConfigException("Unsupported repository type: " + config.getType()));
+				.get(config.getType())
+				.orElseThrow(() -> new RepositoryConfigException("Unsupported repository type: " + config.getType()));
 		Repository repository = factory.getRepository(config);
 		if (repository instanceof RepositoryResolverClient) {
 			((RepositoryResolverClient) repository).setRepositoryResolver(this);
@@ -294,8 +294,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 				((DelegatingRepository) repository).setDelegate(delegate);
 			} catch (ClassCastException e) {
 				throw new RepositoryConfigException(
-					"Delegate specified for repository that is not a DelegatingRepository: " + delegate.getClass(),
-					e);
+						"Delegate specified for repository that is not a DelegatingRepository: " + delegate.getClass(),
+						e);
 			}
 		}
 		return repository;
@@ -316,7 +316,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 				}
 				String repositoryID = repositoryIDs.iterator().next();
 				if (!id.equals(repositoryID)
-					&& !getRepositoryDir(repositoryID).getCanonicalFile().equals(dataDir.getCanonicalFile())) {
+						&& !getRepositoryDir(repositoryID).getCanonicalFile().equals(dataDir.getCanonicalFile())) {
 					throw new RepositoryConfigException("Wrong repository ID in configuration: " + configFile);
 				}
 				return RepositoryConfigUtil.getRepositoryConfig(model, repositoryID);
@@ -377,7 +377,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public synchronized void addRepositoryConfig(RepositoryConfig config)
-		throws RepositoryException, RepositoryConfigException {
+			throws RepositoryException, RepositoryConfigException {
 		addRepositoryConfig(config, true);
 	}
 
@@ -415,7 +415,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public synchronized boolean removeRepository(String repositoryID)
-		throws RepositoryException, RepositoryConfigException {
+			throws RepositoryException, RepositoryConfigException {
 		return removeRepository(repositoryID, true);
 	}
 
@@ -497,7 +497,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 		@Override
 		public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts) {
+				Resource... contexts) {
 			registerModifiedContexts(conn, contexts);
 		}
 
@@ -508,7 +508,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 		@Override
 		public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-			Resource... contexts) {
+				Resource... contexts) {
 			if (object != null && object.equals(RepositoryConfigSchema.REPOSITORY_CONTEXT)) {
 				if (subject == null) {
 					modifiedAllContextsByConnection.put(conn, true);
@@ -561,16 +561,16 @@ public class LocalRepositoryManager extends RepositoryManager {
 										Repository repository = removeInitializedRepository(repositoryID);
 										if (repository != null) {
 											logger.debug("Modified repository {} has been initialized, refreshing...",
-												repositoryID);
+													repositoryID);
 											// refresh single repository
 											refreshRepository(repositoryID, repository);
 										} else {
 											logger.debug("Modified repository {} has not been initialized, skipping...",
-												repositoryID);
+													repositoryID);
 										}
 									} else {
 										logger.debug("Context {} doesn't contain repository config information.",
-											context);
+												context);
 									}
 								} catch (RepositoryException re) {
 									logger.error("Failed to process repository configuration changes", re);
@@ -587,19 +587,19 @@ public class LocalRepositoryManager extends RepositoryManager {
 			for (String repositoryID : RepositoryConfigUtil.getRepositoryIDs(systemRepository)) {
 				if (!SystemRepository.ID.equals(repositoryID)) {
 					addRepositoryConfig(RepositoryConfigUtil.getRepositoryConfig(con.getRepository(), repositoryID),
-						false);
+							false);
 				}
 			}
 			for (String repositoryID : getRepositoryIDs()) {
 				if (!SystemRepository.ID.equals(repositoryID)
-					&& !RepositoryConfigUtil.hasRepositoryConfig(systemRepository, repositoryID)) {
+						&& !RepositoryConfigUtil.hasRepositoryConfig(systemRepository, repositoryID)) {
 					removeRepository(repositoryID, false);
 				}
 			}
 		}
 
 		private boolean isRepositoryConfigContext(RepositoryConnection con, Resource context)
-			throws RepositoryException {
+				throws RepositoryException {
 			logger.debug("Is {} a repository config context?", context);
 			return con.hasStatement(context, RDF.TYPE, REPOSITORY_CONTEXT, true, (Resource) null);
 		}
@@ -608,7 +608,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 			String result = null;
 
 			try (RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
-				context)) {
+					context)) {
 				if (idStatements.hasNext()) {
 					Statement idStatement = idStatements.next();
 					result = idStatement.getObject().stringValue();

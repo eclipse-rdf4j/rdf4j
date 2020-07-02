@@ -60,7 +60,7 @@ public class ConstantOptimizerTest {
 		assertFalse("optimized query should no longer contain && operator", finder.logicalAndfound);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
-			new EmptyBindingSet());
+				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bindings = result.next();
@@ -72,7 +72,7 @@ public class ConstantOptimizerTest {
 	@Test
 	public void testFunctionOptimization() throws RDF4JException {
 		String query = "prefix ex: <ex:>" + "select ?a ?b ?c \n " + "where {\n" + " bind(concat(?a, ?b) as ?c) \n"
-			+ "}";
+				+ "}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
@@ -95,7 +95,7 @@ public class ConstantOptimizerTest {
 		assertFalse("optimized query should no longer contain function call", finder.functionCallFound);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
-			new EmptyBindingSet());
+				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
 		BindingSet bindings = result.next();

@@ -190,9 +190,9 @@ public class DataFile implements Closeable {
 		nioFile.read(buf, offset);
 
 		int dataLength = (data[0] << 24) & 0xff000000 |
-			(data[1] << 16) & 0x00ff0000 |
-			(data[2] << 8) & 0x0000ff00 |
-			(data[3]) & 0x000000ff;
+				(data[1] << 16) & 0x00ff0000 |
+				(data[2] << 8) & 0x0000ff00 |
+				(data[3]) & 0x000000ff;
 
 		// We have either managed to read enough data and can return the required subset of the data, or we have read
 		// too little so we need to execute another read to get the correct data.
@@ -201,7 +201,7 @@ public class DataFile implements Closeable {
 			// adjust the approximate average with 1 part actual length and 99 parts previous average up to a sensible
 			// max of 200
 			dataLengthApproximateAverage = (int) (Math.min(200,
-				((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
+					((dataLengthApproximateAverage / 100.0) * 99) + (dataLength / 100.0)));
 
 			return Arrays.copyOfRange(data, 4, dataLength + 4);
 

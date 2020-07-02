@@ -52,9 +52,9 @@ public class Section5Test extends BaseExamples {
 
 		p(GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox)),
 
-			GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox))
-				.filter(Expressions.regex(name, "Smith")),
+				GraphPatterns.and(x.has(foaf.iri("name"), name), x.has(foaf.iri("mbox"), mbox))
+						.filter(Expressions.regex(name, "Smith")),
 
-			GraphPatterns.and(x.has(foaf.iri("name"), name), GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox)));
+				GraphPatterns.and(x.has(foaf.iri("name"), name), GraphPatterns.and(), x.has(foaf.iri("mbox"), mbox)));
 	}
 }

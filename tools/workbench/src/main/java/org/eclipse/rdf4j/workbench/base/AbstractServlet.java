@@ -120,7 +120,7 @@ public abstract class AbstractServlet implements Servlet {
 
 	@Override
 	public final void service(final ServletRequest req, final ServletResponse resp)
-		throws ServletException, IOException {
+			throws ServletException, IOException {
 		final HttpServletRequest hreq = (HttpServletRequest) req;
 		final HttpServletResponse hresp = (HttpServletResponse) resp;
 		service(hreq, hresp);
@@ -173,7 +173,7 @@ public abstract class AbstractServlet implements Servlet {
 	}
 
 	protected QueryResultWriter getResultWriter(final HttpServletRequest req, final ServletResponse resp,
-		final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+			final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		QueryResultFormat resultFormat = getTupleResultFormat(req, resp);
 
 		if (resultFormat == null) {
@@ -205,7 +205,7 @@ public abstract class AbstractServlet implements Servlet {
 	 * @throws UnsupportedQueryResultFormatException
 	 */
 	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
-		OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
 		String contentType = null;
 		QueryResultWriter resultWriter = checkJSONP(req, outputStream);
 
@@ -241,7 +241,7 @@ public abstract class AbstractServlet implements Servlet {
 			// Switch back to application/xml for user agents who accept either
 			// application/xml or text/html
 			else if (acceptHeader != null
-				&& (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML))) {
+					&& (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML))) {
 				contentType = APPLICATION_XML;
 			}
 		}

@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  * @see UnionExecutorBase
  */
 public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, QueryEvaluationException>
-	implements ParallelExecutor<T> {
+		implements ParallelExecutor<T> {
 
 	protected static final Logger log = LoggerFactory.getLogger(ParallelExecutorBase.class);
 

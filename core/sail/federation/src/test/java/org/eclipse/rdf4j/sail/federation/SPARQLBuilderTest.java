@@ -32,13 +32,13 @@ public class SPARQLBuilderTest {
 	@Parameters(name = "{index}({0})-{2}:{3}")
 	public static Iterable<Object[]> data() {
 		return Arrays.asList(new Object[][] { { "StatementPattern", "SELECT * WHERE {?s ?p ?o}", "", "" },
-			{ "Join", "SELECT * WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
-			{ "Distinct", "SELECT DISTINCT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
-			{ "Optional", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "", "" },
-			{ "Filter", "SELECT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj FILTER (str(?obj) = \"urn:test:obj\")}",
-				"", "" },
-			{ "Bindings", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "s",
-				"urn:test:subj" } });
+				{ "Join", "SELECT * WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
+				{ "Distinct", "SELECT DISTINCT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj}", "", "" },
+				{ "Optional", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "", "" },
+				{ "Filter", "SELECT ?s WHERE {?s ?p ?o; <urn:test:pred> ?obj FILTER (str(?obj) = \"urn:test:obj\")}",
+						"", "" },
+				{ "Bindings", "SELECT * WHERE {?s ?p ?o . OPTIONAL { ?s <urn:test:pred> ?obj}}", "s",
+						"urn:test:subj" } });
 	}
 
 	private static RepositoryConnection con;

@@ -57,7 +57,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 			} else if (datatype.equals(XMLSchema.BOOLEAN)) {
 				try {
 					return createTypedLiteral(valueFactory, literal.booleanValue())
-						.orElseThrow(() -> typeError(literal, null));
+							.orElseThrow(() -> typeError(literal, null));
 				} catch (IllegalArgumentException e) {
 					throw typeError(literal, e);
 				}
@@ -77,7 +77,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 	 *                             specific datatype.
 	 */
 	protected abstract Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
-		throws ArithmeticException;
+			throws ArithmeticException;
 
 	/**
 	 * create a {@link Literal} with the specific datatype for the supplied boolean value.

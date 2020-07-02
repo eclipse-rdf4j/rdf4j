@@ -131,7 +131,7 @@ public class RioConfig implements Serializable {
 	 */
 	public <T extends Object> boolean isSet(RioSetting<T> setting) {
 		return settings.containsKey(setting) || systemPropertyCache.containsKey(setting)
-			|| hasSystemPropertyOverride(setting);
+				|| hasSystemPropertyOverride(setting);
 	}
 
 	private boolean hasSystemPropertyOverride(RioSetting<?> setting) {

@@ -31,11 +31,11 @@ public class FederationSparqlTest {
 
 		try (RepositoryConnection conn = repo1.getConnection()) {
 			conn.add(getClass().getResource("/testcases-sparql-1.0-w3c/data-r2/algebra/var-scope-join-1.ttl"), null,
-				null, conn.getValueFactory().createIRI("http://example/g1"));
+					null, conn.getValueFactory().createIRI("http://example/g1"));
 		}
 		try (RepositoryConnection conn = repo2.getConnection()) {
 			conn.add(getClass().getResource("/testcases-sparql-1.0-w3c/data-r2/algebra/var-scope-join-1.ttl"), null,
-				null, conn.getValueFactory().createIRI("http://example/g2"));
+					null, conn.getValueFactory().createIRI("http://example/g2"));
 		}
 
 		String query = "PREFIX : <http://example/> SELECT * { graph :g1 {?X  :name 'paul'} { graph :g2 {?Y :name 'george' . OPTIONAL { ?X :email ?Z } } } }";

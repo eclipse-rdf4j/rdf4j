@@ -70,7 +70,7 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 	@Override
 	public void parse(Model model, Resource resource) throws RepositoryConfigException {
 		Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
-			.ifPresent(typeLit -> setType(typeLit.getLabel()));
+				.ifPresent(typeLit -> setType(typeLit.getLabel()));
 	}
 
 	/**
@@ -89,12 +89,12 @@ public class AbstractRepositoryImplConfig implements RepositoryImplConfig {
 			// implNode, REPOSITORYTYPE);
 
 			final Literal typeLit = Models.objectLiteral(model.getStatements(resource, REPOSITORYTYPE, null))
-				.orElse(null);
+					.orElse(null);
 			if (typeLit != null) {
 				RepositoryFactory factory = RepositoryRegistry.getInstance()
-					.get(typeLit.getLabel())
-					.orElseThrow(() -> new RepositoryConfigException(
-						"Unsupported repository type: " + typeLit.getLabel()));
+						.get(typeLit.getLabel())
+						.orElseThrow(() -> new RepositoryConfigException(
+								"Unsupported repository type: " + typeLit.getLabel()));
 
 				RepositoryImplConfig implConfig = factory.getConfig();
 				implConfig.parse(model, resource);

@@ -107,19 +107,19 @@ public class FederationManager {
 			joinScheduler.abort();
 		}
 		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
-			"Join Scheduler");
+				"Join Scheduler");
 
 		if (unionScheduler != null) {
 			unionScheduler.abort();
 		}
 		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
-			"Union Scheduler");
+				"Union Scheduler");
 
 		if (leftJoinScheduler != null) {
 			leftJoinScheduler.abort();
 		}
 		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
-			"Left Join Scheduler");
+				"Left Join Scheduler");
 
 	}
 
@@ -167,7 +167,7 @@ public class FederationManager {
 		for (Endpoint member : federation.getMembers()) {
 			if (member.getEndpoint().equals(e.getEndpoint())) {
 				throw new FedXRuntimeException("Adding failed: there exists already an endpoint with location "
-					+ e.getEndpoint() + " (eid=" + member.getId() + ")");
+						+ e.getEndpoint() + " (eid=" + member.getId() + ")");
 			}
 		}
 
@@ -175,7 +175,7 @@ public class FederationManager {
 		federationContext.getEndpointManager().addEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
-			|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
+				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
 			updateStrategy();
 		}
 	}
@@ -213,7 +213,7 @@ public class FederationManager {
 		federationContext.getEndpointManager().removeEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
-			|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
+				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
 			updateStrategy();
 		}
 	}
@@ -344,7 +344,7 @@ public class FederationManager {
 		if (updated) {
 			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type, federationContext);
 			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
-				+ strategy.getClass().getSimpleName());
+					+ strategy.getClass().getSimpleName());
 		}
 
 	}

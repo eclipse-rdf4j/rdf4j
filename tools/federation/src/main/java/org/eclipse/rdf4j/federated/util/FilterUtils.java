@@ -124,7 +124,7 @@ public class FilterUtils {
 		} else {
 			// TODO add more!
 			throw new FilterConversionException("Expression type not supported, fallback to sesame evaluation: "
-				+ expr.getClass().getCanonicalName());
+					+ expr.getClass().getCanonicalName());
 		}
 
 	}

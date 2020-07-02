@@ -51,8 +51,8 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(TupleExpr preparedQuery,
-		final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Evaluate the prepared query (SPARQL query as String) on the provided endpoint.
@@ -68,8 +68,8 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
-		final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Evaluate a given SPARQL query of the provided query type at the given source.
@@ -86,8 +86,8 @@ public interface TripleSource {
 	 */
 	@Deprecated
 	public default CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
-		QueryType queryType, QueryInfo queryInfo)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+			QueryType queryType, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		return getStatements(preparedQuery, EmptyBindingSet.getInstance(), queryType, queryInfo);
 	}
 
@@ -104,9 +104,9 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
-		BindingSet queryBindings,
-		QueryType queryType, QueryInfo queryInfo)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			BindingSet queryBindings,
+			QueryType queryType, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Evaluate the query expression on the provided endpoint.
@@ -122,8 +122,8 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> getStatements(StatementPattern stmt,
-		final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Return the statements matching the given pattern as a {@link Statement} iteration.
@@ -140,8 +140,8 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<Statement, QueryEvaluationException> getStatements(
-		Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Check if the provided statement can return results.
@@ -158,7 +158,7 @@ public interface TripleSource {
 	 * @throws QueryEvaluationException
 	 */
 	public boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Check if the repository can return results for the given triple pattern represented by subj, pred and obj
@@ -172,7 +172,7 @@ public interface TripleSource {
 	 * @throws RepositoryException
 	 */
 	public boolean hasStatements(Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
-		throws RepositoryException;
+			throws RepositoryException;
 
 	/**
 	 * Check if the repository can return results for the given {@link ExclusiveTupleExpr}, e.g. for an
@@ -184,7 +184,7 @@ public interface TripleSource {
 	 * @throws RepositoryException
 	 */
 	public boolean hasStatements(ExclusiveTupleExpr expr, BindingSet bindings)
-		throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 *

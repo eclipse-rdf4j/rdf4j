@@ -239,7 +239,7 @@ public class IsomorphicBenchmark {
 	private Model getModel(String name) {
 		try {
 			try (InputStream resourceAsStream = IsomorphicBenchmark.class.getClassLoader()
-				.getResourceAsStream("benchmark/" + name)) {
+					.getResourceAsStream("benchmark/" + name)) {
 				return Rio.parse(resourceAsStream, "http://example.com/", RDFFormat.TURTLE);
 			}
 		} catch (IOException e) {

@@ -65,9 +65,9 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 					Value context = bindingSet.getValue("context");
 
 					return bindingSet.getValue("subject") instanceof Resource
-						&& bindingSet.getValue("predicate") instanceof IRI
-						&& bindingSet.getValue("object") instanceof Value
-						&& (context == null || context instanceof Resource);
+							&& bindingSet.getValue("predicate") instanceof IRI
+							&& bindingSet.getValue("object") instanceof Value
+							&& (context == null || context instanceof Resource);
 				}
 			};
 

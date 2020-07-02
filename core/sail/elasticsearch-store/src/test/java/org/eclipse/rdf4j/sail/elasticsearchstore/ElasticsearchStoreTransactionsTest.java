@@ -75,7 +75,7 @@ public class ElasticsearchStoreTransactionsTest {
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 
 		elasticsearchStore = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
-			"test");
+				"test");
 
 	}
 
@@ -146,13 +146,13 @@ public class ElasticsearchStoreTransactionsTest {
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-				new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
 
 			return client.admin()
-				.indices()
-				.getIndex(new GetIndexRequest())
-				.actionGet()
-				.getIndices();
+					.indices()
+					.getIndex(new GetIndexRequest())
+					.actionGet()
+					.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
@@ -183,7 +183,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -200,7 +200,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -212,13 +212,13 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
 			assertEquals(1, statements.size());
 			assertEquals(SimpleValueFactory.getInstance().createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE),
-				statements.get(0));
+					statements.get(0));
 		}
 
 	}
@@ -232,7 +232,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(bNode, RDF.TYPE, RDFS.RESOURCE);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(bNode, RDF.TYPE, RDFS.RESOURCE, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -253,7 +253,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(bNode, RDF.TYPE, bNode);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(bNode, RDF.TYPE, bNode, true));
+					.asList(connection.getStatements(bNode, RDF.TYPE, bNode, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -275,7 +275,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -296,7 +296,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -320,7 +320,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -341,7 +341,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -362,7 +362,7 @@ public class ElasticsearchStoreTransactionsTest {
 			connection.add(RDF.TYPE, RDFS.LABEL, label);
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(null, null, label, true));
+					.asList(connection.getStatements(null, null, label, true));
 
 			System.out.println(Arrays.toString(statements.toArray()));
 
@@ -385,7 +385,7 @@ public class ElasticsearchStoreTransactionsTest {
 			StopWatch stopWatch = StopWatch.createStarted();
 
 			List<? extends Statement> statements = Iterations
-				.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
+					.asList(connection.getStatements(iri, RDF.TYPE, RDFS.RESOURCE, true));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -418,7 +418,7 @@ public class ElasticsearchStoreTransactionsTest {
 
 			StopWatch stopWatch = StopWatch.createStarted();
 			Set<Statement> context1Statements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null, context1));
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context1));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -426,7 +426,7 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch = StopWatch.createStarted();
 
 			Set<Statement> context2Statements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null, context2));
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context2));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -434,7 +434,7 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch = StopWatch.createStarted();
 
 			Set<Statement> context3Statements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null, context3));
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context3));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -442,7 +442,7 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch = StopWatch.createStarted();
 
 			Set<Statement> contextNoneStatements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null, true, (Resource) null));
+					.asSet(connection.getStatements(null, RDF.TYPE, null, true, (Resource) null));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -450,7 +450,7 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch = StopWatch.createStarted();
 
 			Set<Statement> contextAllStatements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null));
+					.asSet(connection.getStatements(null, RDF.TYPE, null));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -458,7 +458,7 @@ public class ElasticsearchStoreTransactionsTest {
 			stopWatch = StopWatch.createStarted();
 
 			Set<Statement> contextContext1And2Statements = Iterations
-				.asSet(connection.getStatements(null, RDF.TYPE, null, context1, context2));
+					.asSet(connection.getStatements(null, RDF.TYPE, null, context1, context2));
 
 			stopWatch.stop();
 			logTime(stopWatch, "Query", TimeUnit.MILLISECONDS);
@@ -474,7 +474,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(asSet(statementContext1, statementContext2), contextContext1And2Statements);
 			assertEquals(asSet(statementContextNone), contextNoneStatements);
 			assertEquals(asSet(statementContext1, statementContext2, statementContext3, statementContextNone),
-				contextAllStatements);
+					contextAllStatements);
 
 		}
 
@@ -486,21 +486,21 @@ public class ElasticsearchStoreTransactionsTest {
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(
-				ElasticsearchStoreTransactionsTest.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
-				RDFFormat.TURTLE);
+					ElasticsearchStoreTransactionsTest.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
+					RDFFormat.TURTLE);
 			connection.commit();
 
 			StopWatch stopwatch = StopWatch.createStarted();
 
 			TupleQuery tupleQuery = connection.prepareTupleQuery(String.join("\n", "",
-				"PREFIX sh: <http://www.w3.org/ns/shacl#>",
-				"select * where {",
-				"	?a a sh:NodeShape ;",
-				"		sh:property ?property .",
-				"",
-				"	?property sh:path ?path;",
-				"				 sh:minCount ?minCount.",
-				"}"));
+					"PREFIX sh: <http://www.w3.org/ns/shacl#>",
+					"select * where {",
+					"	?a a sh:NodeShape ;",
+					"		sh:property ?property .",
+					"",
+					"	?property sh:path ?path;",
+					"				 sh:minCount ?minCount.",
+					"}"));
 
 			List<BindingSet> bindingSets = Iterations.asList(tupleQuery.evaluate());
 
@@ -510,7 +510,7 @@ public class ElasticsearchStoreTransactionsTest {
 			assertEquals(1, bindingSets.size());
 			assertEquals("http://example.com/ns#PersonShape", bindingSets.get(0).getValue("a").stringValue());
 			assertEquals("http://www.w3.org/2000/01/rdf-schema#label",
-				bindingSets.get(0).getValue("path").stringValue());
+					bindingSets.get(0).getValue("path").stringValue());
 			assertEquals("1", bindingSets.get(0).getValue("minCount").stringValue());
 
 		}

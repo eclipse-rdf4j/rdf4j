@@ -38,7 +38,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final ParallelExecutor<BindingSet> joinControl;
 
 	public ParallelLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
-		LeftJoin join, BindingSet leftBindings) {
+			LeftJoin join, BindingSet leftBindings) {
 		this.strategy = strategy;
 		this.join = join;
 		this.leftBindings = leftBindings;

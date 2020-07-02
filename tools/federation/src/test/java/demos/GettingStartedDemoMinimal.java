@@ -20,17 +20,17 @@ public class GettingStartedDemoMinimal {
 	public static void main(String[] args) {
 
 		FedXRepository repository = FedXFactory.newFederation()
-			.withSparqlEndpoint("http://dbpedia.org/sparql")
-			.withSparqlEndpoint("https://query.wikidata.org/sparql")
-			.create();
+				.withSparqlEndpoint("http://dbpedia.org/sparql")
+				.withSparqlEndpoint("https://query.wikidata.org/sparql")
+				.create();
 
 		String query = "PREFIX wd: <http://www.wikidata.org/entity/> "
-			+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-			+ "SELECT * WHERE { "
-			+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
-			+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
-			+ " ?countrySameAs wdt:P2131 ?gdp ."
-			+ "}";
+				+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+				+ "SELECT * WHERE { "
+				+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
+				+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
+				+ " ?countrySameAs wdt:P2131 ?gdp ."
+				+ "}";
 
 		List<BindingSet> res = Repositories.tupleQuery(repository, query, it -> QueryResults.asList(it));
 		res.forEach(bs -> System.out.println(bs));

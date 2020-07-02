@@ -36,7 +36,7 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 	protected int currentIdx = 0;
 
 	public IndependentJoingroupBindingsIteration2(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		List<BindingSet> bindings) {
+			List<BindingSet> bindings) {
 		this.bindings = bindings;
 		this.iter = iter;
 	}
@@ -68,8 +68,8 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 
 			if (bIn.size() != 1) {
 				throw new RuntimeException(
-					"For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size()
-						+ ": " + bIn);
+						"For this optimization a bindingset needs to have exactly one binding, it has " + bIn.size()
+								+ ": " + bIn);
 			}
 
 			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());

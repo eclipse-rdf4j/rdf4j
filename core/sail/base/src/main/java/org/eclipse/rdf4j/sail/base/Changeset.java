@@ -121,7 +121,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 				}
 				for (Changeset changeset : prepend) {
 					if (changeset.hasApproved(subj, pred, obj, contexts)
-						|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
+							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}
@@ -205,19 +205,19 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailConflictException {
+			throws SailConflictException {
 		if (observations == null) {
 			observations = new HashSet<>();
 		}
 		if (contexts == null) {
 			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-				new Var("g", null)));
+					new Var("g", null)));
 		} else if (contexts.length == 0) {
 			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
 		} else {
 			for (Resource ctx : contexts) {
 				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-					new Var("g", ctx)));
+						new Var("g", ctx)));
 			}
 		}
 	}
@@ -383,9 +383,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean isChanged() {
 		return approved != null || deprecated != null || approvedContexts != null
-			|| deprecatedContexts != null || addedNamespaces != null
-			|| removedPrefixes != null || statementCleared || namespaceCleared
-			|| observations != null;
+				|| deprecatedContexts != null || addedNamespaces != null
+				|| removedPrefixes != null || statementCleared || namespaceCleared
+				|| observations != null;
 	}
 
 	synchronized List<Statement> getDeprecatedStatements() {
@@ -414,7 +414,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
-		Resource[] contexts) {
+			Resource[] contexts) {
 
 		if (approved == null) {
 			return Collections.emptyList();
@@ -428,8 +428,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 			return new ArrayList<>((Collection<? extends Statement>) statements);
 		} else {
 			return StreamSupport
-				.stream(statements.spliterator(), false)
-				.collect(Collectors.toList());
+					.stream(statements.spliterator(), false)
+					.collect(Collectors.toList());
 		}
 	}
 

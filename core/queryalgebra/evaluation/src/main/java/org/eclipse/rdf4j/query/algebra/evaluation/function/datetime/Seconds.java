@@ -55,7 +55,7 @@ public class Seconds implements Function {
 					if (DatatypeConstants.FIELD_UNDEFINED != seconds) {
 						BigDecimal fraction = calValue.getFractionalSecond();
 						String str = (fraction == null) ? String.valueOf(seconds)
-							: String.valueOf(fraction.doubleValue() + seconds);
+								: String.valueOf(fraction.doubleValue() + seconds);
 
 						return valueFactory.createLiteral(str, XMLSchema.DECIMAL);
 					} else {

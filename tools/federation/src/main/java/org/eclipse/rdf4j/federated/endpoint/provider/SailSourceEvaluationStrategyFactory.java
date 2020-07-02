@@ -69,9 +69,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-		EvaluationStatistics evaluationStatistics) {
+			EvaluationStatistics evaluationStatistics) {
 		EvaluationStrategy delegateStrategy = delegate.createEvaluationStrategy(dataset, tripleSource,
-			evaluationStatistics);
+				evaluationStatistics);
 		return new SailSourceEvaluationStrategy(delegateStrategy, dataset);
 	}
 
@@ -114,25 +114,25 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
 			return delegate.evaluate(expr, serviceUri, bindings);
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-			throws QueryEvaluationException {
+				throws QueryEvaluationException {
 			return delegate.evaluate(expr, bindings);
 		}
 
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.evaluate(expr, bindings);
 		}
 
 		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.isTrue(expr, bindings);
 		}
 

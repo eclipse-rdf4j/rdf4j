@@ -26,25 +26,25 @@ public class QueryResultFormat extends FileFormat {
 	 * Local constant reused across boolean and tuple formats for SPARQL Results XML.
 	 */
 	protected static final IRI SPARQL_RESULTS_XML_URI = SimpleValueFactory.getInstance()
-		.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_XML");
+			.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_XML");
 
 	/**
 	 * Local constant reused across boolean and tuple formats for SPARQL Results JSON.
 	 */
 	protected static final IRI SPARQL_RESULTS_JSON_URI = SimpleValueFactory.getInstance()
-		.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_JSON");
+			.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_JSON");
 
 	/**
 	 * Local constant for tuple formats for SPARQL Results CSV.
 	 */
 	protected static final IRI SPARQL_RESULTS_CSV_URI = SimpleValueFactory.getInstance()
-		.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_CSV");
+			.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_CSV");
 
 	/**
 	 * Local constant for tuple formats for SPARQL Results TSV.
 	 */
 	protected static final IRI SPARQL_RESULTS_TSV_URI = SimpleValueFactory.getInstance()
-		.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_TSV");
+			.createIRI("http://www.w3.org/ns/formats/SPARQL_Results_TSV");
 
 	/**
 	 * A standard URI published by the W3C or another standards body to uniquely denote this format.
@@ -86,7 +86,7 @@ public class QueryResultFormat extends FileFormat {
 	 *                       list is interpreted as the default file extension for the format.
 	 */
 	public QueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-		Collection<String> fileExtensions) {
+			Collection<String> fileExtensions) {
 		super(name, mimeTypes, charset, fileExtensions);
 	}
 
@@ -100,7 +100,7 @@ public class QueryResultFormat extends FileFormat {
 	 *                       list is interpreted as the default file extension for the format.
 	 */
 	public QueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-		Collection<String> fileExtensions, IRI standardURI) {
+			Collection<String> fileExtensions, IRI standardURI) {
 		super(name, mimeTypes, charset, fileExtensions);
 
 		this.standardURI = standardURI;

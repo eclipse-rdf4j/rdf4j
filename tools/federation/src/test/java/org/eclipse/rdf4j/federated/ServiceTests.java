@@ -48,7 +48,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons from endpoint 1 (SERVICE) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query01.rq", "/tests/service/query01.qp");
 		execute("/tests/service/query01.rq", "/tests/service/query01.srx", false);
@@ -59,7 +59,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons from endpoint 1 (SERVICE) by name */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query01a.rq", "/tests/service/query01.qp");
 		execute("/tests/service/query01a.rq", "/tests/service/query01.srx", false);
@@ -72,7 +72,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons from endpoint 1 (SERVICE) + exclusive statement => group */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query02.rq", "/tests/service/query02.qp");
 		execute("/tests/service/query02.rq", "/tests/service/query02.srx", false);
@@ -88,7 +88,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * to test2: order is different
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query02a.rq", "/tests/service/query02a.qp");
 		execute("/tests/service/query02a.rq", "/tests/service/query02.srx", false);
@@ -104,7 +104,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * evaluate using RDF4J
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
@@ -118,7 +118,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* two service which form exclusive groups */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query04.rq", "/tests/service/query04.qp");
 		execute("/tests/service/query04.rq", "/tests/service/query04.srx", false);
@@ -129,7 +129,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* two service which form exclusive groups (resolving by name) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query04a.rq", "/tests/service/query04.qp");
 		execute("/tests/service/query04a.rq", "/tests/service/query04a.srx", false);
@@ -142,7 +142,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* two services, one becomes exclusive group, the other is evaluated as service (filter) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		execute("/tests/service/query05.rq", "/tests/service/query05.srx", false);
 	}
 
@@ -154,7 +154,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * federation member in SERVICE
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		execute("/tests/service/query06.rq", "/tests/service/query06.srx", false);
 	}
 
@@ -166,7 +166,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		/* two services, both evaluated as SERVICE (FILTER), uses name of federation member in SERVICE */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		execute("/tests/service/query07.rq", "/tests/service/query07.srx", false);
 	}
 
@@ -179,7 +179,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * test select query retrieving all persons from endpoint 1 (SERVICE) + exclusive statement => group
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query08.rq", "/tests/service/query08.qp");
 		execute("/tests/service/query08.rq", "/tests/service/query08.srx", false);
@@ -209,14 +209,14 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * http://localhost:18080/repositories/endpoint1 via HTTP
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
 
 		Assertions.assertEquals(1,
-			((TestSparqlFederatedService) serviceResolver
-				.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount.get());
+				((TestSparqlFederatedService) serviceResolver
+						.getService("http://localhost:18080/repositories/endpoint1")).serviceRequestCount.get());
 	}
 
 	@Test
@@ -243,7 +243,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * http://localhost:18080/repositories/endpoint1 via HTTP
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 
@@ -254,7 +254,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		}
 		query.append(" }");
 		query.append(
-			" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
 		query.append(" }");
 
 		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
@@ -270,7 +270,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		// first binding is evaluated using regular service, then we have groups of 4 groups of three bindings and 3
 		// groups with 15
 		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
-			.getService("http://localhost:18080/repositories/endpoint1"));
+				.getService("http://localhost:18080/repositories/endpoint1"));
 		Assertions.assertEquals(1, tfs.serviceRequestCount.get());
 		Assertions.assertEquals(7, tfs.boundJoinRequestCount.get());
 	}
@@ -301,7 +301,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * http://localhost:18080/repositories/endpoint1 via HTTP
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 
@@ -312,7 +312,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		}
 		query.append(" }");
 		query.append(
-			" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
+				" SERVICE <http://localhost:18080/repositories/endpoint1> { BIND (CONCAT(?input, '_processed') AS ?output) } ");
 		query.append(" }");
 
 		try (TupleQueryResult tqr = queryManager().prepareTupleQuery(query.toString()).evaluate()) {
@@ -327,7 +327,7 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		// all input bindings are evaluated as simple join
 		TestSparqlFederatedService tfs = ((TestSparqlFederatedService) serviceResolver
-			.getService("http://localhost:18080/repositories/endpoint1"));
+				.getService("http://localhost:18080/repositories/endpoint1"));
 		Assertions.assertEquals(50, tfs.serviceRequestCount.get());
 		Assertions.assertEquals(0, tfs.boundJoinRequestCount.get());
 	}
@@ -356,10 +356,10 @@ public class ServiceTests extends SPARQLBaseTest {
 		repo.init();
 
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		List<BindingSet> bs = Repositories.tupleQueryNoTransaction(fedxRule.repository,
-			"SELECT * WHERE { VALUES ?input { 'input1'  } . SERVICE SILENT <urn:memStore> { BIND (CONCAT(?input, '_processed') AS ?output) } }",
-			iter -> QueryResults.asList(iter));
+				"SELECT * WHERE { VALUES ?input { 'input1'  } . SERVICE SILENT <urn:memStore> { BIND (CONCAT(?input, '_processed') AS ?output) } }",
+				iter -> QueryResults.asList(iter));
 		assertContainsAll(bs, "output", Sets.newHashSet(l("input1_processed")));
 
 		serviceResolver.shutDown();
@@ -374,7 +374,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 * test select query where SERVICE is not part of federation and produces error
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
-			"/tests/data/data4.ttl"));
+				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
 
@@ -385,26 +385,26 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		Assertions.assertThrows(QueryEvaluationException.class, () -> {
 			Repositories.tupleQueryNoTransaction(fedxRule.repository, query_a,
-				iter -> QueryResults.asList(iter));
+					iter -> QueryResults.asList(iter));
 		});
 
 		// run query where service does not produce errors
 		String query_b = readQueryString("/tests/service/query11_error_b.rq");
 		repoSettings(1).setFailAfter(-1);
 		List<BindingSet> bs = Repositories.tupleQueryNoTransaction(fedxRule.repository, query_b,
-			iter -> QueryResults.asList(iter));
+				iter -> QueryResults.asList(iter));
 		Assertions
-			.assertEquals(Sets.newHashSet("Person2", "Person5"),
-				bs.stream()
-					.map(b -> b.getValue("name").stringValue())
-					.collect(Collectors.toSet()));
+				.assertEquals(Sets.newHashSet("Person2", "Person5"),
+						bs.stream()
+								.map(b -> b.getValue("name").stringValue())
+								.collect(Collectors.toSet()));
 
 		// re-run, but now simulate errors
 		repoSettings(1).resetOperationsCounter();
 		repoSettings(1).setFailAfter(1);
 		Assertions.assertThrows(QueryEvaluationException.class, () -> {
 			Repositories.tupleQueryNoTransaction(fedxRule.repository, query_b,
-				iter -> QueryResults.asList(iter));
+					iter -> QueryResults.asList(iter));
 		});
 
 	}
@@ -420,15 +420,15 @@ public class ServiceTests extends SPARQLBaseTest {
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
-			Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+				Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 			serviceRequestCount.incrementAndGet();
 			return super.select(service, projectionVars, bindings, baseUri);
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-			throws QueryEvaluationException {
+				CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+				throws QueryEvaluationException {
 			boundJoinRequestCount.incrementAndGet();
 			return super.evaluate(service, bindings, baseUri);
 		}

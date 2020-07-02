@@ -27,7 +27,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
-	extends RDFSchemaRepositoryConnectionTest {
+		extends RDFSchemaRepositoryConnectionTest {
 
 	public SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
@@ -120,7 +120,7 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 
 			connection.begin();
 			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
-				.execute();
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
@@ -142,8 +142,8 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 
 			connection.begin();
 			connection
-				.prepareUpdate("insert {<foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2>} where {?a ?b ?c}")
-				.execute();
+					.prepareUpdate("insert {<foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2>} where {?a ?b ?c}")
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
@@ -188,14 +188,14 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 
 			connection.begin();
 			connection.prepareUpdate("insert data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
-				.execute();
+					.execute();
 			connection.commit();
 
 			assertTrue(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));
 
 			connection.begin();
 			connection.prepareUpdate("delete data { <foo:s1> a <foo:C1> . <foo:C1> rdfs:subClassOf <foo:C2> } ")
-				.execute();
+					.execute();
 			connection.commit();
 
 			assertFalse(connection.hasStatement(foo_s1, RDF.TYPE, foo_C2, true));

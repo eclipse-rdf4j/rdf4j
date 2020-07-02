@@ -36,10 +36,10 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 
 	@Override
 	synchronized public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
-		IRI predicate,
-		Value object, boolean inferred, Resource... context) {
+			IRI predicate,
+			Value object, boolean inferred, Resource... context) {
 		return new FilteringIteration<>(
-			new IteratorIteration<>(statements.iterator()), subject, predicate, object, inferred, context);
+				new IteratorIteration<>(statements.iterator()), subject, predicate, object, inferred, context);
 	}
 
 	@Override

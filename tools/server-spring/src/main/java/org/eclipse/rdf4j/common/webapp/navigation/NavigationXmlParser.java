@@ -144,7 +144,7 @@ public class NavigationXmlParser {
 		boolean result = defaultValue;
 		if (attrValue != null && !attrValue.trim().isEmpty()) {
 			result = attrValue.equalsIgnoreCase("true") || attrValue.equalsIgnoreCase("yes")
-				|| attrValue.equalsIgnoreCase("on");
+					|| attrValue.equalsIgnoreCase("on");
 		}
 		return result;
 	}

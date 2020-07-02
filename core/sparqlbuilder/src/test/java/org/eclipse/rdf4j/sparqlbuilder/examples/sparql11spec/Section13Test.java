@@ -35,7 +35,7 @@ public class Section13Test extends BaseExamples {
 	@Test
 	public void example_13_2_2() {
 		Dataset dataset = SparqlBuilder.dataset(SparqlBuilder.fromNamed(iri("http://example.org/alice")),
-			SparqlBuilder.fromNamed(iri("http://example.org/bob")));
+				SparqlBuilder.fromNamed(iri("http://example.org/bob")));
 		p(dataset);
 	}
 
@@ -52,9 +52,9 @@ public class Section13Test extends BaseExamples {
 		GraphPattern namedGraph = GraphPatterns.and(query.var().has(foaf.iri("mbox"), mbox)).from(g);
 
 		query.prefix(foaf, dc)
-			.select(who, g, mbox)
-			.from(defaultGraph, aliceGraph, bobGraph)
-			.where(g.has(dc.iri("publisher"), who), namedGraph);
+				.select(who, g, mbox)
+				.from(defaultGraph, aliceGraph, bobGraph)
+				.where(g.has(dc.iri("publisher"), who), namedGraph);
 		p();
 	}
 
@@ -66,12 +66,12 @@ public class Section13Test extends BaseExamples {
 		// TODO: still need to bracket GGP's that aren't explicitly GGP instances,
 		// even if there's only 1
 		query.prefix(foaf)
-			.select(src, bobNick)
-			.from(SparqlBuilder.fromNamed(iri("http://example.org/alice")),
-				SparqlBuilder.fromNamed(iri("http://example.org/bob")))
-			.where(GraphPatterns
-				.and(x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")), x.has(foaf.iri("nick"), bobNick))
-				.from(src));
+				.select(src, bobNick)
+				.from(SparqlBuilder.fromNamed(iri("http://example.org/alice")),
+						SparqlBuilder.fromNamed(iri("http://example.org/bob")))
+				.where(GraphPatterns
+						.and(x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")), x.has(foaf.iri("nick"), bobNick))
+						.from(src));
 		p();
 	}
 
@@ -82,12 +82,12 @@ public class Section13Test extends BaseExamples {
 		Variable x = query.var(), nick = query.var();
 
 		query.prefix(foaf, data)
-			.select(nick)
-			.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
-				SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
-			.where(GraphPatterns
-				.and(x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")), x.has(foaf.iri("nick"), nick))
-				.from(data.iri("bobFoaf")));
+				.select(nick)
+				.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
+						SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
+				.where(GraphPatterns
+						.and(x.has(foaf.iri("mbox"), iri("mailto:bob@work.example")), x.has(foaf.iri("nick"), nick))
+						.from(data.iri("bobFoaf")));
 		p();
 	}
 
@@ -98,22 +98,22 @@ public class Section13Test extends BaseExamples {
 		Prefix rdfs = SparqlBuilder.prefix("rdfs", iri("http://www.w3.org/2000/01/rdf-schema#"));
 
 		Variable mbox = query.var(), nick = query.var(), ppd = query.var(), alice = query.var(), whom = query.var(),
-			w = query.var();
+				w = query.var();
 
 		Iri foafMbox = foaf.iri("mbox");
 
 		GraphPattern aliceFoafGraph = GraphPatterns
-			.and(alice.has(foafMbox, iri("mailto:bob@work.example")).andHas(foaf.iri("knows"), whom),
-				whom.has(foafMbox, mbox).andHas(rdfs.iri("seeAlso"), ppd),
-				ppd.isA(foaf.iri("PersonalProfileDocument")))
-			.from(data.iri("aliceFoaf"));
+				.and(alice.has(foafMbox, iri("mailto:bob@work.example")).andHas(foaf.iri("knows"), whom),
+						whom.has(foafMbox, mbox).andHas(rdfs.iri("seeAlso"), ppd),
+						ppd.isA(foaf.iri("PersonalProfileDocument")))
+				.from(data.iri("aliceFoaf"));
 		GraphPattern ppdGraph = GraphPatterns.and(w.has(foafMbox, mbox).andHas(foaf.iri("nick"), nick)).from(ppd);
 
 		query.prefix(data, foaf, rdfs)
-			.select(mbox, nick, ppd)
-			.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
-				SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
-			.where(aliceFoafGraph, ppdGraph);
+				.select(mbox, nick, ppd)
+				.from(SparqlBuilder.fromNamed(iri("http://example.org/foaf/aliceFoaf")),
+						SparqlBuilder.fromNamed(iri("http://example.org/foaf/bobFoaf")))
+				.where(aliceFoafGraph, ppdGraph);
 		p();
 	}
 
@@ -125,9 +125,9 @@ public class Section13Test extends BaseExamples {
 		Variable name = query.var(), mbox = query.var(), date = query.var(), g = query.var(), person = query.var();
 
 		query.prefix(foaf, dc)
-			.select(name, mbox, date)
-			.where(g.has(dc.iri("publisher"), name).andHas(dc.iri("date"), date),
-				GraphPatterns.and(person.has(foaf.iri("name"), name).andHas(foaf.iri("mbox"), mbox)).from(g));
+				.select(name, mbox, date)
+				.where(g.has(dc.iri("publisher"), name).andHas(dc.iri("date"), date),
+						GraphPatterns.and(person.has(foaf.iri("name"), name).andHas(foaf.iri("mbox"), mbox)).from(g));
 		p();
 	}
 }

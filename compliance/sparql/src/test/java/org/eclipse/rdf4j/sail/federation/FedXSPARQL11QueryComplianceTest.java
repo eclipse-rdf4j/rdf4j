@@ -40,7 +40,7 @@ public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 	private RepositoryManager manager;
 
 	public FedXSPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-		String resultFileURL, Dataset dataset, boolean ordered) {
+			String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 
 		// FIXME see https://github.com/eclipse/rdf4j/issues/2173
@@ -64,10 +64,10 @@ public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest
 		addMemoryStore("repo1");
 		addMemoryStore("repo2");
 		FedXRepository repo = FedXFactory.newFederation()
-			.withResolvableEndpoint("repo1", true)
-			.withResolvableEndpoint("repo2")
-			.withRepositoryResolver(manager)
-			.create();
+				.withResolvableEndpoint("repo1", true)
+				.withResolvableEndpoint("repo2")
+				.withRepositoryResolver(manager)
+				.create();
 
 		// Use DatasetRepository to handle on-the-fly loading of local datasets, as specified in the test manifest
 		return new DatasetRepository(repo);

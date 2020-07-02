@@ -222,7 +222,7 @@ class SAXFilter implements ContentHandler {
 
 	@Override
 	public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
-		throws SAXException {
+			throws SAXException {
 		try {
 			if (deferredElement != null) {
 				// The next call could set parseLiteralMode to true!
@@ -240,7 +240,7 @@ class SAXFilter implements ContentHandler {
 				newNamespaceMappings.clear();
 
 				if (!inRDFContext && parseStandAloneDocuments
-					&& (!localName.equals("RDF") || !namespaceURI.equals(RDF.NAMESPACE))) {
+						&& (!localName.equals("RDF") || !namespaceURI.equals(RDF.NAMESPACE))) {
 					// Stand-alone document that does not start with an rdf:RDF root
 					// element. Assume this root element is omitted.
 					inRDFContext = true;
@@ -294,7 +294,7 @@ class SAXFilter implements ContentHandler {
 		rdfParser.setXMLLang(deferredElement.xmlLang);
 
 		rdfParser.startElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
-			deferredElement.atts);
+				deferredElement.atts);
 
 		deferredElement = null;
 	}
@@ -317,7 +317,7 @@ class SAXFilter implements ContentHandler {
 
 				if (!qName.equals(elInfo.qName)) {
 					rdfParser.reportError("expected end tag </'" + elInfo.qName + ">, found </" + qName + ">",
-						XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
+							XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);
 				}
 			}
 
@@ -352,7 +352,7 @@ class SAXFilter implements ContentHandler {
 				rdfParser.setXMLLang(deferredElement.xmlLang);
 
 				rdfParser.emptyElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
-					deferredElement.atts);
+						deferredElement.atts);
 
 				deferredElement = null;
 			} else {
@@ -441,7 +441,7 @@ class SAXFilter implements ContentHandler {
 	}
 
 	private void checkAndCopyAttributes(Attributes attributes, ElementInfo elInfo)
-		throws SAXException, RDFParseException {
+			throws SAXException, RDFParseException {
 		Atts atts = new Atts(attributes.getLength());
 
 		int attCount = attributes.getLength();
@@ -465,7 +465,7 @@ class SAXFilter implements ContentHandler {
 				// parsers, as is specified in section 6.1.4 of the spec
 				if ("".equals(namespace)) {
 					if (localName.equals("ID") || localName.equals("about") || localName.equals("resource")
-						|| localName.equals("parseType") || localName.equals("type")) {
+							|| localName.equals("parseType") || localName.equals("type")) {
 						rdfParser.reportWarning("use of unqualified attribute " + localName + " has been deprecated");
 						namespace = RDF.NAMESPACE;
 					}
@@ -473,7 +473,7 @@ class SAXFilter implements ContentHandler {
 
 				if ("".equals(namespace)) {
 					rdfParser.reportError("unqualified attribute '" + qName + "' not allowed",
-						XMLParserSettings.FAIL_ON_INVALID_QNAME);
+							XMLParserSettings.FAIL_ON_INVALID_QNAME);
 				}
 
 				Att att = new Att(namespace, localName, qName, value);

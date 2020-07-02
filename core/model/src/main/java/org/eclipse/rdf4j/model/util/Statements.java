@@ -41,7 +41,7 @@ public class Statements {
 	 */
 	@Experimental
 	public static Function<Triple, Resource> TRIPLE_BNODE_MAPPER = (t) -> SimpleValueFactory.getInstance()
-		.createBNode(Base64.getUrlEncoder().encodeToString(t.stringValue().getBytes(StandardCharsets.UTF_8)));
+			.createBNode(Base64.getUrlEncoder().encodeToString(t.stringValue().getBytes(StandardCharsets.UTF_8)));
 
 	/**
 	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
@@ -57,7 +57,7 @@ public class Statements {
 	 *                  out completely to produce a single statement without context.
 	 */
 	public static void consume(ValueFactory vf, Resource subject, IRI predicate, Value object,
-		Consumer<Statement> consumer, Resource... contexts) {
+			Consumer<Statement> consumer, Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		Objects.requireNonNull(consumer);
 
@@ -85,7 +85,7 @@ public class Statements {
 	 *                 completely to produce a single statement without context.
 	 */
 	public static <C extends Collection<Statement>> C create(ValueFactory vf, Resource subject, IRI predicate,
-		Value object, C collection, Resource... contexts) {
+			Value object, C collection, Resource... contexts) {
 		Objects.requireNonNull(collection);
 		consume(vf, subject, predicate, object, st -> collection.add(st), contexts);
 		return collection;
@@ -136,7 +136,7 @@ public class Statements {
 		Objects.requireNonNull(st1);
 		Objects.requireNonNull(st2);
 		return st1.getPredicate().equals(st2.getPredicate()) && st1.getSubject().equals(st2.getSubject())
-			&& st1.getObject().equals(st2.getObject());
+				&& st1.getObject().equals(st2.getObject());
 	}
 
 	/**
@@ -187,7 +187,7 @@ public class Statements {
 	 */
 	@Experimental
 	public static void convertRDFStarToReification(ValueFactory vf, Function<Triple, Resource> reifiedIdMapper,
-		Statement st, Consumer<Statement> consumer) {
+			Statement st, Consumer<Statement> consumer) {
 		Resource subject = st.getSubject();
 		Value object = st.getObject();
 		if (subject instanceof Triple || object instanceof Triple) {
@@ -218,7 +218,7 @@ public class Statements {
 	 * @return the {@link Resource} that was used as the subject of the created RDF reification statements.
 	 */
 	private static Resource createReifiedStatement(ValueFactory vf, Function<Triple, Resource> reifiedIdMapper,
-		Triple triple, Resource context, Consumer<Statement> consumer) {
+			Triple triple, Resource context, Consumer<Statement> consumer) {
 		Resource stId = reifiedIdMapper.apply(triple);
 		Statement reifiedSt = vf.createStatement(stId, RDF.TYPE, RDF.STATEMENT, context);
 		consumer.accept(reifiedSt);

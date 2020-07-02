@@ -34,8 +34,8 @@ public class TupleLengthFilter extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "TupleLengthFilter{" +
-			"length=" + length +
-			", exact=" + exact +
-			'}';
+				"length=" + length +
+				", exact=" + exact +
+				'}';
 	}
 }

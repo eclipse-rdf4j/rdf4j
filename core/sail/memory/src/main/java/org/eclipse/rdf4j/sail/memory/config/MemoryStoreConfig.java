@@ -86,7 +86,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 					setPersist((persistValue).booleanValue());
 				} catch (IllegalArgumentException e) {
 					throw new SailConfigException(
-						"Boolean value required for " + PERSIST + " property, found " + persistValue);
+							"Boolean value required for " + PERSIST + " property, found " + persistValue);
 				}
 			});
 
@@ -95,7 +95,7 @@ public class MemoryStoreConfig extends BaseSailConfig {
 					setSyncDelay((syncDelayValue).longValue());
 				} catch (NumberFormatException e) {
 					throw new SailConfigException(
-						"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
+							"Long integer value required for " + SYNC_DELAY + " property, found " + syncDelayValue);
 				}
 			});
 		} catch (ModelException e) {

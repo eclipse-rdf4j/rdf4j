@@ -19,7 +19,7 @@ public class QueryParserUtilTest {
 	public void testGetRestOfQueryString() throws Exception {
 
 		String queryString = "# this is a comment\n" + "PREFIX : <http://example.com/base/>\n"
-			+ "# one more comment\r\n" + "SELECT * WHERE { ?s ?p ?o }";
+				+ "# one more comment\r\n" + "SELECT * WHERE { ?s ?p ?o }";
 
 		String restQuery = QueryParserUtil.removeSPARQLQueryProlog(queryString);
 		Assert.assertEquals("SELECT * WHERE { ?s ?p ?o }", restQuery);

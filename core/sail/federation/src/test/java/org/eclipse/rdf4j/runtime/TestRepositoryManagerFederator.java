@@ -45,8 +45,8 @@ public class TestRepositoryManagerFederator {
 	public final void testDirectRecursiveAddThrowsException() throws MalformedURLException, RDF4JException {
 		String id = "fedtest";
 		assertThatThrownBy(() -> federator.addFed(id, "Federation Test", Arrays.asList(new String[] { id, "ignore" }),
-			true, false)).isInstanceOf(RepositoryConfigException.class)
-				.hasMessage("A federation member may not have the same ID as the federation.");
+				true, false)).isInstanceOf(RepositoryConfigException.class)
+						.hasMessage("A federation member may not have the same ID as the federation.");
 	}
 
 }

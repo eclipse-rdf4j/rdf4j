@@ -61,9 +61,9 @@ public class Verify extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE + "verify <location> [<shacl-location> <report.ttl>]\n"
-			+ "  <location>                               The file path or URL identifying the data file\n"
-			+ "  <location> <shacl-location> <report.ttl> Validate using shacl file and create a report\n"
-			+ "Verifies the validity of the specified data file\n";
+				+ "  <location>                               The file path or URL identifying the data file\n"
+				+ "  <location> <shacl-location> <report.ttl> Validate using shacl file and create a report\n"
+				+ "Verifies the validity of the specified data file\n";
 	}
 
 	@Override

@@ -241,7 +241,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 				// cycle detected
 				if (repeatBlankNodes) {
 					throw new RDFHandlerException("Blank node cycle detected. Try disabling "
-						+ BasicWriterSettings.INLINE_BLANK_NODES.getKey());
+							+ BasicWriterSettings.INLINE_BLANK_NODES.getKey());
 				}
 			} else {
 				stack.addLast(bkey);
@@ -253,7 +253,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	private synchronized Set<Statement> queueBlankStatements(SubjectInContext key) {
 		Model firstMatch = blanks.filter(key.getSubject(), null, null, key.getContext());
 		Model matches = firstMatch.isEmpty() ? blankReferences.filter(key.getSubject(), null, null, key.getContext())
-			: firstMatch;
+				: firstMatch;
 		if (matches.isEmpty()) {
 			return null;
 		}

@@ -276,8 +276,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 			// Only ignore if they have not explicitly set any of the relevant
 			// settings before this point
 			if (!this.parserConfig.isSet(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)
-				&& !this.parserConfig.isSet(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES)
-				&& !this.parserConfig.isSet(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)) {
+					&& !this.parserConfig.isSet(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES)
+					&& !this.parserConfig.isSet(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)) {
 				this.parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 				this.parserConfig.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, false);
 				this.parserConfig.set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, false);
@@ -387,7 +387,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {
 				if (uriSpec.length() > 0 && !uriSpec.startsWith("#") && baseURI.isOpaque()) {
 					reportError("Relative URI '" + uriSpec + "' cannot be resolved using the opaque base URI '"
-						+ baseURI + "'", BasicParserSettings.VERIFY_RELATIVE_URIS);
+							+ baseURI + "'", BasicParserSettings.VERIFY_RELATIVE_URIS);
 				}
 			}
 
@@ -525,7 +525,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 */
 	protected Literal createLiteral(String label, String lang, IRI datatype) throws RDFParseException {
 		return RDFParserHelper.createLiteral(label, lang, datatype, getParserConfig(), getParseErrorListener(),
-			valueFactory);
+				valueFactory);
 	}
 
 	/**
@@ -536,9 +536,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 *      ParseErrorListener, ValueFactory, long, long)
 	 */
 	protected Literal createLiteral(String label, String lang, IRI datatype, long lineNo, long columnNo)
-		throws RDFParseException {
+			throws RDFParseException {
 		return RDFParserHelper.createLiteral(label, lang, datatype, getParserConfig(), getParseErrorListener(),
-			valueFactory, lineNo, columnNo);
+				valueFactory, lineNo, columnNo);
 	}
 
 	/**
@@ -634,7 +634,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	protected void reportError(String msg, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting)
-		throws RDFParseException {
+			throws RDFParseException {
 		RDFParserHelper.reportError(msg, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());
 	}
 
@@ -683,7 +683,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	protected void reportError(Exception e, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting)
-		throws RDFParseException {
+			throws RDFParseException {
 		RDFParserHelper.reportError(e, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());
 	}
 
@@ -713,7 +713,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	protected void reportError(String msg, Exception e, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting)
-		throws RDFParseException {
+			throws RDFParseException {
 		RDFParserHelper.reportError(e, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());
 	}
 

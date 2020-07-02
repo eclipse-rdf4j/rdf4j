@@ -38,7 +38,7 @@ public class PathFilter implements Filter {
 
 	@Override
 	public void doFilter(ServletRequest req, ServletResponse res, FilterChain filterChain)
-		throws IOException, ServletException {
+			throws IOException, ServletException {
 		if (req instanceof HttpServletRequest) {
 			HttpServletRequest request = (HttpServletRequest) req;
 			HttpServletResponse response = (HttpServletResponse) res;

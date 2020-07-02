@@ -211,7 +211,7 @@ class ContextStore implements Iterable<Resource> {
 						String contextId = in.readUTF();
 
 						Resource context = isIRI ? valueFactory.createIRI(contextId)
-							: valueFactory.createBNode(contextId);
+								: valueFactory.createBNode(contextId);
 						contextInfoMap.put(context, contextSize);
 					} catch (EOFException e) {
 						break;

@@ -60,9 +60,9 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
-			.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
 
 	@Test
@@ -106,7 +106,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found " + model.getNamespaces().size(),
-				model.getNamespaces().size() >= 1);
+					model.getNamespaces().size() >= 1);
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}
 	}

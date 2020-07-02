@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public abstract class FedXStatementPattern extends StatementPattern
-	implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr {
+		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr {
 	private static final Logger log = LoggerFactory.getLogger(FedXStatementPattern.class);
 
 	private static final long serialVersionUID = 6588020780262348806L;
@@ -54,7 +54,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		super.visitChildren(visitor);
 		for (StatementSource s : sort(statementSources)) {
 			s.visit(visitor);
@@ -75,7 +75,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		visitor.meetOther(this);
 	}
 

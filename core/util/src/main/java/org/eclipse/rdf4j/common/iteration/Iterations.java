@@ -59,7 +59,7 @@ public class Iterations {
 	 * @return The <tt>collection</tt> object that was supplied to this method.
 	 */
 	public static <E, X extends Exception, C extends Collection<E>> C addAll(Iteration<? extends E, X> iter,
-		C collection) throws X {
+			C collection) throws X {
 		try {
 			while (iter.hasNext()) {
 				collection.add(iter.next());
@@ -128,7 +128,7 @@ public class Iterations {
 	 * @param sb        A StringBuilder to append the Iteration string to.
 	 */
 	public static <X extends Exception> void toString(Iteration<?, X> iter, String separator, StringBuilder sb)
-		throws X {
+			throws X {
 		while (iter.hasNext()) {
 			sb.append(iter.next());
 

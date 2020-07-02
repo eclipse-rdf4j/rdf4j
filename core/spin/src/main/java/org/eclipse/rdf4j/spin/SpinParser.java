@@ -156,19 +156,19 @@ public class SpinParser {
 	private static final Logger logger = LoggerFactory.getLogger(SpinParser.class);
 
 	private static final Set<IRI> QUERY_TYPES = Sets.newHashSet(SP.SELECT_CLASS, SP.CONSTRUCT_CLASS, SP.ASK_CLASS,
-		SP.DESCRIBE_CLASS);
+			SP.DESCRIBE_CLASS);
 
 	private static final Set<IRI> UPDATE_TYPES = Sets.newHashSet(SP.MODIFY_CLASS, SP.DELETE_WHERE_CLASS,
-		SP.INSERT_DATA_CLASS, SP.DELETE_DATA_CLASS, SP.LOAD_CLASS, SP.CLEAR_CLASS, SP.CREATE_CLASS, SP.DROP_CLASS);
+			SP.INSERT_DATA_CLASS, SP.DELETE_DATA_CLASS, SP.LOAD_CLASS, SP.CLEAR_CLASS, SP.CREATE_CLASS, SP.DROP_CLASS);
 
 	private static final Set<IRI> COMMAND_TYPES = Sets.union(QUERY_TYPES, UPDATE_TYPES);
 
 	private static final Set<IRI> NON_TEMPLATES = Sets.newHashSet(RDFS.RESOURCE, SP.SYSTEM_CLASS, SP.COMMAND_CLASS,
-		SP.QUERY_CLASS, SP.UPDATE_CLASS, SPIN.MODULES_CLASS, SPIN.TEMPLATES_CLASS, SPIN.ASK_TEMPLATES_CLASS,
-		SPIN.SELECT_TEMPLATES_CLASS, SPIN.CONSTRUCT_TEMPLATES_CLASS, SPIN.UPDATE_TEMPLATES_CLASS, SPIN.RULE_CLASS);
+			SP.QUERY_CLASS, SP.UPDATE_CLASS, SPIN.MODULES_CLASS, SPIN.TEMPLATES_CLASS, SPIN.ASK_TEMPLATES_CLASS,
+			SPIN.SELECT_TEMPLATES_CLASS, SPIN.CONSTRUCT_TEMPLATES_CLASS, SPIN.UPDATE_TEMPLATES_CLASS, SPIN.RULE_CLASS);
 
 	private static final Set<IRI> TEMPLATE_TYPES = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS, SPIN.SELECT_TEMPLATE_CLASS,
-		SPIN.CONSTRUCT_TEMPLATE_CLASS, SPIN.UPDATE_TEMPLATE_CLASS);
+			SPIN.CONSTRUCT_TEMPLATE_CLASS, SPIN.UPDATE_TEMPLATE_CLASS);
 
 	public enum Input {
 		TEXT_FIRST(true, true),
@@ -211,16 +211,16 @@ public class SpinParser {
 	}
 
 	public SpinParser(Input input, Function<IRI, String> wellKnownVarsMapper,
-		Function<IRI, String> wellKnownFuncMapper) {
+			Function<IRI, String> wellKnownFuncMapper) {
 		this.input = input;
 		this.wellKnownVars = wellKnownVarsMapper;
 		this.wellKnownFunctions = wellKnownFuncMapper;
 		this.functionParsers = Arrays.<FunctionParser>asList(
-			new KnownFunctionParser(FunctionRegistry.getInstance(), wellKnownFunctions),
-			new SpinTupleFunctionAsFunctionParser(this), new SpinFunctionParser(this),
-			new SpinxFunctionParser(this));
+				new KnownFunctionParser(FunctionRegistry.getInstance(), wellKnownFunctions),
+				new SpinTupleFunctionAsFunctionParser(this), new SpinFunctionParser(this),
+				new SpinxFunctionParser(this));
 		this.tupleFunctionParsers = Arrays.<TupleFunctionParser>asList(
-			new KnownTupleFunctionParser(TupleFunctionRegistry.getInstance()), new SpinTupleFunctionParser(this));
+				new KnownTupleFunctionParser(TupleFunctionRegistry.getInstance()), new SpinTupleFunctionParser(this));
 	}
 
 	public List<FunctionParser> getFunctionParsers() {
@@ -250,7 +250,7 @@ public class SpinParser {
 	public Map<IRI, RuleProperty> parseRuleProperties(TripleSource store) throws RDF4JException {
 		Map<IRI, RuleProperty> rules = new HashMap<>();
 		try (CloseableIteration<IRI, QueryEvaluationException> rulePropIter = TripleSources
-			.getSubjectURIs(RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store)) {
+				.getSubjectURIs(RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store)) {
 
 			while (rulePropIter.hasNext()) {
 				IRI ruleProp = rulePropIter.next();
@@ -270,7 +270,7 @@ public class SpinParser {
 
 	private List<IRI> getNextRules(Resource ruleProp, TripleSource store) throws RDF4JException {
 		return Iterations.asList((TripleSources.getObjectURIs(ruleProp,
-			SPIN.NEXT_RULE_PROPERTY_PROPERTY, store)));
+				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store)));
 	}
 
 	private int getMaxIterationCount(Resource ruleProp, TripleSource store) throws RDF4JException {
@@ -282,11 +282,11 @@ public class SpinParser {
 				return ((Literal) v).intValue();
 			} catch (NumberFormatException e) {
 				throw new MalformedSpinException("Value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY
-					+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
+						+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
 			}
 		} else {
 			throw new MalformedSpinException(
-				"Non-literal value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY + ": " + ruleProp);
+					"Non-literal value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY + ": " + ruleProp);
 		}
 	}
 
@@ -311,7 +311,7 @@ public class SpinParser {
 			}
 			if (level == null) {
 				throw new MalformedSpinException(
-					"Invalid value " + levelValue + " for " + SPIN.VIOLATION_LEVEL_PROPERTY + ": " + subj);
+						"Invalid value " + levelValue + " for " + SPIN.VIOLATION_LEVEL_PROPERTY + ": " + subj);
 			}
 		}
 		return new ConstraintViolation(label, root, path, value, level);
@@ -350,17 +350,17 @@ public class SpinParser {
 		Set<IRI> possibleQueryTypes = new HashSet<>();
 		Set<IRI> possibleTemplates = new HashSet<>();
 		try (CloseableIteration<IRI, QueryEvaluationException> typeIter = TripleSources
-			.getObjectURIs(queryResource, RDF.TYPE, store)) {
+				.getObjectURIs(queryResource, RDF.TYPE, store)) {
 			while (typeIter.hasNext()) {
 				IRI type = typeIter.next();
 				if (isQueryElseTemplate == null && SPIN.TEMPLATES_CLASS.equals(type)) {
 					isQueryElseTemplate = Boolean.FALSE;
 				} else if ((isQueryElseTemplate == null || isQueryElseTemplate == Boolean.TRUE)
-					&& COMMAND_TYPES.contains(type)) {
+						&& COMMAND_TYPES.contains(type)) {
 					isQueryElseTemplate = Boolean.TRUE;
 					possibleQueryTypes.add(type);
 				} else if ((isQueryElseTemplate == null || isQueryElseTemplate == Boolean.FALSE)
-					&& !NON_TEMPLATES.contains(type)) {
+						&& !NON_TEMPLATES.contains(type)) {
 					possibleTemplates.add(type);
 				}
 			}
@@ -373,7 +373,7 @@ public class SpinParser {
 			// command (query or update)
 			if (possibleQueryTypes.size() > 1) {
 				throw new MalformedSpinException(
-					"Incompatible RDF types for command: " + queryResource + " has types " + possibleQueryTypes);
+						"Incompatible RDF types for command: " + queryResource + " has types " + possibleQueryTypes);
 			}
 
 			IRI queryType = possibleQueryTypes.iterator().next();
@@ -415,7 +415,7 @@ public class SpinParser {
 			}
 			if (possibleTemplates.size() > 1) {
 				throw new MalformedSpinException("Template has unexpected RDF types: " + queryResource
-					+ " has non-abstract types " + possibleTemplates);
+						+ " has non-abstract types " + possibleTemplates);
 			}
 
 			IRI templateResource = (IRI) possibleTemplates.iterator().next();
@@ -433,7 +433,7 @@ public class SpinParser {
 	}
 
 	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set<IRI> abstractTmpls,
-		final TripleSource store) throws RDF4JException {
+			final TripleSource store) throws RDF4JException {
 		try {
 			return templateCache.get(tmplUri, () -> parseTemplateInternal(tmplUri, queryType, abstractTmpls, store));
 		} catch (ExecutionException e) {
@@ -448,12 +448,12 @@ public class SpinParser {
 	}
 
 	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set<IRI> abstractTmpls, TripleSource store)
-		throws RDF4JException {
+			throws RDF4JException {
 		Set<IRI> possibleTmplTypes;
 		try (Stream<IRI> stream = TripleSources.getObjectURIs(tmplUri, RDF.TYPE, store).stream()) {
 			possibleTmplTypes = stream
-				.filter(TEMPLATE_TYPES::contains)
-				.collect(Collectors.toSet());
+					.filter(TEMPLATE_TYPES::contains)
+					.collect(Collectors.toSet());
 		}
 
 		if (possibleTmplTypes.isEmpty()) {
@@ -461,7 +461,7 @@ public class SpinParser {
 		}
 		if (possibleTmplTypes.size() > 1) {
 			throw new MalformedSpinException(
-				"Incompatible RDF types for template: " + tmplUri + " has types " + possibleTmplTypes);
+					"Incompatible RDF types for template: " + tmplUri + " has types " + possibleTmplTypes);
 		}
 
 		IRI tmplType = possibleTmplTypes.iterator().next();
@@ -469,7 +469,7 @@ public class SpinParser {
 		Set<IRI> compatibleTmplTypes;
 		if (SP.QUERY_CLASS.equals(queryType)) {
 			compatibleTmplTypes = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS, SPIN.SELECT_TEMPLATE_CLASS,
-				SPIN.CONSTRUCT_TEMPLATE_CLASS);
+					SPIN.CONSTRUCT_TEMPLATE_CLASS);
 		} else if (SP.UPDATE_CLASS.equals(queryType) || UPDATE_TYPES.contains(queryType)) {
 			compatibleTmplTypes = Collections.singleton(SPIN.UPDATE_TEMPLATE_CLASS);
 		} else if (SP.ASK_CLASS.equals(queryType)) {
@@ -483,7 +483,7 @@ public class SpinParser {
 		}
 		if (!compatibleTmplTypes.contains(tmplType)) {
 			throw new MalformedSpinException(
-				"Template type " + tmplType + " is incompatible with command type " + queryType);
+					"Template type " + tmplType + " is incompatible with command type " + queryType);
 		}
 
 		Template tmpl = new Template(tmplUri);
@@ -507,7 +507,7 @@ public class SpinParser {
 	}
 
 	private Map<IRI, Argument> parseTemplateArguments(IRI tmplUri, Set<IRI> abstractTmpls, TripleSource store)
-		throws RDF4JException {
+			throws RDF4JException {
 		Map<IRI, Argument> args = new HashMap<>();
 		for (IRI abstractTmpl : abstractTmpls) {
 			parseArguments(abstractTmpl, store, args);
@@ -517,10 +517,10 @@ public class SpinParser {
 	}
 
 	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri, TripleSource store)
-		throws RDF4JException {
+			throws RDF4JException {
 		for (FunctionParser functionParser : functionParsers) {
 			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(funcUri,
-				store);
+					store);
 			if (function != null) {
 				return function;
 			}
@@ -560,7 +560,7 @@ public class SpinParser {
 
 	private void parseArguments(IRI moduleUri, TripleSource store, Map<IRI, Argument> args) throws RDF4JException {
 		try (CloseableIteration<Resource, QueryEvaluationException> argIter = TripleSources
-			.getObjectResources(moduleUri, SPIN.CONSTRAINT_PROPERTY, store)) {
+				.getObjectResources(moduleUri, SPIN.CONSTRAINT_PROPERTY, store)) {
 
 			while (argIter.hasNext()) {
 				Resource possibleArg = argIter.next();
@@ -680,7 +680,7 @@ public class SpinParser {
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
 		SortedSet<IRI> sortedArgs = new TreeSet<>(
-			(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
+				(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 
 		int numArgs = sortedArgs.size();
@@ -762,7 +762,7 @@ public class SpinParser {
 			Value resultNodes = TripleSources.singleValue(describe, SP.RESULT_NODES_PROPERTY, store);
 			if (!(resultNodes instanceof Resource)) {
 				throw new MalformedSpinException(
-					String.format("Value of %s is not a resource", SP.RESULT_NODES_PROPERTY));
+						String.format("Value of %s is not a resource", SP.RESULT_NODES_PROPERTY));
 			}
 
 			projElems = new LinkedHashMap<>();
@@ -776,7 +776,7 @@ public class SpinParser {
 			Value resultVars = TripleSources.singleValue(select, SP.RESULT_VARIABLES_PROPERTY, store);
 			if (!(resultVars instanceof Resource)) {
 				throw new MalformedSpinException(
-					String.format("Value of %s is not a resource", SP.RESULT_VARIABLES_PROPERTY));
+						String.format("Value of %s is not a resource", SP.RESULT_VARIABLES_PROPERTY));
 			}
 
 			Map<String, ProjectionElem> oldProjElems = projElems;
@@ -859,7 +859,7 @@ public class SpinParser {
 		private UnaryTupleOperator visitTemplates(Resource templates) throws RDF4JException {
 			List<ProjectionElemList> projElemLists = new ArrayList<>();
 			Iteration<Resource, QueryEvaluationException> iter = TripleSources.listResources(templates,
-				store);
+					store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ProjectionElemList projElems = visitTemplate(r);
@@ -897,7 +897,7 @@ public class SpinParser {
 		private Projection visitResultNodes(Resource resultNodes) throws RDF4JException {
 			ProjectionElemList projElemList = new ProjectionElemList();
 			Iteration<Resource, QueryEvaluationException> iter = TripleSources.listResources(resultNodes,
-				store);
+					store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ProjectionElem projElem = visitResultNode(r);
@@ -916,10 +916,10 @@ public class SpinParser {
 		}
 
 		private Projection visitResultVariables(Resource resultVars, Map<String, ProjectionElem> previousProjElems)
-			throws RDF4JException {
+				throws RDF4JException {
 			ProjectionElemList projElemList = new ProjectionElemList();
 			Iteration<Resource, QueryEvaluationException> iter = TripleSources.listResources(resultVars,
-				store);
+					store);
 			while (iter.hasNext()) {
 				Resource r = iter.next();
 				ProjectionElem projElem = visitResultVariable(r, previousProjElems);
@@ -934,7 +934,7 @@ public class SpinParser {
 		}
 
 		private ProjectionElem visitResultVariable(Resource r, Map<String, ProjectionElem> previousProjElems)
-			throws RDF4JException {
+				throws RDF4JException {
 			return createProjectionElem(r, null, previousProjElems);
 		}
 
@@ -990,7 +990,7 @@ public class SpinParser {
 		}
 
 		private ProjectionElem createProjectionElem(Value v, String projName,
-			Map<String, ProjectionElem> previousProjElems) throws RDF4JException {
+				Map<String, ProjectionElem> previousProjElems) throws RDF4JException {
 			String varName;
 			ValueExpr valueExpr;
 			Collection<AggregateOperator> oldAggregates = aggregates;
@@ -1171,7 +1171,7 @@ public class SpinParser {
 
 			Map<Resource, Set<IRI>> patternTypes = new LinkedHashMap<>();
 			Iteration<Resource, QueryEvaluationException> groupIter = TripleSources.listResources(group,
-				store);
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				patternTypes.put(r, Iterations.asSet(TripleSources.getObjectURIs(r, RDF.TYPE, store)));
@@ -1218,7 +1218,7 @@ public class SpinParser {
 
 		private void visitInsert(Resource insert) throws RDF4JException {
 			Iteration<Resource, QueryEvaluationException> groupIter = TripleSources.listResources(insert,
-				store);
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
@@ -1228,7 +1228,7 @@ public class SpinParser {
 
 		private void visitDelete(Resource delete) throws RDF4JException {
 			Iteration<Resource, QueryEvaluationException> groupIter = TripleSources.listResources(delete,
-				store);
+					store);
 			while (groupIter.hasNext()) {
 				Resource r = groupIter.next();
 				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
@@ -1253,7 +1253,7 @@ public class SpinParser {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
 						throw new MalformedSpinException(
-							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 					tupleNode = visitGroupGraphPattern((Resource) elements);
 					namedGraph = oldGraph;
@@ -1261,11 +1261,11 @@ public class SpinParser {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
 						throw new MalformedSpinException(
-							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 
 					Iteration<Resource, QueryEvaluationException> iter = TripleSources
-						.listResources((Resource) elements, store);
+							.listResources((Resource) elements, store);
 					TupleExpr prev = null;
 					while (iter.hasNext()) {
 						Resource entry = iter.next();
@@ -1280,7 +1280,7 @@ public class SpinParser {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
 						throw new MalformedSpinException(
-							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
 					LeftJoin leftJoin = new LeftJoin();
@@ -1293,7 +1293,7 @@ public class SpinParser {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
 						throw new MalformedSpinException(
-							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
 					Difference difference = new Difference();
@@ -1313,7 +1313,7 @@ public class SpinParser {
 					Set<String> varNames = new LinkedHashSet<>();
 					Value varNameList = TripleSources.singleValue(r, SP.VAR_NAMES_PROPERTY, store);
 					Iteration<Value, QueryEvaluationException> varNameIter = TripleSources
-						.list((Resource) varNameList, store);
+							.list((Resource) varNameList, store);
 					while (varNameIter.hasNext()) {
 						Value v = varNameIter.next();
 						if (v instanceof Literal) {
@@ -1324,13 +1324,13 @@ public class SpinParser {
 					List<BindingSet> bindingSets = new ArrayList<>();
 					Value bindingsList = TripleSources.singleValue(r, SP.BINDINGS_PROPERTY, store);
 					Iteration<Value, QueryEvaluationException> bindingsIter = TripleSources
-						.list((Resource) bindingsList, store);
+							.list((Resource) bindingsList, store);
 					while (bindingsIter.hasNext()) {
 						Value valueList = bindingsIter.next();
 						QueryBindingSet bs = new QueryBindingSet();
 						Iterator<String> nameIter = varNames.iterator();
 						Iteration<Value, QueryEvaluationException> valueIter = TripleSources
-							.list((Resource) valueList, store);
+								.list((Resource) valueList, store);
 						while (nameIter.hasNext() && valueIter.hasNext()) {
 							String name = nameIter.next();
 							Value value = valueIter.next();
@@ -1359,7 +1359,7 @@ public class SpinParser {
 						Var subjVar = getVar(subj);
 						Var objVar = getVar(obj);
 						tupleNode = new ArbitraryLengthPath(subjVar,
-							new StatementPattern(subjVar, getVar(subPath), objVar), objVar, minPath.longValue());
+								new StatementPattern(subjVar, getVar(subPath), objVar), objVar, minPath.longValue());
 					} else {
 						throw new UnsupportedOperationException(types.toString());
 					}
@@ -1369,7 +1369,7 @@ public class SpinParser {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
 						throw new MalformedSpinException(
-							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
 					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
 
@@ -1386,7 +1386,7 @@ public class SpinParser {
 					prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);
 					prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);
 					Service service = new Service(getVar(serviceUri), tupleNode, exprString, prefixDecls, null,
-						isSilent);
+							isSilent);
 					tupleNode = service;
 				} else {
 					throw new UnsupportedOperationException(types.toString());
@@ -1481,35 +1481,35 @@ public class SpinParser {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);
 				if (args.size() != 2) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Compare(args.get(0), args.get(1), compareOp);
 			} else if ((mathOp = toMathOp(func)) != null) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);
 				if (args.size() != 2) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new MathExpr(args.get(0), args.get(1), mathOp);
 			} else if (SP.AND.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);
 				if (args.size() != 2) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new And(args.get(0), args.get(1));
 			} else if (SP.OR.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);
 				if (args.size() != 2) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Or(args.get(0), args.get(1));
 			} else if (SP.NOT.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Not(args.get(0));
 			} else if (SP.COUNT_CLASS.equals(func)) {
@@ -1558,7 +1558,7 @@ public class SpinParser {
 				Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 				if (!(elements instanceof Resource)) {
 					throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 				}
 				TupleExpr currentNode = tupleNode;
 				TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
@@ -1568,7 +1568,7 @@ public class SpinParser {
 				Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 				if (!(elements instanceof Resource)) {
 					throw new MalformedSpinException(
-						String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+							String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 				}
 				TupleExpr currentNode = tupleNode;
 				TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
@@ -1578,14 +1578,14 @@ public class SpinParser {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Bound((Var) args.get(0));
 			} else if (SP.IF.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY, SP.ARG3_PROPERTY);
 				if (args.size() != 3) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new If(args.get(0), args.get(1), args.get(2));
 			} else if (SP.COALESCE.equals(func)) {
@@ -1595,56 +1595,56 @@ public class SpinParser {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new IsURI(args.get(0));
 			} else if (SP.IS_BLANK.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new IsBNode(args.get(0));
 			} else if (SP.IS_LITERAL.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new IsLiteral(args.get(0));
 			} else if (SP.IS_NUMERIC.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new IsNumeric(args.get(0));
 			} else if (SP.STR.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Str(args.get(0));
 			} else if (SP.LANG.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Lang(args.get(0));
 			} else if (SP.DATATYPE.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new Datatype(args.get(0));
 			} else if (SP.IRI.equals(func) || SP.URI.equals(func)) {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new IRIFunction(args.get(0));
 			} else if (SP.BNODE.equals(func)) {
@@ -1655,7 +1655,7 @@ public class SpinParser {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY, SP.ARG3_PROPERTY);
 				if (args.size() < 2) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				ValueExpr flagsArg = (args.size() == 3) ? args.get(2) : null;
 				expr = new Regex(args.get(0), args.get(1), flagsArg);
@@ -1663,7 +1663,7 @@ public class SpinParser {
 				List<ValueExpr> args = getArgs(r, func, SP.ARG1_PROPERTY);
 				if (args.size() != 1) {
 					throw new MalformedSpinException(
-						String.format("Invalid number of arguments for function: %s", func));
+							String.format("Invalid number of arguments for function: %s", func));
 				}
 				expr = new LocalName(args.get(0));
 			} else {
@@ -1784,7 +1784,7 @@ public class SpinParser {
 					}
 				} else if (nameValue != null) {
 					throw new MalformedSpinException(
-						String.format("Value of %s is not a literal", SP.VAR_NAME_PROPERTY));
+							String.format("Value of %s is not a literal", SP.VAR_NAME_PROPERTY));
 				}
 			}
 			return varName;
@@ -1849,12 +1849,12 @@ public class SpinParser {
 				buf.append("GRAPH <").append(node.getContextVar().getValue()).append("> { ");
 			}
 			buf.append("<")
-				.append(node.getSubjectVar().getValue())
-				.append("> <")
-				.append(node.getPredicateVar().getValue())
-				.append("> <")
-				.append(node.getObjectVar().getValue())
-				.append("> .");
+					.append(node.getSubjectVar().getValue())
+					.append("> <")
+					.append(node.getPredicateVar().getValue())
+					.append("> <")
+					.append(node.getObjectVar().getValue())
+					.append("> .");
 			if (node.getContextVar() != null) {
 				buf.append(" } ");
 			}

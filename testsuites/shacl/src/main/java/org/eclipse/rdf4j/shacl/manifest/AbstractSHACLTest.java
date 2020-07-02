@@ -60,7 +60,7 @@ public abstract class AbstractSHACLTest extends TestCase {
 	 *--------------*/
 
 	public AbstractSHACLTest(String testURI, String label, Model shapesGraph, Model dataGraph, boolean failure,
-		boolean conforms) {
+			boolean conforms) {
 		super(label.replaceAll("\\(", " ").replaceAll("\\)", " "));
 
 		this.testURI = testURI;

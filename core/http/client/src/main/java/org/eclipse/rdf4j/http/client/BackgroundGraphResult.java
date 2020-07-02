@@ -26,7 +26,7 @@ public class BackgroundGraphResult extends org.eclipse.rdf4j.query.impl.Backgrou
 	}
 
 	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,
-		String baseURI) {
+			String baseURI) {
 		super(queue, parser, in, charset, baseURI);
 	}
 

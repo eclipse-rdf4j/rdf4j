@@ -30,8 +30,8 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 	private final DistanceUnit unit;
 
 	public ElasticsearchDocumentDistance(SearchHit hit,
-		Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField, IRI units,
-		GeoPoint srcPoint, DistanceUnit unit) {
+			Function<? super String, ? extends SpatialContext> geoContextMapper, String geoPointField, IRI units,
+			GeoPoint srcPoint, DistanceUnit unit) {
 		super(hit, geoContextMapper);
 		this.geoPointField = geoPointField;
 		this.units = units;
@@ -45,7 +45,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 		GeoPoint dstPoint = GeoPoint.fromGeohash(geohash);
 
 		double unitDist = GeoDistance.ARC.calculate(srcPoint.getLat(), srcPoint.getLon(), dstPoint.getLat(),
-			dstPoint.getLon(), unit);
+				dstPoint.getLon(), unit);
 		double distance;
 		if (GEOF.UOM_METRE.equals(units)) {
 			distance = unit.toMeters(unitDist);
@@ -53,7 +53,7 @@ public class ElasticsearchDocumentDistance extends ElasticsearchDocumentResult i
 			distance = unitDist / unit.getDistancePerDegree();
 		} else if (GEOF.UOM_RADIAN.equals(units)) {
 			distance = DistanceUtils.dist2Radians(unit.convert(unitDist, DistanceUnit.KILOMETERS),
-				DistanceUtils.EARTH_MEAN_RADIUS_KM);
+					DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else if (GEOF.UOM_UNITY.equals(units)) {
 			distance = unit.convert(unitDist, DistanceUnit.KILOMETERS) / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);
 		} else {

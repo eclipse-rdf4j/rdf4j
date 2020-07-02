@@ -163,12 +163,12 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testSES2373SubselectOptional() throws Exception {
 		conn.prepareUpdate(QueryLanguage.SPARQL,
-			"insert data {" + "<u:1> <u:r> <u:subject> ." + "<u:1> <u:v> 1 ." + "<u:1> <u:x> <u:x1> ."
-				+ "<u:2> <u:r> <u:subject> ." + "<u:2> <u:v> 2 ." + "<u:2> <u:x> <u:x2> ."
-				+ "<u:3> <u:r> <u:subject> ." + "<u:3> <u:v> 3 ." + "<u:3> <u:x> <u:x3> ."
-				+ "<u:4> <u:r> <u:subject> ." + "<u:4> <u:v> 4 ." + "<u:4> <u:x> <u:x4> ."
-				+ "<u:5> <u:r> <u:subject> ." + "<u:5> <u:v> 5 ." + "<u:5> <u:x> <u:x5> ." + "}")
-			.execute();
+				"insert data {" + "<u:1> <u:r> <u:subject> ." + "<u:1> <u:v> 1 ." + "<u:1> <u:x> <u:x1> ."
+						+ "<u:2> <u:r> <u:subject> ." + "<u:2> <u:v> 2 ." + "<u:2> <u:x> <u:x2> ."
+						+ "<u:3> <u:r> <u:subject> ." + "<u:3> <u:v> 3 ." + "<u:3> <u:x> <u:x3> ."
+						+ "<u:4> <u:r> <u:subject> ." + "<u:4> <u:v> 4 ." + "<u:4> <u:x> <u:x4> ."
+						+ "<u:5> <u:r> <u:subject> ." + "<u:5> <u:v> 5 ." + "<u:5> <u:x> <u:x5> ." + "}")
+				.execute();
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("select ?x { \n");
@@ -240,7 +240,7 @@ public abstract class ComplexSPARQLQueryTest {
 			for (BindingSet bs : result) {
 				Literal label = (Literal) bs.getValue("label");
 				assertTrue("wrong label value (expected '01' or '02', but got '" + label.stringValue() + "')",
-					label.stringValue().equals("01") || label.stringValue().equals("02"));
+						label.stringValue().equals("01") || label.stringValue().equals("02"));
 			}
 		}
 	}
@@ -917,13 +917,13 @@ public abstract class ComplexSPARQLQueryTest {
 		queryBuilder.append("{ ?publisher <http://purl.org/dc/elements/1.1/publisher> ?publisher }");
 
 		conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString())
-			.evaluate(new AbstractTupleQueryResultHandler() {
+				.evaluate(new AbstractTupleQueryResultHandler() {
 
-				@Override
-				public void handleSolution(BindingSet bindingSet) {
-					fail("nobody is self published");
-				}
-			});
+					@Override
+					public void handleSolution(BindingSet bindingSet) {
+						fail("nobody is self published");
+					}
+				});
 	}
 
 	@Test
@@ -1085,7 +1085,7 @@ public abstract class ComplexSPARQLQueryTest {
 		StringBuilder query = new StringBuilder();
 		query.append(" PREFIX : <http://example.org/>\n");
 		query.append(
-			" SELECT DISTINCT ?a ?name ?isX WHERE { ?b :p1 ?a . ?a :name ?name. OPTIONAL { ?a a :X . VALUES(?isX) { (:X) } } } ");
+				" SELECT DISTINCT ?a ?name ?isX WHERE { ?b :p1 ?a . ?a :name ?name. OPTIONAL { ?a a :X . VALUES(?isX) { (:X) } } } ");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
 
@@ -1119,9 +1119,9 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testMaxAggregateWithGroupEmptyResult() throws Exception {
 		String query = "select ?s (max(?o) as ?omax) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n" +
-			" group by ?s\n";
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -1134,8 +1134,8 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testMaxAggregateWithoutGroupEmptySolution() throws Exception {
 		String query = "select (max(?o) as ?omax) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n";
+				"   ?s ?p ?o .\n" +
+				" }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -1148,9 +1148,9 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testMinAggregateWithGroupEmptyResult() throws Exception {
 		String query = "select ?s (min(?o) as ?omin) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n" +
-			" group by ?s\n";
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -1163,8 +1163,8 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testMinAggregateWithoutGroupEmptySolution() throws Exception {
 		String query = "select (min(?o) as ?omin) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n";
+				"   ?s ?p ?o .\n" +
+				" }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -1177,9 +1177,9 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testSampleAggregateWithGroupEmptyResult() throws Exception {
 		String query = "select ?s (sample(?o) as ?osample) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n" +
-			" group by ?s\n";
+				"   ?s ?p ?o .\n" +
+				" }\n" +
+				" group by ?s\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.hasNext()).isFalse();
@@ -1192,8 +1192,8 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testSampleAggregateWithoutGroupEmptySolution() throws Exception {
 		String query = "select (sample(?o) as ?osample) {\n" +
-			"   ?s ?p ?o .\n" +
-			" }\n";
+				"   ?s ?p ?o .\n" +
+				" }\n";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 			assertThat(result.next()).isEmpty();
@@ -1235,7 +1235,7 @@ public abstract class ComplexSPARQLQueryTest {
 		query.append("WHERE { \n");
 		query.append("         ?s ?p ?o . \n");
 		query.append(
-			"        FILTER(IF(!BOUND(?p), false , ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)) \n");
+				"        FILTER(IF(!BOUND(?p), false , ?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)) \n");
 		query.append("}");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
@@ -2148,9 +2148,9 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testPropertyPathNegationInversion() throws Exception {
 		String data = "@prefix : <http://example.org/>.\n"
-			+ ":Mary :parentOf :Jim.\n"
-			+ ":Jim :knows :Jane.\n"
-			+ ":Jane :worksFor :IBM.";
+				+ ":Mary :parentOf :Jim.\n"
+				+ ":Jim :knows :Jane.\n"
+				+ ":Jane :worksFor :IBM.";
 
 		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
 		String query1 = "prefix : <http://example.org/> ASK WHERE { :IBM ^(:|!:) :Jane } ";
@@ -2307,9 +2307,9 @@ public abstract class ComplexSPARQLQueryTest {
 	 */
 	public void testBindScope() throws Exception {
 		String query = "SELECT * {\n" +
-			"  { BIND (\"a\" AS ?a) }\n" +
-			"  { BIND (?a AS ?b) } \n" +
-			"}";
+				"  { BIND (\"a\" AS ?a) }\n" +
+				"  { BIND (?a AS ?b) } \n" +
+				"}";
 
 		TupleQuery q = conn.prepareTupleQuery(query);
 		List<BindingSet> result = QueryResults.asList(q.evaluate());
@@ -2328,15 +2328,15 @@ public abstract class ComplexSPARQLQueryTest {
 
 		ValueFactory f = conn.getValueFactory();
 		String query = "prefix ex: <http://example.org/> \n" +
-			"select * {\n" +
-			"  bind(ex:v1 as ?v)\n" +
-			"  bind(strafter(str(?v),str(ex:)) as ?b)\n" +
-			"  {\n" +
-			"    bind(?b as ?b1)\n" +
-			"  } union {\n" +
-			"    bind(?b as ?b2)\n" +
-			"  }\n" +
-			"}";
+				"select * {\n" +
+				"  bind(ex:v1 as ?v)\n" +
+				"  bind(strafter(str(?v),str(ex:)) as ?b)\n" +
+				"  {\n" +
+				"    bind(?b as ?b1)\n" +
+				"  } union {\n" +
+				"    bind(?b as ?b2)\n" +
+				"  }\n" +
+				"}";
 
 		TupleQuery q = conn.prepareTupleQuery(query);
 		List<BindingSet> result = QueryResults.asList(q.evaluate());
@@ -2362,7 +2362,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT * {\n" + "    ?s1 ?p1 ?blank . " + "    FILTER(isBlank(?blank))"
-			+ "    BIND (iri(?blank) as ?biri)" + "    ?biri ?p2 ?o2 ." + "}");
+				+ "    BIND (iri(?blank) as ?biri)" + "    ?biri ?p2 ?o2 ." + "}");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
 		try (TupleQueryResult evaluate = tq.evaluate();) {
@@ -2379,7 +2379,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT * {\n" + "    ?s1 ?p1 ?blank . " + "    FILTER(isBlank(?blank))"
-			+ "    BIND (iri(?blank) as ?biri)" + "    ?biri <urn:test:pred>* ?o2 ." + "}");
+				+ "    BIND (iri(?blank) as ?biri)" + "    ?biri <urn:test:pred>* ?o2 ." + "}");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
 		try (TupleQueryResult evaluate = tq.evaluate();) {
@@ -2390,8 +2390,8 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testEmptyUnion() throws Exception {
 		String query = "PREFIX : <http://example.org/> " + "SELECT ?visibility WHERE {"
-			+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
-			+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)" + "}";
+				+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
+				+ "BIND (IF(BOUND(?var), 'VISIBLE', 'HIDDEN') as ?visibility)" + "}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();) {
 			assertNotNull(result);
 			assertFalse(result.hasNext());
@@ -2413,8 +2413,8 @@ public abstract class ComplexSPARQLQueryTest {
 		conn.prepareUpdate(QueryLanguage.SPARQL, ub.toString()).execute();
 
 		String query = "select ?s  {\n" + "    ?s a* <http://type> .\n"
-			+ "    FILTER EXISTS {?s <http://predicate> ?o}\n"
-			+ "} limit 100 values ?o {<http://obj1>}";
+				+ "    FILTER EXISTS {?s <http://predicate> ?o}\n"
+				+ "} limit 100 values ?o {<http://obj1>}";
 
 		TupleQuery tq = conn.prepareTupleQuery(query);
 
@@ -2427,22 +2427,22 @@ public abstract class ComplexSPARQLQueryTest {
 	public void testValuesClauseNamedGraph() throws Exception {
 		String ex = "http://example.org/";
 		String data = "@prefix foaf: <" + FOAF.NAMESPACE + "> .\n"
-			+ "@prefix ex: <" + ex + "> .\n"
-			+ "ex:graph1 {\n" +
-			"	ex:Person1 rdf:type foaf:Person ;\n" +
-			"		foaf:name \"Person 1\" .	ex:Person2 rdf:type foaf:Person ;\n" +
-			"		foaf:name \"Person 2\" .	ex:Person3 rdf:type foaf:Person ;\n" +
-			"		foaf:name \"Person 3\" .\n" +
-			"}";
+				+ "@prefix ex: <" + ex + "> .\n"
+				+ "ex:graph1 {\n" +
+				"	ex:Person1 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 1\" .	ex:Person2 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 2\" .	ex:Person3 rdf:type foaf:Person ;\n" +
+				"		foaf:name \"Person 3\" .\n" +
+				"}";
 
 		conn.add(new StringReader(data), "", RDFFormat.TRIG);
 
 		String query = "SELECT  ?person ?name ?__index \n"
-			+ "WHERE { "
-			+ "        VALUES (?person ?name  ?__index) { \n"
-			+ "                  (<http://example.org/Person1> UNDEF \"0\") \n"
-			+ "                  (<http://example.org/Person3> UNDEF \"2\")  } \n"
-			+ "        GRAPH <http://example.org/graph1> { ?person <http://xmlns.com/foaf/0.1/name> ?name .   } }";
+				+ "WHERE { "
+				+ "        VALUES (?person ?name  ?__index) { \n"
+				+ "                  (<http://example.org/Person1> UNDEF \"0\") \n"
+				+ "                  (<http://example.org/Person3> UNDEF \"2\")  } \n"
+				+ "        GRAPH <http://example.org/graph1> { ?person <http://xmlns.com/foaf/0.1/name> ?name .   } }";
 
 		TupleQuery q = conn.prepareTupleQuery(query);
 
@@ -2456,7 +2456,7 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testSeconds() throws Exception {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-			+ "SELECT (SECONDS(\"2011-01-10T14:45:13\"^^xsd:dateTime) AS ?sec) { }";
+				+ "SELECT (SECONDS(\"2011-01-10T14:45:13\"^^xsd:dateTime) AS ?sec) { }";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate();) {
 			assertNotNull(result);
@@ -2472,7 +2472,7 @@ public abstract class ComplexSPARQLQueryTest {
 	@Test
 	public void testSecondsMilliseconds() throws Exception {
 		String qry = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
-			+ "SELECT (SECONDS(\"2011-01-10T14:45:13.815-05:00\"^^xsd:dateTime) AS ?sec) { }";
+				+ "SELECT (SECONDS(\"2011-01-10T14:45:13.815-05:00\"^^xsd:dateTime) AS ?sec) { }";
 
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, qry).evaluate();) {
 			assertNotNull(result);
@@ -2521,11 +2521,11 @@ public abstract class ComplexSPARQLQueryTest {
 	protected abstract Repository newRepository() throws Exception;
 
 	protected void loadTestData(String dataFile, Resource... contexts)
-		throws RDFParseException, RepositoryException, IOException {
+			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset {}", dataFile);
 		try (InputStream dataset = ComplexSPARQLQueryTest.class.getResourceAsStream(dataFile);) {
 			conn.add(dataset, "", Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)),
-				contexts);
+					contexts);
 		}
 		logger.debug("dataset loaded.");
 	}

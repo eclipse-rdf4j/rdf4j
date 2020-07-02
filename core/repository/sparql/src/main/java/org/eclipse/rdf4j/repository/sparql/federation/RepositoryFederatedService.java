@@ -65,7 +65,7 @@ public class RepositoryFederatedService implements FederatedService {
 		 * @throws QueryEvaluationException
 		 */
 		public BatchingServiceIteration(CloseableIteration<BindingSet, QueryEvaluationException> inputBindings,
-			int blockSize, Service service) throws QueryEvaluationException {
+				int blockSize, Service service) throws QueryEvaluationException {
 			super(inputBindings, null, EmptyBindingSet.getInstance());
 			this.blockSize = blockSize;
 			this.service = service;
@@ -84,7 +84,7 @@ public class RepositoryFederatedService implements FederatedService {
 					blockBindings.add(leftIter.next());
 				}
 				CloseableIteration<BindingSet, QueryEvaluationException> materializedIter = new CollectionIteration<>(
-					blockBindings);
+						blockBindings);
 				addResult(evaluateInternal(service, materializedIter, service.getBaseURI()));
 			}
 		}
@@ -104,7 +104,7 @@ public class RepositoryFederatedService implements FederatedService {
 		private final String baseUri;
 
 		public FallbackServiceIteration(Service service,
-			List<BindingSet> allBindings, String baseUri) {
+				List<BindingSet> allBindings, String baseUri) {
 			super(null, null, null);
 			this.service = service;
 			this.allBindings = allBindings;
@@ -133,7 +133,7 @@ public class RepositoryFederatedService implements FederatedService {
 		private final RepositoryConnection connection;
 
 		private CloseConnectionIteration(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
-			RepositoryConnection connection) {
+				RepositoryConnection connection) {
 			super();
 			this.delegate = delegate;
 			this.connection = connection;
@@ -207,7 +207,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 */
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
-		BindingSet bindings, String baseUri) throws QueryEvaluationException {
+			BindingSet bindings, String baseUri) throws QueryEvaluationException {
 
 		RepositoryConnection conn = null;
 		try {
@@ -248,7 +248,7 @@ public class RepositoryFederatedService implements FederatedService {
 				closeQuietly(conn);
 			}
 			throw new QueryEvaluationException(
-				"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} catch (RuntimeException e) {
 			if (useFreshConnection) {
 				closeQuietly(conn);
@@ -284,7 +284,7 @@ public class RepositoryFederatedService implements FederatedService {
 			throw new QueryEvaluationException(e);
 		} catch (RepositoryException e) {
 			throw new QueryEvaluationException(
-				"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} finally {
 			if (useFreshConnection) {
 				closeQuietly(conn);
@@ -294,8 +294,8 @@ public class RepositoryFederatedService implements FederatedService {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
-		CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-		throws QueryEvaluationException {
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+			throws QueryEvaluationException {
 
 		if (boundJoinBlockSize > 0) {
 			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
@@ -313,8 +313,8 @@ public class RepositoryFederatedService implements FederatedService {
 	 * SERVICEs.
 	 */
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateInternal(Service service,
-		CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
-		throws QueryEvaluationException {
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
+			throws QueryEvaluationException {
 
 		// materialize all bindings (to allow for fallback in case of errors)
 		// note that this may be blocking depending on the underlying iterator
@@ -390,7 +390,7 @@ public class RepositoryFederatedService implements FederatedService {
 				return new CollectionIteration<>(allBindings);
 			}
 			throw new QueryEvaluationException(
-				"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
+					"Repository for endpoint " + rep.toString() + " could not be initialized.", e);
 		} catch (MalformedQueryException e) {
 			if (useFreshConnection) {
 				closeQuietly(conn);
@@ -398,7 +398,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// this exception must not be silenced, bug in our code
 			// => try a fallback to the simple evaluation
 			logger.debug("Encounted malformed query exception: " + e.getMessage()
-				+ ". Falling back to simple SERVICE evaluation.");
+					+ ". Falling back to simple SERVICE evaluation.");
 			return evaluateInternalFallback(service, allBindings, baseUri);
 		} catch (QueryEvaluationException e) {
 			if (useFreshConnection) {
@@ -433,10 +433,10 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @return resulting iteration
 	 */
 	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateInternalFallback(Service service,
-		List<BindingSet> allBindings, String baseUri) {
+			List<BindingSet> allBindings, String baseUri) {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> res = new FallbackServiceIteration(service,
-			allBindings, baseUri);
+				allBindings, baseUri);
 
 		if (service.isSilent()) {
 			res = new SilentIteration(res);
@@ -589,7 +589,7 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @throws QueryEvaluationException
 	 */
 	private String buildVALUESClause(List<BindingSet> bindings, List<String> relevantBindingNames)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 
 		StringBuilder sb = new StringBuilder();
 		sb.append(" VALUES (?__rowIdx"); // __rowIdx: see comment in evaluate()

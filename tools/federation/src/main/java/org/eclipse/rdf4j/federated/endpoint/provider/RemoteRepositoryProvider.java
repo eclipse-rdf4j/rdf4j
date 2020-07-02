@@ -26,24 +26,24 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 
 	@Override
 	public Endpoint loadEndpoint(RemoteRepositoryRepositoryInformation repoInfo)
-		throws FedXException {
+			throws FedXException {
 
 		String repositoryServer = repoInfo.get("repositoryServer");
 		String repositoryName = repoInfo.get("repositoryName");
 
 		if (repositoryServer == null || repositoryName == null) {
 			throw new FedXException("Invalid configuration, repositoryServer and repositoryName are required for "
-				+ repoInfo.getName());
+					+ repoInfo.getName());
 		}
 
 		try {
 			HTTPRepository repo = new HTTPRepository(repositoryServer, repositoryName);
 			HttpClientBuilder httpClientBuilder = HttpClients.custom()
-				.useSystemProperties()
-				.setMaxConnTotal(20)
-				.setMaxConnPerRoute(20);
+					.useSystemProperties()
+					.setMaxConnTotal(20)
+					.setMaxConnPerRoute(20);
 			((SharedHttpClientSessionManager) repo.getHttpClientSessionManager())
-				.setHttpClientBuilder(httpClientBuilder);
+					.setHttpClientBuilder(httpClientBuilder);
 			try {
 				repo.init();
 			} finally {
@@ -59,7 +59,7 @@ public class RemoteRepositoryProvider implements EndpointProvider<RemoteReposito
 			return res;
 		} catch (Exception e) {
 			throw new FedXException("Repository " + repoInfo.getId() + " could not be initialized: " + e.getMessage(),
-				e);
+					e);
 		}
 	}
 

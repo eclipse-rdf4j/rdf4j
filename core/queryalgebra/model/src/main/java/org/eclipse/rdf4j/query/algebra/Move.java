@@ -59,7 +59,7 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 		if (other instanceof Move) {
 			Move o = (Move) other;
 			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
-				&& nullEquals(destinationGraph, o.destinationGraph);
+					&& nullEquals(destinationGraph, o.destinationGraph);
 		}
 		return false;
 	}

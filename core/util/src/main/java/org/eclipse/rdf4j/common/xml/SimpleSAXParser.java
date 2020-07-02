@@ -253,7 +253,7 @@ public class SimpleSAXParser {
 		// overrides DefaultHandler.startElement()
 		@Override
 		public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
-			throws SAXException {
+				throws SAXException {
 			// Report any deferred start tag
 			if (deferredStartTag != null) {
 				reportDeferredStartElement();

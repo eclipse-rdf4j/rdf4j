@@ -38,7 +38,7 @@ public class FedXRepositoryConfigTest {
 		assertThat(members.filter(null, FEDX.STORE, null).size()).isEqualTo(2);
 
 		assertThat(members.filter(null, FEDX.REPOSITORY_NAME, null).objects().stream().map(Value::stringValue))
-			.containsExactly("endpoint1", "endpoint2");
+				.containsExactly("endpoint1", "endpoint2");
 	}
 
 	@Test
@@ -68,7 +68,7 @@ public class FedXRepositoryConfigTest {
 		assertThat(export.filter(implNode, FedXRepositoryConfig.MEMBER, null).size()).isEqualTo(2);
 
 		assertThat(export.filter(null, FEDX.REPOSITORY_NAME, null).objects().stream().map(Value::stringValue))
-			.containsExactly("endpoint1", "endpoint2");
+				.containsExactly("endpoint1", "endpoint2");
 	}
 
 	protected Model readConfig(String configResource) throws Exception {

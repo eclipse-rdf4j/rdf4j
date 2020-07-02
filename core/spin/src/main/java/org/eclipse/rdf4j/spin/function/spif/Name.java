@@ -32,7 +32,7 @@ public class Name extends AbstractSpinFunction implements Function {
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException(
-				String.format("%s requires 1 argument, got %d", getURI(), args.length));
+					String.format("%s requires 1 argument, got %d", getURI(), args.length));
 		}
 		if (args[0] instanceof Literal) {
 			return valueFactory.createLiteral(((Literal) args[0]).getLabel());
@@ -41,8 +41,8 @@ public class Name extends AbstractSpinFunction implements Function {
 			try {
 
 				try (Stream<Literal> stream = TripleSources
-					.getObjectLiterals((Resource) args[0], RDFS.LABEL, qp.getTripleSource())
-					.stream()) {
+						.getObjectLiterals((Resource) args[0], RDFS.LABEL, qp.getTripleSource())
+						.stream()) {
 					return stream.findFirst().orElseGet(() -> valueFactory.createLiteral(args[0].stringValue()));
 				}
 

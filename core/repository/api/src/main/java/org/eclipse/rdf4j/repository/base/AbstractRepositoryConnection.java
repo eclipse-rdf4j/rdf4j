@@ -104,16 +104,16 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 		try {
 			if (isActive()) {
 				throw new IllegalStateException(
-					"Transaction isolation level can not be modified while transaction is active");
+						"Transaction isolation level can not be modified while transaction is active");
 			}
 			this.isolationLevel = level;
 		} catch (UnknownTransactionStateException e) {
 			throw new IllegalStateException(
-				"Transaction isolation level can not be modified while transaction state is unknown", e);
+					"Transaction isolation level can not be modified while transaction state is unknown", e);
 
 		} catch (RepositoryException e) {
 			throw new IllegalStateException("Transaction isolation level can not be modified due to repository error",
-				e);
+					e);
 		}
 	}
 
@@ -139,19 +139,19 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return prepareTupleQuery(ql, query, null);
 	}
 
 	@Override
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return prepareGraphQuery(ql, query, null);
 	}
 
 	@Override
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
-		throws MalformedQueryException, RepositoryException {
+			throws MalformedQueryException, RepositoryException {
 		return prepareBooleanQuery(ql, query, null);
 	}
 
@@ -162,7 +162,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);) {
 			return stIter.hasNext();
 		}
@@ -170,7 +170,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		return hasStatement(st.getSubject(), st.getPredicate(), st.getObject(), includeInferred, contexts);
 	}
 
@@ -212,7 +212,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException {
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -241,7 +241,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException {
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -270,7 +270,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException {
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -338,7 +338,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException {
+			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 
 		RDFInserter rdfInserter = new RDFInserter(this);
@@ -386,7 +386,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-		throws RepositoryException, E {
+			throws RepositoryException, E {
 		try {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
@@ -453,7 +453,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	@Override
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
-		throws RepositoryException, E {
+			throws RepositoryException, E {
 		try {
 			boolean localTransaction = startLocalTransaction();
 
@@ -509,7 +509,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	protected abstract void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException;
+			throws RepositoryException;
 
 	protected void removeWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
 		if (contexts.length == 0 && st.getContext() != null) {
@@ -520,5 +520,5 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	protected abstract void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException;
+			throws RepositoryException;
 }

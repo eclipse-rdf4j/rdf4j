@@ -103,7 +103,7 @@ public class RDF4JProtocolSessionTest {
 	@Test
 	public void testSize() throws Exception {
 		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/size"))
-			.willReturn(aResponse().withStatus(200).withBody("8")));
+				.willReturn(aResponse().withStatus(200).withBody("8")));
 
 		assertThat(subject.size()).isEqualTo(8);
 		verifyHeader("/rdf4j-server/repositories/test/size");
@@ -115,9 +115,9 @@ public class RDF4JProtocolSessionTest {
 
 		Header h = new BasicHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
 		stubFor(get(urlEqualTo("/rdf4j-server/repositories/test/config"))
-			.willReturn(aResponse().withStatus(200)
-				.withHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType())
-				.withBodyFile("repository-config.nt")));
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType())
+						.withBodyFile("repository-config.nt")));
 
 		subject.getRepositoryConfig(new StatementCollector());
 
@@ -129,9 +129,9 @@ public class RDF4JProtocolSessionTest {
 	@Test
 	public void testRepositoryList() throws Exception {
 		stubFor(get(urlEqualTo("/rdf4j-server/repositories"))
-			.willReturn(aResponse().withStatus(200)
-				.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
-				.withBodyFile("repository-list.xml")));
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml")));
 
 		assertThat(subject.getRepositoryList().getBindingNames()).contains("id");
 		verifyHeader("/rdf4j-server/repositories");
@@ -146,22 +146,22 @@ public class RDF4JProtocolSessionTest {
 		String transactionStartUrl = Protocol.getTransactionsLocation(subject.getRepositoryURL());
 
 		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test/transactions"))
-			.willReturn(aResponse().withStatus(201).withHeader("Location", transactionStartUrl + "/1")));
+				.willReturn(aResponse().withStatus(201).withHeader("Location", transactionStartUrl + "/1")));
 		stubFor(post("/rdf4j-server/repositories/test/transactions/1?action=PING")
-			.willReturn(aResponse().withStatus(200).withBody("2000")));
+				.willReturn(aResponse().withStatus(200).withBody("2000")));
 
 		subject.beginTransaction(IsolationLevels.SERIALIZABLE);
 		Thread.sleep(2000);
 
 		verify(moreThanOrExactly(2),
-			postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
+				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
 
 		subject.close();
 		Thread.sleep(1000);
 
 		// we should not have received any further pings after the session was closed.
 		verify(lessThanOrExactly(3),
-			postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
+				postRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/transactions/1?action=PING")));
 	}
 
 	@Test

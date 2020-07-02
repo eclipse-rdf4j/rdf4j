@@ -140,10 +140,10 @@ public class GenericPlanNode {
 		// (recursively). We need this value to calculate the selfTimeActual.
 		if (totalTimeActual == null) {
 			double sum = plans.stream()
-				.map(GenericPlanNode::getTotalTimeActual)
-				.filter(Objects::nonNull)
-				.mapToDouble(d -> d)
-				.sum();
+					.map(GenericPlanNode::getTotalTimeActual)
+					.filter(Objects::nonNull)
+					.mapToDouble(d -> d)
+					.sum();
 
 			if (sum > 0) {
 				return sum;
@@ -178,11 +178,11 @@ public class GenericPlanNode {
 		}
 
 		double childTime = plans
-			.stream()
-			.map(GenericPlanNode::getTotalTimeActual)
-			.filter(Objects::nonNull)
-			.mapToDouble(t -> t)
-			.sum();
+				.stream()
+				.map(GenericPlanNode::getTotalTimeActual)
+				.filter(Objects::nonNull)
+				.mapToDouble(t -> t)
+				.sum();
 
 		return totalTimeActual - childTime;
 
@@ -232,8 +232,8 @@ public class GenericPlanNode {
 		if (timedOut != null && timedOut) {
 			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
 			sb.append("You can change the timeout by setting .setMaxExecutionTime(...) on your query.")
-				.append(newLine)
-				.append(newLine);
+					.append(newLine)
+					.append(newLine);
 		}
 
 		sb.append(type);
@@ -247,9 +247,9 @@ public class GenericPlanNode {
 		appendCostAnnotation(sb);
 		sb.append(newLine);
 		plans.forEach(child -> sb.append(Arrays.stream(child.toString().split(newLine))
-			.map(c -> "   " + c)
-			.reduce((a, b) -> a + newLine + b)
-			.orElse("") + newLine));
+				.map(c -> "   " + c)
+				.reduce((a, b) -> a + newLine + b)
+				.orElse("") + newLine));
 
 		return sb.toString();
 	}
@@ -328,14 +328,14 @@ public class GenericPlanNode {
 
 	private void appendCostAnnotation(StringBuilder sb) {
 		String costs = Stream.of(
-			"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
-			"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
-			"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
-			"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
-			"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()))
-			.filter(s -> !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values
-			.reduce((a, b) -> a + ", " + b)
-			.orElse("");
+				"costEstimate=" + toHumanReadableNumber(getCostEstimate()),
+				"resultSizeEstimate=" + toHumanReadableNumber(getResultSizeEstimate()),
+				"resultSizeActual=" + toHumanReadableNumber(getResultSizeActual()),
+				"totalTimeActual=" + toHumanReadableTime(getTotalTimeActual()),
+				"selfTimeActual=" + toHumanReadableTime(getSelfTimeActual()))
+				.filter(s -> !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values
+				.reduce((a, b) -> a + ", " + b)
+				.orElse("");
 
 		if (!costs.isEmpty()) {
 			sb.append(" (").append(costs).append(")");

@@ -125,7 +125,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	}
 
 	protected <T extends QueryModelNode> boolean replaceNodeInList(List<T> list, QueryModelNode current,
-		QueryModelNode replacement) {
+			QueryModelNode replacement) {
 		ListIterator<T> iter = list.listIterator();
 		while (iter.hasNext()) {
 			if (iter.next() == current) {

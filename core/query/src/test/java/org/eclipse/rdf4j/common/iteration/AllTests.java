@@ -16,10 +16,10 @@ import org.junit.runners.Suite.SuiteClasses;
  */
 @RunWith(Suite.class)
 @SuiteClasses({ LimitIterationTest.class, EmptyIterationTest.class, OffsetIterationTest.class,
-	ConvertingIterationTest.class, CloseableIteratorIterationTest.class, DelayedIterationTest.class,
-	DistinctIterationTest.class, ExceptionConvertingIterationTest.class, FilterIterationTest.class,
-	IntersectionIterationTest.class, DistinctIntersectionIterationTest.class, IteratorIterationTest.class,
-	LookAheadIterationTest.class, MinusIterationTest.class, DistinctMinusIterationTest.class,
-	SingletonIterationTest.class, UnionIterationTest.class, })
+		ConvertingIterationTest.class, CloseableIteratorIterationTest.class, DelayedIterationTest.class,
+		DistinctIterationTest.class, ExceptionConvertingIterationTest.class, FilterIterationTest.class,
+		IntersectionIterationTest.class, DistinctIntersectionIterationTest.class, IteratorIterationTest.class,
+		LookAheadIterationTest.class, MinusIterationTest.class, DistinctMinusIterationTest.class,
+		SingletonIterationTest.class, UnionIterationTest.class, })
 public class AllTests {
 }

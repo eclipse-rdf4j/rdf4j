@@ -39,8 +39,8 @@ public class LimitedSizePathIterator extends PathIteration {
 	 * @throws QueryEvaluationException
 	 */
 	public LimitedSizePathIterator(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
-		TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings, AtomicLong used,
-		long maxSize) throws QueryEvaluationException {
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings, AtomicLong used,
+			long maxSize) throws QueryEvaluationException {
 		super(evaluationStrategyImpl, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings);
 		this.used = used;
 		this.maxSize = maxSize;

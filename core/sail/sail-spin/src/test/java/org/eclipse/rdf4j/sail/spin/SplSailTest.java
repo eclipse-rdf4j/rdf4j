@@ -71,10 +71,10 @@ public class SplSailTest {
 		loadRDF("/schema/owl.ttl");
 		conn.add(vf.createStatement(vf.createURI("test:run"), RDF.TYPE, vf.createURI(SPL.NAMESPACE, "RunTestCases")));
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, "prefix spin: <http://spinrdf.org/spin#> "
-			+ "prefix spl: <http://spinrdf.org/spl#> "
-			+ "select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");
+				+ "prefix spl: <http://spinrdf.org/spl#> "
+				+ "select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");
 		try ( // returns failed tests
-			TupleQueryResult tqr = tq.evaluate()) {
+				TupleQueryResult tqr = tq.evaluate()) {
 			while (tqr.hasNext()) {
 				BindingSet bs = tqr.next();
 				Value testCase = bs.getValue("testCase");

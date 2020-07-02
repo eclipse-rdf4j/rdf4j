@@ -70,7 +70,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	}
 
 	public <E extends Exception> MutableTupleQueryResult(Collection<String> bindingNames,
-		Iteration<? extends BindingSet, E> bindingSetIter) throws E {
+			Iteration<? extends BindingSet, E> bindingSetIter) throws E {
 		this.bindingNames.addAll(bindingNames);
 		Iterations.addAll(bindingSetIter, this.bindingSets);
 	}

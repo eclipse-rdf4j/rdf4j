@@ -197,7 +197,7 @@ public abstract class FilteredModel extends AbstractModel {
 	 * @param contexts an array of one context term to be removed or an empty array
 	 */
 	protected abstract void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-		Resource... contexts);
+			Resource... contexts);
 
 	private boolean accept(Resource s, IRI p, Value o, Resource... c) {
 		if (subj != null && !subj.equals(s)) {

@@ -71,8 +71,8 @@ public class ConfigControllerTest {
 		request.setMethod(HttpMethod.POST.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
-			("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-				.getBytes(Charsets.UTF_8));
+				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
+						.getBytes(Charsets.UTF_8));
 
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
 

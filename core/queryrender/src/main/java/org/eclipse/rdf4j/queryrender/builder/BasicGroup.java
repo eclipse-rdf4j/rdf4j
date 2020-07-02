@@ -145,7 +145,7 @@ public class BasicGroup implements Group {
 					aJoin.setLeftArg(aExpr);
 
 					if (aGroup.isOptional() && aJoin instanceof LeftJoin && aGroup instanceof BasicGroup
-						&& !((BasicGroup) aGroup).mFilters.isEmpty()) {
+							&& !((BasicGroup) aGroup).mFilters.isEmpty()) {
 
 						BasicGroup aBasicGroup = (BasicGroup) aGroup;
 

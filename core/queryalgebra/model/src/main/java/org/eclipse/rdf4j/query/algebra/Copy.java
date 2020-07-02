@@ -59,7 +59,7 @@ public class Copy extends AbstractQueryModelNode implements UpdateExpr {
 		if (other instanceof Copy) {
 			Copy o = (Copy) other;
 			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
-				&& nullEquals(destinationGraph, o.destinationGraph);
+					&& nullEquals(destinationGraph, o.destinationGraph);
 		}
 		return false;
 	}

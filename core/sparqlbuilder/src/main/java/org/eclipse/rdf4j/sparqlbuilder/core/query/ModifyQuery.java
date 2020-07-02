@@ -69,7 +69,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery delete(TriplePattern... triples) {
 		deleteTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(deleteTriples, SparqlBuilder::triplesTemplate,
-			tt -> tt.and(triples));
+				tt -> tt.and(triples));
 
 		return this;
 	}
@@ -96,7 +96,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	 */
 	public ModifyQuery insert(TriplePattern... triples) {
 		insertTriples = SparqlBuilderUtils.getOrCreateAndModifyOptional(insertTriples, SparqlBuilder::triplesTemplate,
-			tt -> tt.and(triples));
+				tt -> tt.and(triples));
 
 		return this;
 	}

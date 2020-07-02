@@ -103,7 +103,7 @@ public class NotifyingTest {
 
 			@Override
 			public Update prepareUpdate(QueryLanguage ql, String query, String baseURI)
-				throws MalformedQueryException, RepositoryException {
+					throws MalformedQueryException, RepositoryException {
 				return updateStub;
 			}
 		};
@@ -113,7 +113,7 @@ public class NotifyingTest {
 
 			@Override
 			public void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-				Update operation) {
+					Update operation) {
 				assertEquals(stub, conn);
 				assertEquals(SPARQL, ql);
 				assertEquals("DELETE DATA { <> <> <> }", update);
@@ -133,7 +133,7 @@ public class NotifyingTest {
 
 			@Override
 			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-				throws RepositoryException {
+					throws RepositoryException {
 			}
 		};
 		Repository repo = stub.getRepository();
@@ -142,7 +142,7 @@ public class NotifyingTest {
 
 			@Override
 			public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-				Resource... contexts) {
+					Resource... contexts) {
 				assertEquals(stub, conn);
 				assertEquals(uri, subject);
 				assertEquals(uri, predicate);

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
 public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
-	implements EvaluationStrategyFactory, FederatedServiceResolverClient {
+		implements EvaluationStrategyFactory, FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
 
@@ -37,9 +37,9 @@ public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrateg
 
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-		EvaluationStatistics evaluationStatistics) {
+			EvaluationStatistics evaluationStatistics) {
 		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold(),
-			evaluationStatistics);
+				evaluationStatistics);
 	}
 
 }

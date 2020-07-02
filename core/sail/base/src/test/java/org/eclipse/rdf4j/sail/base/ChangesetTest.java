@@ -38,12 +38,12 @@ public class ChangesetTest {
 		CountDownLatch countDownLatch = new CountDownLatch(3);
 
 		ExecutorService executorService = Executors.newFixedThreadPool(3,
-			r -> {
-				Thread t = Executors.defaultThreadFactory().newThread(r);
-				// this thread pool does not need to stick around if the all other threads are done
-				t.setDaemon(true);
-				return t;
-			});
+				r -> {
+					Thread t = Executors.defaultThreadFactory().newThread(r);
+					// this thread pool does not need to stick around if the all other threads are done
+					t.setDaemon(true);
+					return t;
+				});
 
 		Runnable addingData = () -> {
 			countDownLatch.countDown();
@@ -84,7 +84,7 @@ public class ChangesetTest {
 
 			for (int i = 0; i < 100; i++) {
 				Iterator<Statement> approvedStatements = changeset.getApprovedStatements(null, RDF.TYPE, null, allGraph)
-					.iterator();
+						.iterator();
 
 				for (int j = 0; j < 100 && approvedStatements.hasNext(); j++) {
 					approvedStatements.next();
@@ -94,15 +94,15 @@ public class ChangesetTest {
 		};
 
 		Stream.of(addingData, readingData, readingDataIterator)
-			.map(executorService::submit)
-			.collect(Collectors.toList())
-			.forEach(future -> {
-				try {
-					future.get();
-				} catch (InterruptedException | ExecutionException e) {
-					throw new RuntimeException(e);
-				}
-			});
+				.map(executorService::submit)
+				.collect(Collectors.toList())
+				.forEach(future -> {
+					try {
+						future.get();
+					} catch (InterruptedException | ExecutionException e) {
+						throw new RuntimeException(e);
+					}
+				});
 
 		executorService.shutdown();
 		executorService.shutdownNow();

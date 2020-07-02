@@ -155,15 +155,15 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 		ProjectionElem aObj = theList.getElements().get(2);
 
 		return new StatementPattern(
-			mExtensions.containsKey(aSubj.getSourceName())
-				? new Var(scrubVarName(aSubj.getSourceName()), asValue(mExtensions.get(aSubj.getSourceName())))
-				: new Var(scrubVarName(aSubj.getSourceName())),
-			mExtensions.containsKey(aPred.getSourceName())
-				? new Var(scrubVarName(aPred.getSourceName()), asValue(mExtensions.get(aPred.getSourceName())))
-				: new Var(scrubVarName(aPred.getSourceName())),
-			mExtensions.containsKey(aObj.getSourceName())
-				? new Var(scrubVarName(aObj.getSourceName()), asValue(mExtensions.get(aObj.getSourceName())))
-				: new Var(scrubVarName(aObj.getSourceName())));
+				mExtensions.containsKey(aSubj.getSourceName())
+						? new Var(scrubVarName(aSubj.getSourceName()), asValue(mExtensions.get(aSubj.getSourceName())))
+						: new Var(scrubVarName(aSubj.getSourceName())),
+				mExtensions.containsKey(aPred.getSourceName())
+						? new Var(scrubVarName(aPred.getSourceName()), asValue(mExtensions.get(aPred.getSourceName())))
+						: new Var(scrubVarName(aPred.getSourceName())),
+				mExtensions.containsKey(aObj.getSourceName())
+						? new Var(scrubVarName(aObj.getSourceName()), asValue(mExtensions.get(aObj.getSourceName())))
+						: new Var(scrubVarName(aObj.getSourceName())));
 	}
 
 	/**
@@ -224,9 +224,9 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 */
 	public static boolean isSPOElemList(ProjectionElemList theList) {
 		return theList.getElements().size() == 3
-			&& theList.getElements().get(0).getTargetName().equalsIgnoreCase("subject")
-			&& theList.getElements().get(1).getTargetName().equalsIgnoreCase("predicate")
-			&& theList.getElements().get(2).getTargetName().equalsIgnoreCase("object");
+				&& theList.getElements().get(0).getTargetName().equalsIgnoreCase("subject")
+				&& theList.getElements().get(1).getTargetName().equalsIgnoreCase("predicate")
+				&& theList.getElements().get(2).getTargetName().equalsIgnoreCase("object");
 	}
 
 	/**

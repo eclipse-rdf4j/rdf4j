@@ -130,11 +130,11 @@ public class QueryResultIO {
 	 *                                               format.
 	 */
 	public static TupleQueryResultParser createTupleParser(QueryResultFormat format)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		TupleQueryResultParserFactory factory = TupleQueryResultParserRegistry.getInstance()
-			.get(format)
-			.orElseThrow(() -> new UnsupportedQueryResultFormatException(
-				"No parser factory available for tuple query result format " + format));
+				.get(format)
+				.orElseThrow(() -> new UnsupportedQueryResultFormatException(
+						"No parser factory available for tuple query result format " + format));
 
 		return factory.getParser();
 	}
@@ -151,7 +151,7 @@ public class QueryResultIO {
 	 * @see TupleQueryResultParser#setValueFactory(ValueFactory)
 	 */
 	public static TupleQueryResultParser createTupleParser(QueryResultFormat format, ValueFactory valueFactory)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		TupleQueryResultParser parser = createTupleParser(format);
 		parser.setValueFactory(valueFactory);
 		return parser;
@@ -169,11 +169,11 @@ public class QueryResultIO {
 	 *                                               format.
 	 */
 	public static TupleQueryResultWriter createTupleWriter(QueryResultFormat format, OutputStream out)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance()
-			.get(format)
-			.orElseThrow(() -> new UnsupportedQueryResultFormatException(
-				"No writer factory available for tuple query result format " + format));
+				.get(format)
+				.orElseThrow(() -> new UnsupportedQueryResultFormatException(
+						"No writer factory available for tuple query result format " + format));
 
 		return factory.getWriter(out);
 	}
@@ -189,11 +189,11 @@ public class QueryResultIO {
 	 *                                               format.
 	 */
 	public static BooleanQueryResultParser createBooleanParser(QueryResultFormat format)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		BooleanQueryResultParserFactory factory = BooleanQueryResultParserRegistry.getInstance()
-			.get(format)
-			.orElseThrow(() -> new UnsupportedQueryResultFormatException(
-				"No parser factory available for boolean query result format " + format));
+				.get(format)
+				.orElseThrow(() -> new UnsupportedQueryResultFormatException(
+						"No parser factory available for boolean query result format " + format));
 
 		return factory.getParser();
 	}
@@ -210,11 +210,11 @@ public class QueryResultIO {
 	 *                                               format.
 	 */
 	public static BooleanQueryResultWriter createBooleanWriter(QueryResultFormat format, OutputStream out)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance()
-			.get(format)
-			.orElseThrow(() -> new UnsupportedQueryResultFormatException(
-				"No writer factory available for boolean query result format " + format));
+				.get(format)
+				.orElseThrow(() -> new UnsupportedQueryResultFormatException(
+						"No writer factory available for boolean query result format " + format));
 
 		return factory.getWriter(out);
 	}
@@ -231,21 +231,21 @@ public class QueryResultIO {
 	 *                                               format.
 	 */
 	public static QueryResultWriter createWriter(QueryResultFormat format, OutputStream out)
-		throws UnsupportedQueryResultFormatException {
+			throws UnsupportedQueryResultFormatException {
 		Supplier<UnsupportedQueryResultFormatException> exception = () -> new UnsupportedQueryResultFormatException(
-			"No writer factory available for query result format " + format);
+				"No writer factory available for query result format " + format);
 
 		if (format instanceof TupleQueryResultFormat) {
 
 			TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance()
-				.get((TupleQueryResultFormat) format)
-				.orElseThrow(exception);
+					.get((TupleQueryResultFormat) format)
+					.orElseThrow(exception);
 
 			return factory.getWriter(out);
 		} else if (format instanceof BooleanQueryResultFormat) {
 			BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance()
-				.get((BooleanQueryResultFormat) format)
-				.orElseThrow(exception);
+					.get((BooleanQueryResultFormat) format)
+					.orElseThrow(exception);
 
 			return factory.getWriter(out);
 		}
@@ -269,8 +269,8 @@ public class QueryResultIO {
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
 	 */
 	public static void parseTuple(InputStream in, QueryResultFormat format, TupleQueryResultHandler handler,
-		ValueFactory valueFactory) throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
-		UnsupportedQueryResultFormatException {
+			ValueFactory valueFactory) throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+			UnsupportedQueryResultFormatException {
 		TupleQueryResultParser parser = createTupleParser(format);
 		parser.setValueFactory(valueFactory);
 		parser.setQueryResultHandler(handler);
@@ -299,7 +299,7 @@ public class QueryResultIO {
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
 	 */
 	public static TupleQueryResult parseTuple(InputStream in, QueryResultFormat format) throws IOException,
-		QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		return parseTupleInternal(in, format, false);
 	}
 
@@ -320,18 +320,18 @@ public class QueryResultIO {
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
 	 */
 	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format) throws IOException,
-		QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		return parseTupleInternal(in, format, true);
 	}
 
 	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
-		boolean parseOnBackgroundThread) throws IOException, QueryResultParseException,
-		TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+			boolean parseOnBackgroundThread) throws IOException, QueryResultParseException,
+			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		TupleQueryResultParser parser = createTupleParser(format);
 
 		if (parseOnBackgroundThread) {
 			BackgroundTupleResult result = new BackgroundTupleResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
-				parser, in);
+					parser, in);
 			// Start a new thread in the background, which will be completed
 			// when the BackgroundTupleResult is either closed or interrupted
 			boolean allGood = false;
@@ -371,7 +371,7 @@ public class QueryResultIO {
 	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
 	 */
 	public static boolean parseBoolean(InputStream in, QueryResultFormat format)
-		throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException {
+			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException {
 		BooleanQueryResultParser parser = createBooleanParser(format);
 		try {
 
@@ -402,7 +402,7 @@ public class QueryResultIO {
 	 * @throws QueryEvaluationException              If an unsupported query result file format was specified.
 	 */
 	public static void writeTuple(TupleQueryResult tqr, QueryResultFormat format, OutputStream out) throws IOException,
-		TupleQueryResultHandlerException, UnsupportedQueryResultFormatException, QueryEvaluationException {
+			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException, QueryEvaluationException {
 		TupleQueryResultWriter writer = createTupleWriter(format, out);
 		try {
 			writer.startDocument();
@@ -430,7 +430,7 @@ public class QueryResultIO {
 	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
 	 */
 	public static void writeBoolean(boolean value, QueryResultFormat format, OutputStream out)
-		throws QueryResultHandlerException, UnsupportedQueryResultFormatException {
+			throws QueryResultHandlerException, UnsupportedQueryResultFormatException {
 		BooleanQueryResultWriter writer = createBooleanWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
@@ -450,7 +450,7 @@ public class QueryResultIO {
 	 * @throws UnsupportedRDFormatException If an unsupported query result file format was specified.
 	 */
 	public static void writeGraph(GraphQueryResult gqr, RDFFormat format, OutputStream out)
-		throws IOException, RDFHandlerException, UnsupportedRDFormatException, QueryEvaluationException {
+			throws IOException, RDFHandlerException, UnsupportedRDFormatException, QueryEvaluationException {
 		RDFWriter writer = Rio.createWriter(format, out);
 		try {
 			QueryResults.report(gqr, writer);

@@ -143,7 +143,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 					if (nextRight != null) {
 
 						if (nextLeft.line.get(0) == nextRight.line.get(0)
-							|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
+								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
 							joinedLeft = nextLeft;
 							nextRight = null;
@@ -228,19 +228,19 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		left.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 		if (discardedRight != null) {
 			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];")
-				.append("\n");
+					.append("\n");
 
 		}
 		if (discardedLeft != null) {
 			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];")
-				.append("\n");
+					.append("\n");
 		}
 
 		if (joined != null) {
@@ -283,7 +283,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	public void close() {
 
 		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed())
-			&& (joined == null || joined.isClosed())) {
+				&& (joined == null || joined.isClosed())) {
 			iterator.close();
 			iterator = null;
 		}

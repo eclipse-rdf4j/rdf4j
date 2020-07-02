@@ -51,7 +51,7 @@ public class QueryBindingSetTest {
 		assertTrue(qbs.equals(mbs));
 		assertTrue(mbs.equals(qbs));
 		assertEquals("objects that return true on their equals() method must have identical hash codes", qbs.hashCode(),
-			mbs.hashCode());
+				mbs.hashCode());
 	}
 
 	/**

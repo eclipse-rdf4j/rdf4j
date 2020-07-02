@@ -49,8 +49,8 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	private final String snippetVarName;
 
 	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
-		StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
-		Resource subject, String queryString, IRI propertyURI) {
+			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesPattern = matchesPattern;
 		this.queryPattern = queryPattern;
 		this.propertyPattern = propertyPattern;
@@ -83,7 +83,7 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	}
 
 	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName, String snippetVarName,
-		Resource subject, String queryString, IRI propertyURI) {
+			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesVarName = matchesVarName;
 		this.propertyVarName = propertyVarName;
 		this.scoreVarName = scoreVarName;

@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * @author as
  */
 public class StatementGroupAndJoinOptimizer extends AbstractQueryModelVisitor<OptimizationException>
-	implements FedXOptimizer {
+		implements FedXOptimizer {
 
 	private static final Logger log = LoggerFactory.getLogger(StatementGroupAndJoinOptimizer.class);
 

@@ -26,7 +26,7 @@ public class TestTupleResultBuilder {
 	@Test
 	public final void testSES1780regression() throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLResultsJSONWriter(new ByteArrayOutputStream()),
-			SimpleValueFactory.getInstance());
+				SimpleValueFactory.getInstance());
 		builder.start("test");
 		builder.namedResult("test", new URL("http://www.foo.org/bar#"));
 		builder.end();
@@ -35,7 +35,7 @@ public class TestTupleResultBuilder {
 	@Test
 	public final void testSES1726regression() throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLResultsJSONWriter(new ByteArrayOutputStream()),
-			SimpleValueFactory.getInstance());
+				SimpleValueFactory.getInstance());
 		try {
 			builder.namedResult("test", new URL("http://www.foo.org/bar#"));
 			fail("Did not receive expected exception for calling namedResult before start");
@@ -47,7 +47,7 @@ public class TestTupleResultBuilder {
 	@Test
 	public final void testSES1846Normal() throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()),
-			SimpleValueFactory.getInstance());
+				SimpleValueFactory.getInstance());
 		builder.startBoolean();
 		builder.bool(true);
 		builder.endBoolean();
@@ -56,7 +56,7 @@ public class TestTupleResultBuilder {
 	@Test
 	public final void testSES1846regression() throws Exception {
 		TupleResultBuilder builder = new TupleResultBuilder(new SPARQLBooleanXMLWriter(new ByteArrayOutputStream()),
-			SimpleValueFactory.getInstance());
+				SimpleValueFactory.getInstance());
 		try {
 			builder.start();
 			builder.bool(true);

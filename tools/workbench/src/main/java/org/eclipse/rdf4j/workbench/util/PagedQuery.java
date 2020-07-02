@@ -48,9 +48,9 @@ public class PagedQuery {
 	 * @param requestOffset which result to start at when populating the result set
 	 */
 	public PagedQuery(final String query, final QueryLanguage language, final int requestLimit,
-		final int requestOffset) {
+			final int requestOffset) {
 		LOGGER.debug("Query Language: {}, requestLimit: " + requestLimit + ", requestOffset: " + requestOffset,
-			language);
+				language);
 		LOGGER.debug("Query: {}", query);
 
 		String rval = query;

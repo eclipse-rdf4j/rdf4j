@@ -71,7 +71,7 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 * Creates a new StatementCollector that stores reported statements and namespaces in the supplied containers.
 	 */
 	public ContextStatementCollector(Collection<Statement> statements, Map<String, String> namespaces, ValueFactory vf,
-		Resource... contexts) {
+			Resource... contexts) {
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		this.statements = statements;
 		this.namespaces = namespaces;

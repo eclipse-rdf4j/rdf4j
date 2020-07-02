@@ -42,9 +42,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 		try {
 			return (EvaluationStrategyFactory) Thread.currentThread()
-				.getContextClassLoader()
-				.loadClass(evalStratFactoryClassName)
-				.newInstance();
+					.getContextClassLoader()
+					.loadClass(evalStratFactoryClassName)
+					.newInstance();
 		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
 			throw new SailConfigException(e);
 		}
@@ -57,7 +57,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		if (evalStratFactoryClassName != null) {
 			graph.setNamespace("sb", NAMESPACE);
 			graph.add(implNode, EVALUATION_STRATEGY_FACTORY,
-				SimpleValueFactory.getInstance().createLiteral(evalStratFactoryClassName));
+					SimpleValueFactory.getInstance().createLiteral(evalStratFactoryClassName));
 		}
 
 		return implNode;
@@ -70,9 +70,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		try {
 
 			Models.objectLiteral(graph.getStatements(implNode, EVALUATION_STRATEGY_FACTORY, null))
-				.ifPresent(factoryClassName -> {
-					setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
-				});
+					.ifPresent(factoryClassName -> {
+						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
+					});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

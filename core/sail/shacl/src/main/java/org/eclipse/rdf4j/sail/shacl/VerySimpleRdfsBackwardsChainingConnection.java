@@ -33,45 +33,45 @@ class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 
 	VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
-		RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		super(wrappedCon);
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException {
+			throws SailException {
 
 		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
 
 		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
-			&& RDF.TYPE.equals(pred)) {
+				&& RDF.TYPE.equals(pred)) {
 			return hasStatement | rdfsSubClassOfReasoner.backwardsChain((Resource) obj)
-				.stream()
-				.map(type -> super.hasStatement(subj, pred, type, false, contexts))
-				.reduce((a, b) -> a || b)
-				.orElse(false);
+					.stream()
+					.map(type -> super.hasStatement(subj, pred, type, false, contexts))
+					.reduce((a, b) -> a || b)
+					.orElse(false);
 		}
 		return hasStatement;
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-		boolean includeInferred, Resource... contexts) throws SailException {
+			boolean includeInferred, Resource... contexts) throws SailException {
 
 		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
-			&& RDF.TYPE.equals(pred)) {
+				&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (!inferredTypes.isEmpty()) {
 
 				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes.stream()
-					.map(r -> super.getStatements(subj, pred, r, false, contexts))
-					.toArray(CloseableIteration[]::new);
+						.map(r -> super.getStatements(subj, pred, r, false, contexts))
+						.toArray(CloseableIteration[]::new);
 
 				return new LookAheadIteration<Statement, SailException>() {
 
 					UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
-						statementsMatchingInferredTypes);
+							statementsMatchingInferredTypes);
 
 					HashSet<Statement> dedupe = new HashSet<>();
 
@@ -82,7 +82,7 @@ class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 						while (next == null && unionIteration.hasNext()) {
 							Statement temp = unionIteration.next();
 							temp = SimpleValueFactory.getInstance()
-								.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
+									.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
 
 							if (!dedupe.isEmpty()) {
 								boolean contains = dedupe.contains(temp);

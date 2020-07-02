@@ -84,9 +84,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test2() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { ?s ?p ?var  } }";
 
@@ -97,9 +97,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test3() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1000  } } order by ?var";
 
@@ -110,9 +110,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test3a() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		String query = "SELECT ?s ?var WHERE { VALUES ?var { 'val1' 'val2' } . OPTIONAL { SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var . FILTER (?var='val2') } LIMIT 1  } } }";
 
@@ -125,9 +125,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test4() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var } . SERVICE <urn:dummy> {  ?s ?p ?var  } } order by ?var";
 
@@ -138,9 +138,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test4a() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		// Note: here we apply a workaround and explicitly project "?__rowIdx"
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var ?__rowIdx { ?s ?p ?var } LIMIT 3  } } order by ?var";
@@ -152,9 +152,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 	public void test4b() throws Exception {
 
 		addData(serviceRepo, Lists.newArrayList(
-			vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-			vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-			vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
@@ -280,9 +280,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 			values.add(l("value" + i));
 		}
 		addData(serviceRepo,
-			values.stream()
-				.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
-				.collect(Collectors.toList()));
+				values.stream()
+						.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
+						.collect(Collectors.toList()));
 
 		ExecutorService executor = Executors.newFixedThreadPool(5);
 		try {
@@ -314,9 +314,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 			values.add(l("value" + i));
 		}
 		addData(serviceRepo,
-			values.stream()
-				.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
-				.collect(Collectors.toList()));
+				values.stream()
+						.map(value -> vf.createStatement(iri("s1"), RDFS.LABEL, value))
+						.collect(Collectors.toList()));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var  } }";
 		try (RepositoryConnection conn = localRepo.getConnection()) {

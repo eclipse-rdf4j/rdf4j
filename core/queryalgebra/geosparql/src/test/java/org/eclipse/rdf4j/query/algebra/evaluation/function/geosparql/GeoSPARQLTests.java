@@ -79,7 +79,7 @@ public class GeoSPARQLTests {
 	 */
 	private static String getQuery(String name) throws IOException {
 		try (InputStream is = GeoSPARQLTests.class.getResourceAsStream(name);
-			BufferedReader buffer = new BufferedReader(new InputStreamReader(is))) {
+				BufferedReader buffer = new BufferedReader(new InputStreamReader(is))) {
 			return buffer.lines().collect(Collectors.joining("\n"));
 		}
 	}

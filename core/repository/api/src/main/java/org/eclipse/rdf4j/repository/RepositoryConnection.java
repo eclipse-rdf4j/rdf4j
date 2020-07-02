@@ -193,7 +193,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                           repository.
 	 */
 	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a SPARQL query that produces sets of value tuples, that is a SPARQL SELECT query. In case the query
@@ -223,7 +223,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a query that produces sets of value tuples.
@@ -238,7 +238,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares SPARQL queries that produce RDF graphs, that is, SPARQL CONSTRUCT or DESCRIBE queries. In case the query
@@ -267,7 +267,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares queries that produce RDF graphs.
@@ -282,7 +282,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares SPARQL queries that return <tt>true</tt> or <tt>false</tt>, that is, SPARQL ASK queries. In case the
@@ -312,7 +312,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares queries that return <tt>true</tt> or <tt>false</tt>.
@@ -327,7 +327,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
 	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a SPARQL Update operation. In case the update string contains relative URIs that need to be resolved
@@ -364,7 +364,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException If the supplied update operation string is malformed.
 	 */
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
-		throws RepositoryException, MalformedQueryException;
+			throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Gets all resources that are used as content identifiers. Care should be taken that the returned
@@ -389,7 +389,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 */
 	public default RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		return getStatements(subj, pred, obj, true, contexts);
 	}
 
@@ -411,7 +411,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	@Deprecated
 	public default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
-		boolean includeInferred, Resource... contexts) throws RepositoryException {
+			boolean includeInferred, Resource... contexts) throws RepositoryException {
 		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
 	}
 
@@ -431,7 +431,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 */
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws RepositoryException;
+			Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
@@ -447,7 +447,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
 	 */
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws RepositoryException;
+			throws RepositoryException;
 
 	/**
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
@@ -465,7 +465,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	@Deprecated
 	public default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws RepositoryException {
+			Resource... contexts) throws RepositoryException {
 		return hasStatement(subj, (IRI) pred, obj, includeInferred, contexts);
 	}
 
@@ -497,7 +497,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RDFHandlerException If the handler encounters an unrecoverable error.
 	 */
 	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
-		Resource... contexts) throws RepositoryException, RDFHandlerException;
+			Resource... contexts) throws RepositoryException, RDFHandlerException;
 
 	/**
 	 * Exports all explicit statements in the specified contexts to the supplied RDFHandler. This method supplies the
@@ -667,7 +667,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                      repository is not writable.
 	 */
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException;
+			throws IOException, RDFParseException, RepositoryException;
 
 	/**
 	 * Adds RDF data from a Reader to the repository, optionally to one or more named contexts. <b>Note: using a Reader
@@ -687,7 +687,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                      repository is not writable.
 	 */
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException;
+			throws IOException, RDFParseException, RepositoryException;
 
 	/**
 	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
@@ -710,7 +710,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                      repository is not writable.
 	 */
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException;
+			throws IOException, RDFParseException, RepositoryException;
 
 	/**
 	 * Adds RDF data from the specified file to a specific contexts in the repository.
@@ -731,7 +731,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                      repository is not writable.
 	 */
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
-		throws IOException, RDFParseException, RepositoryException;
+			throws IOException, RDFParseException, RepositoryException;
 
 	/**
 	 * Adds a statement with the specified subject, predicate and object to this repository, optionally to one or more
@@ -768,7 +768,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	@Deprecated
 	public default void add(Resource subject, URI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		this.add(subject, (IRI) predicate, object, contexts);
 	}
 
@@ -815,7 +815,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             repository is not writable.
 	 */
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
-		throws RepositoryException, E;
+			throws RepositoryException, E;
 
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
@@ -830,7 +830,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             repository is not writable.
 	 */
 	default void add(RepositoryResult<Statement> statements, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		add((Iteration<Statement, RepositoryException>) statements, contexts);
 	}
 
@@ -863,7 +863,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	@Deprecated
 	public default void remove(Resource subject, URI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		this.remove(subject, (IRI) predicate, object, contexts);
 	}
 
@@ -905,7 +905,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             repository is not writable.
 	 */
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
-		throws RepositoryException, E;
+			throws RepositoryException, E;
 
 	/**
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
@@ -920,7 +920,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             repository is not writable.
 	 */
 	default void remove(RepositoryResult<Statement> statements, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		remove((Iteration<Statement, RepositoryException>) statements, contexts);
 	}
 

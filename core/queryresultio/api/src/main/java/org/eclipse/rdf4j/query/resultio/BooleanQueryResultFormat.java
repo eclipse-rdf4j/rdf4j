@@ -31,24 +31,24 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results XML Format.
 	 */
 	public static final BooleanQueryResultFormat SPARQL = new BooleanQueryResultFormat("SPARQL/XML",
-		Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
-		Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI);
+			Arrays.asList("application/sparql-results+xml", "application/xml"), StandardCharsets.UTF_8,
+			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI);
 
 	/**
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final BooleanQueryResultFormat JSON = new BooleanQueryResultFormat("SPARQL/JSON",
-		// Note: The MIME type for SPARQL* JSON is handled by this format in order to handle BooleanQueryResult
-		// when SPARQL* JSON is requested.
-		Arrays.asList("application/sparql-results+json", "application/json",
-			"application/x-sparqlstar-results+json"),
-		StandardCharsets.UTF_8, Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
+			// Note: The MIME type for SPARQL* JSON is handled by this format in order to handle BooleanQueryResult
+			// when SPARQL* JSON is requested.
+			Arrays.asList("application/sparql-results+json", "application/json",
+					"application/x-sparqlstar-results+json"),
+			StandardCharsets.UTF_8, Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
 
 	/**
 	 * Plain text encoding using values "true" and "false" (case-insensitive).
 	 */
 	public static final BooleanQueryResultFormat TEXT = new BooleanQueryResultFormat("TEXT", "text/boolean",
-		StandardCharsets.US_ASCII, "txt");
+			StandardCharsets.US_ASCII, "txt");
 
 	/*--------------*
 	 * Constructors *
@@ -91,7 +91,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 *                       list is interpreted as the default file extension for the format.
 	 */
 	public BooleanQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-		Collection<String> fileExtensions) {
+			Collection<String> fileExtensions) {
 		super(name, mimeTypes, charset, fileExtensions);
 	}
 
@@ -109,7 +109,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 *                       if it does not currently have a standard URI.
 	 */
 	public BooleanQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
-		Collection<String> fileExtensions, IRI standardURI) {
+			Collection<String> fileExtensions, IRI standardURI) {
 		super(name, mimeTypes, charset, fileExtensions, standardURI);
 	}
 }

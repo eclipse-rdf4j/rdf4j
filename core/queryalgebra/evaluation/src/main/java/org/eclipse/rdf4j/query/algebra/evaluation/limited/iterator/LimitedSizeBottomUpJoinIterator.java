@@ -40,7 +40,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 	 * @throws QueryEvaluationException
 	 */
 	public LimitedSizeBottomUpJoinIterator(EvaluationStrategy limitedSizeEvaluationStrategy, Join join,
-		BindingSet bindings, AtomicLong used, long maxSize) throws QueryEvaluationException {
+			BindingSet bindings, AtomicLong used, long maxSize) throws QueryEvaluationException {
 		super(limitedSizeEvaluationStrategy, join, bindings);
 		this.used = used;
 		this.maxSize = maxSize;
@@ -71,7 +71,7 @@ public class LimitedSizeBottomUpJoinIterator extends BottomUpJoinIterator {
 
 	@Override
 	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		List<BindingSet> put = hashTable.put(hashKey, hashValue);
 		if (put == null && used.incrementAndGet() > maxSize) {
 			throw new QueryEvaluationException(SIZE_LIMIT_REACHED + maxSize);

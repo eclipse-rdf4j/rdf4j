@@ -74,7 +74,7 @@ public class ByteArrayUtil {
 	 */
 	public static int getInt(byte[] array, int offset) {
 		return ((array[offset] & 0xff) << 24) | ((array[offset + 1] & 0xff) << 16) | ((array[offset + 2] & 0xff) << 8)
-			| (array[offset + 3] & 0xff);
+				| (array[offset + 3] & 0xff);
 	}
 
 	/**
@@ -104,9 +104,9 @@ public class ByteArrayUtil {
 	 */
 	public static long getLong(byte[] array, int offset) {
 		return ((long) (array[offset] & 0xff) << 56) | ((long) (array[offset + 1] & 0xff) << 48)
-			| ((long) (array[offset + 2] & 0xff) << 40) | ((long) (array[offset + 3] & 0xff) << 32)
-			| ((long) (array[offset + 4] & 0xff) << 24) | ((long) (array[offset + 5] & 0xff) << 16)
-			| ((long) (array[offset + 6] & 0xff) << 8) | ((long) (array[offset + 7] & 0xff));
+				| ((long) (array[offset + 2] & 0xff) << 40) | ((long) (array[offset + 3] & 0xff) << 32)
+				| ((long) (array[offset + 4] & 0xff) << 24) | ((long) (array[offset + 5] & 0xff) << 16)
+				| ((long) (array[offset + 6] & 0xff) << 8) | ((long) (array[offset + 7] & 0xff));
 	}
 
 	/**

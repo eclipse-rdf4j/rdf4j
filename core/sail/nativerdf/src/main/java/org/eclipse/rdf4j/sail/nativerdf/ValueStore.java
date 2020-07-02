@@ -134,7 +134,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
-		int namespaceIDCacheSize) throws IOException {
+			int namespaceIDCacheSize) throws IOException {
 		super();
 		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);
 
@@ -380,19 +380,19 @@ public class ValueStore extends AbstractValueFactory {
 				String namespace = data2namespace(data);
 				try {
 					if (id == getNamespaceID(namespace, false)
-						&& java.net.URI.create(namespace + "part").isAbsolute()) {
+							&& java.net.URI.create(namespace + "part").isAbsolute()) {
 						continue;
 					}
 				} catch (IllegalArgumentException e) {
 					// throw SailException
 				}
 				throw new SailException(
-					"Store must be manually exported and imported to fix namespaces like " + namespace);
+						"Store must be manually exported and imported to fix namespaces like " + namespace);
 			} else {
 				Value value = this.data2value(id, data);
 				if (id != this.getID(copy(value))) {
 					throw new SailException(
-						"Store must be manually exported and imported to merge values like " + value);
+							"Store must be manually exported and imported to merge values like " + value);
 				}
 			}
 		}
@@ -482,7 +482,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
-		throws IOException, UnsupportedEncodingException {
+			throws IOException, UnsupportedEncodingException {
 		// Get datatype ID
 		int datatypeID = NativeValue.UNKNOWN_ID;
 

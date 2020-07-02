@@ -16,9 +16,9 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 	private org.eclipse.rdf4j.query.algebra.Var objectVar;
 
 	public ValueExprTripleRef(String extName,
-		org.eclipse.rdf4j.query.algebra.Var s,
-		org.eclipse.rdf4j.query.algebra.Var p,
-		org.eclipse.rdf4j.query.algebra.Var o) {
+			org.eclipse.rdf4j.query.algebra.Var s,
+			org.eclipse.rdf4j.query.algebra.Var p,
+			org.eclipse.rdf4j.query.algebra.Var o) {
 		this.exprVarName = extName;
 		subjectVar = s;
 		predicateVar = p;
@@ -60,7 +60,7 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 		if (other instanceof ValueExprTripleRef) {
 			ValueExprTripleRef o = (ValueExprTripleRef) other;
 			return subjectVar.equals(o.getSubjectVar()) && predicateVar.equals(o.getPredicateVar())
-				&& objectVar.equals(o.getObjectVar());
+					&& objectVar.equals(o.getObjectVar());
 		}
 		return false;
 	}

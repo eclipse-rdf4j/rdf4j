@@ -36,7 +36,7 @@ public class LimitedSizeZeroLengthPathIteration extends ZeroLengthPathIteration 
 	 * @param bindings
 	 */
 	public LimitedSizeZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar,
-		Value subj, Value obj, Var contextVar, BindingSet bindings, AtomicLong used, long maxSize) {
+			Value subj, Value obj, Var contextVar, BindingSet bindings, AtomicLong used, long maxSize) {
 		super(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings);
 		this.used = used;
 		this.maxSize = maxSize;

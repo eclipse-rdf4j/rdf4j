@@ -47,7 +47,7 @@ public class Export extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE + "export <file>                 Exports the entirey repository to a file\n"
-			+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
+				+ "export <file> (<uri>|null)... Exports the specified context(s) to a file\n";
 	}
 
 	@Override
@@ -124,11 +124,11 @@ public class Export extends ConsoleCommand {
 		}
 
 		try (RepositoryConnection conn = repository.getConnection();
-			Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-				StandardOpenOption.TRUNCATE_EXISTING)) {
+				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+						StandardOpenOption.TRUNCATE_EXISTING)) {
 
 			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName)
-				.orElseThrow(() -> new UnsupportedRDFormatException("No RDF parser for " + fileName));
+					.orElseThrow(() -> new UnsupportedRDFormatException("No RDF parser for " + fileName));
 			RDFWriter writer = Rio.createWriter(fmt, w);
 
 			long startTime = System.nanoTime();

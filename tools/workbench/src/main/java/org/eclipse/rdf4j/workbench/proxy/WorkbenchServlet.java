@@ -95,7 +95,7 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
-		throws ServletException, IOException {
+			throws ServletException, IOException {
 		final String pathInfo = req.getPathInfo();
 		if (pathInfo == null) {
 			final String defaultPath = config.getInitParameter(DEFAULT_PATH);
@@ -123,7 +123,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	 * @throws QueryResultHandlerException
 	 */
 	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp, final String pathInfo)
-		throws IOException, ServletException, QueryResultHandlerException {
+			throws IOException, ServletException, QueryResultHandlerException {
 		int idx = pathInfo.indexOf('/', 1);
 		if (idx < 0) {
 			idx = pathInfo.length();
@@ -148,9 +148,9 @@ public class WorkbenchServlet extends AbstractServlet {
 				Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
 
 				writer.println(
-					"\n" +
-						"THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - " +
-						"DO NOT TRY TO PARSE THIS ERROR MESSAGE");
+						"\n" +
+								"THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - " +
+								"DO NOT TRY TO PARSE THIS ERROR MESSAGE");
 
 			} else {
 				throw new ServletException(e);
@@ -171,14 +171,14 @@ public class WorkbenchServlet extends AbstractServlet {
 	 * @throws QueryResultHandlerException
 	 */
 	private void handleUnauthorizedException(final HttpServletRequest req, final HttpServletResponse resp)
-		throws IOException, QueryResultHandlerException {
+			throws IOException, QueryResultHandlerException {
 		// Invalid credentials or insufficient authorization. Present
 		// entry form again with error message.
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.transform(this.getTransformationUrl(req), "server.xsl");
 		builder.start("error-message");
 		builder.result(
-			"The entered credentials entered either failed to authenticate to the Sesame server, or were unauthorized for the requested operation.");
+				"The entered credentials entered either failed to authenticate to the Sesame server, or were unauthorized for the requested operation.");
 		builder.end();
 	}
 
@@ -198,7 +198,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	}
 
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
-		throws RepositoryConfigException, RepositoryException, ServletException, IOException {
+			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
 		setCredentials(req, resp);
 		final DynamicHttpRequest http = new DynamicHttpRequest(req);
@@ -243,7 +243,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	 * @throws MalformedURLException if the repository location is malformed
 	 */
 	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
-		throws MalformedURLException, RepositoryException {
+			throws MalformedURLException, RepositoryException {
 		if (manager instanceof RemoteRepositoryManager) {
 			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
 			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());

@@ -70,15 +70,15 @@ public class RDFLoader {
 	 * @throws RDFHandlerException          If thrown by the RDFHandler
 	 */
 	public void load(File file, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (baseURI == null) {
 			// default baseURI to file
 			baseURI = file.toURI().toString();
 		}
 		if (dataFormat == null) {
 			dataFormat = Rio.getParserFormatForFileName(file.getName())
-				.orElseThrow(() -> new UnsupportedRDFormatException(
-					"Could not find RDF format for file: " + file.getName()));
+					.orElseThrow(() -> new UnsupportedRDFormatException(
+							"Could not find RDF format for file: " + file.getName()));
 		}
 
 		try (InputStream in = new FileInputStream(file);) {
@@ -104,7 +104,7 @@ public class RDFLoader {
 	 * @throws RDFHandlerException          If thrown by the RDFHandler
 	 */
 	public void load(URL url, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
@@ -132,9 +132,9 @@ public class RDFLoader {
 					mimeType = mimeType.substring(0, semiColonIdx);
 				}
 				dataFormat = Rio.getParserFormatForMIMEType(mimeType)
-					.orElseGet(() -> Rio.getParserFormatForFileName(url.getPath())
-						.orElseThrow(() -> new UnsupportedRDFormatException(
-							"Could not find RDF format for URL: " + url.getPath())));
+						.orElseGet(() -> Rio.getParserFormatForFileName(url.getPath())
+								.orElseThrow(() -> new UnsupportedRDFormatException(
+										"Could not find RDF format for URL: " + url.getPath())));
 
 			}
 
@@ -155,7 +155,7 @@ public class RDFLoader {
 	 * @throws RDFHandlerException          If thrown by the RDFHandler
 	 */
 	public void load(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		if (!in.markSupported()) {
 			in = new BufferedInputStream(in, 1024);
 		}
@@ -184,12 +184,12 @@ public class RDFLoader {
 	 * @throws RDFHandlerException          If thrown by the RDFHandler
 	 */
 	public void load(Reader reader, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 		loadInputStreamOrReader(reader, baseURI, dataFormat, rdfHandler);
 	}
 
 	private void loadZip(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
-		throws IOException, RDFParseException, RDFHandlerException {
+			throws IOException, RDFParseException, RDFHandlerException {
 
 		try (ZipInputStream zipIn = new ZipInputStream(in);) {
 			for (ZipEntry entry = zipIn.getNextEntry(); entry != null; entry = zipIn.getNextEntry()) {
@@ -230,7 +230,7 @@ public class RDFLoader {
 	 * @throws RDFHandlerException
 	 */
 	private void loadInputStreamOrReader(Object inputStreamOrReader, String baseURI, RDFFormat dataFormat,
-		RDFHandler rdfHandler) throws IOException, RDFParseException, RDFHandlerException {
+			RDFHandler rdfHandler) throws IOException, RDFParseException, RDFHandlerException {
 		RDFParser rdfParser = Rio.createParser(dataFormat, vf);
 		rdfParser.setParserConfig(config);
 		rdfParser.setParseErrorListener(new ParseErrorLogger());
@@ -243,7 +243,7 @@ public class RDFLoader {
 			rdfParser.parse((Reader) inputStreamOrReader, baseURI);
 		} else {
 			throw new IllegalArgumentException(
-				"Must be an InputStream or a Reader, is a: " + inputStreamOrReader.getClass());
+					"Must be an InputStream or a Reader, is a: " + inputStreamOrReader.getClass());
 		}
 	}
 }

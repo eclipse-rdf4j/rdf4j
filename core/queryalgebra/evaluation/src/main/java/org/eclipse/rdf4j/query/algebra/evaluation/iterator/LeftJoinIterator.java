@@ -45,7 +45,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 *--------------*/
 
 	public LeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.join = join;
 		this.scopeBindingNames = join.getBindingNames();

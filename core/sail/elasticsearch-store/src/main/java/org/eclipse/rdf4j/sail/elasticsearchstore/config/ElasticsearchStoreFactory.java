@@ -55,7 +55,7 @@ public class ElasticsearchStoreFactory implements SailFactory {
 			config.assertRequiredValuesPresent();
 
 			ElasticsearchStore elasticsearchStore = new ElasticsearchStore(config.getHostname(), config.getPort(),
-				config.getClusterName(), config.getIndex());
+					config.getClusterName(), config.getIndex());
 
 			EvaluationStrategyFactory evalStratFactory = config.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {

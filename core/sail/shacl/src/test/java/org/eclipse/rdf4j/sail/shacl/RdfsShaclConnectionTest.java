@@ -48,10 +48,10 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-				.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection);
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
-				connection,
-				((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
+					connection,
+					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
 			assertTrue(connection2.hasStatement(aSubSub, RDF.TYPE, sup, true));
 		}
@@ -69,33 +69,33 @@ public class RdfsShaclConnectionTest {
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-				.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection);
 
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
-				connection,
-				((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
+					connection,
+					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
-				.stream()) {
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
 				assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sub, true)
-				.stream()) {
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
 				assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, subSub, true)
-				.stream()) {
+					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
-					Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
+						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
 				assertEquals(expected, collect);
 			}
 		}
@@ -118,14 +118,14 @@ public class RdfsShaclConnectionTest {
 			connection.commit();
 
 			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
-				.createReasoner((ShaclSailConnection) connection);
+					.createReasoner((ShaclSailConnection) connection);
 
 			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
-				connection,
-				((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
+					connection,
+					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
-				.stream()) {
+					.stream()) {
 				List<Statement> collect = stream.peek(System.out::println).collect(Collectors.toList());
 				assertEquals(new HashSet<>(collect).size(), collect.size());
 

@@ -33,8 +33,8 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 	@Parameters(name = "{0}")
 	public static final IsolationLevel[] parametersREAD_COMMITTED() {
 		return new IsolationLevel[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
-			IsolationLevels.SNAPSHOT_READ,
-			IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
+				IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
 	}
 
 	private IRI woman;
@@ -179,7 +179,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 		// TODO this test currently assumes that inferred triples are added to the null context. If we extend
 		// the reasoner to support usage of other contexts, this will have to be amended.
 		assertTrue("inferred triple should have been added to null context",
-			testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true, (Resource) null));
+				testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true, (Resource) null));
 
 // It used to expected behaviour that all inferred statements be added to the null context except those that already existed in some other context. There is no longer a check for if an inferred statement exists in other contexts.
 //		assertFalse("input triple should not have been re-added as inferred",
@@ -194,7 +194,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 		// TODO this test currently assumes that inferred triples are added to the null context. If we extend
 		// the reasoner to support usage of other contexts, this will have to be amended.
 		assertTrue("inferred triple should have been added to null context",
-			testCon.hasStatement(FOAF.AGENT, RDF.TYPE, RDFS.CLASS, true, (Resource) null));
+				testCon.hasStatement(FOAF.AGENT, RDF.TYPE, RDFS.CLASS, true, (Resource) null));
 		// It used to expected behaviour that all inferred statements be added to the null context except those that
 		// already existed in some other context. There is no longer a check for if an inferred statement exists in
 		// other contexts.
@@ -203,9 +203,9 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 		// assertFalse("input triple should not have been re-added as inferred", testCon.hasStatement(FOAF.PERSON,
 		// RDFS.SUBCLASSOF, FOAF.AGENT, true, (Resource) null));
 		assertTrue("input triple should be explicitly present",
-			testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));
+				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));
 		assertTrue("input triple should be explicitly present",
-			testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, false));
+				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, false));
 
 	}
 

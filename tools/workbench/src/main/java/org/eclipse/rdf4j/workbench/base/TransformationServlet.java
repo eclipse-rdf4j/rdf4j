@@ -75,7 +75,7 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
-		throws ServletException, IOException {
+			throws ServletException, IOException {
 		if (req.getCharacterEncoding() == null) {
 			req.setCharacterEncoding("UTF-8");
 		}
@@ -103,18 +103,18 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	}
 
 	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
-		throws Exception {
+			throws Exception {
 		service(wreq, resp, xslPath);
 	}
 
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-		throws Exception {
+			throws Exception {
 		service(getTupleResultBuilder(req, resp, resp.getOutputStream()), xslPath);
 	}
 
 	protected void service(final TupleResultBuilder writer, final String xslPath) throws Exception {
 		LOGGER.info("Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
-			xslPath);
+				xslPath);
 	}
 
 }

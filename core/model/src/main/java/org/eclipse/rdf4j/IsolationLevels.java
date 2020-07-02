@@ -86,7 +86,7 @@ public enum IsolationLevels implements IsolationLevel {
 	 * @throws IllegalArgumentException if either one of the input parameters is <code>null</code>.
 	 */
 	public static IsolationLevel getCompatibleIsolationLevel(IsolationLevel level,
-		List<? extends IsolationLevel> supportedLevels) {
+			List<? extends IsolationLevel> supportedLevels) {
 		if (supportedLevels == null) {
 			throw new IllegalArgumentException("list of supported levels may not be null");
 		}

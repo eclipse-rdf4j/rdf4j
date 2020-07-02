@@ -22,10 +22,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 @Deprecated
 public class ServiceJoinConversionIteration
-	extends org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration {
+		extends org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration {
 
 	public ServiceJoinConversionIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		List<BindingSet> bindings) {
+			List<BindingSet> bindings) {
 		super(iter, bindings);
 	}
 }

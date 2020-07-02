@@ -103,7 +103,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 		try {
 			Function instanceOfFunc = getFunction("http://spinrdf.org/spl#instanceOf", qpTripleSource,
-				FunctionRegistry.getInstance());
+					FunctionRegistry.getInstance());
 			Map<IRI, Argument> funcArgs = parser.parseArguments(func, qpTripleSource);
 			List<IRI> funcArgList = SpinParser.orderArguments(funcArgs.keySet());
 			final Map<IRI, Value> argValues = new HashMap<>(funcArgList.size() * 3);
@@ -137,7 +137,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 				@Override
 				public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+						IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 					if (funcInstance.equals(subj)) {
 						if (pred != null) {
 							Value v = argValues.get(pred);
@@ -168,8 +168,8 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 				@Override
 				protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(
-					TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
-					int maxExecutionTime) throws QueryEvaluationException {
+						TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
+						int maxExecutionTime) throws QueryEvaluationException {
 					// Clone the tuple expression to allow for more aggressive
 					// optimizations
 					tupleExpr = tupleExpr.clone();
@@ -181,12 +181,12 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 					}
 
 					new SpinFunctionInterpreter(parser, getTripleSource(), functionRegistry).optimize(tupleExpr,
-						dataset, bindings);
+							dataset, bindings);
 					new SpinMagicPropertyInterpreter(parser, getTripleSource(), tupleFunctionRegistry, serviceResolver)
-						.optimize(tupleExpr, dataset, bindings);
+							.optimize(tupleExpr, dataset, bindings);
 
 					EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(getTripleSource(), dataset,
-						serviceResolver, tupleFunctionRegistry);
+							serviceResolver, tupleFunctionRegistry);
 
 					// do standard optimizations
 					new BindingAssigner().optimize(tupleExpr, dataset, bindings);
@@ -208,21 +208,21 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 
 				@Override
 				protected void execute(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings,
-					boolean includeInferred, int maxExecutionTime) throws UpdateExecutionException {
+						boolean includeInferred, int maxExecutionTime) throws UpdateExecutionException {
 					throw new UnsupportedOperationException();
 				}
 			};
 
 			try (CloseableIteration<Resource, QueryEvaluationException> iter = TripleSources
-				.getObjectResources(func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
+					.getObjectResources(func, SPIN.CONSTRAINT_PROPERTY, qpTripleSource)) {
 				while (iter.hasNext()) {
 					Resource constraint = iter.next();
 					Set<IRI> constraintTypes = Iterations
-						.asSet(TripleSources.getObjectURIs(constraint, RDF.TYPE, qpTripleSource));
+							.asSet(TripleSources.getObjectURIs(constraint, RDF.TYPE, qpTripleSource));
 					// skip over argument constraints that we have already checked
 					if (!constraintTypes.contains(SPL.ARGUMENT_TEMPLATE)) {
 						ConstraintViolation violation = SpinInferencing.checkConstraint(funcInstance, constraint,
-							tempQueryPreparer, parser);
+								tempQueryPreparer, parser);
 						if (violation != null) {
 							return BooleanLiteral.FALSE;
 						}
@@ -237,7 +237,7 @@ public class CanInvoke extends AbstractSpinFunction implements Function {
 	}
 
 	private Function getFunction(String name, TripleSource tripleSource, FunctionRegistry functionRegistry)
-		throws RDF4JException {
+			throws RDF4JException {
 		Function func = functionRegistry.get(name).orElse(null);
 		if (func == null) {
 			IRI funcUri = tripleSource.getValueFactory().createIRI(name);

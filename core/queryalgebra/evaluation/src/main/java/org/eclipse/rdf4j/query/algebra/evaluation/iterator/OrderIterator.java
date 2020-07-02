@@ -245,17 +245,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *--------------*/
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		Comparator<BindingSet> comparator) {
+			Comparator<BindingSet> comparator) {
 		this(iter, comparator, Long.MAX_VALUE, false);
 	}
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		Comparator<BindingSet> comparator, long limit, boolean distinct) {
+			Comparator<BindingSet> comparator, long limit, boolean distinct) {
 		this(iter, comparator, limit, distinct, Integer.MAX_VALUE);
 	}
 
 	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
+			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
 		this.iter = iter;
 		this.comparator = comparator;
 		this.limit = limit;

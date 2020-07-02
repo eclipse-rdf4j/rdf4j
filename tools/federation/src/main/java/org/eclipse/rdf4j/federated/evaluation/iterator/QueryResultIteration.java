@@ -37,7 +37,7 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 	protected final QueryManager qm;
 
 	public QueryResultIteration(
-		CloseableIteration<BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
+			CloseableIteration<BindingSet, QueryEvaluationException> inner, QueryInfo queryInfo) {
 		super();
 		this.inner = inner;
 		this.queryInfo = queryInfo;

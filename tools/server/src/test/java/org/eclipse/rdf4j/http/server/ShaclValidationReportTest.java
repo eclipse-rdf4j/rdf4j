@@ -52,28 +52,28 @@ public class ShaclValidationReportTest {
 	}
 
 	String shacl = "@base <http://example.com/ns> .\n" +
-		"@prefix ex: <http://example.com/ns#> .\n" +
-		"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
-		"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-		"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-		"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-		"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
-		"\n" +
-		"ex:PersonShape\n" +
-		"\ta sh:NodeShape  ;\n" +
-		"\tsh:targetClass rdfs:Resource ;\n" +
-		"\tsh:property ex:PersonShapeProperty  .\n" +
-		"\n" +
-		"\n" +
-		"ex:PersonShapeProperty\n" +
-		"        sh:path rdfs:label ;\n" +
-		"        sh:minCount 1 .";
+			"@prefix ex: <http://example.com/ns#> .\n" +
+			"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
+			"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+			"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+			"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+			"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+			"\n" +
+			"ex:PersonShape\n" +
+			"\ta sh:NodeShape  ;\n" +
+			"\tsh:targetClass rdfs:Resource ;\n" +
+			"\tsh:property ex:PersonShapeProperty  .\n" +
+			"\n" +
+			"\n" +
+			"ex:PersonShapeProperty\n" +
+			"        sh:path rdfs:label ;\n" +
+			"        sh:minCount 1 .";
 
 	@Test
 	public void testSparqlUpdate() throws IOException {
 
 		Repository systemRepo = new HTTPRepository(
-			Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
+				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -107,7 +107,7 @@ public class ShaclValidationReportTest {
 	public void testAddingData() throws IOException {
 
 		Repository systemRepo = new HTTPRepository(
-			Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
+				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = systemRepo.getConnection()) {
 			connection.begin();
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);

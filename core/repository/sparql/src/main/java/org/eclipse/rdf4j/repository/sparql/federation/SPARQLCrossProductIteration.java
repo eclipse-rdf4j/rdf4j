@@ -37,7 +37,7 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 	protected BindingSet currentInputBinding = null;
 
 	public SPARQLCrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
-		List<BindingSet> inputBindings) {
+			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;
 		this.inputBindings = inputBindings;

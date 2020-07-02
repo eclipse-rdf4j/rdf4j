@@ -315,7 +315,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
-		throws VisitorException {
+			throws VisitorException {
 		FunctionCall functionCall = new FunctionCall(uri);
 
 		int noOfArguments = node.jjtGetNumChildren();
@@ -416,7 +416,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)
-		throws VisitorException {
+			throws VisitorException {
 		if (havingNode != null) {
 			// create an implicit group
 			if (group == null) {
@@ -465,7 +465,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr processOrderClause(ASTOrderClause orderNode, TupleExpr tupleExpr, Group group)
-		throws VisitorException {
+			throws VisitorException {
 		if (orderNode != null) {
 			@SuppressWarnings("unchecked")
 			List<OrderElem> orderElements = (List<OrderElem>) orderNode.jjtAccept(this, null);
@@ -649,17 +649,17 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						for (Var var : collector.getCollectedVars()) {
 							if (!groupNames.contains(var.getName())) {
 								throw new VisitorException(
-									"variable '" + var.getName() + "' in projection not present in GROUP BY.");
+										"variable '" + var.getName() + "' in projection not present in GROUP BY.");
 
 							}
 						}
 					} else {
 						if (!groupNames.contains(elem.getTargetName())) {
 							throw new VisitorException(
-								"variable '" + elem.getTargetName() + "' in projection not present in GROUP BY.");
+									"variable '" + elem.getTargetName() + "' in projection not present in GROUP BY.");
 						} else if (!groupNames.contains(elem.getSourceName())) {
 							throw new VisitorException(
-								"variable '" + elem.getSourceName() + "' in projection not present in GROUP BY.");
+									"variable '" + elem.getSourceName() + "' in projection not present in GROUP BY.");
 
 						}
 					}
@@ -887,7 +887,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private List<StatementPattern> replaceSameTermVars(List<StatementPattern> statementPatterns,
-		Set<SameTerm> sameTermConstraints) {
+			Set<SameTerm> sameTermConstraints) {
 		if (sameTermConstraints != null) {
 			for (SameTerm st : sameTermConstraints) {
 				Var left = (Var) st.getLeftArg();
@@ -1059,7 +1059,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (node instanceof TripleRef) {
 			TripleRef t = (TripleRef) node;
 			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar(), t.getPredicateVar(),
-				t.getObjectVar());
+					t.getObjectVar());
 		}
 		throw new IllegalArgumentException("could not cast " + node.getClass().getName() + " to ValueExpr");
 	}
@@ -1203,7 +1203,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		String serviceExpressionString = node.getPatternString();
 
 		parentGP.addRequiredTE(new Service(mapValueExprToVar(serviceRef), serviceExpr, serviceExpressionString,
-			node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent()));
+				node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent()));
 
 		graphPattern = parentGP;
 
@@ -1494,7 +1494,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						if (objVar.equals(subjVar)) { // see SES-1685
 							Var objVarReplacement = createAnonVar();
 							te = handlePathModifiers(scope, startVar, te, objVarReplacement, contextVar, lowerBound,
-								upperBound);
+									upperBound);
 							SameTerm condition = new SameTerm(objVar, objVarReplacement);
 							pathSequencePattern.addConstraint(condition);
 						} else {
@@ -1545,7 +1545,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
 							// or otherwise we'd create a reflexive path (possible in nested expressions)
 							if (subjVar.equals(startVar)
-								|| !(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
+									|| !(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
 								startVar = objVar;
 							}
 						}
@@ -1661,13 +1661,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 				if (patternMatch == null) {
 					patternMatch = new StatementPattern(nps.getScope(), patternSubjVar, predVar,
-						patternObjVar,
-						nps.getContextVar());
+							patternObjVar,
+							nps.getContextVar());
 				} else {
 					patternMatch = new Join(
-						new StatementPattern(nps.getScope(), patternSubjVar, predVar, patternObjVar,
-							nps.getContextVar()),
-						patternMatch);
+							new StatementPattern(nps.getScope(), patternSubjVar, predVar, patternObjVar,
+									nps.getContextVar()),
+							patternMatch);
 				}
 			}
 		}
@@ -1679,11 +1679,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			for (ValueExpr objVar : nps.getObjectList()) {
 				if (patternMatchInverse == null) {
 					patternMatchInverse = new StatementPattern(nps.getScope(), (Var) objVar, predVar, subjVar,
-						nps.getContextVar());
+							nps.getContextVar());
 				} else {
 					patternMatchInverse = new Join(
-						new StatementPattern(nps.getScope(), (Var) objVar, predVar, subjVar, nps.getContextVar()),
-						patternMatchInverse);
+							new StatementPattern(nps.getScope(), (Var) objVar, predVar, subjVar, nps.getContextVar()),
+							patternMatchInverse);
 				}
 			}
 		}
@@ -1706,7 +1706,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr replaceVarOccurrence(TupleExpr te, List<ValueExpr> objectList, Var replacementVar)
-		throws VisitorException {
+			throws VisitorException {
 		for (ValueExpr objExpr : objectList) {
 			Var objVar = mapValueExprToVar(objExpr);
 			VarReplacer replacer = new VarReplacer(objVar, replacementVar);
@@ -1716,7 +1716,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr handlePathModifiers(Scope scope, Var subjVar, TupleExpr te, Var endVar, Var contextVar,
-		long lowerBound, long upperBound) throws VisitorException {
+			long lowerBound, long upperBound) throws VisitorException {
 
 		TupleExpr result = te;
 
@@ -1755,7 +1755,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					// upperbound is abitrary-length
 
 					result = new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
-						lowerBound);
+							lowerBound);
 				}
 			} else {
 				// create single path of fixed length.
@@ -1768,7 +1768,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private TupleExpr createPath(Scope scope, Var subjVar, TupleExpr pathExpression, Var endVar, Var contextVar,
-		long length) throws VisitorException {
+			long length) throws VisitorException {
 		if (pathExpression instanceof StatementPattern) {
 			Var predVar = ((StatementPattern) pathExpression).getPredicateVar();
 
@@ -2571,7 +2571,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// bind expression
 		Object child0 = node.jjtGetChild(0).jjtAccept(this, data);
 		ValueExpr ve = child0 instanceof ValueExpr ? (ValueExpr) child0
-			: (child0 instanceof TripleRef) ? ((TripleRef) child0).getExprVar() : null;
+				: (child0 instanceof TripleRef) ? ((TripleRef) child0).getExprVar() : null;
 		if (ve == null) {
 			throw new IllegalArgumentException("Unexpected expressin on bind");
 		}

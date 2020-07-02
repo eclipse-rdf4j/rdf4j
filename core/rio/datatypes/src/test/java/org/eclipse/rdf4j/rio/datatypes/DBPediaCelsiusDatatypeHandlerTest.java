@@ -57,8 +57,8 @@ public class DBPediaCelsiusDatatypeHandlerTest extends AbstractDatatypeHandlerTe
 	@Override
 	protected Literal getNormalisedLiteralForRecognisedDatatypeAndValue() {
 		return SimpleValueFactory.getInstance()
-			.createLiteral("1.0",
-				SimpleValueFactory.getInstance().createIRI("http://dbpedia.org/datatype/", "degreeCelsius"));
+				.createLiteral("1.0",
+						SimpleValueFactory.getInstance().createIRI("http://dbpedia.org/datatype/", "degreeCelsius"));
 	}
 
 	// -------------------------------------

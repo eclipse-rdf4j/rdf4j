@@ -71,7 +71,7 @@ public class ValuesBackedNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 
 	}
 
@@ -88,7 +88,7 @@ public class ValuesBackedNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ValuesBackedNode{" +
-			"collection=" + collection + '}';
+				"collection=" + collection + '}';
 	}
 
 	@Override

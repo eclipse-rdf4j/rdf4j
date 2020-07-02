@@ -43,9 +43,9 @@ public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser imple
 
 			Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
 			CsvToBean csvToBean = new CsvToBeanBuilder<BindingSet>(reader).withType(BindingSet.class)
-				.withMappingStrategy(strategy)
-				.withSeparator('\t')
-				.build();
+					.withMappingStrategy(strategy)
+					.withSeparator('\t')
+					.build();
 			csvToBean.setCsvReader(new SPARQLResultsTSVReader(reader)); // We need our reader
 			List<BindingSet> bindingSets = csvToBean.parse();
 			List<String> bindingNames = strategy.getBindingNames();

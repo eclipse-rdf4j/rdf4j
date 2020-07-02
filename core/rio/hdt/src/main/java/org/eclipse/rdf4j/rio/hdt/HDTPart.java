@@ -264,7 +264,7 @@ abstract class HDTPart {
 
 		if (calc != expect) {
 			throw new IOException("CRC does not match: calculated " +
-				Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
+					Long.toHexString(calc) + " instead of " + Long.toHexString(expect));
 		}
 	}
 }

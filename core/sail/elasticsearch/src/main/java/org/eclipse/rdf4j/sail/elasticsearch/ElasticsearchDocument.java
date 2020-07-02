@@ -54,7 +54,7 @@ public class ElasticsearchDocument implements SearchDocument {
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
-		Function<? super String, ? extends SpatialContext> geoContextMapper) {
+			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this(id, type, index, Versions.MATCH_ANY, new HashMap<>(), geoContextMapper);
 		fields.put(SearchFields.URI_FIELD_NAME, resourceId);
 		if (context != null) {
@@ -63,7 +63,7 @@ public class ElasticsearchDocument implements SearchDocument {
 	}
 
 	public ElasticsearchDocument(String id, String type, String index, long version, Map<String, Object> fields,
-		Function<? super String, ? extends SpatialContext> geoContextMapper) {
+			Function<? super String, ? extends SpatialContext> geoContextMapper) {
 		this.id = id;
 		this.type = type;
 		this.version = version;
@@ -144,7 +144,7 @@ public class ElasticsearchDocument implements SearchDocument {
 				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), GeoHashUtils.stringEncode(p.getX(), p.getY()));
 			} else {
 				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),
-					ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
+						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));
 			}
 		} catch (ParseException e) {
 			// ignore

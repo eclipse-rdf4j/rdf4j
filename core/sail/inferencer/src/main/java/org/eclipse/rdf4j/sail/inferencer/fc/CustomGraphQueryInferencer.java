@@ -75,7 +75,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @throws SailException                     if a problem occurs interpreting the rule pattern
 	 */
 	public CustomGraphQueryInferencer(QueryLanguage language, String queryText, String matcherText)
-		throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
+			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
 		super();
 		setFields(language, queryText, matcherText);
 	}
@@ -92,7 +92,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @throws SailException                     if a problem occurs interpreting the rule pattern
 	 */
 	public CustomGraphQueryInferencer(NotifyingSail baseSail, QueryLanguage language, String queryText,
-		String matcherText) throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
+			String matcherText) throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
 		super(baseSail);
 		setFields(language, queryText, matcherText);
 	}
@@ -107,7 +107,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	 * @throws SailException           if a problem occurs interpreting the rule pattern
 	 */
 	public final void setFields(QueryLanguage language, String queryText, String matcherText)
-		throws MalformedQueryException, SailException {
+			throws MalformedQueryException, SailException {
 		customQuery = QueryParserUtil.parseGraphQuery(language, queryText, null);
 		String matcherQuery = matcherText;
 		if (matcherText.trim().isEmpty()) {
@@ -209,8 +209,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 
 		private void setUpdateNeededIfMatching(Statement statement) {
 			updateNeeded = hasWatchValues ? watchPredicates.contains(statement.getPredicate())
-				|| watchSubjects.contains(statement.getSubject()) || watchObjects.contains(statement.getObject())
-				: true;
+					|| watchSubjects.contains(statement.getSubject()) || watchObjects.contains(statement.getObject())
+					: true;
 		}
 
 		@Override
@@ -254,7 +254,7 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		}
 
 		private void buildDeltaSets(Collection<Statement> forRemoval, Collection<Statement> forAddition)
-			throws SailException, RDFHandlerException, QueryEvaluationException {
+				throws SailException, RDFHandlerException, QueryEvaluationException {
 			evaluateIntoStatements(customMatcher, forRemoval);
 			evaluateIntoStatements(customQuery, forAddition);
 			logger.debug("existing virtual properties: {}", forRemoval.size());
@@ -268,10 +268,10 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 		}
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
-			throws SailException, RDFHandlerException, QueryEvaluationException {
+				throws SailException, RDFHandlerException, QueryEvaluationException {
 			try (
-				CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
-					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+					CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+							.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory factory = getValueFactory();
 				while (bindingsIter.hasNext()) {
 					BindingSet bindings = bindingsIter.next();

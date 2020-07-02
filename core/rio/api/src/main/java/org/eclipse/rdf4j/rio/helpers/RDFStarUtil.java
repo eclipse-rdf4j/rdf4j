@@ -43,8 +43,8 @@ public class RDFStarUtil {
 	 */
 	public static <T extends Value> T toRDFEncodedValue(T value) {
 		return value instanceof Triple
-			? (T) VF.createIRI(TRIPLE_PREFIX + encode(NTriplesUtil.toNTriplesString(value)))
-			: value;
+				? (T) VF.createIRI(TRIPLE_PREFIX + encode(NTriplesUtil.toNTriplesString(value)))
+				: value;
 	}
 
 	/**
@@ -62,9 +62,9 @@ public class RDFStarUtil {
 	public static <T extends Value> T fromRDFEncodedValue(T encodedValue) {
 		try {
 			return isEncodedTriple(encodedValue)
-				? (T) NTriplesUtil.parseTriple(decode(
-					encodedValue.stringValue().substring(TRIPLE_PREFIX.length())), VF)
-				: encodedValue;
+					? (T) NTriplesUtil.parseTriple(decode(
+							encodedValue.stringValue().substring(TRIPLE_PREFIX.length())), VF)
+					: encodedValue;
 		} catch (IllegalArgumentException e) {
 			throw new IllegalArgumentException("Invalid RDF* encoded triple: " + encodedValue);
 		}

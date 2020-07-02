@@ -44,7 +44,7 @@ public class LuceneDocument implements SearchDocument {
 	}
 
 	public LuceneDocument(String id, String resourceId, String context,
-		Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
+			Function<? super String, ? extends SpatialStrategy> geoStrategyMapper) {
 		this(geoStrategyMapper);
 		setId(id);
 		setResource(resourceId);

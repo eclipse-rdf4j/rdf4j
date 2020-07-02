@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.SailException;
 class ConnectionHelper {
 
 	static CloseableIteration<Statement, SailException> getCloseableIteration(
-		RepositoryResult<Statement> repositoryResults) {
+			RepositoryResult<Statement> repositoryResults) {
 
 		return new CloseableIteration<Statement, SailException>() {
 
@@ -50,13 +50,13 @@ class ConnectionHelper {
 	static void transferStatements(SailConnection from, TransferStatement transfer) {
 
 		try (CloseableIteration<? extends Statement, SailException> statements = from
-			.getStatements(null, null, null, false)) {
+				.getStatements(null, null, null, false)) {
 
 			while (statements.hasNext()) {
 				Statement next = statements.next();
 
 				transfer.transfer(next.getSubject(), next.getPredicate(),
-					next.getObject(), next.getContext());
+						next.getObject(), next.getContext());
 
 			}
 		}

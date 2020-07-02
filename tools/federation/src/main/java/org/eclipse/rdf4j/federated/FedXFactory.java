@@ -50,7 +50,7 @@ public class FedXFactory {
 	 * @throws Exception
 	 */
 	public static FedXRepository createSparqlFederation(
-		List<String> sparqlEndpoints) throws Exception {
+			List<String> sparqlEndpoints) throws Exception {
 		return newFederation().withSparqlEndpoints(sparqlEndpoints).create();
 	}
 
@@ -65,7 +65,7 @@ public class FedXFactory {
 	 * @throws Exception
 	 */
 	public static FedXRepository createFederation(File dataConfig)
-		throws Exception {
+			throws Exception {
 		return newFederation().withMembers(dataConfig).create();
 	}
 
@@ -81,7 +81,7 @@ public class FedXFactory {
 	 * @throws Exception
 	 */
 	public static FedXRepository createFederation(
-		List<Endpoint> endpoints) throws FedXException {
+			List<Endpoint> endpoints) throws FedXException {
 
 		return newFederation().withMembers(endpoints).create();
 	}

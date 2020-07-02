@@ -47,7 +47,7 @@ public class NamespaceController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		String pathInfoStr = request.getPathInfo();
 		String prefix = pathInfoStr.substring(pathInfoStr.lastIndexOf('/') + 1);
 
@@ -75,7 +75,7 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private ModelAndView getExportNamespaceResult(HttpServletRequest request, String prefix)
-		throws ServerHTTPException, ClientHTTPException {
+			throws ServerHTTPException, ClientHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			String namespace = repositoryCon.getNamespace(prefix);
 
@@ -93,7 +93,7 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private ModelAndView getUpdateNamespaceResult(HttpServletRequest request, String prefix)
-		throws IOException, ClientHTTPException, ServerHTTPException {
+			throws IOException, ClientHTTPException, ServerHTTPException {
 		String namespace = IOUtil.readString(request.getReader());
 		namespace = namespace.trim();
 
@@ -112,7 +112,7 @@ public class NamespaceController extends AbstractController {
 	}
 
 	private ModelAndView getRemoveNamespaceResult(HttpServletRequest request, String prefix)
-		throws ServerHTTPException {
+			throws ServerHTTPException {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			repositoryCon.removeNamespace(prefix);
 		} catch (RepositoryException e) {

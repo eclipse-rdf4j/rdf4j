@@ -30,8 +30,8 @@ public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluat
 	protected final FederationEvalStrategy strategy;
 
 	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-		FederationEvalStrategy strategy)
-		throws QueryEvaluationException {
+			FederationEvalStrategy strategy)
+			throws QueryEvaluationException {
 		super(iter);
 		this.filterExpr = filterExpr;
 		this.strategy = strategy;

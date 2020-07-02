@@ -108,7 +108,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 
 			if (writerConfig.get(XMLWriterSettings.INCLUDE_XML_PI)) {
 				String str = (quote == '\"') ? "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-					: "<?xml version='1.0' encoding='UTF-8'?>\n";
+						: "<?xml version='1.0' encoding='UTF-8'?>\n";
 				writer.write(str);
 			}
 
@@ -369,13 +369,13 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	protected void writeAttribute(String namespace, String attName, String value)
-		throws IOException, RDFHandlerException {
+			throws IOException, RDFHandlerException {
 		// Note: attribute cannot use the default namespace
 		String prefix = namespaceTable.get(namespace);
 
 		if (prefix == null) {
 			throw new RDFHandlerException(
-				"No prefix has been declared for the namespace used in this attribute: " + namespace);
+					"No prefix has been declared for the namespace used in this attribute: " + namespace);
 		}
 
 		writeQuotedAttribute(" " + prefix + ":" + attName, value);
@@ -390,7 +390,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 */
 	protected void writeQuotedAttribute(String attName, String value) throws IOException {
 		String str = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(value)
-			: XMLUtil.escapeSingleQuotedAttValue(value);
+				: XMLUtil.escapeSingleQuotedAttValue(value);
 		writer.write(attName);
 		writer.write("=");
 		writer.write(quote);
@@ -445,7 +445,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 			str = XMLUtil.escapeCharacterData(chars);
 		} else {
 			str = (quote == '\"') ? XMLUtil.escapeDoubleQuotedAttValue(chars)
-				: XMLUtil.escapeSingleQuotedAttValue(chars);
+					: XMLUtil.escapeSingleQuotedAttValue(chars);
 		}
 		writer.write(str);
 	}

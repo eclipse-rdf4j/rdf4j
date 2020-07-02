@@ -110,7 +110,7 @@ public class InterceptorTest {
 
 			@Override
 			public Update prepareUpdate(QueryLanguage ql, String query, String baseURI)
-				throws MalformedQueryException, RepositoryException {
+					throws MalformedQueryException, RepositoryException {
 				return updateStub;
 			}
 		};
@@ -120,7 +120,7 @@ public class InterceptorTest {
 
 			@Override
 			public boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
-				Update operation) {
+					Update operation) {
 				assertEquals(stub, conn);
 				assertEquals(SPARQL, ql);
 				assertEquals("DELETE DATA { <> <> <> }", update);
@@ -141,7 +141,7 @@ public class InterceptorTest {
 
 			@Override
 			protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
-				throws RepositoryException {
+					throws RepositoryException {
 				fail();
 			}
 		};
@@ -151,7 +151,7 @@ public class InterceptorTest {
 
 			@Override
 			public boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-				Resource... contexts) {
+					Resource... contexts) {
 				assertEquals(stub, conn);
 				assertEquals(uri, subject);
 				assertEquals(uri, predicate);

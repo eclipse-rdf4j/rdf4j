@@ -67,7 +67,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		// Create configurations for the SAIL stack, and the repository
 		// implementation.
 		subject.addRepositoryConfig(
-			new RepositoryConfig(TEST_REPO, new SailRepositoryConfig(new MemoryStoreConfig(true))));
+				new RepositoryConfig(TEST_REPO, new SailRepositoryConfig(new MemoryStoreConfig(true))));
 
 		// Create configuration for proxy repository to previous repository.
 		subject.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(TEST_REPO)));

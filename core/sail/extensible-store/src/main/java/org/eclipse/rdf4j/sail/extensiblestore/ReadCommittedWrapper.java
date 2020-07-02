@@ -57,12 +57,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 
 	@Override
 	public CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(Resource subject,
-		IRI predicate, Value object, boolean inferred, Resource... context) {
+			IRI predicate, Value object, boolean inferred, Resource... context) {
 
 		// must match single statement
 		if (subject != null && predicate != null && object != null && context != null && context.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
-				.createStatement(subject, predicate, object, context[0]);
+					.createStatement(subject, predicate, object, context[0]);
 
 			statement = ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);
 
@@ -89,33 +89,33 @@ class ReadCommittedWrapper implements DataStructureInterface {
 					Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());
 
 					Iterator<ExtensibleStatement> left = internalAddedLocal.stream()
-						.filter(statement -> {
+							.filter(statement -> {
 
-							if (subject != null && !statement.getSubject().equals(subject)) {
-								return false;
-							}
-							if (predicate != null && !statement.getPredicate().equals(predicate)) {
-								return false;
-							}
-							if (object != null && !statement.getObject().equals(object)) {
-								return false;
-							}
-							if (context != null && context.length > 0
-								&& !containsContext(context, statement.getContext())) {
-								return false;
-							}
+								if (subject != null && !statement.getSubject().equals(subject)) {
+									return false;
+								}
+								if (predicate != null && !statement.getPredicate().equals(predicate)) {
+									return false;
+								}
+								if (object != null && !statement.getObject().equals(object)) {
+									return false;
+								}
+								if (context != null && context.length > 0
+										&& !containsContext(context, statement.getContext())) {
+									return false;
+								}
 
-							if (!inferred && inferred != statement.isInferred()) {
-								return false;
-							}
+								if (!inferred && inferred != statement.isInferred()) {
+									return false;
+								}
 
-							return true;
-						})
-						.iterator();
+								return true;
+							})
+							.iterator();
 
 					CloseableIteration<? extends ExtensibleStatement, SailException> right = dataStructure
-						.getStatements(
-							subject, predicate, object, inferred, context);
+							.getStatements(
+									subject, predicate, object, inferred, context);
 
 					@Override
 					protected void handleClose() throws SailException {
@@ -179,10 +179,10 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		}
 
 		List<ExtensibleStatement> internalAddedEffective = internalAdded
-			.keySet()
-			.stream()
-			.filter(statement -> !internalRemoved.containsKey(statement))
-			.collect(Collectors.toList());
+				.keySet()
+				.stream()
+				.filter(statement -> !internalRemoved.containsKey(statement))
+				.collect(Collectors.toList());
 
 		synchronized (dataStructure) {
 			internalAddedEffective.forEach(dataStructure::addStatement);

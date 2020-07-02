@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, QueryEvaluationException>
-	implements ParallelExecutor<BindingSet> {
+		implements ParallelExecutor<BindingSet> {
 
 	/*
 	 * IMPLEMENTATION NOTE
@@ -61,7 +61,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	 * @param federationContext
 	 */
 	public ParallelServiceExecutor(FedXService service,
-		FederationEvalStrategy strategy, BindingSet bindings, FederationContext federationContext) {
+			FederationEvalStrategy strategy, BindingSet bindings, FederationContext federationContext) {
 		super();
 		this.service = service;
 		this.strategy = strategy;
@@ -156,7 +156,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> performTask()
-			throws Exception {
+				throws Exception {
 
 			// Note: in order two avoid deadlocks we consume the SERVICE result.
 			// This is basically required to avoid processing background tuple

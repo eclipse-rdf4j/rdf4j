@@ -99,10 +99,10 @@ public class EndpointFactory {
 	}
 
 	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName, boolean writable)
-		throws FedXException {
+			throws FedXException {
 		RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();
 		RemoteRepositoryRepositoryInformation info = new RemoteRepositoryRepositoryInformation(repositoryServer,
-			repositoryName);
+				repositoryName);
 		info.setWritable(writable);
 		return repProvider.loadEndpoint(info);
 
@@ -173,7 +173,7 @@ public class EndpointFactory {
 	 * @throws FedXException
 	 */
 	public static Endpoint loadEndpoint(String id, Repository repository)
-		throws FedXException {
+			throws FedXException {
 		RepositoryEndpointProvider repProvider = new RepositoryEndpointProvider(repository);
 		String name = "http://" + id;
 		String location = "http://unknown";
@@ -288,7 +288,7 @@ public class EndpointFactory {
 	}
 
 	private static Endpoint loadEndpoint(Model graph, Resource repNode, Value repType, File baseDir)
-		throws FedXException {
+			throws FedXException {
 
 		// NativeStore => RDF4J native store implementation
 		if (repType.equals(FedXUtil.literal("NativeStore"))) {
@@ -363,7 +363,7 @@ public class EndpointFactory {
 
 		@Override
 		public void handleNamespace(String prefix, String uri)
-			throws RDFHandlerException {
+				throws RDFHandlerException {
 			; // no-op
 		}
 

@@ -117,8 +117,8 @@ public class SPARQLConnectionTest {
 		String expectedRemovePattern = "DELETE DATA[^{]*\\{[^<]*<" + FOAF.AGENT + "> ";
 
 		assertThat(sparqlUpdate).containsPattern(expectedAddPattern1)
-			.containsPattern(expectedAddPattern2)
-			.containsPattern(expectedRemovePattern);
+				.containsPattern(expectedAddPattern2)
+				.containsPattern(expectedRemovePattern);
 	}
 
 	@Test
@@ -145,9 +145,9 @@ public class SPARQLConnectionTest {
 
 		assertThat(sparqlUpdate).containsPattern(expectedSequence);
 		assertThat(sparqlUpdate).contains(expectedAddedTriple1)
-			.contains(expectedAddedTriple2)
-			.contains(expectedAddedTriple3)
-			.contains(expectedRemovedTriple1);
+				.contains(expectedAddedTriple2)
+				.contains(expectedAddedTriple3)
+				.contains(expectedRemovedTriple1);
 
 	}
 }

@@ -189,11 +189,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	static {
 		try {
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
+					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
 			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
-				"shacl-sparql-inference/propertyShapeWithTarget.rq");
+					"shacl-sparql-inference/propertyShapeWithTarget.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -206,14 +206,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 		super(baseSail);
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
-			executorService);
+				executorService);
 	}
 
 	public ShaclSail() {
 		super();
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
-			executorService);
+				executorService);
 	}
 
 	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.
@@ -240,32 +240,32 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
 		return Arrays.asList(
-			SHACL.TARGET_CLASS,
-			SHACL.PATH,
-			SHACL.PROPERTY,
-			SHACL.OR,
-			SHACL.AND,
-			SHACL.MIN_COUNT,
-			SHACL.MAX_COUNT,
-			SHACL.MIN_LENGTH,
-			SHACL.MAX_LENGTH,
-			SHACL.PATTERN,
-			SHACL.FLAGS,
-			SHACL.NODE_KIND_PROP,
-			SHACL.LANGUAGE_IN,
-			SHACL.DATATYPE,
-			SHACL.MIN_EXCLUSIVE,
-			SHACL.MIN_INCLUSIVE,
-			SHACL.MAX_EXCLUSIVE,
-			SHACL.MAX_INCLUSIVE,
-			SHACL.CLASS,
-			SHACL.TARGET_NODE,
-			SHACL.DEACTIVATED,
-			SHACL.TARGET_SUBJECTS_OF,
-			SHACL.IN,
-			SHACL.UNIQUE_LANG,
-			SHACL.NOT,
-			SHACL.TARGET_OBJECTS_OF);
+				SHACL.TARGET_CLASS,
+				SHACL.PATH,
+				SHACL.PROPERTY,
+				SHACL.OR,
+				SHACL.AND,
+				SHACL.MIN_COUNT,
+				SHACL.MAX_COUNT,
+				SHACL.MIN_LENGTH,
+				SHACL.MAX_LENGTH,
+				SHACL.PATTERN,
+				SHACL.FLAGS,
+				SHACL.NODE_KIND_PROP,
+				SHACL.LANGUAGE_IN,
+				SHACL.DATATYPE,
+				SHACL.MIN_EXCLUSIVE,
+				SHACL.MIN_INCLUSIVE,
+				SHACL.MAX_EXCLUSIVE,
+				SHACL.MAX_INCLUSIVE,
+				SHACL.CLASS,
+				SHACL.TARGET_NODE,
+				SHACL.DEACTIVATED,
+				SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN,
+				SHACL.UNIQUE_LANG,
+				SHACL.NOT,
+				SHACL.TARGET_OBJECTS_OF);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -363,14 +363,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
 		if (executorService[0] == null) {
 			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
-				r -> {
-					Thread t = Executors.defaultThreadFactory().newThread(r);
-					// this thread pool does not need to stick around if the all other threads are done, because it
-					// is only used for SHACL validation and if all other threads have ended then there would be no
-					// thread to receive the validation results.
-					t.setDaemon(true);
-					return t;
-				});
+					r -> {
+						Thread t = Executors.defaultThreadFactory().newThread(r);
+						// this thread pool does not need to stick around if the all other threads are done, because it
+						// is only used for SHACL validation and if all other threads have ended then there would be no
+						// thread to receive the validation results.
+						t.setDaemon(true);
+						return t;
+					});
 		}
 		return executorService[0].submit(runnable);
 	}
@@ -379,8 +379,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection() throws SailException {
 
 		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
-			super.getConnection(), super.getConnection(), super.getConnection(),
-			shapesRepo.getConnection());
+				super.getConnection(), super.getConnection(), super.getConnection(),
+				shapesRepo.getConnection());
 
 		// don't synchronize the entire method, because this can cause a deadlock when trying to get a new connection
 		// while at the same time closing another connection
@@ -434,9 +434,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
-				"Deadlock detected when a single thread uses multiple connections " +
-					"interleaved and one connection has modified the shapes without calling commit() " +
-					"while another connection also tries to modify the shapes!");
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection also tries to modify the shapes!");
 		}
 
 		try {
@@ -463,9 +463,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	Lock acquireReadlock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
-				"Deadlock detected when a single thread uses multiple connections " +
-					"interleaved and one connection has modified the shapes without calling commit() " +
-					"while another connection calls commit()!");
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection calls commit()!");
 		}
 		try {
 			return lockManager.getReadLock();
@@ -723,11 +723,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static String resourceAsString(String s) throws IOException {
 		return IOUtils.toString(Objects.requireNonNull(ShaclSail.class.getClassLoader().getResourceAsStream(s)),
-			StandardCharsets.UTF_8);
+				StandardCharsets.UTF_8);
 	}
 
 	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,
-		AtomicBoolean initialized, ExecutorService[] executorService) {
+			AtomicBoolean initialized, ExecutorService[] executorService) {
 
 		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
 			Thread t = Executors.defaultThreadFactory().newThread(r);

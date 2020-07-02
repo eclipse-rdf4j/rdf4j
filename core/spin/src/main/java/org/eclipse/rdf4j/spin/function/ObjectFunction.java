@@ -30,7 +30,7 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
-				String.format("%s requires 2 arguments, got %d", getURI(), args.length));
+					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
 		}
 		Value subj = args[0];
 		if (!(subj instanceof Resource)) {
@@ -43,7 +43,7 @@ public class ObjectFunction extends AbstractSpinFunction implements Function {
 
 		try {
 			try (CloseableIteration<? extends Statement, QueryEvaluationException> stmts = qp.getTripleSource()
-				.getStatements((Resource) subj, (IRI) pred, null)) {
+					.getStatements((Resource) subj, (IRI) pred, null)) {
 				if (stmts.hasNext()) {
 					return stmts.next().getObject();
 				} else {

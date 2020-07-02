@@ -32,7 +32,7 @@ public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final ParallelExecutor<BindingSet> joinControl;
 
 	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
-		StatementTupleExpr expr, List<BindingSet> bindings) {
+			StatementTupleExpr expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;

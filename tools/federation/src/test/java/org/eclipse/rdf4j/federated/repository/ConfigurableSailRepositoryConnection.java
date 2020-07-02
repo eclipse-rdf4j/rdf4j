@@ -35,21 +35,21 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	private final ConfigurableSailRepository rep;
 
 	protected ConfigurableSailRepositoryConnection(ConfigurableSailRepository repository,
-		SailConnection sailConnection) {
+			SailConnection sailConnection) {
 		super(repository, sailConnection);
 		this.rep = repository;
 	}
 
 	@Override
 	public void add(Statement st, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		checkOperations(true);
 		super.add(st, contexts);
 	}
 
 	@Override
 	public void add(Iterable<? extends Statement> arg0,
-		Resource... arg1) throws RepositoryException {
+			Resource... arg1) throws RepositoryException {
 		checkOperations(true);
 		super.add(arg0, arg1);
 	}
@@ -57,67 +57,67 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 	@SuppressWarnings("deprecation")
 	@Override
 	public void add(Resource subject, org.eclipse.rdf4j.model.URI predicate, Value object,
-		Resource... contexts) throws RepositoryException {
+			Resource... contexts) throws RepositoryException {
 		checkOperations(true);
 		super.add(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		checkOperations(false);
 		return super.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws RepositoryException {
+			Resource... contexts) throws RepositoryException {
 		checkOperations(false);
 		return super.getStatements(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override
 	public void add(Resource subject, IRI predicate, Value object, Resource... contexts)
-		throws RepositoryException {
+			throws RepositoryException {
 		checkOperations(true);
 		super.add(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
-		String queryString, String baseURI)
-		throws MalformedQueryException {
+			String queryString, String baseURI)
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareBooleanQuery(ql, queryString, baseURI);
 	}
 
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql,
-		String queryString, String baseURI)
-		throws MalformedQueryException {
+			String queryString, String baseURI)
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareGraphQuery(ql, queryString, baseURI);
 	}
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString,
-		String baseURI) throws MalformedQueryException {
+			String baseURI) throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareQuery(ql, queryString, baseURI);
 	}
 
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql,
-		String queryString, String baseURI)
-		throws MalformedQueryException {
+			String queryString, String baseURI)
+			throws MalformedQueryException {
 		checkOperations(false);
 		return super.prepareTupleQuery(ql, queryString, baseURI);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update,
-		String baseURI) throws RepositoryException,
-		MalformedQueryException {
+			String baseURI) throws RepositoryException,
+			MalformedQueryException {
 		checkOperations(true);
 		return super.prepareUpdate(ql, update, baseURI);
 	}

@@ -41,7 +41,7 @@ public class CookieHandler {
 	}
 
 	public void updateCookies(final WorkbenchRequest req, final HttpServletResponse resp)
-		throws UnsupportedEncodingException {
+			throws UnsupportedEncodingException {
 		for (String name : this.servlet.getCookieNames()) {
 			if (req.isParameterPresent(name)) {
 				addCookie(req, resp, name);
@@ -50,7 +50,7 @@ public class CookieHandler {
 	}
 
 	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name)
-		throws UnsupportedEncodingException {
+			throws UnsupportedEncodingException {
 		final String raw = req.getParameter(name);
 		final String value = URLEncoder.encode(raw, "UTF-8");
 		LOGGER.info("name: {}\nvalue: {}", name, value);

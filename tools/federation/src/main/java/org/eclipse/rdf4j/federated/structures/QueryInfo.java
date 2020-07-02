@@ -55,7 +55,7 @@ public class QueryInfo {
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
 
 	public QueryInfo(String query, QueryType queryType, boolean incluedInferred,
-		FederationContext federationContext, Dataset dataset) {
+			FederationContext federationContext, Dataset dataset) {
 		this(query, null, queryType, 0, incluedInferred, federationContext, dataset);
 	}
 
@@ -70,7 +70,7 @@ public class QueryInfo {
 	 * @param dataset           the {@link Dataset}
 	 */
 	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
-		FederationContext federationContext, Dataset dataset) {
+			FederationContext federationContext, Dataset dataset) {
 		super();
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
@@ -82,16 +82,16 @@ public class QueryInfo {
 		this.dataset = dataset;
 
 		int _maxExecutionTime = maxExecutionTime <= 0 ? federationContext.getConfig().getEnforceMaxQueryTime()
-			: maxExecutionTime;
+				: maxExecutionTime;
 		this.maxExecutionTimeMs = _maxExecutionTime * 1000;
 		this.includeInferred = includeInferred;
 		this.start = System.currentTimeMillis();
 	}
 
 	public QueryInfo(Resource subj, IRI pred, Value obj, boolean includeInferred,
-		FederationContext federationContext, Dataset dataset) {
+			FederationContext federationContext, Dataset dataset) {
 		this(QueryStringUtil.toString(subj, pred, obj), QueryType.GET_STATEMENTS, includeInferred,
-			federationContext, dataset);
+				federationContext, dataset);
 	}
 
 	public BigInteger getQueryID() {

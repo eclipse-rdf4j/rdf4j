@@ -144,11 +144,11 @@ public class OrderingTest {
 			List<Tuple> tuples = new MockConsumePlanNode(innerJoin).asList();
 
 			verify(tuples,
-				Arrays.asList(target1.toString(), target1.toString()),
-				Arrays.asList(target2.toString(), target2.toString()),
-				Arrays.asList(target3.toString(), target3.toString()),
-				Arrays.asList(target4.toString(), target4.toString()),
-				Arrays.asList(target5.toString(), target5.toString()));
+					Arrays.asList(target1.toString(), target1.toString()),
+					Arrays.asList(target2.toString(), target2.toString()),
+					Arrays.asList(target3.toString(), target3.toString()),
+					Arrays.asList(target4.toString(), target4.toString()),
+					Arrays.asList(target5.toString(), target5.toString()));
 
 		}
 	}
@@ -156,21 +156,21 @@ public class OrderingTest {
 	public void verify(List<Tuple> actual, List<String>... expect) {
 
 		List<Tuple> collect = Arrays.stream(expect)
-			.map(strings -> strings.stream()
-				.map(SimpleValueFactory.getInstance()::createLiteral)
-				.map(l -> (Value) l)
-				.collect(Collectors.toList()))
-			.map(Tuple::new)
-			.collect(Collectors.toList());
+				.map(strings -> strings.stream()
+						.map(SimpleValueFactory.getInstance()::createLiteral)
+						.map(l -> (Value) l)
+						.collect(Collectors.toList()))
+				.map(Tuple::new)
+				.collect(Collectors.toList());
 
 		actual = actual.stream()
-			.map(tuple -> tuple.line.stream()
-				.map(Value::stringValue)
-				.map(SimpleValueFactory.getInstance()::createLiteral)
-				.map(l -> (Value) l)
-				.collect(Collectors.toList()))
-			.map(Tuple::new)
-			.collect(Collectors.toList());
+				.map(tuple -> tuple.line.stream()
+						.map(Value::stringValue)
+						.map(SimpleValueFactory.getInstance()::createLiteral)
+						.map(l -> (Value) l)
+						.collect(Collectors.toList()))
+				.map(Tuple::new)
+				.collect(Collectors.toList());
 
 		assertEquals(collect, actual);
 

@@ -237,7 +237,7 @@ public class LockManager {
 	private void logAbandonedLock(WeakLockReference lock) {
 		if (lock.stack == null && logger.isWarnEnabled()) {
 			String msg = lock.alias
-				+ " lock abandoned; lock was acquired in {}; consider setting the {} system property";
+					+ " lock abandoned; lock was acquired in {}; consider setting the {} system property";
 			logger.warn(msg, lock.acquiredName, Properties.TRACK_LOCKS);
 		} else if (logger.isWarnEnabled()) {
 			String msg = lock.alias + " lock abandoned; lock was acquired in " + lock.acquiredName;
@@ -251,7 +251,7 @@ public class LockManager {
 			WeakLockReference lock = activeLocks.iterator().next();
 			if (logger.isWarnEnabled()) {
 				String msg = "Thread " + current.getName() + " is waiting on an active " + lock.alias
-					+ " lock acquired in " + lock.acquiredName;
+						+ " lock acquired in " + lock.acquiredName;
 				if (lock.acquiredId == current.getId()) {
 					if (lock.stack == null) {
 						logger.warn(msg, new Throwable());
@@ -278,7 +278,7 @@ public class LockManager {
 				}
 			}
 			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active " + alias
-				+ " locks";
+					+ " locks";
 			if (warn) {
 				logger.warn(msg);
 			} else {

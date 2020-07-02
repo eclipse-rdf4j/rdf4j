@@ -62,7 +62,7 @@ public class SpinxFunctionParser implements FunctionParser {
 				String ns = funcUri.getNamespace();
 				try {
 					Reader reader = new InputStreamReader(
-						new URL(new URL(ns.substring(0, ns.length() - 1)), file).openStream());
+							new URL(new URL(ns.substring(0, ns.length() - 1)), file).openStream());
 					try {
 						engine.eval(reader);
 					} finally {

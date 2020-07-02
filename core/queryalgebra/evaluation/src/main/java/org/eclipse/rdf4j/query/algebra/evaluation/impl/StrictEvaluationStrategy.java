@@ -204,20 +204,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-		FederatedServiceResolver serviceResolver) {
+			FederatedServiceResolver serviceResolver) {
 		this(tripleSource, dataset, serviceResolver, 0, new EvaluationStatistics());
 	}
 
 	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-		FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
-		EvaluationStatistics evaluationStatistics) {
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics) {
 		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, false);
 
 	}
 
 	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-		FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
-		EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		this.tripleSource = tripleSource;
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
@@ -274,7 +274,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> ret;
 
@@ -320,7 +320,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		final Scope scope = alp.getScope();
 		final Var subjectVar = alp.getSubjectVar();
 		final TupleExpr pathExpression = alp.getPathExpression();
@@ -332,7 +332,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 
 		final Var subjectVar = zlp.getSubjectVar();
 		final Var objVar = zlp.getObjectVar();
@@ -360,13 +360,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
-		final Var objVar, final Var contextVar, Value subj, Value obj) {
+			final Var objVar, final Var contextVar, Value subj, Value obj) {
 		return new ZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar, bindings);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, String serviceUri,
-		CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
 		try {
 			FederatedService fs = serviceResolver.getService(serviceUri);
 			return fs.evaluate(service, bindings, service.getBaseURI());
@@ -381,7 +381,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Var serviceRef = service.getServiceRef();
 
 		String serviceUri;
@@ -434,7 +434,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			// otherwise: perform a SELECT query
 			return fs.select(service, freeVars, bindings,
-				baseUri);
+					baseUri);
 
 		} catch (RuntimeException e) {
 			// suppress exceptions if silent
@@ -466,13 +466,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(operator.getArg(), bindings);
 		return new DescribeIteration(iter, this, operator.getBindingNames(), bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
@@ -489,7 +489,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
 
 		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
-			|| isUnbound(conVar, bindings)) {
+				|| isUnbound(conVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();
 		}
@@ -630,7 +630,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 						result.addBinding(objVar.getName(), st.getObject());
 					}
 					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-						&& st.getContext() != null) {
+							&& st.getContext() != null) {
 						result.addBinding(conVar.getName(), st.getContext());
 					}
 
@@ -687,7 +687,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(UnaryTupleOperator expr,
-		BindingSet bindings) throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Projection) {
 			return evaluate((Projection) expr, bindings);
 		} else if (expr instanceof MultiProjection) {
@@ -723,7 +723,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
-		BindingSet bindings) throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		final Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
 		if (bindings.size() == 0) { // empty binding set
 			return new CloseableIteratorIteration<>(iter);
@@ -776,7 +776,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 
 		result = this.evaluate(projection.getArg(), bindings);
@@ -785,7 +785,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
-		BindingSet bindings) throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		result = this.evaluate(multiProjection.getArg(), bindings);
 		result = new MultiProjectionIterator(multiProjection, result, bindings);
@@ -793,7 +793,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		result = this.evaluate(filter.getArg(), bindings);
 		result = new FilterIterator(filter, result, this);
@@ -801,7 +801,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(slice.getArg(), bindings);
 
 		if (slice.hasOffset()) {
@@ -816,7 +816,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 		try {
 			result = this.evaluate(extension.getArg(), bindings);
@@ -832,22 +832,22 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return new DistinctIteration<>(evaluate(distinct.getArg(), bindings));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return new ReducedIteration<>(evaluate(reduced.getArg(), bindings));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Group node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return new GroupIterator(this, node, bindings, iterationCacheSyncThreshold);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		ValueComparator vcmp = new ValueComparator();
 		OrderComparator cmp = new OrderComparator(this, node, vcmp);
 		boolean reduced = isReducedOrDistinct(node);
@@ -856,7 +856,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,
-		BindingSet bindings) throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Join) {
 			return evaluate((Join) expr, bindings);
 		} else if (expr instanceof LeftJoin) {
@@ -875,7 +875,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		if (join.getRightArg() instanceof Service) {
@@ -895,7 +895,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			return new HashJoinIteration(this, leftJoin, bindings);
 		}
@@ -922,14 +922,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@SuppressWarnings("unchecked")
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(union.getLeftArg(), bindings);
 			}
 		};
@@ -938,7 +938,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(union.getRightArg(), bindings);
 			}
 		};
@@ -947,14 +947,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(intersection.getLeftArg(), bindings);
 			}
 		};
@@ -963,7 +963,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(intersection.getRightArg(), bindings);
 			}
 		};
@@ -972,14 +972,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
-		final BindingSet bindings) throws QueryEvaluationException {
+			final BindingSet bindings) throws QueryEvaluationException {
 		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
 
 		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(difference.getLeftArg(), bindings);
 			}
 		};
@@ -988,7 +988,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			@Override
 			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
+					throws QueryEvaluationException {
 				return evaluate(difference.getRightArg(), bindings);
 			}
 		};
@@ -997,23 +997,23 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
-		BindingSet bindings) throws QueryEvaluationException {
+			BindingSet bindings) throws QueryEvaluationException {
 		return new SingletonIteration<>(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return new EmptyIteration<>();
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ExternalSet external, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return external.evaluate(bindings);
 	}
 
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		if (expr instanceof Var) {
 			return evaluate((Var) expr, bindings);
 		} else if (expr instanceof ValueConstant) {
@@ -1104,12 +1104,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(ValueConstant valueConstant, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		return valueConstant.getValue();
 	}
 
 	public Value evaluate(BNodeGenerator node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		ValueExpr nodeIdExpr = node.getNodeIdExpr();
 
 		if (nodeIdExpr != null) {
@@ -1155,7 +1155,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(Label node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		// FIXME: deprecate Label in favour of Str(?)
 		Value argValue = evaluate(node.getArg(), bindings);
 
@@ -1173,7 +1173,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(Lang node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
 		if (argValue instanceof Literal) {
@@ -1185,7 +1185,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(Datatype node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value v = evaluate(node.getArg(), bindings);
 
 		if (v instanceof Literal) {
@@ -1207,7 +1207,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(Namespace node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
 		if (argValue instanceof IRI) {
@@ -1219,7 +1219,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(LocalName node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
 		if (argValue instanceof IRI) {
@@ -1236,7 +1236,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operand contains a Resource, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsResource node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		return BooleanLiteral.valueOf(argValue instanceof Resource);
 	}
@@ -1247,7 +1247,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operand contains a URI, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsURI node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		return BooleanLiteral.valueOf(argValue instanceof IRI);
 	}
@@ -1258,7 +1258,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operand contains a BNode, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsBNode node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		return BooleanLiteral.valueOf(argValue instanceof BNode);
 	}
@@ -1269,7 +1269,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operand contains a Literal, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsLiteral node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		return BooleanLiteral.valueOf(argValue instanceof Literal);
 	}
@@ -1281,7 +1281,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operand contains a numeric datatyped literal, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(IsNumeric node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
 		if (argValue instanceof Literal) {
@@ -1304,7 +1304,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @throws QueryEvaluationException
 	 */
 	public IRI evaluate(IRIFunction node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
 		if (argValue instanceof Literal) {
@@ -1345,7 +1345,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operands match according to the <tt>regex</tt> operator, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(Regex node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value arg = evaluate(node.getArg(), bindings);
 		Value parg = evaluate(node.getPatternArg(), bindings);
 		Value farg = null;
@@ -1355,7 +1355,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		if (QueryEvaluationUtil.isStringLiteral(arg) && QueryEvaluationUtil.isSimpleLiteral(parg)
-			&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
+				&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
 			String text = ((Literal) arg).getLabel();
 			String ptn = ((Literal) parg).getLabel();
 			String flags = "";
@@ -1401,7 +1401,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(LangMatches node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value langTagValue = evaluate(node.getLeftArg(), bindings);
 		Value langRangeValue = evaluate(node.getRightArg(), bindings);
 
@@ -1435,7 +1435,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <tt>true</tt> if the operands match according to the <tt>like</tt> operator, <tt>false</tt> otherwise.
 	 */
 	public Value evaluate(Like node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value val = evaluate(node.getArg(), bindings);
 		String strVal = null;
 
@@ -1525,10 +1525,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * Evaluates a function.
 	 */
 	public Value evaluate(FunctionCall node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Function function = FunctionRegistry.getInstance()
-			.get(node.getURI())
-			.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
+				.get(node.getURI())
+				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
 
 		// the NOW function is a special case as it needs to keep a shared
 		// return
@@ -1613,7 +1613,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(SameTerm node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
@@ -1636,14 +1636,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		if (result == null) {
 			throw new ValueExprEvaluationException(
-				"COALESCE arguments do not evaluate to a value: " + node.getSignature());
+					"COALESCE arguments do not evaluate to a value: " + node.getSignature());
 		}
 
 		return result;
 	}
 
 	public Value evaluate(Compare node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
@@ -1651,7 +1651,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(MathExpr node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		// Do the math
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
@@ -1708,7 +1708,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(ListMemberOperator node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		List<ValueExpr> args = node.getArguments();
 		Value leftValue = evaluate(args.get(0), bindings);
 
@@ -1741,7 +1741,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(CompareAny node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
 
 		// Result is false until a match has been found
@@ -1768,7 +1768,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(CompareAll node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
 
 		// Result is true until a mismatch has been found
@@ -1796,7 +1796,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(Exists node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
@@ -1848,7 +1848,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public Value evaluate(ValueExprTripleRef node, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value subj = evaluate(node.getSubjectVar(), bindings);
 		if (!(subj instanceof Resource)) {
 			throw new ValueExprEvaluationException("no subject value");
@@ -1907,10 +1907,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		// in case the
 		if (sourceSupportsRdfStar) {
 			CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = ((RDFStarTripleSource) tripleSource)
-				.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
+					.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
 
 			FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
-				sourceIter) {
+					sourceIter) {
 				@Override
 				protected boolean accept(Triple triple) throws QueryEvaluationException {
 					if (subjValue != null && !subjValue.equals(triple.getSubject())) {
@@ -1953,11 +1953,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// standard reification iteration
 			// 1. walk over resources used as subjects of (x rdf:type rdf:Statement)
 			final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
-				tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
+					tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
 
 				@Override
 				protected Resource convert(Statement sourceObject)
-					throws QueryEvaluationException {
+						throws QueryEvaluationException {
 					return sourceObject.getSubject();
 				}
 			};
@@ -1966,14 +1966,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
 				@Override
 				protected void handleClose()
-					throws QueryEvaluationException {
+						throws QueryEvaluationException {
 					super.handleClose();
 					iter.close();
 				}
 
 				@Override
 				protected BindingSet getNextElement()
-					throws QueryEvaluationException {
+						throws QueryEvaluationException {
 					while (iter.hasNext()) {
 						Resource theNode = iter.next();
 						QueryBindingSet result = new QueryBindingSet(bindings);
@@ -2004,9 +2004,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 
 				private boolean matchValue(Resource theNode, Value value, Var var, QueryBindingSet result,
-					IRI predicate) {
+						IRI predicate) {
 					try (CloseableIteration<? extends Statement, QueryEvaluationException> valueiter = tripleSource
-						.getStatements(theNode, predicate, null)) {
+							.getStatements(theNode, predicate, null)) {
 						while (valueiter.hasNext()) {
 							Statement valueStatement = valueiter.next();
 							if (theNode.equals(valueStatement.getSubject())) {
@@ -2036,7 +2036,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		QueryModelNode queryModelNode;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
-			QueryModelNode queryModelNode) {
+				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
@@ -2061,7 +2061,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
-			QueryModelNode queryModelNode) {
+				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
@@ -2087,7 +2087,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		protected void handleClose() throws QueryEvaluationException {
 			try {
 				queryModelNode.setTotalTimeNanosActual(
-					queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
+						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
 			} finally {
 				super.handleClose();
 

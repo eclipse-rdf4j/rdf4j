@@ -26,7 +26,7 @@ public class TriXParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype}.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(
-		"org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype", "Fail on TriX missing datatype", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype", "Fail on TriX missing datatype", Boolean.TRUE);
 
 	/**
 	 * @deprecated use {@link #FAIL_ON_MISSING_DATATYPE} instead.
@@ -42,7 +42,7 @@ public class TriXParserSettings {
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
 	 */
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
-		"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);
+			"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);
 
 	/**
 	 * @deprecated use {@link #FAIL_ON_INVALID_STATEMENT} instead

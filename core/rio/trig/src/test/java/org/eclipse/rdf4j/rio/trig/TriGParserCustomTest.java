@@ -71,7 +71,7 @@ public class TriGParserCustomTest {
 	@Test
 	public void testSPARQLGraphKeyword() throws Exception {
 		Model model = Rio.parse(new StringReader("GRAPH <urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -84,7 +84,7 @@ public class TriGParserCustomTest {
 	@Test
 	public void testGraph() throws Exception {
 		Model model = Rio.parse(new StringReader("<urn:a> { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -97,8 +97,8 @@ public class TriGParserCustomTest {
 	@Test
 	public void testGraphLocalNameGraph() throws Exception {
 		Model model = Rio.parse(
-			new StringReader("@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				new StringReader("@prefix graph: <urn:> .\n graph:a { [] <http://www.example.net/test> \"Foo\" }"), "",
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -111,8 +111,8 @@ public class TriGParserCustomTest {
 	@Test
 	public void testGraphLocalNameIntegerGraph() throws Exception {
 		Model model = Rio.parse(
-			new StringReader("@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				new StringReader("@prefix graph: <urn:> .\n graph:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -125,8 +125,8 @@ public class TriGParserCustomTest {
 	@Test
 	public void testGraphLocalNameNotGraph() throws Exception {
 		Model model = Rio.parse(
-			new StringReader("@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				new StringReader("@prefix ex: <urn:> .\n ex:a { [] <http://www.example.net/test> \"Foo\" }"), "",
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -139,8 +139,8 @@ public class TriGParserCustomTest {
 	@Test
 	public void testGraphLocalNameIntegerNotGraph() throws Exception {
 		Model model = Rio.parse(
-			new StringReader("@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
-			RDFFormat.TRIG);
+				new StringReader("@prefix ex: <urn:> .\n ex:1 { [] <http://www.example.net/test> \"Foo\" }"), "",
+				RDFFormat.TRIG);
 
 		assertEquals(1, model.size());
 		assertNotNull(model.contexts().iterator().next());
@@ -173,13 +173,13 @@ public class TriGParserCustomTest {
 	@Test
 	public void testMinimalWhitespace() throws Exception {
 		Rio.parse(this.getClass().getResourceAsStream("/testcases/trig/trig-syntax-minimal-whitespace-01.trig"), "",
-			RDFFormat.TRIG);
+				RDFFormat.TRIG);
 	}
 
 	@Test
 	public void testMinimalWhitespaceLine12() throws Exception {
 		Rio.parse(new StringReader("@prefix : <http://example/c/> . {_:s:p :o ._:s:p\"Alice\". _:s:p _:o .}"), "",
-			RDFFormat.TRIG);
+				RDFFormat.TRIG);
 	}
 
 	@Test

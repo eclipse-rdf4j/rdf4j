@@ -19,21 +19,21 @@ public class GettingStartedDemo {
 	public static void main(String[] args) {
 
 		FedXRepository repository = FedXFactory.newFederation()
-			.withSparqlEndpoint("http://dbpedia.org/sparql")
-			.withSparqlEndpoint("https://query.wikidata.org/sparql")
-			.create();
+				.withSparqlEndpoint("http://dbpedia.org/sparql")
+				.withSparqlEndpoint("https://query.wikidata.org/sparql")
+				.create();
 
 		repository.init();
 
 		try (RepositoryConnection conn = repository.getConnection()) {
 
 			String query = "PREFIX wd: <http://www.wikidata.org/entity/> "
-				+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
-				+ "SELECT * WHERE { "
-				+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
-				+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
-				+ " ?countrySameAs wdt:P2131 ?gdp ."
-				+ "}";
+					+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
+					+ "SELECT * WHERE { "
+					+ " ?country a <http://dbpedia.org/class/yago/WikicatMemberStatesOfTheEuropeanUnion> ."
+					+ " ?country <http://www.w3.org/2002/07/owl#sameAs> ?countrySameAs . "
+					+ " ?countrySameAs wdt:P2131 ?gdp ."
+					+ "}";
 
 			TupleQuery tq = conn.prepareTupleQuery(query);
 			try (TupleQueryResult tqRes = tq.evaluate()) {

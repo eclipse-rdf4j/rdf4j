@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  *
  */
 /* package */ class FedXRepositoryWrapper extends RepositoryWrapper
-	implements RepositoryResolverClient, FederatedServiceResolverClient {
+		implements RepositoryResolverClient, FederatedServiceResolverClient {
 
 	private final FedXRepositoryConfig fedXConfig;
 
@@ -92,16 +92,16 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 		if (members == null && dataConfigFile == null) {
 			throw new RepositoryException(
-				"No federation members defined: neither explicitly nor via data config.");
+					"No federation members defined: neither explicitly nor via data config.");
 		}
 
 		FedXRepository fedxRepo;
 		try {
 			// apply a repository resolver (if any) set from RepositoryManager
 			FedXFactory factory = FedXFactory.newFederation()
-				.withRepositoryResolver(repositoryResolver)
-				.withFederatedServiceResolver(serviceResolver)
-				.withFedXBaseDir(baseDir);
+					.withRepositoryResolver(repositoryResolver)
+					.withFederatedServiceResolver(serviceResolver)
+					.withFedXBaseDir(baseDir);
 
 			if (dataConfigFile != null) {
 				factory.withMembers(dataConfigFile);

@@ -217,16 +217,16 @@ public abstract class SailIsolationLevelTest {
 					try {
 						connection.begin(isolationLevel);
 						List<Statement> statements = Iterations
-							.asList(connection.getStatements(null, null, null, false));
+								.asList(connection.getStatements(null, null, null, false));
 						connection.commit();
 						if (statements.size() != 0) {
 							if (statements.size() != count) {
 								logger.error("Size was {}. Expected 0 or {}", statements.size(), count);
 								logger.error("\n[\n\t{}\n]",
-									statements.stream()
-										.map(Object::toString)
-										.reduce((a, b) -> a + " , \n\t" + b)
-										.get());
+										statements.stream()
+												.map(Object::toString)
+												.reduce((a, b) -> a + " , \n\t" + b)
+												.get());
 
 								failure.set(true);
 							}
@@ -288,7 +288,7 @@ public abstract class SailIsolationLevelTest {
 			// open an iteration outside the transaction and leave it open while another transaction is begun and
 			// committed
 			try (CloseableIteration<? extends Statement, SailException> unusedStatements = con.getStatements(null, null,
-				null, true);) {
+					null, true);) {
 				con.begin(level);
 				con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
 				Assert.assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
@@ -437,7 +437,7 @@ public abstract class SailIsolationLevelTest {
 			}
 			int counter = 0;
 			try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(null, null, null,
-				false);) {
+					false);) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
 					counter++;
@@ -555,7 +555,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
-		final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
+			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
 		return new Thread(() -> {
 			try (SailConnection con = store.getConnection();) {
 				start.countDown();
@@ -588,9 +588,9 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected long count(SailConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
-		Resource... contexts) throws SailException {
+			Resource... contexts) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, obj,
-			includeInferred, contexts);) {
+				includeInferred, contexts);) {
 			long counter = 0;
 			while (stmts.hasNext()) {
 				stmts.next();
@@ -602,7 +602,7 @@ public abstract class SailIsolationLevelTest {
 
 	protected Literal readLiteral(SailConnection con, final IRI subj, final IRI pred) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, null,
-			false);) {
+				false);) {
 			if (!stmts.hasNext()) {
 				return null;
 			}
@@ -617,7 +617,7 @@ public abstract class SailIsolationLevelTest {
 	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
 		Literal lit = vf.createLiteral(Integer.toString(i), XMLSchema.INTEGER);
 		connection.addStatement(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
-			vf.createIRI("http://test#context_" + i));
+				vf.createIRI("http://test#context_" + i));
 	}
 
 	protected synchronized void fail(String message, Throwable t) {

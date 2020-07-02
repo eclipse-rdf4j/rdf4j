@@ -73,7 +73,7 @@ public abstract class AbstractNTriplesParserTest {
 	}
 
 	private void parsePositiveNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testLocationBaseUri,
-		RepositoryConnection con) throws Exception {
+			RepositoryConnection con) throws Exception {
 		StringBuilder positiveQuery = new StringBuilder();
 		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -98,7 +98,7 @@ public abstract class AbstractNTriplesParserTest {
 			String nextBaseUrl = testLocationBaseUri + nextTestFile;
 
 			suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, null, nextBaseUrl,
-				createRDFParser(), createRDFParser()));
+					createRDFParser(), createRDFParser()));
 		}
 
 		queryResult.close();
@@ -106,7 +106,7 @@ public abstract class AbstractNTriplesParserTest {
 	}
 
 	private void parseNegativeNTriplesSyntaxTests(TestSuite suite, String fileBasePath, String testLocationBaseUri,
-		RepositoryConnection con) throws Exception {
+			RepositoryConnection con) throws Exception {
 		StringBuilder negativeQuery = new StringBuilder();
 		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
 		negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
@@ -131,7 +131,7 @@ public abstract class AbstractNTriplesParserTest {
 			String nextBaseUrl = testLocationBaseUri + nextTestFile;
 
 			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-				createRDFParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+					createRDFParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
 		}
 
 		queryResult.close();

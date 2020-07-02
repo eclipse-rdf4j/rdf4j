@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
  *
  */
 public class DelegateFederatedServiceResolver extends AbstractFederatedServiceResolver
-	implements FederatedServiceResolver {
+		implements FederatedServiceResolver {
 
 	private final EndpointManager endpointManager;
 

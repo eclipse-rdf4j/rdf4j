@@ -35,7 +35,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ExternalTypeFilterNode(SailConnection connection, Set<Resource> filterOnType, PlanNode parent, int index,
-		boolean returnMatching) {
+			boolean returnMatching) {
 		this.connection = connection;
 		this.filterOnType = filterOnType;
 		this.parent = parent;
@@ -68,8 +68,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
-									that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
-									getId());
+										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										getId());
 							}
 						}
 					} else {
@@ -79,8 +79,8 @@ public class ExternalTypeFilterNode implements PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
-									that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
-									getId());
+										that.getClass().getSimpleName() + ":IgnoredAsTypeMismatch", temp, that,
+										getId());
 							}
 						}
 					}
@@ -91,9 +91,9 @@ public class ExternalTypeFilterNode implements PlanNode {
 			private Resource isType(Value subject) {
 				if (subject instanceof Resource) {
 					return filterOnType.stream()
-						.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
-						.findFirst()
-						.orElse(null);
+							.filter(type -> connection.hasStatement((Resource) subject, RDF.TYPE, type, true))
+							.findFirst()
+							.orElse(null);
 				}
 				return null;
 			}
@@ -138,15 +138,15 @@ public class ExternalTypeFilterNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-				+ getId() + " [label=\"filter source\"]").append("\n");
+					+ getId() + " [label=\"filter source\"]").append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
-				.append("\n");
+					.append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -155,7 +155,7 @@ public class ExternalTypeFilterNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ExternalTypeFilterNode{" + "filterOnType="
-			+ Arrays.toString(filterOnType.stream().map(Formatter::prefix).toArray()) + '}';
+				+ Arrays.toString(filterOnType.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override

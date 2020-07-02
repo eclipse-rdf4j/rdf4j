@@ -132,8 +132,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(
-			new StringReader("<urn:test:subject> <urn:test:predicate> \" \\t \\b \\n \\r \\f \\\" \\' \\\\ \" . "),
-			"http://example/");
+				new StringReader("<urn:test:subject> <urn:test:predicate> \" \\t \\b \\n \\r \\f \\\" \\' \\\\ \" . "),
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(" \t \b \n \r \f \" \' \\ ", Models.objectLiteral(model).get().getLabel());
 	}
@@ -144,8 +144,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(
-			new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n"),
-			"http://example/");
+				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n"),
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -156,8 +156,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(
-			new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n"),
-			"http://example/");
+				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n"),
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -168,8 +168,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(
-			new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n"),
-			"http://example/");
+				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n"),
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -180,8 +180,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(
-			new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n"),
-			"http://example/");
+				new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n"),
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -192,8 +192,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader(
-			"<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
-			"http://example/");
+				"<urn:test:subject> <urn:test:predicate> <urn:test:object> .#endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
+				"http://example/");
 		assertEquals(2, model.size());
 	}
 
@@ -203,8 +203,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader(
-			"<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
-			"http://example/");
+				"<urn:test:subject> <urn:test:predicate> <urn:test:object> . #endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
+				"http://example/");
 		assertEquals(2, model.size());
 	}
 
@@ -214,8 +214,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader(
-			"<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
-			"http://example/");
+				"<urn:test:subject> <urn:test:predicate> <urn:test:object> .# endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
+				"http://example/");
 		assertEquals(2, model.size());
 	}
 
@@ -225,8 +225,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader(
-			"<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
-			"http://example/");
+				"<urn:test:subject> <urn:test:predicate> <urn:test:object> . # endoflinecomment\n<urn:test:subject> <urn:test:predicate> <urn:test:secondobject> . # endoflinecomment\n"),
+				"http://example/");
 		assertEquals(2, model.size());
 	}
 
@@ -236,7 +236,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .#\n"),
-			"http://example/");
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -247,7 +247,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . #\n"),
-			"http://example/");
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -258,7 +258,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> .# \n"),
-			"http://example/");
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -269,7 +269,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 		ntriplesParser.parse(new StringReader("<urn:test:subject> <urn:test:predicate> <urn:test:object> . # \n"),
-			"http://example/");
+				"http://example/");
 		assertEquals(1, model.size());
 		assertEquals(Collections.singleton("urn:test:object"), Models.objectStrings(model));
 	}
@@ -415,16 +415,16 @@ public abstract class AbstractNTriplesParserUnitTest {
 				ntriplesParser.parse(new StringReader(triple), NTRIPLES_TEST_URL);
 			} catch (Exception e) {
 				fail(" Failed to parse triple : " + triple + " containing character '" + character + "' at index " + i
-					+ " in charactersList");
+						+ " in charactersList");
 			}
 
 			assertEquals("Should parse '" + character + "'", 1, model.size());
 			assertEquals("Should have subject when triple has character : '" + character + "'", 1,
-				model.subjects().size());
+					model.subjects().size());
 			assertEquals("Should have predicate when triple has character : '" + character + "'", 1,
-				model.predicates().size());
+					model.predicates().size());
 			assertEquals("Should have object when triple has character : '" + character + "'", 1,
-				model.objects().size());
+					model.objects().size());
 		}
 
 	}
@@ -448,8 +448,8 @@ public abstract class AbstractNTriplesParserUnitTest {
 
 			try {
 				ntriplesParser.parse(
-					new StringReader("<urn:test:subject> <urn:test:predicate> _:" + character + "1 . "),
-					NTRIPLES_TEST_URL);
+						new StringReader("<urn:test:subject> <urn:test:predicate> _:" + character + "1 . "),
+						NTRIPLES_TEST_URL);
 			} catch (RDFParseException e) {
 				assertEquals(0, model.size());
 				assertEquals(0, model.subjects().size());
@@ -458,7 +458,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				throw e;
 			}
 			fail("Should have failed to parse invalid N-Triples bnode with '" + character
-				+ "' at the begining of the bnode label");
+					+ "' at the begining of the bnode label");
 		}
 	}
 

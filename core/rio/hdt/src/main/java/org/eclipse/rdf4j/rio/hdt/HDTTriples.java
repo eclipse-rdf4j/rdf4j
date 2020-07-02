@@ -61,9 +61,9 @@ class HDTTriples extends HDTPart {
 	}
 
 	protected final static byte[] FORMAT_LIST = "<http://purl.org/HDT/hdt#triplesList>"
-		.getBytes(StandardCharsets.US_ASCII);
+			.getBytes(StandardCharsets.US_ASCII);
 	protected final static byte[] FORMAT_BITMAP = "<http://purl.org/HDT/hdt#triplesBitmap>"
-		.getBytes(StandardCharsets.US_ASCII);
+			.getBytes(StandardCharsets.US_ASCII);
 	protected final static String ORDER = "order";
 	protected final static String NUM = "numTriples";
 
@@ -83,7 +83,7 @@ class HDTTriples extends HDTPart {
 	protected void parse(InputStream is) throws IOException {
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
+				CheckedInputStream cis = new CheckedInputStream(uis, new CRC16())) {
 
 			checkControl(cis, HDTPart.Type.TRIPLES);
 			checkFormat(cis, FORMAT_BITMAP);
@@ -93,7 +93,7 @@ class HDTTriples extends HDTPart {
 			int i = getIntegerProperty(properties, ORDER, "order");
 			if (i != HDTTriples.Order.SPO.getValue()) {
 				throw new UnsupportedOperationException(
-					"Triples section: order " + Integer.toString(i) + ", but only SPO order is supported");
+						"Triples section: order " + Integer.toString(i) + ", but only SPO order is supported");
 			}
 
 			checkCRC(cis, is, 2);

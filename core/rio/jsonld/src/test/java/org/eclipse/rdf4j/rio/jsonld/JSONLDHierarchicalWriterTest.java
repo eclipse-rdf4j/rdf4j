@@ -73,9 +73,9 @@ public class JSONLDHierarchicalWriterTest {
 	@Test
 	public void testSingleSubnodeInContext() throws IOException {
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred"), vf.createIRI("sch:node2"),
-			vf.createIRI("sch:node3"));
+				vf.createIRI("sch:node3"));
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
-			vf.createIRI("sch:node3"));
+				vf.createIRI("sch:node3"));
 
 		verifyOutput();
 	}
@@ -92,11 +92,11 @@ public class JSONLDHierarchicalWriterTest {
 	@Test
 	public void testRootIsNotTheParentNodeInContext() throws IOException {
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
-			vf.createIRI("sch:context1"));
+				vf.createIRI("sch:context1"));
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred3"), vf.createLiteral("literal1"),
-			vf.createIRI("sch:context1"));
+				vf.createIRI("sch:context1"));
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"),
-			vf.createIRI("sch:context1"));
+				vf.createIRI("sch:context1"));
 
 		verifyOutput();
 	}
@@ -238,9 +238,9 @@ public class JSONLDHierarchicalWriterTest {
 	public void testDifferentContexts() throws IOException {
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node1"));
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node2"),
-			vf.createIRI("sch:context1"));
+				vf.createIRI("sch:context1"));
 		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node3"),
-			vf.createIRI("sch:context2"));
+				vf.createIRI("sch:context2"));
 		verifyOutput();
 	}
 
@@ -248,9 +248,9 @@ public class JSONLDHierarchicalWriterTest {
 	public void testNodesInDifferentContextsAreNotMixed() throws IOException {
 		addStatement(vf.createIRI("sch:node1"), vf.createIRI("sch:pred1"), vf.createIRI("sch:node2"));
 		addStatement(vf.createIRI("sch:node2"), vf.createIRI("sch:pred2"), vf.createIRI("sch:node3"),
-			vf.createIRI("sch:context1"));
+				vf.createIRI("sch:context1"));
 		addStatement(vf.createIRI("sch:node3"), vf.createIRI("sch:pred3"), vf.createIRI("sch:node1"),
-			vf.createIRI("sch:context2"));
+				vf.createIRI("sch:context2"));
 		verifyOutput();
 	}
 
@@ -326,7 +326,7 @@ public class JSONLDHierarchicalWriterTest {
 			os = new ComparingOutputStream(expectedFile);
 		} else {
 			fail(
-				"The file with expected results is missing. Remove this fail clause if you want to generate new file.");
+					"The file with expected results is missing. Remove this fail clause if you want to generate new file.");
 			os = Files.newOutputStream(file.toPath());
 		}
 		RDFWriter writer = new JSONLDWriter(os);

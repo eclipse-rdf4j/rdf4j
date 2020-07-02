@@ -76,7 +76,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 		ReferenceQueue<ElasticsearchStore> objectReferenceQueue = new ReferenceQueue<>();
 		startGarbageCollectionMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue),
-			clientProvider);
+				clientProvider);
 
 	}
 
@@ -132,7 +132,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 		while (true) {
 			if (LocalDateTime.now().isAfter(tenMinFromNow)) {
 				logger.error(
-					"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
+						"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
 
 				try {
 					clientProvider.close();
@@ -140,16 +140,16 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 					throw new RuntimeException(e);
 				}
 				throw new RuntimeException(
-					"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
+						"Could not connect to Elasticsearch after " + time + " " + timeUnit.toString() + " of trying!");
 
 			}
 			try {
 				Client client = clientProvider.getClient();
 
 				ClusterHealthResponse clusterHealthResponse = client.admin()
-					.cluster()
-					.health(new ClusterHealthRequest())
-					.actionGet();
+						.cluster()
+						.health(new ClusterHealthRequest())
+						.actionGet();
 				ClusterHealthStatus status = clusterHealthResponse.getStatus();
 				logger.info("Cluster status: {}", status.name());
 
@@ -184,7 +184,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	// this code does some final safety cleanup when the user's ElasticsearchStore gets garbage collected
 	private void startGarbageCollectionMonitoring(ReferenceQueue<ElasticsearchStore> referenceQueue,
-		Reference<ElasticsearchStore> ref, ClientProvider clientProvider) {
+			Reference<ElasticsearchStore> ref, ClientProvider clientProvider) {
 
 		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
 			Thread t = Executors.defaultThreadFactory().newThread(r);
@@ -211,7 +211,7 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 			if (!clientProvider.isClosed()) {
 				logger.warn(
-					"Closing ClientPool in ElasticsearchStore due to store having no references and shutdown() never being called()");
+						"Closing ClientPool in ElasticsearchStore due to store having no references and shutdown() never being called()");
 			}
 
 			try {

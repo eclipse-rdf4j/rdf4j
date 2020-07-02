@@ -70,7 +70,7 @@ public class Sort implements PlanNode {
 						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
 							Tuple[] objects = sortedTuples.toArray(new Tuple[0]);
 							Arrays.parallelSort(objects,
-								(a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
+									(a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
 							sortedTuples = Arrays.asList(objects);
 						} else {
 							sortedTuples.sort((a, b) -> valueComparator.compare(a.line.get(0), b.line.get(0)));
@@ -108,7 +108,7 @@ public class Sort implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}

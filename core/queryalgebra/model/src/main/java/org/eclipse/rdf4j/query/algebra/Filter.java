@@ -57,9 +57,9 @@ public class Filter extends UnaryTupleOperator {
 		Set<String> result = getArg().getBindingNames();
 		if (condition instanceof SubQueryValueOperator) {
 			result = Stream
-				.concat(result.stream(),
-					((SubQueryValueOperator) condition).getSubQuery().getBindingNames().stream())
-				.collect(Collectors.toSet());
+					.concat(result.stream(),
+							((SubQueryValueOperator) condition).getSubQuery().getBindingNames().stream())
+					.collect(Collectors.toSet());
 		}
 		return result;
 	}

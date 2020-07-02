@@ -41,7 +41,7 @@ public class SPARQLStarTSVTupleBackgroundTest extends AbstractQueryResultIOTuple
 
 	@Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
-		QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		return QueryResultIO.parseTupleBackground(in, format);
 	}
 }

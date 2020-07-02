@@ -62,7 +62,7 @@ public class FedXService extends AbstractQueryModelNode implements TupleExpr, Bo
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		visitor.meetOther(this);
 	}
 

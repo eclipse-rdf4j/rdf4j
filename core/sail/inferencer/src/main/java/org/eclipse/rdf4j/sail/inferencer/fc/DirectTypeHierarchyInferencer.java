@@ -86,29 +86,29 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	static {
 		try {
 			DIRECT_SUBCLASSOF_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT * FROM {X} sesame:directSubClassOf {Y} ", null);
+					"CONSTRUCT * FROM {X} sesame:directSubClassOf {Y} ", null);
 
 			DIRECT_SUBPROPERTYOF_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT * FROM {X} sesame:directType {Y}", null);
+					"CONSTRUCT * FROM {X} sesame:directType {Y}", null);
 
 			DIRECT_TYPE_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT * FROM {X} sesame:directSubPropertyOf {Y}", null);
+					"CONSTRUCT * FROM {X} sesame:directSubPropertyOf {Y}", null);
 
 			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT {X} sesame:directSubClassOf {Y} " + "FROM {X} rdfs:subClassOf {Y} " + "WHERE X != Y AND "
-					+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subClassOf {Z} rdfs:subClassOf {Y} WHERE X != Z AND Z != Y)",
-				null);
+					"CONSTRUCT {X} sesame:directSubClassOf {Y} " + "FROM {X} rdfs:subClassOf {Y} " + "WHERE X != Y AND "
+							+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subClassOf {Z} rdfs:subClassOf {Y} WHERE X != Z AND Z != Y)",
+					null);
 
 			DIRECT_SUBPROPERTYOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT {X} sesame:directSubPropertyOf {Y} " + "FROM {X} rdfs:subPropertyOf {Y} "
-					+ "WHERE X != Y AND "
-					+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subPropertyOf {Z} rdfs:subPropertyOf {Y} WHERE X != Z AND Z != Y)",
-				null);
+					"CONSTRUCT {X} sesame:directSubPropertyOf {Y} " + "FROM {X} rdfs:subPropertyOf {Y} "
+							+ "WHERE X != Y AND "
+							+ "NOT EXISTS (SELECT Z FROM {X} rdfs:subPropertyOf {Z} rdfs:subPropertyOf {Y} WHERE X != Z AND Z != Y)",
+					null);
 
 			DIRECT_TYPE_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SERQL,
-				"CONSTRUCT {X} sesame:directType {Y} FROM {X} rdf:type {Y} "
-					+ "WHERE NOT EXISTS (SELECT Z FROM {X} rdf:type {Z} rdfs:subClassOf {Y} WHERE Z != Y)",
-				null);
+					"CONSTRUCT {X} sesame:directType {Y} FROM {X} rdf:type {Y} "
+							+ "WHERE NOT EXISTS (SELECT Z FROM {X} rdf:type {Z} rdfs:subClassOf {Y} WHERE Z != Y)",
+					null);
 		} catch (MalformedQueryException e) {
 			// Can only occur due to a bug in this code
 			throw new RuntimeException(e);
@@ -157,7 +157,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	 *-----------------------------------------------------*/
 
 	private class DirectTypeHierarchyInferencerConnection extends InferencerConnectionWrapper
-		implements SailConnectionListener {
+			implements SailConnectionListener {
 
 		/**
 		 * Flag indicating whether an update of the inferred statements is needed.
@@ -254,10 +254,10 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 		}
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
-			throws SailException, RDFHandlerException, QueryEvaluationException {
+				throws SailException, RDFHandlerException, QueryEvaluationException {
 			try (
-				CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
-					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+					CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+							.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {

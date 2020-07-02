@@ -66,7 +66,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @since 3.2.0
 	 */
 	default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
-		String baseURI) {
+			String baseURI) {
 		return Optional.empty();
 	}
 
@@ -86,7 +86,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-		Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	/**
 	 * Returns the set of all unique context identifiers that are used to store statements.
@@ -114,14 +114,14 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-		boolean includeInferred, Resource... contexts) throws SailException;
+			boolean includeInferred, Resource... contexts) throws SailException;
 
 	/**
 	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
 	default CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred, Value obj,
-		boolean includeInferred, Resource... contexts) throws SailException {
+			boolean includeInferred, Resource... contexts) throws SailException {
 		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
 	}
 
@@ -145,10 +145,10 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
-		throws SailException {
+			throws SailException {
 
 		try (CloseableIteration<? extends Statement, SailException> stIter = getStatements(subj, pred, obj,
-			includeInferred, contexts)) {
+				includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
 
@@ -322,14 +322,14 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException;
+			throws SailException;
 
 	/**
 	 * @deprecated since 4.0. Use {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	default void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		addStatement(op, subj, (IRI) pred, obj, contexts);
 	}
 
@@ -350,14 +350,14 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-		throws SailException;
+			throws SailException;
 
 	/**
 	 * @deprecated since 4.0. USe {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
 	default void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-		throws SailException {
+			throws SailException {
 		removeStatement(op, subj, (IRI) pred, obj, contexts);
 	}
 
@@ -474,7 +474,7 @@ public interface SailConnection extends AutoCloseable {
 	// with default implementation for backwards compatibility
 	@Experimental
 	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-		BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
 }

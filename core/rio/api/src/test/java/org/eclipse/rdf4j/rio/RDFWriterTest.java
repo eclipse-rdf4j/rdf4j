@@ -313,7 +313,7 @@ public abstract class RDFWriterTest {
 	}
 
 	protected Model parse(InputStream reader, String baseURI)
-		throws RDFParseException, RDFHandlerException, IOException {
+			throws RDFParseException, RDFHandlerException, IOException {
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
 		Model result = new LinkedHashModel();
@@ -342,7 +342,7 @@ public abstract class RDFWriterTest {
 	}
 
 	private void testRoundTripInternal(boolean preserveBNodeIds)
-		throws RDFHandlerException, IOException, RDFParseException {
+			throws RDFHandlerException, IOException, RDFParseException {
 		Statement st1 = vf.createStatement(bnode, uri1, plainLit);
 		Statement st2 = vf.createStatement(bnodeEmpty, uri1, plainLit);
 		Statement st3 = vf.createStatement(bnodeNumeric, uri1, plainLit);
@@ -435,26 +435,26 @@ public abstract class RDFWriterTest {
 
 		if (rdfParser.getRDFFormat().supportsNamespaces()) {
 			assertTrue("Expected at least one namespace, found" + model.getNamespaces().size(),
-				model.getNamespaces().size() >= 1);
+					model.getNamespaces().size() >= 1);
 			assertEquals(exNs, model.getNamespace("ex").get().getName());
 		}
 
 		// Test for four unique statements for blank nodes in subject position
 		assertEquals("Unexpected number of statements with blank node subjects", 5,
-			model.filter(null, uri1, plainLit).size());
+				model.filter(null, uri1, plainLit).size());
 		// Test for four unique statements for blank nodes in object position
 		assertEquals("Unexpected number of statements with blank node objects", 5,
-			model.filter(uri2, uri1, null).size());
+				model.filter(uri2, uri1, null).size());
 		if (rdfParser.getRDFFormat().supportsContexts()) {
 			assertTrue("missing statement with language literal and context: st11", model.contains(st11));
 		} else {
 			assertTrue("missing statement with language literal: st11",
-				model.contains(vf.createStatement(uri1, uri2, langLit)));
+					model.contains(vf.createStatement(uri1, uri2, langLit)));
 		}
 		assertTrue("missing statement with datatype: st12", model.contains(st12));
 		if (rdfParser.getRDFFormat().equals(RDFFormat.RDFXML)) {
 			logger.warn(
-				"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
+					"FIXME: SES-879: RDFXML Parser does not preserve literals starting or ending in newline character");
 		} else {
 			assertTrue("missing statement with literal ending with newline: st13", model.contains(st13));
 			assertTrue("missing statement with literal starting with newline: st14", model.contains(st14));
@@ -467,10 +467,10 @@ public abstract class RDFWriterTest {
 		assertTrue("missing statement with subject URI ending in period: st20", model.contains(st20));
 
 		assertEquals("missing statement with blank node single use subject: st21", 1,
-			model.filter(null, uri4, uri5).size());
+				model.filter(null, uri4, uri5).size());
 
 		assertEquals("missing statement with blank node single use object: st22", 1,
-			model.filter(uri4, uri5, null).size());
+				model.filter(uri4, uri5, null).size());
 
 		Model st23Statements = model.filter(null, uri4, uri3);
 		if (rdfParser.getRDFFormat().supportsContexts()) {
@@ -482,9 +482,9 @@ public abstract class RDFWriterTest {
 			assertEquals("missing statement with blank node use: st23/st24", 1, st23Statements.size());
 		}
 		assertEquals("missing statement with blank node use subject and object: st25", 1,
-			model.filter(null, uri5, uri4).size());
+				model.filter(null, uri5, uri4).size());
 		assertEquals("missing statement with blank node use subject and object: st26", 1,
-			model.filter(uri4, uri3, null).size());
+				model.filter(uri4, uri3, null).size());
 		Model st27Statements = model.filter(uri3, uri4, null);
 		if (rdfParser.getRDFFormat().supportsContexts()) {
 			assertEquals("missing statement with blank node use: object: st27/st28", 2, st27Statements.size());
@@ -497,26 +497,26 @@ public abstract class RDFWriterTest {
 		if (rdfParser.getRDFFormat().supportsContexts()) {
 			Set<Resource> st29Contexts = model.filter(uri5, uri4, uri1).contexts();
 			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
-				st29Contexts.size());
+					st29Contexts.size());
 			assertNotNull("missing statements with blank node context: st29", st29Contexts.iterator().next());
 
 			Set<Resource> st30Contexts = model.filter(uri5, uri4, uri2).contexts();
 			assertEquals("Unexpected number of contexts containing blank node context statement", 1,
-				st30Contexts.size());
+					st30Contexts.size());
 			assertNotNull("missing statements with blank node context: st30", st30Contexts.iterator().next());
 
 			assertEquals("Context for two blank node statements was not the same", st29Contexts.iterator().next(),
-				st30Contexts.iterator().next());
+					st30Contexts.iterator().next());
 
 			assertEquals("Unexpected number of statements in the blank node context", 2,
-				model.filter(null, null, null, st29Contexts.iterator().next()).size());
+					model.filter(null, null, null, st29Contexts.iterator().next()).size());
 			assertEquals("Unexpected number of statements in the blank node context", 2,
-				model.filter(null, null, null, st30Contexts.iterator().next()).size());
+					model.filter(null, null, null, st30Contexts.iterator().next()).size());
 		} else {
 			assertEquals("missing statement with blank node context in non-quads format: st29", 1,
-				model.filter(uri5, uri4, uri1).size());
+					model.filter(uri5, uri4, uri1).size());
 			assertEquals("missing statement with blank node context in non-quads format: st30", 1,
-				model.filter(uri5, uri4, uri2).size());
+					model.filter(uri5, uri4, uri2).size());
 		}
 	}
 
@@ -731,7 +731,7 @@ public abstract class RDFWriterTest {
 				obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
 			}
 			model.add(potentialSubjects.get(prng.nextInt(potentialSubjects.size())),
-				pred, obj);
+					pred, obj);
 		}
 		logger.debug("Test class: " + this.getClass().getName());
 		logger.debug("Test statements size: " + model.size() + " (" + rdfWriterFactory.getRDFFormat() + ")");
@@ -759,7 +759,7 @@ public abstract class RDFWriterTest {
 			rdfWriter.endRDF();
 			long endWrite = System.currentTimeMillis();
 			logger.debug(
-				"Write took: " + (endWrite - startWrite) + " ms (" + rdfWriterFactory.getRDFFormat() + ")");
+					"Write took: " + (endWrite - startWrite) + " ms (" + rdfWriterFactory.getRDFFormat() + ")");
 			logger.debug("File size (bytes): " + testFile.length());
 
 		}
@@ -777,7 +777,7 @@ public abstract class RDFWriterTest {
 			rdfParser.parse(in, "foo:bar");
 			long endParse = System.currentTimeMillis();
 			logger.debug(
-				"Parse took: " + (endParse - startParse) + " ms (" + rdfParserFactory.getRDFFormat() + ")");
+					"Parse took: " + (endParse - startParse) + " ms (" + rdfParserFactory.getRDFFormat() + ")");
 
 			if (storeParsedStatements) {
 				if (model.size() != parsedModel.size()) {
@@ -794,12 +794,12 @@ public abstract class RDFWriterTest {
 					}
 				}
 				assertEquals(
-					"Unexpected number of statements, expected " + model.size() + " found " + parsedModel.size(),
-					model.size(), parsedModel.size());
+						"Unexpected number of statements, expected " + model.size() + " found " + parsedModel.size(),
+						model.size(), parsedModel.size());
 
 				if (rdfParser.getRDFFormat().supportsNamespaces()) {
 					assertTrue("Expected at least 5 namespaces, found " + parsedModel.getNamespaces().size(),
-						parsedModel.getNamespaces().size() >= 5);
+							parsedModel.getNamespaces().size() >= 5);
 					assertEquals(exNs, parsedModel.getNamespace("ex").get().getName());
 				}
 			}
@@ -1140,7 +1140,7 @@ public abstract class RDFWriterTest {
 
 	@Test
 	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
-		throws Exception {
+			throws Exception {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, bnodeSingleUseObject, bnode));
@@ -1163,7 +1163,7 @@ public abstract class RDFWriterTest {
 		assertTrue(tripleBNodeStatement.subjects().iterator().next() instanceof BNode);
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertEquals(tripleBNodeStatement.subjects().iterator().next(),
-				doubleBNodeStatement.contexts().iterator().next());
+					doubleBNodeStatement.contexts().iterator().next());
 		}
 	}
 
@@ -1183,7 +1183,7 @@ public abstract class RDFWriterTest {
 
 	@Test
 	public void testWriteOneStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
-		throws Exception {
+			throws Exception {
 		Model input = new LinkedHashModel();
 		input.setNamespace("ex", exNs);
 		input.add(vf.createStatement(uri1, uri1, bnode, bnode));
@@ -1203,7 +1203,7 @@ public abstract class RDFWriterTest {
 		assertTrue(doubleBNodeStatement.objects().iterator().next() instanceof BNode);
 		if (rdfWriterFactory.getRDFFormat().supportsContexts()) {
 			assertEquals(doubleBNodeStatement.objects().iterator().next(),
-				doubleBNodeStatement.contexts().iterator().next());
+					doubleBNodeStatement.contexts().iterator().next());
 		}
 	}
 
@@ -1828,12 +1828,12 @@ public abstract class RDFWriterTest {
 		// If an RDFWriter is a Closeable and it calls endRDF() explicitly on close() we should check
 		// it's consistent in various situations. Currently only RDFXMLPrettyWriter is a Closeable.
 		boolean[][] options = {
-			// call endRDF(), don't call close()
-			{ true, false },
-			// don't call endRDF(), call close()
-			{ false, true },
-			// call endRDF(), call close()
-			{ true, true },
+				// call endRDF(), don't call close()
+				{ true, false },
+				// don't call endRDF(), call close()
+				{ false, true },
+				// call endRDF(), call close()
+				{ true, true },
 		};
 
 		Set<Integer> sizes = new HashSet<>();
@@ -1842,7 +1842,7 @@ public abstract class RDFWriterTest {
 				RDFWriter rdfWriter = rdfWriterFactory.getWriter(outs);
 
 				Assume.assumeTrue("Test makes sense only if RDFWriter is a Closeable",
-					rdfWriter instanceof Closeable);
+						rdfWriter instanceof Closeable);
 
 				rdfWriter.startRDF();
 				rdfWriter.handleNamespace("ex", "http://example.com/");

@@ -23,7 +23,7 @@ import org.elasticsearch.search.sort.SortOrder;
 class ElasticsearchHelper {
 
 	static CloseableIteration<SearchHit, RuntimeException> getScrollingIterator(QueryBuilder queryBuilder,
-		Client client, String index, int scrollTimeout) {
+			Client client, String index, int scrollTimeout) {
 
 		return new CloseableIteration<SearchHit, RuntimeException>() {
 
@@ -35,11 +35,11 @@ class ElasticsearchHelper {
 			{
 
 				SearchResponse scrollResp = client.prepareSearch(index)
-					.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
-					.setScroll(new TimeValue(scrollTimeout))
-					.setQuery(queryBuilder)
-					.setSize(size)
-					.get();
+						.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
+						.setScroll(new TimeValue(scrollTimeout))
+						.setQuery(queryBuilder)
+						.setSize(size)
+						.get();
 
 				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 				scrollId = scrollResp.getScrollId();
@@ -66,9 +66,9 @@ class ElasticsearchHelper {
 						scrollIsEmpty();
 					} else {
 						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)
-							.setScroll(new TimeValue(scrollTimeout))
-							.execute()
-							.actionGet();
+								.setScroll(new TimeValue(scrollTimeout))
+								.execute()
+								.actionGet();
 
 						items = Arrays.asList(scrollResp.getHits().getHits()).iterator();
 						scrollId = scrollResp.getScrollId();

@@ -233,7 +233,7 @@ public class LinkedHashModel extends AbstractModel {
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+					Resource... contexts) {
 				LinkedHashModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -372,7 +372,7 @@ public class LinkedHashModel extends AbstractModel {
 		ModelNode<Resource> ctx;
 
 		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
-			ModelNode<Resource> ctx) {
+				ModelNode<Resource> ctx) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
 			this.pred = pred;
@@ -381,7 +381,7 @@ public class LinkedHashModel extends AbstractModel {
 		}
 
 		public ModelStatement(ModelNode<Resource> subj, ModelNode<IRI> pred, ModelNode<Value> obj,
-			ModelNode<Resource> ctx, Statement statement) {
+				ModelNode<Resource> ctx, Statement statement) {
 			super(subj.getValue(), pred.getValue(), obj.getValue(), ctx.getValue());
 			this.subj = subj;
 			this.pred = pred;

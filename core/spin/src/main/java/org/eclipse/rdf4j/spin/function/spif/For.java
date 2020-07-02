@@ -29,10 +29,10 @@ public class For implements InverseMagicProperty {
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-		final ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
+			final ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		if (args.length != 2) {
 			throw new ValueExprEvaluationException(
-				String.format("%s requires 2 arguments, got %d", getURI(), args.length));
+					String.format("%s requires 2 arguments, got %d", getURI(), args.length));
 		}
 		if (!(args[0] instanceof Literal)) {
 			throw new ValueExprEvaluationException("First list element must be a literal");
@@ -43,24 +43,24 @@ public class For implements InverseMagicProperty {
 		final int from = ((Literal) args[0]).intValue();
 		final int to = ((Literal) args[1]).intValue();
 		return new CloseableIteratorIteration<>(
-			SingleValueToListTransformer.transform(new Iterator<Value>() {
+				SingleValueToListTransformer.transform(new Iterator<Value>() {
 
-				int value = from;
+					int value = from;
 
-				@Override
-				public boolean hasNext() {
-					return (value <= to);
-				}
+					@Override
+					public boolean hasNext() {
+						return (value <= to);
+					}
 
-				@Override
-				public Value next() {
-					return valueFactory.createLiteral(value++);
-				}
+					@Override
+					public Value next() {
+						return valueFactory.createLiteral(value++);
+					}
 
-				@Override
-				public void remove() {
-					throw new UnsupportedOperationException();
-				}
-			}));
+					@Override
+					public void remove() {
+						throw new UnsupportedOperationException();
+					}
+				}));
 	}
 }

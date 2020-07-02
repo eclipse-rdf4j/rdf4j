@@ -186,8 +186,8 @@ public class ShaclProperties {
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
 						logger.warn("Unsupported SHACL feature detected {} in statement {}",
-							predicate.replace("http://www.w3.org/ns/shacl#", "sh:"),
-							statement);
+								predicate.replace("http://www.w3.org/ns/shacl#", "sh:"),
+								statement);
 					}
 				}
 

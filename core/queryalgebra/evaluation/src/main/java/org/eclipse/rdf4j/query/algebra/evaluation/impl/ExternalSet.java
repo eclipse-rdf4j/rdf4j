@@ -52,6 +52,6 @@ public abstract class ExternalSet extends AbstractQueryModelNode implements Tupl
 	}
 
 	public abstract CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 }

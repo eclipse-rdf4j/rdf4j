@@ -119,7 +119,7 @@ public class DynamicModel implements Model {
 			for (Resource context : contexts) {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
 				added = added
-					| statements.put(statement, statement) == null;
+						| statements.put(statement, statement) == null;
 			}
 			return added;
 		} else {
@@ -143,8 +143,8 @@ public class DynamicModel implements Model {
 			boolean removed = false;
 			for (Resource context : contexts) {
 				removed = removed
-					| statements.remove(
-						SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
+						| statements.remove(
+								SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context)) != null;
 			}
 			return removed;
 		} else {
@@ -263,12 +263,12 @@ public class DynamicModel implements Model {
 		Objects.requireNonNull(c);
 		if (model == null) {
 			return c.stream()
-				.map(s -> {
-					Objects.requireNonNull(s);
-					return statements.put(s, s) == null;
-				})
-				.reduce((a, b) -> a || b)
-				.orElse(false);
+					.map(s -> {
+						Objects.requireNonNull(s);
+						return statements.put(s, s) == null;
+					})
+					.reduce((a, b) -> a || b)
+					.orElse(false);
 		}
 		return model.addAll(c);
 	}
@@ -285,11 +285,11 @@ public class DynamicModel implements Model {
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
 			return c
-				.stream()
-				.map(statements::remove)
-				.map(Objects::nonNull)
-				.reduce((a, b) -> a || b)
-				.orElse(false);
+					.stream()
+					.map(statements::remove)
+					.map(Objects::nonNull)
+					.reduce((a, b) -> a || b)
+					.orElse(false);
 		}
 		return model.removeAll(c);
 	}
@@ -306,16 +306,16 @@ public class DynamicModel implements Model {
 	@Override
 	public Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (model == null && subject != null && predicate != null && object != null && contexts != null
-			&& contexts.length == 1) {
+				&& contexts.length == 1) {
 			Statement statement = SimpleValueFactory.getInstance()
-				.createStatement(subject, predicate, object, contexts[0]);
+					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
 			if (foundStatement == null) {
 				return EmptyIterator::new;
 			}
 			return () -> new SingletonIterator<>(foundStatement);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
-			&& contexts.length == 0) {
+				&& contexts.length == 0) {
 			return this;
 		} else {
 			upgrade();

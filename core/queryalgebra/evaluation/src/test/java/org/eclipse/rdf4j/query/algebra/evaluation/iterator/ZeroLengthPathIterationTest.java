@@ -50,7 +50,7 @@ public class ZeroLengthPathIterationTest {
 
 			@Override
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
-				IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 				return new CloseableIteratorIteration<>(m.getStatements(subj, pred, obj, contexts).iterator());
 			}
 
@@ -76,7 +76,7 @@ public class ZeroLengthPathIterationTest {
 		Var subjectVar = new Var("x");
 		Var objVar = new Var("y");
 		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null, null,
-			bindings)) {
+				bindings)) {
 			BindingSet result = zlp.getNextElement();
 
 			assertTrue("zlp evaluation should have retained unrelated input binding", result.hasBinding("a"));

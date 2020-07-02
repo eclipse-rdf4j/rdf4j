@@ -65,7 +65,7 @@ class HDTArrayLog64 extends HDTArray {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
+				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 			// read bytes, minimum 1
 			long bytes = (nrbits * entries + 7) / 8;
 			if (bytes > Integer.MAX_VALUE) {

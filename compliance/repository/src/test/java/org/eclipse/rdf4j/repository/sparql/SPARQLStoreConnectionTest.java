@@ -80,7 +80,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	protected Repository createRepository() {
 		return new SPARQLRepository(HTTPMemServer.REPOSITORY_URL,
-			Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
+				Protocol.getStatementsLocation(HTTPMemServer.REPOSITORY_URL));
 	}
 
 	@Override
@@ -147,7 +147,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Ignore
 	public void testGetStatementsInMultipleContexts() throws Exception {
 		System.err.println(
-			"temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
+				"temporarily disabled testGetStatementsInMultipleContexts() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
@@ -198,7 +198,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Ignore
 	public void testGetStatementsInSingleContext() throws Exception {
 		System.err.println(
-			"temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
+				"temporarily disabled testGetStatementsInSingleContext() for SPARQLRepository: implementation of statement context using SPARQL not yet complete");
 		// TODO see SES-1776
 	}
 
@@ -305,7 +305,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append("            foaf:mbox ?mbox. }");
 
 		try (GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SPARQL, queryBuilder.toString())
-			.evaluate()) {
+				.evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -376,7 +376,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append("            foaf:mbox ?mbox . ");
 		queryBuilder.append(" } ");
 		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString())
-			.evaluate()) {
+				.evaluate()) {
 			assertTrue(result != null);
 			assertTrue(result.hasNext());
 
@@ -404,7 +404,7 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\" . } ");
 
 		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryBuilder.toString())
-			.evaluate()) {
+				.evaluate()) {
 			assertNotNull(result);
 			assertTrue(result.hasNext());
 

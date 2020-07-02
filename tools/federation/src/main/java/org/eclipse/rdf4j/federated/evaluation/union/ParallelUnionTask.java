@@ -34,7 +34,7 @@ public class ParallelUnionTask extends ParallelTaskBase<BindingSet> {
 	protected final QueryInfo queryInfo;
 
 	public ParallelUnionTask(ParallelExecutor<BindingSet> unionControl, StatementPattern stmt, Endpoint endpoint,
-		BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
+			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
 		this.endpoint = endpoint;
 		this.stmt = stmt;
 		this.bindings = bindings;

@@ -109,7 +109,7 @@ public class WriteTest extends SPARQLBaseTest {
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
-				"PREFIX : <http://example.org/> INSERT { :subject a :Person } WHERE { }");
+					"PREFIX : <http://example.org/> INSERT { :subject a :Person } WHERE { }");
 			update.execute();
 
 			// test that statement is returned from federation
@@ -130,7 +130,7 @@ public class WriteTest extends SPARQLBaseTest {
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
-				"PREFIX ex: <http://example.org/> INSERT DATA { ex:subject a ex:Person } ");
+					"PREFIX ex: <http://example.org/> INSERT DATA { ex:subject a ex:Person } ");
 			update.execute();
 
 			// test that statement is returned from federation
@@ -177,7 +177,7 @@ public class WriteTest extends SPARQLBaseTest {
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,
-				"PREFIX : <http://example.org/> INSERT { :subject a :Person } WHERE { }");
+					"PREFIX : <http://example.org/> INSERT { :subject a :Person } WHERE { }");
 			update.execute();
 
 			// test that statement is returned from federation

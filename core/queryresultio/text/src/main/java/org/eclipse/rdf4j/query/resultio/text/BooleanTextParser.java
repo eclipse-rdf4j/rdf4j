@@ -84,7 +84,7 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 
 	@Override
 	public void parseQueryResult(InputStream in)
-		throws IOException, QueryResultParseException, QueryResultHandlerException {
+			throws IOException, QueryResultParseException, QueryResultHandlerException {
 		parse(in);
 	}
 }

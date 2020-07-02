@@ -61,7 +61,7 @@ public class SPARQL11ManifestTest {
 	 * @throws Exception
 	 */
 	public static TestSuite suite(SPARQLQueryTest.Factory factory, String manifestFile,
-		boolean approvedTestsOnly, String... excludedSubdirs) throws Exception {
+			boolean approvedTestsOnly, String... excludedSubdirs) throws Exception {
 		TestSuite suite = new TestSuite(factory.getClass().getName()) {
 
 			@Override
@@ -74,7 +74,7 @@ public class SPARQL11ManifestTest {
 							FileUtil.deleteDir(tmpDir);
 						} catch (IOException e) {
 							System.err.println(
-								"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
+									"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
 						}
 					}
 				}
@@ -87,12 +87,12 @@ public class SPARQL11ManifestTest {
 			addTurtle(con, new URL(manifestFile), manifestFile);
 
 			String query = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-				+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-				+ "SELECT DISTINCT ?manifestFile "
-				+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+					+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+					+ "SELECT DISTINCT ?manifestFile "
+					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
 			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
-				.evaluate();
+					.evaluate();
 
 			for (BindingSet bindingSet : manifestResults) {
 				String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
@@ -121,7 +121,7 @@ public class SPARQL11ManifestTest {
 	 * @throws Exception
 	 */
 	public static TestSuite suite(SPARQLUpdateConformanceTest.Factory factory, String manifestFile,
-		boolean approvedTestsOnly, String... excludedSubdirs) throws Exception {
+			boolean approvedTestsOnly, String... excludedSubdirs) throws Exception {
 
 		TestSuite suite = new TestSuite(factory.getClass().getName()) {
 
@@ -135,7 +135,7 @@ public class SPARQL11ManifestTest {
 							FileUtil.deleteDir(tmpDir);
 						} catch (IOException e) {
 							System.err.println(
-								"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
+									"Unable to clean up temporary directory '" + tmpDir + "': " + e.getMessage());
 						}
 					}
 				}
@@ -148,12 +148,12 @@ public class SPARQL11ManifestTest {
 			addTurtle(con, new URL(manifestFile), manifestFile);
 
 			String query = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
-				+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
-				+ "SELECT DISTINCT ?manifestFile "
-				+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
+					+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
+					+ "SELECT DISTINCT ?manifestFile "
+					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
 			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
-				.evaluate();
+					.evaluate();
 
 			for (BindingSet bindingSet : manifestResults) {
 				String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
@@ -196,7 +196,7 @@ public class SPARQL11ManifestTest {
 	}
 
 	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
-		throws IOException, RepositoryException, RDFParseException {
+			throws IOException, RepositoryException, RDFParseException {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}

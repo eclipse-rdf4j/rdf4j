@@ -30,18 +30,18 @@ import org.junit.runners.Parameterized;
 public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceTest {
 
 	private static final String[] defaultIgnoredTests = {
-		// incompatible with SPARQL 1.1 - syntax for decimals was modified
-		"Basic - Term 6",
-		// incompatible with SPARQL 1.1 - syntax for decimals was modified
-		"Basic - Term 7",
-		// Test is incorrect: assumes timezoned date is comparable with non-timezoned
-		"date-2",
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
-		"Strings: Distinct",
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
-		"All: Distinct",
-		// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
-		"SELECT REDUCED ?x with strings"
+			// incompatible with SPARQL 1.1 - syntax for decimals was modified
+			"Basic - Term 6",
+			// incompatible with SPARQL 1.1 - syntax for decimals was modified
+			"Basic - Term 7",
+			// Test is incorrect: assumes timezoned date is comparable with non-timezoned
+			"date-2",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"Strings: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"All: Distinct",
+			// Incompatible with SPARQL 1.1 - string-typed literals and plain literals are identical
+			"SELECT REDUCED ?x with strings"
 	};
 
 	private static final List<String> excludedSubdirs = Arrays.asList("service");
@@ -56,7 +56,7 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 	 * @param ordered
 	 */
 	public SPARQL10QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-		String resultFileURL, Dataset dataset, boolean ordered) {
+			String resultFileURL, Dataset dataset, boolean ordered) {
 		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 
@@ -80,9 +80,9 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(
-			SPARQL10QueryComplianceTest.class.getClassLoader()
-				.getResource("testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl")
-				.toExternalForm());
+				SPARQL10QueryComplianceTest.class.getClassLoader()
+						.getResource("testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl")
+						.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
 			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs);

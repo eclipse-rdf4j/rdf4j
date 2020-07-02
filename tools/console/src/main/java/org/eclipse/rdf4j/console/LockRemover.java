@@ -30,12 +30,12 @@ public class LockRemover {
 	 * @throws RepositoryException
 	 */
 	public static boolean tryToRemoveLock(Repository repo, ConsoleIO consoleIO)
-		throws IOException, RepositoryException {
+			throws IOException, RepositoryException {
 		boolean lockRemoved = false;
 
 		LockManager lockManager = new DirectoryLockManager(repo.getDataDir());
 		if (lockManager.isLocked() && consoleIO
-			.askProceed("WARNING: The lock from another process on this repository needs to be removed", true)) {
+				.askProceed("WARNING: The lock from another process on this repository needs to be removed", true)) {
 			repo.shutDown();
 			lockRemoved = lockManager.revokeLock();
 			repo.initialize();
@@ -58,8 +58,8 @@ public class LockRemover {
 			SailLockedException sle = (SailLockedException) rle.getCause();
 			LockManager lockManager = sle.getLockManager();
 			if (lockManager != null && lockManager.isLocked() && consoleIO.askProceed(
-				"WARNING: The lock from process '" + sle.getLockedBy() + "' on this repository needs to be removed",
-				true)) {
+					"WARNING: The lock from process '" + sle.getLockedBy() + "' on this repository needs to be removed",
+					true)) {
 				lockRemoved = lockManager.revokeLock();
 			}
 		}

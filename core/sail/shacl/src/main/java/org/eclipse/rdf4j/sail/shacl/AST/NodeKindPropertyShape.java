@@ -31,8 +31,8 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NodeKindPropertyShape.class);
 
 	NodeKindPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-		PathPropertyShape parent, Resource path,
-		Resource nodeKind) {
+			PathPropertyShape parent, Resource path,
+			Resource nodeKind) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.nodeKind = NodeKind.from(nodeKind);
@@ -68,7 +68,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -76,7 +76,7 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-			(parent) -> new NodeKindFilter(parent, nodeKind), this, overrideTargetNode, negateThisPlan);
+				(parent) -> new NodeKindFilter(parent, nodeKind), this, overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -115,9 +115,9 @@ public class NodeKindPropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "NodeKindPropertyShape{" +
-			"nodeKind=" + nodeKind +
-			", path=" + getPath() +
-			", id=" + id +
-			'}';
+				"nodeKind=" + nodeKind +
+				", path=" + getPath() +
+				", id=" + id +
+				'}';
 	}
 }

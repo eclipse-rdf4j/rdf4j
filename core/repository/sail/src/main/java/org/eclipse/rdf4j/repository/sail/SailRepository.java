@@ -53,7 +53,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
  * @author Arjohn Kampman
  */
 public class SailRepository extends AbstractRepository implements FederatedServiceResolverClient,
-	RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
 
 	/*-----------*
 	 * Constants *

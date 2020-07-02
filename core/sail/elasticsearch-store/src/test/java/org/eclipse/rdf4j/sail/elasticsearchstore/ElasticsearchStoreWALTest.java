@@ -89,13 +89,13 @@ public class ElasticsearchStoreWALTest {
 		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-				new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
 
 			return client.admin()
-				.indices()
-				.getIndex(new GetIndexRequest())
-				.actionGet()
-				.getIndices();
+					.indices()
+					.getIndex(new GetIndexRequest())
+					.actionGet()
+					.getIndices();
 		} catch (UnknownHostException e) {
 			throw new IllegalStateException(e);
 		}
@@ -118,7 +118,7 @@ public class ElasticsearchStoreWALTest {
 		assertTrue(transactionFaild);
 
 		SailRepository elasticsearchStore = new SailRepository(
-			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -132,7 +132,7 @@ public class ElasticsearchStoreWALTest {
 
 	private void failedTransactionAdd(int count) {
 		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
-			embeddedElastic.getTransportTcpPort(), "cluster1");
+				embeddedElastic.getTransportTcpPort(), "cluster1");
 
 		ElasticsearchStore es = new ElasticsearchStore(clientProvider, "testindex");
 		SailRepository elasticsearchStore = new SailRepository(es);
@@ -183,7 +183,7 @@ public class ElasticsearchStoreWALTest {
 		assertTrue(transactionFaild);
 
 		SailRepository elasticsearchStore = new SailRepository(
-			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -197,7 +197,7 @@ public class ElasticsearchStoreWALTest {
 
 	private void fill(int count) {
 		SailRepository elasticsearchStore = new SailRepository(
-			new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -213,7 +213,7 @@ public class ElasticsearchStoreWALTest {
 
 	private void failedTransactionRemove() {
 		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
-			embeddedElastic.getTransportTcpPort(), "cluster1");
+				embeddedElastic.getTransportTcpPort(), "cluster1");
 
 		ElasticsearchStore es = new ElasticsearchStore(clientProvider, "testindex");
 		SailRepository elasticsearchStore = new SailRepository(es);

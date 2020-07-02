@@ -88,7 +88,7 @@ public class Unique implements PlanNode {
 					} else {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
-								that.getClass().getSimpleName() + ":IgnoredNotUnique", temp, that, getId());
+									that.getClass().getSimpleName() + ":IgnoredNotUnique", temp, that, getId());
 						}
 					}
 
@@ -136,7 +136,7 @@ public class Unique implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}

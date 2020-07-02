@@ -29,7 +29,7 @@ public class TurtlePrettyWriterTest extends RDFWriterTest {
 	@Override
 	protected void setupWriterConfig(WriterConfig config) {
 		config.set(BasicWriterSettings.PRETTY_PRINT, true)
-			.set(BasicWriterSettings.INLINE_BLANK_NODES, inlineBlankNodes);
+				.set(BasicWriterSettings.INLINE_BLANK_NODES, inlineBlankNodes);
 	}
 
 	@Override
@@ -64,7 +64,7 @@ public class TurtlePrettyWriterTest extends RDFWriterTest {
 
 	@Override
 	public void testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace()
-		throws Exception {
+			throws Exception {
 		try {
 			inlineBlankNodes = false;
 			super.testWriteTwoStatementsObjectBNodeSinglePredicateSingleContextBNodeReusedWithNamespace();

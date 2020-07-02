@@ -96,7 +96,7 @@ public class RDFParserHelperTest {
 	@Test
 	public final void testCreateLiteralLabelOnly() throws Exception {
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, null, parserConfig, errListener,
-			valueFactory);
+				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertFalse(literal.getLanguage().isPresent());
@@ -111,7 +111,7 @@ public class RDFParserHelperTest {
 	@Test
 	public final void testCreateLiteralLabelAndLanguage() throws Exception {
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, LANG_EN, null, parserConfig, errListener,
-			valueFactory);
+				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertEquals(LANG_EN, literal.getLanguage().orElse(null));
@@ -126,7 +126,7 @@ public class RDFParserHelperTest {
 	@Test
 	public final void testCreateLiteralLabelAndDatatype() throws Exception {
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, XMLSchema.STRING, parserConfig, errListener,
-			valueFactory);
+				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertFalse(literal.getLanguage().isPresent());
@@ -144,7 +144,7 @@ public class RDFParserHelperTest {
 	@Test
 	public final void testCreateLiteralLabelAndLanguageWithRDFLangString() throws Exception {
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, LANG_EN, RDF.LANGSTRING, parserConfig, errListener,
-			valueFactory);
+				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertEquals(LANG_EN, literal.getLanguage().orElse(null));
@@ -176,7 +176,7 @@ public class RDFParserHelperTest {
 	public final void testCreateLiteralLabelNoLanguageWithRDFLangStringWithNoVerify() throws Exception {
 		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig, errListener,
-			valueFactory);
+				valueFactory);
 		assertFalse(literal.getLanguage().isPresent());
 		assertEquals(XMLSchema.STRING, literal.getDatatype());
 	}
@@ -189,7 +189,7 @@ public class RDFParserHelperTest {
 		thrown.expectMessage(TEST_MESSAGE_FOR_FAILURE);
 		try {
 			RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.VERIFY_DATATYPE_VALUES,
-				parserConfig, errListener);
+					parserConfig, errListener);
 		} finally {
 			assertErrorListener(0, 1, 0);
 		}
@@ -201,7 +201,7 @@ public class RDFParserHelperTest {
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.VERIFY_DATATYPE_VALUES, parserConfig,
-			errListener);
+				errListener);
 		assertErrorListener(0, 1, 0);
 	}
 
@@ -209,7 +209,7 @@ public class RDFParserHelperTest {
 	public final void testReportErrorStringFatalInactive() throws Exception {
 		assertFalse(parserConfig.get(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES,
-			parserConfig, errListener);
+				parserConfig, errListener);
 		assertErrorListener(0, 0, 0);
 	}
 
@@ -218,7 +218,7 @@ public class RDFParserHelperTest {
 		assertFalse(parserConfig.get(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 		parserConfig.addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES,
-			parserConfig, errListener);
+				parserConfig, errListener);
 		assertErrorListener(0, 0, 0);
 	}
 
@@ -230,7 +230,7 @@ public class RDFParserHelperTest {
 		thrown.expectMessage(TEST_MESSAGE_FOR_FAILURE);
 		try {
 			RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1, BasicParserSettings.VERIFY_DATATYPE_VALUES,
-				parserConfig, errListener);
+					parserConfig, errListener);
 		} finally {
 			assertErrorListener(0, 1, 0);
 		}
@@ -242,7 +242,7 @@ public class RDFParserHelperTest {
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1, BasicParserSettings.VERIFY_DATATYPE_VALUES,
-			parserConfig, errListener);
+				parserConfig, errListener);
 		assertErrorListener(0, 1, 0);
 	}
 
@@ -250,7 +250,7 @@ public class RDFParserHelperTest {
 	public final void testReportErrorStringIntIntFatalInactive() throws Exception {
 		assertFalse(parserConfig.get(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES,
-			parserConfig, errListener);
+				parserConfig, errListener);
 		assertErrorListener(0, 0, 0);
 	}
 
@@ -259,7 +259,7 @@ public class RDFParserHelperTest {
 		assertFalse(parserConfig.get(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES));
 		parserConfig.addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);
 		RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES,
-			parserConfig, errListener);
+				parserConfig, errListener);
 		assertErrorListener(0, 0, 0);
 	}
 

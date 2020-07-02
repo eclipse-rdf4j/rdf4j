@@ -90,7 +90,7 @@ public class StatementsController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -110,7 +110,7 @@ public class StatementsController extends AbstractController {
 				logger.info("POST transaction to repository");
 				result = getTransactionResultResult(repository, request, response);
 			} else if (Protocol.SPARQL_UPDATE_MIME_TYPE.equals(mimeType)
-				|| request.getParameterMap().containsKey(Protocol.UPDATE_PARAM_NAME)) {
+					|| request.getParameterMap().containsKey(Protocol.UPDATE_PARAM_NAME)) {
 				logger.info("POST SPARQL update request to repository");
 				result = getSparqlUpdateResult(repository, request, response);
 			} else {
@@ -125,14 +125,14 @@ public class StatementsController extends AbstractController {
 			result = getDeleteDataResult(repository, request, response);
 		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-				"Method not allowed: " + reqMethod);
+					"Method not allowed: " + reqMethod);
 		}
 
 		return result;
 	}
 
 	private ModelAndView getSparqlUpdateResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
@@ -179,7 +179,7 @@ public class StatementsController extends AbstractController {
 
 		SimpleDataset dataset = null;
 		if (defaultRemoveGraphURIs != null || defaultInsertGraphURIs != null || defaultGraphURIs != null
-			|| namedGraphURIs != null) {
+				|| namedGraphURIs != null) {
 			dataset = new SimpleDataset();
 		}
 
@@ -248,7 +248,7 @@ public class StatementsController extends AbstractController {
 				if (parameterName.startsWith(BINDING_PREFIX) && parameterName.length() > BINDING_PREFIX.length()) {
 					String bindingName = parameterName.substring(BINDING_PREFIX.length());
 					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,
-						repository.getValueFactory());
+							repository.getValueFactory());
 					update.setBinding(bindingName, bindingValue);
 				}
 			}
@@ -290,7 +290,7 @@ public class StatementsController extends AbstractController {
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws ClientHTTPException {
+			HttpServletResponse response) throws ClientHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();
@@ -302,7 +302,7 @@ public class StatementsController extends AbstractController {
 		boolean useInferencing = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);
 
 		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,
-			RDFWriterRegistry.getInstance());
+				RDFWriterRegistry.getInstance());
 
 		Map<String, Object> model = new HashMap<>();
 		model.put(ExportStatementsView.SUBJECT_KEY, subj);
@@ -319,7 +319,7 @@ public class StatementsController extends AbstractController {
 	 * Process several actions as a transaction.
 	 */
 	private ModelAndView getTransactionResultResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
+			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
 		InputStream in = request.getInputStream();
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			logger.debug("Processing transaction...");
@@ -360,22 +360,22 @@ public class StatementsController extends AbstractController {
 	 * Upload data to the repository.
 	 */
 	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response, boolean replaceCurrent)
-		throws IOException, ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response, boolean replaceCurrent)
+			throws IOException, ServerHTTPException, ClientHTTPException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
 		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)
-			.orElseThrow(
-				() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
+				.orElseThrow(
+						() -> new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType));
 
 		ValueFactory vf = repository.getValueFactory();
 
 		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);
 		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);
 		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,
-			false);
+				false);
 
 		if (baseURI == null) {
 			baseURI = vf.createIRI("foo:bar");
@@ -400,7 +400,7 @@ public class StatementsController extends AbstractController {
 			return new ModelAndView(EmptySuccessView.getInstance());
 		} catch (UnsupportedRDFormatException e) {
 			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,
-				"No RDF parser available for format " + rdfFormat.getName());
+					"No RDF parser available for format " + rdfFormat.getName());
 		} catch (RDFParseException e) {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
@@ -422,7 +422,7 @@ public class StatementsController extends AbstractController {
 	 * Delete data from the repository.
 	 */
 	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
-		HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
+			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
 		ProtocolUtil.logRequestParameters(request);
 
 		ValueFactory vf = repository.getValueFactory();

@@ -52,12 +52,12 @@ class HDTBitmap extends HDTPart {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, new CRC8())) {
+				CheckedInputStream cis = new CheckedInputStream(uis, new CRC8())) {
 
 			int dtype = cis.read();
 			if (dtype != BITMAP1) {
 				throw new UnsupportedOperationException("Bitmap encoding " + Long.toHexString(dtype) +
-					", but only bitmap v1 is supported");
+						", but only bitmap v1 is supported");
 			}
 
 			long b = (int) VByte.decode(cis);
@@ -72,7 +72,7 @@ class HDTBitmap extends HDTPart {
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);
-			CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
+				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {
 
 			buffer = new byte[(int) bytes];
 			cis.read(buffer);

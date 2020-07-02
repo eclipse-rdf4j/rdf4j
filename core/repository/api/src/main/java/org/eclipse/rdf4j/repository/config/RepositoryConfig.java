@@ -150,11 +150,11 @@ public class RepositoryConfig {
 		try {
 
 			Models.objectLiteral(model.getStatements(repositoryNode, REPOSITORYID, null))
-				.ifPresent(lit -> setID(lit.getLabel()));
+					.ifPresent(lit -> setID(lit.getLabel()));
 			Models.objectLiteral(model.getStatements(repositoryNode, RDFS.LABEL, null))
-				.ifPresent(lit -> setTitle(lit.getLabel()));
+					.ifPresent(lit -> setTitle(lit.getLabel()));
 			Models.objectResource(model.getStatements(repositoryNode, REPOSITORYIMPL, null))
-				.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
+					.ifPresent(res -> setRepositoryImplConfig(AbstractRepositoryImplConfig.create(model, res)));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}

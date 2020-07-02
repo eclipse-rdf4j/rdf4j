@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
 public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException>
-	implements TupleQueryResult {
+		implements TupleQueryResult {
 
 	/*-----------*
 	 * Variables *
@@ -57,7 +57,7 @@ public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, Quer
 	 * @param bindingNames The binding names, in order of projection.
 	 */
 	public IteratingTupleQueryResult(List<String> bindingNames,
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSetIter) {
 		super(bindingSetIter);
 		// Don't allow modifications to the binding names when it is accessed
 		// through getBindingNames:

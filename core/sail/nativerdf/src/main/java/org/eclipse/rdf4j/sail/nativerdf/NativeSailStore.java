@@ -78,19 +78,19 @@ class NativeSailStore implements SailStore {
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
 		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-			ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
+				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
 	}
 
 	/**
 	 * Creates a new {@link NativeSailStore}.
 	 */
 	public NativeSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-		int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
+			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
 			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
-				namespaceIDCacheSize);
+					namespaceIDCacheSize);
 			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
 			contextStore = new ContextStore(this, dataDir);
 			initialized = true;
@@ -186,7 +186,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
-			stIter1) {
+				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
 				return st.getContext() != null;
@@ -212,7 +212,7 @@ class NativeSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
 	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
-		boolean explicit, Resource... contexts) throws IOException {
+			boolean explicit, Resource... contexts) throws IOException {
 		int subjID = NativeValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);
@@ -432,7 +432,7 @@ class NativeSailStore implements SailStore {
 		@Override
 		public void deprecate(Statement statement) throws SailException {
 			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
-				statement.getContext());
+					statement.getContext());
 		}
 
 		/**
@@ -453,7 +453,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
-			throws SailException {
+				throws SailException {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			boolean result = false;
 			sinkStoreAccessLock.lock();
@@ -492,7 +492,7 @@ class NativeSailStore implements SailStore {
 		}
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
-			throws SailException {
+				throws SailException {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 
 			sinkStoreAccessLock.lock();
@@ -539,7 +539,7 @@ class NativeSailStore implements SailStore {
 				long removeCount = 0;
 				for (int contextId : contextIds) {
 					Map<Integer, Long> result = tripleStore.removeTriplesByContext(subjID, predID, objID, contextId,
-						explicit);
+							explicit);
 
 					for (Entry<Integer, Long> entry : result.entrySet()) {
 						Integer entryContextId = entry.getKey();
@@ -605,7 +605,7 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws SailException {
+				Resource... contexts) throws SailException {
 			try {
 				return createStatementIterator(subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {

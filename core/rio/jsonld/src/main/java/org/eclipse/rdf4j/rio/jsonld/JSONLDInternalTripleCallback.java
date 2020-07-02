@@ -61,12 +61,12 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf) {
 		this(nextHandler, vf, new ParserConfig(), new ParseErrorLogger(), nodeID -> vf.createBNode(nodeID),
-			() -> vf.createBNode());
+				() -> vf.createBNode());
 	}
 
 	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf, ParserConfig parserConfig,
-		ParseErrorListener parseErrorListener, Function<String, Resource> namedBNodeCreator,
-		Supplier<Resource> anonymousBNodeCreator) {
+			ParseErrorListener parseErrorListener, Function<String, Resource> namedBNodeCreator,
+			Supplier<Resource> anonymousBNodeCreator) {
 		this.handler = nextHandler;
 		this.vf = vf;
 		this.parserConfig = parserConfig;
@@ -126,7 +126,7 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 		Value object;
 		try {
 			object = RDFParserHelper.createLiteral(value, language, datatypeURI, getParserConfig(),
-				getParserErrorListener(), getValueFactory());
+					getParserErrorListener(), getValueFactory());
 		} catch (final RDFParseException e) {
 			throw new RuntimeException(e);
 		}
@@ -213,10 +213,10 @@ class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
 			for (final RDFDataset.Quad quad : quads) {
 				if (quad.getObject().isLiteral()) {
 					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),
-						quad.getObject().getDatatype(), quad.getObject().getLanguage(), graphName);
+							quad.getObject().getDatatype(), quad.getObject().getLanguage(), graphName);
 				} else {
 					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),
-						graphName);
+							graphName);
 				}
 			}
 		}

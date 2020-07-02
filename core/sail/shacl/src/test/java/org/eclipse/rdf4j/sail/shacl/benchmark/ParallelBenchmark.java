@@ -136,7 +136,7 @@ public class ParallelBenchmark {
 
 		try {
 			SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
+					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
 			runBenchmark(IsolationLevels.SERIALIZABLE, repository, true, false, blackhole);
 
 		} finally {
@@ -151,7 +151,7 @@ public class ParallelBenchmark {
 
 		try {
 			SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
+					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
 			runBenchmark(IsolationLevels.SERIALIZABLE, repository, false, false, blackhole);
 
 		} finally {
@@ -166,7 +166,7 @@ public class ParallelBenchmark {
 
 		try {
 			SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
+					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
 			runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
 
 		} finally {
@@ -181,7 +181,7 @@ public class ParallelBenchmark {
 
 		try {
 			SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
+					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "shaclDatatype.ttl"));
 			((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
 			runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
@@ -193,7 +193,7 @@ public class ParallelBenchmark {
 	}
 
 	private void runBenchmark(IsolationLevels isolationLevel, SailRepository repository, boolean parallel,
-		boolean mixedReadWrite, Blackhole blackhole) {
+			boolean mixedReadWrite, Blackhole blackhole) {
 		ArrayList<List<Statement>> allStatements = new ArrayList<>(this.allStatements);
 
 		if (mixedReadWrite) {
@@ -221,7 +221,7 @@ public class ParallelBenchmark {
 					} else {
 						// read operation instead of write
 						try (Stream<Statement> stream = connection.getStatements(null, RDF.TYPE, null, false)
-							.stream()) {
+								.stream()) {
 							long count = stream.count();
 							blackhole.consume(count);
 						}

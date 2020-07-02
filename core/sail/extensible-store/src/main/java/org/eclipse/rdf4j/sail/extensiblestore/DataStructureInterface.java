@@ -42,11 +42,11 @@ public interface DataStructureInterface {
 	}
 
 	CloseableIteration<? extends ExtensibleStatement, SailException> getStatements(
-		Resource subject,
-		IRI predicate,
-		Value object,
-		boolean inferred,
-		Resource... context);
+			Resource subject,
+			IRI predicate,
+			Value object,
+			boolean inferred,
+			Resource... context);
 
 	// flush this DataStructure to make added and removed data visible to read operations
 	void flushForReading();
@@ -55,8 +55,8 @@ public interface DataStructureInterface {
 
 	default void clear(boolean inferred, Resource[] contexts) {
 		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(null, null,
-			null,
-			inferred, contexts)) {
+				null,
+				inferred, contexts)) {
 			while (statements.hasNext()) {
 				removeStatement(statements.next());
 			}
@@ -70,8 +70,8 @@ public interface DataStructureInterface {
 
 		boolean deleted = false;
 		try (CloseableIteration<? extends ExtensibleStatement, SailException> statements = getStatements(subj, pred,
-			obj,
-			inferred, contexts)) {
+				obj,
+				inferred, contexts)) {
 			while (statements.hasNext()) {
 				removeStatement(statements.next());
 				deleted = true;

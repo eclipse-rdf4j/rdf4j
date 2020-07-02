@@ -222,7 +222,7 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 		if (other instanceof ZeroLengthPath) {
 			ZeroLengthPath o = (ZeroLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && objectVar.equals(o.getObjectVar())
-				&& nullEquals(contextVar, o.getContextVar()) && scope.equals(o.getScope());
+					&& nullEquals(contextVar, o.getContextVar()) && scope.equals(o.getScope());
 		}
 		return false;
 	}

@@ -42,8 +42,8 @@ public class Show extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE + "show {r, repositories}   Shows all available repositories\n"
-			+ "show {n, namespaces}     Shows all namespaces\n"
-			+ "show {c, contexts}       Shows all context identifiers\n";
+				+ "show {n, namespaces}     Shows all namespaces\n"
+				+ "show {c, contexts}       Shows all context identifiers\n";
 	}
 
 	/**

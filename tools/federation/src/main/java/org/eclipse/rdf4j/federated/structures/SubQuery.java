@@ -39,7 +39,7 @@ public class SubQuery implements Serializable {
 
 	public SubQuery(StatementPattern stmt, Dataset dataset) {
 		this((Resource) stmt.getSubjectVar().getValue(), (IRI) stmt.getPredicateVar().getValue(),
-			stmt.getObjectVar().getValue(), FedXUtil.toContexts(stmt, dataset));
+				stmt.getObjectVar().getValue(), FedXUtil.toContexts(stmt, dataset));
 	}
 
 	/**

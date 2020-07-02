@@ -39,8 +39,8 @@ public class CacheUtils {
 	 * @throws OptimizationException
 	 */
 	private static boolean checkEndpointForResults(SourceSelectionCache cache, Endpoint endpoint, Resource subj,
-		IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
-		throws OptimizationException {
+			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+			throws OptimizationException {
 		try {
 			TripleSource t = endpoint.getTripleSource();
 			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo, contexts);
@@ -50,7 +50,7 @@ public class CacheUtils {
 			return hasResults;
 		} catch (Exception e) {
 			throw new OptimizationException(
-				"Error checking results for endpoint " + endpoint.getId() + ": " + e.getMessage(), e);
+					"Error checking results for endpoint " + endpoint.getId() + ": " + e.getMessage(), e);
 		}
 	}
 
@@ -68,8 +68,8 @@ public class CacheUtils {
 	 * @return whether some endpoint can provide results
 	 */
 	public static boolean checkCacheUpdateCache(SourceSelectionCache cache, List<Endpoint> endpoints, Resource subj,
-		IRI pred,
-		Value obj, QueryInfo queryInfo, Resource... contexts) {
+			IRI pred,
+			Value obj, QueryInfo queryInfo, Resource... contexts) {
 
 		SubQuery q = new SubQuery(subj, pred, obj, contexts);
 
@@ -79,7 +79,7 @@ public class CacheUtils {
 				return true;
 			}
 			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS
-				&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
+					&& checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {
 				return true;
 			}
 		}
@@ -101,8 +101,8 @@ public class CacheUtils {
 	 * @return the list of relevant statement sources
 	 */
 	public static List<StatementSource> checkCacheForStatementSourcesUpdateCache(SourceSelectionCache cache,
-		List<Endpoint> endpoints,
-		Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) {
+			List<Endpoint> endpoints,
+			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) {
 
 		SubQuery q = new SubQuery(subj, pred, obj, contexts);
 		List<StatementSource> sources = new ArrayList<>(endpoints.size());

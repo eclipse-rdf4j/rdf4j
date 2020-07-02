@@ -33,7 +33,7 @@ public class ParallelServiceJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final ParallelExecutor<BindingSet> joinControl;
 
 	public ParallelServiceJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
-		FedXService expr, List<BindingSet> bindings) {
+			FedXService expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;

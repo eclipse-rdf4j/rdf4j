@@ -597,7 +597,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 		if (predicateChanged) {
 			return getValueFactory().createStatement(statement.getSubject(), p, statement.getObject(),
-				statement.getContext());
+					statement.getContext());
 		} else {
 			return statement;
 		}
@@ -605,7 +605,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
 		return Arrays.<SearchQueryInterpreter>asList(new QuerySpecBuilder(incompleteQueryFails),
-			new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
+				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }
 

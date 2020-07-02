@@ -170,10 +170,10 @@ public abstract class AbstractLuceneSailSpinTest {
 	public void testDistanceFunction() throws Exception {
 		RepositoryConnection connection = getConnection();
 		String queryStr = "prefix geo:  <" + GEO.NAMESPACE + ">" + "prefix geof: <" + GEOF.NAMESPACE + ">"
-			+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
-			+ "select ?toUri ?fromUri ?dist where {(?from ?range ?units geo:asWKT search:distance)"
-			+ "search:withinDistance (?toUri ?to ?dist) ."
-			+ "?toUri a <urn:geo/Landmark>. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range.}";
+				+ "prefix search: <" + LuceneSailSchema.NAMESPACE + ">"
+				+ "select ?toUri ?fromUri ?dist where {(?from ?range ?units geo:asWKT search:distance)"
+				+ "search:withinDistance (?toUri ?to ?dist) ."
+				+ "?toUri a <urn:geo/Landmark>. ?fromUri geo:asWKT ?from; <urn:geo/maxDistance> ?range.}";
 		try {
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
 			query.setBinding("units", GEOF.UOM_METRE);
@@ -257,7 +257,7 @@ public abstract class AbstractLuceneSailSpinTest {
 			printTupleResult(query);
 			List<BindingSet> results = Iterations.asList(query.evaluate());
 			List<String> subjects = Lists.transform(results,
-				(BindingSet input) -> input.getBinding("sub").getValue().stringValue());
+					(BindingSet input) -> input.getBinding("sub").getValue().stringValue());
 
 			Assert.assertTrue(subjects.contains("urn:test.org/data/rec5"));
 			Assert.assertTrue(subjects.contains("urn:test.org/data/rec4"));

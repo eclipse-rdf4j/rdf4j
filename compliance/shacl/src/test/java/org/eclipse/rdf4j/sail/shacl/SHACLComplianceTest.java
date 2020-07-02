@@ -33,7 +33,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 
 	public static TestSuite suite() throws Exception {
 		String[] ignoredDirectories = { "targets", "sparql", "complex", "misc", "node", "path", "validation-reports",
-			"property" };
+				"property" };
 		if (RUN_ALL) {
 			ignoredDirectories = new String[0];
 		}
@@ -42,7 +42,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 
 			@Override
 			public AbstractSHACLTest createSHACLTest(String testURI, String label, Model shapesGraph, Model dataGraph,
-				boolean failure, boolean conforms) {
+					boolean failure, boolean conforms) {
 				return new SHACLComplianceTest(testURI, label, shapesGraph, dataGraph, failure, conforms);
 			}
 
@@ -55,7 +55,7 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 	}
 
 	public SHACLComplianceTest(String testURI, String label, Model shapesGraph, Model dataGraph, boolean failure,
-		boolean conforms) {
+			boolean conforms) {
 		super(testURI, label, shapesGraph, dataGraph, failure, conforms);
 	}
 

@@ -208,7 +208,7 @@ public class IDFile implements Closeable {
 
 			// doing one big read is considerably faster than doing a single read per id
 			byte[] bytes = nioFile.readBytes(ITEM_SIZE * (cacheLookupIndex << cacheLineShift),
-				(int) (ITEM_SIZE * cacheLineSize));
+					(int) (ITEM_SIZE * cacheLineSize));
 
 			cacheLine = convertBytesToLongs(bytes);
 
@@ -276,13 +276,13 @@ public class IDFile implements Closeable {
 		cacheLine = new Long[cacheLineSize];
 		for (int i = 0; i < bytes.length; i += ITEM_SIZE) {
 			long l = ((long) (bytes[i + 0] & 0xff) << 56)
-				| ((long) bytes[i + 1] & 0xff) << 48
-				| ((long) bytes[i + 2] & 0xff) << 40
-				| ((long) bytes[i + 3] & 0xff) << 32
-				| ((long) bytes[i + 4] & 0xff) << 24
-				| ((long) bytes[i + 5] & 0xff) << 16
-				| ((long) bytes[i + 6] & 0xff) << 8
-				| ((long) bytes[i + 7] & 0xff);
+					| ((long) bytes[i + 1] & 0xff) << 48
+					| ((long) bytes[i + 2] & 0xff) << 40
+					| ((long) bytes[i + 3] & 0xff) << 32
+					| ((long) bytes[i + 4] & 0xff) << 24
+					| ((long) bytes[i + 5] & 0xff) << 16
+					| ((long) bytes[i + 6] & 0xff) << 8
+					| ((long) bytes[i + 7] & 0xff);
 
 			cacheLine[(int) (i / ITEM_SIZE)] = l;
 		}

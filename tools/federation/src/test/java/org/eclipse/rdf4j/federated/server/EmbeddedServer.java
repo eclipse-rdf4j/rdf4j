@@ -55,7 +55,7 @@ public class EmbeddedServer {
 	 * @throws Exception
 	 */
 	public static void main(String[] args)
-		throws Exception {
+			throws Exception {
 		EmbeddedServer server = new EmbeddedServer();
 		server.start();
 	}

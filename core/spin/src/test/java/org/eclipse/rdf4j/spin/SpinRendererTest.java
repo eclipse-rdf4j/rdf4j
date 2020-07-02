@@ -92,9 +92,9 @@ public class SpinRendererTest {
 		renderer.render(parsedOp, actual);
 
 		Object operation = (parsedOp instanceof ParsedQuery) ? ((ParsedQuery) parsedOp).getTupleExpr()
-			: ((ParsedUpdate) parsedOp).getUpdateExprs();
+				: ((ParsedUpdate) parsedOp).getUpdateExprs();
 		assertTrue("Operation was\n" + operation + "\nExpected\n" + toRDF(expected) + "\nbut was\n" + toRDF(actual),
-			Models.isomorphic(actual.getStatements(), expected.getStatements()));
+				Models.isomorphic(actual.getStatements(), expected.getStatements()));
 	}
 
 	private static String toRDF(StatementCollector stmts) throws RDFHandlerException {

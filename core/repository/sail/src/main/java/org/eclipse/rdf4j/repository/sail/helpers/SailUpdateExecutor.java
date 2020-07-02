@@ -109,7 +109,7 @@ public class SailUpdateExecutor {
 	 * @param maxExecutionTime in seconds.
 	 */
 	public void executeUpdate(UpdateExpr updateExpr, Dataset dataset, BindingSet bindings, boolean includeInferred,
-		int maxExecutionTime) throws SailException, RDFParseException, IOException {
+			int maxExecutionTime) throws SailException, RDFParseException, IOException {
 		UpdateContext uc = new UpdateContext(updateExpr, dataset, bindings, includeInferred);
 		logger.trace("Incoming update expression:\n{}", uc);
 
@@ -214,7 +214,7 @@ public class SailUpdateExecutor {
 
 			if (maxExecutionTime > 0) {
 				statements = new TimeLimitIteration<Statement, SailException>(statements,
-					1000L * (maxExecutionTime - clearTime)) {
+						1000L * (maxExecutionTime - clearTime)) {
 
 					@Override
 					protected void throwInterruptedException() throws SailException {
@@ -310,7 +310,7 @@ public class SailUpdateExecutor {
 			statements = con.getStatements(null, null, null, uc.isIncludeInferred(), (Resource) source);
 			if (maxExecutionTime > 0) {
 				statements = new TimeLimitIteration<Statement, SailException>(statements,
-					1000L * (maxExecutionTime - clearTime)) {
+						1000L * (maxExecutionTime - clearTime)) {
 
 					@Override
 					protected void throwInterruptedException() throws SailException {
@@ -351,7 +351,7 @@ public class SailUpdateExecutor {
 						contextIDs = con.getContextIDs();
 						if (maxExecutionTime > 0) {
 							contextIDs = new TimeLimitIteration<Resource, SailException>(contextIDs,
-								1000L * maxExecutionTime) {
+									1000L * maxExecutionTime) {
 
 								@Override
 								protected void throwInterruptedException() throws SailException {
@@ -386,7 +386,7 @@ public class SailUpdateExecutor {
 	 * @throws SailException
 	 */
 	protected void executeInsertData(InsertData insertDataExpr, UpdateContext uc, int maxExecutionTime)
-		throws SailException {
+			throws SailException {
 
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
 		RDFHandler handler = new RDFSailInserter(con, vf, uc);
@@ -412,7 +412,7 @@ public class SailUpdateExecutor {
 	 * @throws SailException
 	 */
 	protected void executeDeleteData(DeleteData deleteDataExpr, UpdateContext uc, int maxExecutionTime)
-		throws SailException {
+			throws SailException {
 
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(vf);
 		parser.setLineNumberOffset(deleteDataExpr.getLineNumberOffset());
@@ -440,8 +440,8 @@ public class SailUpdateExecutor {
 			}
 
 			try (
-				CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = evaluateWhereClause(
-					whereClause, uc, maxExecutionTime)) {
+					CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = evaluateWhereClause(
+							whereClause, uc, maxExecutionTime)) {
 				while (sourceBindings.hasNext()) {
 					BindingSet sourceBinding = sourceBindings.next();
 					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
@@ -470,8 +470,8 @@ public class SailUpdateExecutor {
 	}
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateWhereClause(
-		final TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
-		throws SailException, QueryEvaluationException {
+			final TupleExpr whereClause, final UpdateContext uc, final int maxExecutionTime)
+			throws SailException, QueryEvaluationException {
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings1 = null;
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings2 = null;
 		ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> result = null;
@@ -481,7 +481,7 @@ public class SailUpdateExecutor {
 
 			if (maxExecutionTime > 0) {
 				sourceBindings2 = new TimeLimitIteration<BindingSet, QueryEvaluationException>(sourceBindings1,
-					1000L * maxExecutionTime) {
+						1000L * maxExecutionTime) {
 
 					@Override
 					protected void throwInterruptedException() throws QueryEvaluationException {
@@ -497,7 +497,7 @@ public class SailUpdateExecutor {
 				@Override
 				protected BindingSet convert(BindingSet sourceBinding) throws QueryEvaluationException {
 					if (whereClause instanceof SingletonSet && sourceBinding instanceof EmptyBindingSet
-						&& uc.getBindingSet() != null) {
+							&& uc.getBindingSet() != null) {
 						// in the case of an empty WHERE clause, we use the supplied bindings to produce triples to
 						// DELETE/INSERT
 						return uc.getBindingSet();
@@ -555,7 +555,7 @@ public class SailUpdateExecutor {
 	 * @throws SailException
 	 */
 	private void deleteBoundTriples(BindingSet whereBinding, TupleExpr deleteClause, UpdateContext uc)
-		throws SailException {
+			throws SailException {
 		if (deleteClause != null) {
 			List<StatementPattern> deletePatterns = StatementPatternCollector.process(deleteClause);
 
@@ -604,7 +604,7 @@ public class SailUpdateExecutor {
 	 * @throws SailException
 	 */
 	private void insertBoundTriples(BindingSet whereBinding, TupleExpr insertClause, UpdateContext uc)
-		throws SailException {
+			throws SailException {
 		if (insertClause != null) {
 			List<StatementPattern> insertPatterns = StatementPatternCollector.process(insertClause);
 
@@ -618,13 +618,13 @@ public class SailUpdateExecutor {
 					IRI with = uc.getDataset().getDefaultInsertGraph();
 					if (with == null && toBeInserted.getContext() == null) {
 						con.addStatement(uc, toBeInserted.getSubject(), toBeInserted.getPredicate(),
-							toBeInserted.getObject());
+								toBeInserted.getObject());
 					} else if (toBeInserted.getContext() == null) {
 						con.addStatement(uc, toBeInserted.getSubject(), toBeInserted.getPredicate(),
-							toBeInserted.getObject(), with);
+								toBeInserted.getObject(), with);
 					} else {
 						con.addStatement(uc, toBeInserted.getSubject(), toBeInserted.getPredicate(),
-							toBeInserted.getObject(), toBeInserted.getContext());
+								toBeInserted.getObject(), toBeInserted.getContext());
 					}
 				}
 			}
@@ -632,7 +632,7 @@ public class SailUpdateExecutor {
 	}
 
 	private Statement createStatementFromPattern(StatementPattern pattern, BindingSet sourceBinding,
-		MapBindingSet bnodeMapping) throws SailException {
+			MapBindingSet bnodeMapping) throws SailException {
 
 		Resource subject = null;
 		IRI predicate = null;

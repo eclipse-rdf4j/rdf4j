@@ -26,7 +26,7 @@ public class NQuadsHandlingTest extends AbstractParserHandlingTest {
 	@Override
 	protected InputStream getRDFLangStringWithNoLanguageStream(Model model) throws Exception {
 		InputStream RDFLangStringWithNoLanguageStatements = new FileInputStream(
-			"src/test/resources/testcases/nquads/nquads-RDF-langString-no-language-test.nq");
+				"src/test/resources/testcases/nquads/nquads-RDF-langString-no-language-test.nq");
 		return RDFLangStringWithNoLanguageStatements;
 	}
 

@@ -57,13 +57,13 @@ public class ConjunctiveFilterExpr extends AbstractQueryModelNode implements Fil
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		visitor.meetOther(this);
 	}
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		super.visitChildren(visitor);
 		for (FilterExpr expr : expressions) {
 			expr.getExpression().visit(visitor);

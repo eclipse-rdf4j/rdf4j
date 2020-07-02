@@ -186,7 +186,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 				for (String nextPrefix : namespaceTable.keySet()) {
 					this.log.debug("Adding custom prefix for <{}> to map to <{}>", nextPrefix,
-						namespaceTable.get(nextPrefix));
+							namespaceTable.get(nextPrefix));
 					xmlWriter.setAttribute("xmlns:" + namespaceTable.get(nextPrefix), nextPrefix);
 				}
 			} catch (IOException e) {
@@ -385,8 +385,8 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 				this.namespaceTable.put(uri, prefix);
 			} else {
 				this.log.debug(
-					"handleNamespace was ignored for either the empty prefix or the sesame qname prefix (q). Attempted to map: <{}> to <{}>",
-					uri, prefix);
+						"handleNamespace was ignored for either the empty prefix or the sesame qname prefix (q). Attempted to map: <{}> to <{}>",
+						uri, prefix);
 			}
 		} else {
 			this.log.warn("handleNamespace was ignored after startDocument: <{}> to <{}>", uri, prefix);

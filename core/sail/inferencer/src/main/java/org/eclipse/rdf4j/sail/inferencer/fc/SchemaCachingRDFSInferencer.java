@@ -153,7 +153,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository schema,
-		boolean useAllRdfsRules) {
+			boolean useAllRdfsRules) {
 		super(data);
 
 		this.schema = schema;
@@ -205,7 +205,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public void initialize()
-		throws SailException {
+			throws SailException {
 		super.initialize();
 
 		if (sharedSchema) {
@@ -225,8 +225,8 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 					schemaConnection.begin();
 					try (Stream<Statement> stream = schemaConnection.getStatements(null, null, null).stream()) {
 						tboxStatments = stream
-							.peek(conn::processForSchemaCache)
-							.collect(Collectors.toList());
+								.peek(conn::processForSchemaCache)
+								.collect(Collectors.toList());
 					}
 					schemaConnection.commit();
 				}
@@ -236,7 +236,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 			if (schema != null) {
 				tboxStatments.forEach(statement -> conn.addStatement(statement.getSubject(),
-					statement.getPredicate(), statement.getObject(), statement.getContext()));
+						statement.getPredicate(), statement.getObject(), statement.getContext()));
 			}
 
 			conn.commit();
@@ -246,7 +246,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public SchemaCachingRDFSInferencerConnection getConnection()
-		throws SailException {
+			throws SailException {
 		InferencerConnection e = (InferencerConnection) super.getConnection();
 		return new SchemaCachingRDFSInferencerConnection(this, e);
 	}
@@ -266,7 +266,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * @return inferencer
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
-		SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
+			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
 		return fastInstantiateFrom(sailToInstantiateFrom, store, true);
 	}
 
@@ -281,13 +281,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * @return inferencer
 	 */
 	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
-		SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
-		boolean useAllRdfsRules) {
+			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
+			boolean useAllRdfsRules) {
 
 		sailToInstantiateFrom.getConnection().close();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,
-			sailToInstantiateFrom.schema, useAllRdfsRules);
+				sailToInstantiateFrom.schema, useAllRdfsRules);
 
 		ret.sharedSchema = true;
 
@@ -333,7 +333,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	long getSchemaSize() {
 		return subClassOfStatements.size() + subPropertyOfStatements.size() + rangeStatements.size()
-			+ domainStatements.size() + properties.size() + types.size();
+				+ domainStatements.size() + properties.size() + types.size();
 	}
 
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
@@ -522,7 +522,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	private void calculateRangeDomain(Collection<Statement> rangeOrDomainStatements,
-		Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
+			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
 		rangeOrDomainStatements.forEach(s -> {
 			Resource predicate = s.getSubject();
@@ -543,11 +543,11 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		});
 
 		calculatedProperties.keySet()
-			.stream()
-			.filter(
-				key -> !calculatedRangeOrDomain.containsKey(key))
-			.forEach(
-				key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
+				.stream()
+				.filter(
+						key -> !calculatedRangeOrDomain.containsKey(key))
+				.forEach(
+						key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
 
 		// Fixed point approach to finding all ranges or domains.
 		// prevSize is the size of the previous application of the function

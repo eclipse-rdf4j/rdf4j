@@ -156,7 +156,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 		if (endpointData.size() > MAX_ENDPOINTS) {
 			throw new RuntimeException(
-				"MAX_ENDPOINTs to low, " + endpointData.size() + " repositories needed. Adjust configuration");
+					"MAX_ENDPOINTs to low, " + endpointData.size() + " repositories needed. Adjust configuration");
 		}
 
 		if (localData != null) {
@@ -180,7 +180,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws IOException
 	 */
 	protected void loadDataSet(Repository rep, String datasetFile)
-		throws RDFParseException, RepositoryException, IOException {
+			throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset...");
 		InputStream dataset = SPARQLServiceEvaluationTest.class.getResourceAsStream(datasetFile);
 
@@ -192,7 +192,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		try {
 			con.clear();
 			con.add(dataset, "",
-				Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
+					Rio.getParserFormatForFileName(datasetFile).orElseThrow(Rio.unsupportedFormat(datasetFile)));
 		} finally {
 			dataset.close();
 			con.close();
@@ -342,14 +342,14 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	@Test
 	public void test2() throws Exception {
 		prepareTest(null,
-			Arrays.asList("/testcases-service/data02endpoint1.ttl", "/testcases-service/data02endpoint2.ttl"));
+				Arrays.asList("/testcases-service/data02endpoint1.ttl", "/testcases-service/data02endpoint2.ttl"));
 		execute("/testcases-service/service02.rq", "/testcases-service/service02.srx", false);
 	}
 
 	@Test
 	public void test3() throws Exception {
 		prepareTest(null,
-			Arrays.asList("/testcases-service/data03endpoint1.ttl", "/testcases-service/data03endpoint2.ttl"));
+				Arrays.asList("/testcases-service/data03endpoint1.ttl", "/testcases-service/data03endpoint2.ttl"));
 		execute("/testcases-service/service03.rq", "/testcases-service/service03.srx", false);
 	}
 
@@ -362,7 +362,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	@Test
 	public void test5() throws Exception {
 		prepareTest("/testcases-service/data05.ttl",
-			Arrays.asList("/testcases-service/data05endpoint1.ttl", "/testcases-service/data05endpoint2.ttl"));
+				Arrays.asList("/testcases-service/data05endpoint1.ttl", "/testcases-service/data05endpoint2.ttl"));
 		execute("/testcases-service/service05.rq", "/testcases-service/service05.srx", false);
 	}
 
@@ -580,7 +580,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws Exception
 	 */
 	private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult,
-		boolean checkOrder) throws Exception {
+			boolean checkOrder) throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);

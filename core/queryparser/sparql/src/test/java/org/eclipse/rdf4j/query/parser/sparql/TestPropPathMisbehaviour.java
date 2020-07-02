@@ -45,8 +45,8 @@ public class TestPropPathMisbehaviour {
 	@Test
 	public void testGH2343() {
 		String query1 = "select ?iri ?value where { \n" +
-			"    ?iri (<urn:p>+) / <urn:q> ?value .\n" +
-			"}";
+				"    ?iri (<urn:p>+) / <urn:q> ?value .\n" +
+				"}";
 		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
 
 		assertNotNull(q);
@@ -64,6 +64,6 @@ public class TestPropPathMisbehaviour {
 		assertTrue("expect subj var to be iri", "iri".equals(sp.getSubjectVar().getName()));
 
 		assertTrue("expect obj var of the pattern to be same as the objVar of ALP",
-			alp.getObjectVar().equals(sp.getObjectVar()));
+				alp.getObjectVar().equals(sp.getObjectVar()));
 	}
 }

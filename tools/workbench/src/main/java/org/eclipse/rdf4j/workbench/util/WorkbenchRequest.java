@@ -63,11 +63,11 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	 * @throws FileUploadException if there is an issue retrieving the parameter map
 	 */
 	public WorkbenchRequest(Repository repository, HttpServletRequest request, Map<String, String> defaults)
-		throws RepositoryException, IOException, FileUploadException {
+			throws RepositoryException, IOException, FileUploadException {
 		super(request);
 		this.defaults = defaults;
 		this.decoder = new ValueDecoder(repository,
-			(repository == null) ? SimpleValueFactory.getInstance() : repository.getValueFactory());
+				(repository == null) ? SimpleValueFactory.getInstance() : repository.getValueFactory());
 		String url = request.getRequestURL().toString();
 		if (ServletFileUpload.isMultipartContent(this)) {
 			parameters = getMultipartParameterMap();
@@ -152,7 +152,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	@Override
 	public String[] getParameterValues(String name) {
 		return (parameters != null && parameters.containsKey(name)) ? new String[] { parameters.get(name) }
-			: super.getParameterValues(name);
+				: super.getParameterValues(name);
 	}
 
 	/**
@@ -270,7 +270,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	}
 
 	private Map<String, String> getMultipartParameterMap()
-		throws RepositoryException, IOException, FileUploadException {
+			throws RepositoryException, IOException, FileUploadException {
 		Map<String, String> parameters = new HashMap<>();
 		ServletFileUpload upload = new ServletFileUpload();
 		FileItemIterator iter = upload.getItemIterator(this);

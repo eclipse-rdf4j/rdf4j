@@ -29,10 +29,10 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sparql#";
 
 	public static final IRI QUERY_ENDPOINT = vf
-		.createIRI("http://www.openrdf.org/config/repository/sparql#query-endpoint");
+			.createIRI("http://www.openrdf.org/config/repository/sparql#query-endpoint");
 
 	public static final IRI UPDATE_ENDPOINT = vf
-		.createIRI("http://www.openrdf.org/config/repository/sparql#update-endpoint");
+			.createIRI("http://www.openrdf.org/config/repository/sparql#update-endpoint");
 
 	private String queryEndpointUrl;
 
@@ -97,9 +97,9 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Models.objectIRI(m.getStatements(implNode, QUERY_ENDPOINT, null))
-				.ifPresent(iri -> setQueryEndpointUrl(iri.stringValue()));
+					.ifPresent(iri -> setQueryEndpointUrl(iri.stringValue()));
 			Models.objectIRI(m.getStatements(implNode, UPDATE_ENDPOINT, null))
-				.ifPresent(iri -> setUpdateEndpointUrl(iri.stringValue()));
+					.ifPresent(iri -> setUpdateEndpointUrl(iri.stringValue()));
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
 		}

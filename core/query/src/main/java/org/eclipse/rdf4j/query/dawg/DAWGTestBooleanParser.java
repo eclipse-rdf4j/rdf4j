@@ -61,9 +61,9 @@ public class DAWGTestBooleanParser extends AbstractRDFHandler {
 	@Override
 	public void endRDF() throws RDFHandlerException {
 		Resource resultSetNode = Models.subject(graph.filter(null, RDF.TYPE, RESULTSET))
-			.orElseThrow(() -> new RDFHandlerException("missing instance of type ResultSet"));
+				.orElseThrow(() -> new RDFHandlerException("missing instance of type ResultSet"));
 		Literal booleanLit = Models.getPropertyLiteral(graph, resultSetNode, BOOLEAN)
-			.orElseThrow(() -> new RDFHandlerException("missing boolean value for " + BOOLEAN));
+				.orElseThrow(() -> new RDFHandlerException("missing boolean value for " + BOOLEAN));
 
 		if (booleanLit.equals(DAWGTestResultSetSchema.TRUE)) {
 			value = true;

@@ -30,7 +30,7 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(MinExclusivePropertyShape.class);
 
 	MinExclusivePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape,
-		boolean deactivated, PathPropertyShape parent, Resource path, Literal minExclusive) {
+			boolean deactivated, PathPropertyShape parent, Resource path, Literal minExclusive) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minExclusive = minExclusive;
@@ -39,7 +39,7 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -47,8 +47,8 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-			(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,
-			overrideTargetNode, negateThisPlan);
+				(parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0), this,
+				overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -87,9 +87,9 @@ public class MinExclusivePropertyShape extends AbstractSimplePropertyShape {
 	@Override
 	public String toString() {
 		return "MinExclusivePropertyShape{" +
-			"minExclusive=" + minExclusive +
-			", path=" + getPath() +
-			", id=" + id +
-			'}';
+				"minExclusive=" + minExclusive +
+				", path=" + getPath() +
+				", id=" + id +
+				'}';
 	}
 }

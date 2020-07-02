@@ -108,7 +108,7 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 		}
 
 		return dataType != null ? valueFactory.createLiteral(valueString, dataType)
-			: valueFactory.createLiteral(valueString);
+				: valueFactory.createLiteral(valueString);
 	}
 
 	@Deprecated

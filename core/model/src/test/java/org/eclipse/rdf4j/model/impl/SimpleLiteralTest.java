@@ -66,7 +66,7 @@ public class SimpleLiteralTest {
 
 		assertEquals(lit1, lit2);
 		assertEquals("hashCode() should return identical values for literals for which equals() is true",
-			lit1.hashCode(), lit2.hashCode());
+				lit1.hashCode(), lit2.hashCode());
 
 		// datatyped literals
 		SimpleLiteral lit3 = new SimpleLiteral("10.0", XMLSchema.DECIMAL);
@@ -74,7 +74,7 @@ public class SimpleLiteralTest {
 
 		assertEquals(lit3, lit4);
 		assertEquals("hashCode() should return identical values for literals for which equals() is true",
-			lit3.hashCode(), lit4.hashCode());
+				lit3.hashCode(), lit4.hashCode());
 
 		// language-tagged literals
 		SimpleLiteral lit5 = new SimpleLiteral("duck", "en");
@@ -82,7 +82,7 @@ public class SimpleLiteralTest {
 
 		assertEquals(lit5, lit6);
 		assertEquals("hashCode() should return identical values for literals for which equals() is true",
-			lit5.hashCode(), lit6.hashCode());
+				lit5.hashCode(), lit6.hashCode());
 
 		SimpleLiteral lit1en = new SimpleLiteral("a", "en");
 		assertFalse(lit1.equals(lit1en));
@@ -94,7 +94,7 @@ public class SimpleLiteralTest {
 		SimpleLiteral lit7 = new SimpleLiteral("duck", "EN");
 		assertEquals(lit5, lit7);
 		assertEquals("hashCode() should return identical values for literals for which equals() is true",
-			lit5.hashCode(), lit7.hashCode());
+				lit5.hashCode(), lit7.hashCode());
 	}
 
 	@Test

@@ -51,6 +51,6 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 	 * @throws QueryEvaluationException
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-		throws QueryEvaluationException;
+			throws QueryEvaluationException;
 
 }

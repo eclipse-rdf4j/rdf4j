@@ -63,7 +63,7 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 		if (other instanceof Modify) {
 			Modify o = (Modify) other;
 			return nullEquals(deleteExpr, o.deleteExpr) && nullEquals(insertExpr, o.insertExpr)
-				&& nullEquals(whereExpr, o.whereExpr);
+					&& nullEquals(whereExpr, o.whereExpr);
 		}
 		return false;
 	}

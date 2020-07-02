@@ -26,7 +26,7 @@ public class MessageHandlerInterceptor implements HandlerInterceptor {
 
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
-		Exception ex) {
+			Exception ex) {
 		// nop
 	}
 
@@ -56,7 +56,7 @@ public class MessageHandlerInterceptor implements HandlerInterceptor {
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
-		throws Exception {
+			throws Exception {
 		return true;
 	}
 

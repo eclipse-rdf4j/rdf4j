@@ -34,7 +34,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 	private final Resource[] context;
 
 	public FilteringIteration(CloseableIteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
-		boolean inferred, Resource... context) {
+			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.closeableWrappedIteration = wrappedIteration;
 		this.subject = subject;
@@ -45,7 +45,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 	}
 
 	public FilteringIteration(Iteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
-		boolean inferred, Resource... context) {
+			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.subject = subject;
 		this.predicate = predicate;
@@ -70,7 +70,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 				continue;
 			}
 			if (context != null && context.length > 0
-				&& !containsContext(context, next.getContext())) {
+					&& !containsContext(context, next.getContext())) {
 				continue;
 			}
 

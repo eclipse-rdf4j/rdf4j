@@ -55,7 +55,7 @@ public class RDFParserHelper {
 	 *                           settings in the given parser config.
 	 */
 	public static final Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
-		ParseErrorListener errListener, ValueFactory valueFactory) throws RDFParseException {
+			ParseErrorListener errListener, ValueFactory valueFactory) throws RDFParseException {
 		return createLiteral(label, lang, datatype, parserConfig, errListener, valueFactory, -1, -1);
 	}
 
@@ -87,8 +87,8 @@ public class RDFParserHelper {
 	 *                           settings in the given parser config.
 	 */
 	public static final Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
-		ParseErrorListener errListener, ValueFactory valueFactory, long lineNo, long columnNo)
-		throws RDFParseException {
+			ParseErrorListener errListener, ValueFactory valueFactory, long lineNo, long columnNo)
+			throws RDFParseException {
 		if (label == null) {
 			throw new NullPointerException("Cannot create a literal using a null label");
 		}
@@ -110,13 +110,13 @@ public class RDFParserHelper {
 						try {
 							if (!nextHandler.verifyLanguage(workingLabel, workingLang.get())) {
 								reportError("'" + lang + "' is not a valid language tag ", lineNo, columnNo,
-									BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
+										BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
 							}
 						} catch (LiteralUtilException e) {
 							reportError("'" + label
-								+ " could not be verified by a language handler that recognised it. language was "
-								+ lang, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig,
-								errListener);
+									+ " could not be verified by a language handler that recognised it. language was "
+									+ lang, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig,
+									errListener);
 						}
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {
@@ -127,19 +127,19 @@ public class RDFParserHelper {
 							workingDatatype = result.getDatatype();
 						} catch (LiteralUtilException e) {
 							reportError(
-								"'" + label + "' did not have a valid value for language " + lang + ": "
-									+ e.getMessage() + " and could not be normalised",
-								lineNo, columnNo, BasicParserSettings.NORMALIZE_LANGUAGE_TAGS, parserConfig,
-								errListener);
+									"'" + label + "' did not have a valid value for language " + lang + ": "
+											+ e.getMessage() + " and could not be normalised",
+									lineNo, columnNo, BasicParserSettings.NORMALIZE_LANGUAGE_TAGS, parserConfig,
+									errListener);
 						}
 					}
 				}
 			}
 			if (!recognisedLanguage) {
 				reportError("'" + label
-					+ "' was not recognised as a language literal, and could not be verified, with language "
-					+ lang, lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, parserConfig,
-					errListener);
+						+ "' was not recognised as a language literal, and could not be verified, with language "
+						+ lang, lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, parserConfig,
+						errListener);
 			}
 		} else if (workingDatatype != null) {
 			boolean recognisedDatatype = false;
@@ -150,14 +150,14 @@ public class RDFParserHelper {
 						try {
 							if (!nextHandler.verifyDatatype(workingLabel, workingDatatype)) {
 								reportError("'" + label + "' is not a valid value for datatype " + datatype, lineNo,
-									columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES, parserConfig,
-									errListener);
+										columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES, parserConfig,
+										errListener);
 							}
 						} catch (LiteralUtilException e) {
 							reportError("'" + label
-								+ " could not be verified by a datatype handler that recognised it. datatype was "
-								+ datatype, lineNo, columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES,
-								parserConfig, errListener);
+									+ " could not be verified by a datatype handler that recognised it. datatype was "
+									+ datatype, lineNo, columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES,
+									parserConfig, errListener);
 						}
 					}
 					if (parserConfig.get(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)) {
@@ -168,17 +168,17 @@ public class RDFParserHelper {
 							workingDatatype = result.getDatatype();
 						} catch (LiteralUtilException e) {
 							reportError(
-								"'" + label + "' is not a valid value for datatype " + datatype + ": "
-									+ e.getMessage() + " and could not be normalised",
-								lineNo, columnNo, BasicParserSettings.NORMALIZE_DATATYPE_VALUES, parserConfig,
-								errListener);
+									"'" + label + "' is not a valid value for datatype " + datatype + ": "
+											+ e.getMessage() + " and could not be normalised",
+									lineNo, columnNo, BasicParserSettings.NORMALIZE_DATATYPE_VALUES, parserConfig,
+									errListener);
 						}
 					}
 				}
 			}
 			if (!recognisedDatatype) {
 				reportError("'" + label + "' was not recognised, and could not be verified, with datatype " + datatype,
-					lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, parserConfig, errListener);
+						lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, parserConfig, errListener);
 			}
 
 		}
@@ -187,8 +187,8 @@ public class RDFParserHelper {
 			try {
 				// Removes datatype for langString datatype with no language tag when VERIFY_DATATYPE_VALUES is False.
 				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))
-					&& (!workingLang.isPresent() || workingLang.get().isEmpty())
-					&& !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {
+						&& (!workingLang.isPresent() || workingLang.get().isEmpty())
+						&& !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {
 					workingLang = Optional.ofNullable(null);
 					workingDatatype = null;
 				}
@@ -231,7 +231,7 @@ public class RDFParserHelper {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	public static void reportError(String msg, RioSetting<Boolean> relevantSetting, ParserConfig parserConfig,
-		ParseErrorListener errListener) throws RDFParseException {
+			ParseErrorListener errListener) throws RDFParseException {
 		reportError(msg, -1, -1, relevantSetting, parserConfig, errListener);
 	}
 
@@ -262,7 +262,7 @@ public class RDFParserHelper {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	public static void reportError(String msg, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting,
-		ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
+			ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
 		if (parserConfig.get(relevantSetting)) {
 			if (errListener != null) {
 				errListener.error(msg, lineNo, columnNo);
@@ -302,7 +302,7 @@ public class RDFParserHelper {
 	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
 	 */
 	public static void reportError(Exception e, long lineNo, long columnNo, RioSetting<Boolean> relevantSetting,
-		ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
+			ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
 		if (parserConfig.get(relevantSetting)) {
 			if (errListener != null) {
 				errListener.error(e.getMessage(), lineNo, columnNo);
@@ -332,7 +332,7 @@ public class RDFParserHelper {
 	 * throws a <tt>ParseException</tt> afterwards.
 	 */
 	public static void reportFatalError(String msg, long lineNo, long columnNo, ParseErrorListener errListener)
-		throws RDFParseException {
+			throws RDFParseException {
 		if (errListener != null) {
 			errListener.fatalError(msg, lineNo, columnNo);
 		}
@@ -362,7 +362,7 @@ public class RDFParserHelper {
 	 * already been reported when the original ParseException was thrown.
 	 */
 	public static void reportFatalError(Exception e, long lineNo, long columnNo, ParseErrorListener errListener)
-		throws RDFParseException {
+			throws RDFParseException {
 		if (e instanceof RDFParseException) {
 			throw (RDFParseException) e;
 		} else {
@@ -382,7 +382,7 @@ public class RDFParserHelper {
 	 * already been reported when the original ParseException was thrown.
 	 */
 	public static void reportFatalError(String message, Exception e, long lineNo, long columnNo,
-		ParseErrorListener errListener) throws RDFParseException {
+			ParseErrorListener errListener) throws RDFParseException {
 		if (e instanceof RDFParseException) {
 			throw (RDFParseException) e;
 		} else {

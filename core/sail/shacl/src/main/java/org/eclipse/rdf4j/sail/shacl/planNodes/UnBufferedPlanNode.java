@@ -70,8 +70,8 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 				Tuple tuple = next;
 				if (GlobalValidationExecutionLogging.loggingEnabled) {
 					validationExecutionLogger.log(depth(),
-						parent.getClass().getSimpleName() + ":UnBuffered" + name + ".next()", tuple, parent,
-						getId());
+							parent.getClass().getSimpleName() + ":UnBuffered" + name + ".next()", tuple, parent,
+							getId());
 				}
 				next = null;
 
@@ -100,7 +100,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 	}
 
 	@Override

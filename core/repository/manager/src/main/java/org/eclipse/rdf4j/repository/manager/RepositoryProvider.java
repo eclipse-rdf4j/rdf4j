@@ -84,7 +84,7 @@ public class RepositoryProvider {
 	 * @return a (new or existing) {@link RepositoryManager} using the supplied url as its data dir.
 	 */
 	public static RepositoryManager getRepositoryManager(String url)
-		throws RepositoryConfigException, RepositoryException {
+			throws RepositoryConfigException, RepositoryException {
 		String uri = normalizeDirectory(url);
 		SynchronizedManager sync = null;
 		synchronized (managers) {
@@ -115,7 +115,7 @@ public class RepositoryProvider {
 	 * @throws RepositoryException
 	 */
 	public static LocalRepositoryManager getRepositoryManager(File dir)
-		throws RepositoryConfigException, RepositoryException {
+			throws RepositoryConfigException, RepositoryException {
 		String url = dir.toURI().toASCIIString();
 		return (LocalRepositoryManager) getRepositoryManager(url);
 	}
@@ -133,7 +133,7 @@ public class RepositoryProvider {
 	 * @throws RepositoryException
 	 */
 	public static RepositoryManager getRepositoryManagerOfRepository(String url)
-		throws RepositoryConfigException, RepositoryException {
+			throws RepositoryConfigException, RepositoryException {
 		if (!url.contains(REPOSITORIES)) {
 			throw new IllegalArgumentException("URL is not repository URL: " + url);
 		}

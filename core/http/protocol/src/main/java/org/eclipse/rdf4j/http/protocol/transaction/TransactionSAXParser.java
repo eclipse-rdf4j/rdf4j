@@ -136,8 +136,8 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 			bindings = new ArrayList<>();
 		} else if (TransactionXMLConstants.BINDING_URI.equals(tagName)
-			|| TransactionXMLConstants.BINDING_BNODE.equals(tagName)
-			|| TransactionXMLConstants.BINDING_LITERAL.equals(tagName)) {
+				|| TransactionXMLConstants.BINDING_BNODE.equals(tagName)
+				|| TransactionXMLConstants.BINDING_LITERAL.equals(tagName)) {
 			if (bindings == null) {
 				throw new SAXException("unexpected start of SPARQL Update operation binding (without <bindings>)");
 			}
@@ -228,7 +228,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 	private TransactionOperation createAddStatementOperation() throws SAXException {
 		if (parsedValues.size() < 3) {
 			throw new SAXException(
-				"At least three values required for AddStatementOperation, found: " + parsedValues.size());
+					"At least three values required for AddStatementOperation, found: " + parsedValues.size());
 		}
 
 		try {
@@ -251,7 +251,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 	private TransactionOperation createRemoveStatementsOperation() throws SAXException {
 		if (parsedValues.size() < 3) {
 			throw new SAXException(
-				"At least three values required for RemoveStatementsOperation, found: " + parsedValues.size());
+					"At least three values required for RemoveStatementsOperation, found: " + parsedValues.size());
 		}
 
 		try {

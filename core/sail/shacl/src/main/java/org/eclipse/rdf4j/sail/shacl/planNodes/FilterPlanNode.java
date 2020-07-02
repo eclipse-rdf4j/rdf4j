@@ -93,7 +93,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(that.depth(),
-									that.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp, that, getId());
+										that.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp, that, getId());
 							}
 						}
 					} else {
@@ -102,8 +102,8 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(that.depth(),
-									that.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp, that,
-									getId());
+										that.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp, that,
+										getId());
 							}
 						}
 					}
@@ -157,7 +157,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-			.append("\n");
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		if (trueNode != null) {
 			stringBuilder.append(getId() + " -> " + trueNode.getId() + " [label=\"true values\"]").append("\n");

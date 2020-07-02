@@ -31,7 +31,7 @@ public class ParallelCheckJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final ParallelExecutor<BindingSet> joinControl;
 
 	public ParallelCheckJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
-		CheckStatementPattern expr, List<BindingSet> bindings) {
+			CheckStatementPattern expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;
 		this.bindings = bindings;

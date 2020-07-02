@@ -58,7 +58,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 *--------------*/
 
 	public BottomUpJoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 		rightIter = strategy.evaluate(join.getRightArg(), bindings);
 
@@ -212,7 +212,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	protected void put(Map<BindingSet, List<BindingSet>> hashTable, BindingSet hashKey, List<BindingSet> hashValue)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 		hashTable.put(hashKey, hashValue);
 	}
 

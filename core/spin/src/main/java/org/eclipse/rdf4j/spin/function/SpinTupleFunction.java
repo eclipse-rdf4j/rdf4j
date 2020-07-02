@@ -65,7 +65,7 @@ public class SpinTupleFunction extends AbstractSpinFunction implements Transient
 
 	@Override
 	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
-		ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
+			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
 		QueryPreparer qp = getCurrentQueryPreparer();
 		CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter;
 		if (parsedQuery instanceof ParsedBooleanQuery) {

@@ -25,7 +25,7 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	private final QueryContext queryContext;
 
 	public QueryContextIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
-		QueryContext queryContext) {
+			QueryContext queryContext) {
 		this.iter = iter;
 		this.queryContext = queryContext;
 	}

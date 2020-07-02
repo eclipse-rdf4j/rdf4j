@@ -104,9 +104,9 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	public WriteStrategy getWriteStrategy() {
 		try {
 			return federationContext.getConfig()
-				.getWriteStrategyFactory()
-				.newInstance()
-				.create(members, federationContext);
+					.getWriteStrategyFactory()
+					.newInstance()
+					.create(members, federationContext);
 		} catch (Exception e) {
 			throw new FedXRuntimeException("Failed to instantiate write strategy: " + e.getMessage(), e);
 		}

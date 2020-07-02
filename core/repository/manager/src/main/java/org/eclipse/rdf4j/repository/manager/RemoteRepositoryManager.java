@@ -65,7 +65,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL and credentials.
 	 */
 	public static RemoteRepositoryManager getInstance(String serverURL, String username, String password)
-		throws RepositoryException {
+			throws RepositoryException {
 		RemoteRepositoryManager manager = new RemoteRepositoryManager(serverURL);
 		manager.setUsernameAndPassword(username, password);
 		manager.init();
@@ -214,7 +214,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	public RepositoryConfig getRepositoryConfig(String id) throws RepositoryException {
 		Model model = getModelFactory().createEmptyModel();
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
-			.createRDF4JProtocolSession(serverURL)) {
+				.createRDF4JProtocolSession(serverURL)) {
 			protocolSession.setUsernameAndPassword(username, password);
 
 			int serverProtocolVersion = Integer.parseInt(protocolSession.getServerProtocol());
@@ -237,7 +237,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		List<RepositoryInfo> result = new ArrayList<>();
 
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
-			.createRDF4JProtocolSession(serverURL)) {
+				.createRDF4JProtocolSession(serverURL)) {
 			protocolSession.setUsernameAndPassword(username, password);
 			try (TupleQueryResult responseFromServer = protocolSession.getRepositoryList()) {
 				while (responseFromServer.hasNext()) {
@@ -288,7 +288,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	@Override
 	public void addRepositoryConfig(RepositoryConfig config) throws RepositoryException, RepositoryConfigException {
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
-			.createRDF4JProtocolSession(serverURL)) {
+				.createRDF4JProtocolSession(serverURL)) {
 			protocolSession.setUsernameAndPassword(username, password);
 
 			int serverProtocolVersion = Integer.parseInt(protocolSession.getServerProtocol());
@@ -303,7 +303,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 				removeRepository(config.getID());
 				try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {
 					protocolSession.upload(contents, baseURI, protocolSession.getPreferredRDFFormat(), false, true,
-						ctx);
+							ctx);
 				}
 			} else {
 				if (hasRepositoryConfig(config.getID())) {
@@ -324,7 +324,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 		if (existingRepo) {
 			try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()
-				.createRDF4JProtocolSession(serverURL)) {
+					.createRDF4JProtocolSession(serverURL)) {
 				protocolSession.setUsernameAndPassword(username, password);
 				protocolSession.deleteRepository(repositoryID);
 			} catch (IOException e) {

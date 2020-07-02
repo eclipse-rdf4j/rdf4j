@@ -34,10 +34,10 @@ public class FedXWithRemoteRepositoryManager {
 
 		// assumes that remote repositories exist
 		Repository localRepo = FedXFactory.newFederation()
-			.withRepositoryResolver(repoManager)
-			.withResolvableEndpoint("my-repository-1")
-			.withResolvableEndpoint("my-repository-2")
-			.create();
+				.withRepositoryResolver(repoManager)
+				.withResolvableEndpoint("my-repository-1")
+				.withResolvableEndpoint("my-repository-2")
+				.create();
 
 		localRepo.init();
 

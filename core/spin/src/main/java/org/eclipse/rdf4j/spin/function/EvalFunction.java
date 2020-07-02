@@ -118,8 +118,8 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 
 	private boolean isQuery(Resource r, TripleSource store) throws RDF4JException {
 		try (CloseableIteration<? extends URI, QueryEvaluationException> typeIter = TripleSources.getObjectURIs(r,
-			RDF.TYPE,
-			store)) {
+				RDF.TYPE,
+				store)) {
 			while (typeIter.hasNext()) {
 				URI type = typeIter.next();
 				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type) || SPIN.TEMPLATES_CLASS.equals(type)) {

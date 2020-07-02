@@ -45,8 +45,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	private boolean optimizeWhenNoStatementsRemoved = true;
 
 	MinCountPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-		PathPropertyShape parent, Resource path,
-		Long minCount) {
+			PathPropertyShape parent, Resource path,
+			Long minCount) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		this.minCount = minCount;
@@ -55,7 +55,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-		PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -66,8 +66,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		if (overrideTargetNode != null) {
 			PlanNode allStatements = new BulkedExternalLeftOuterJoin(overrideTargetNode.getPlanNode(),
-				connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
-				"?c");
+					connectionsGroup.getBaseConnection(), getPath().getQuery("?a", "?c", null), false, null, "?a",
+					"?c");
 			PlanNode groupBy = new GroupByCount(allStatements);
 
 			PlanNode filteredStatements = new MinCountFilter(groupBy, minCount).getFalseNode(UnBufferedPlanNode.class);
@@ -106,10 +106,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 
 		if (!optimizeWhenNoStatementsRemoved || connectionsGroup.getStats().hasRemoved()) {
 			PlanNode planRemovedStatements = new Unique(
-				new TrimTuple(getPlanRemovedStatements(connectionsGroup, null), 0, 1));
+					new TrimTuple(getPlanRemovedStatements(connectionsGroup, null), 0, 1));
 
 			PlanNode filteredPlanRemovedStatements = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(),
-				planRemovedStatements);
+					planRemovedStatements);
 
 			PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
@@ -120,7 +120,7 @@ public class MinCountPropertyShape extends PathPropertyShape {
 			PlanNode planAddedStatements1 = getPlanAddedStatements(connectionsGroup, null);
 
 			planAddedStatements1 = (nodeShape).getTargetFilter(connectionsGroup.getBaseConnection(),
-				planAddedStatements1);
+					planAddedStatements1);
 
 			topNode = new UnionNode(unique, planAddedStatements1);
 
@@ -152,8 +152,8 @@ public class MinCountPropertyShape extends PathPropertyShape {
 		PlanNode trimTuple = new Unique(new TrimTuple(minCountFilter, 0, 1));
 
 		PlanNode bulkedExternalLeftOuterJoin2 = new BulkedExternalLeftOuterJoin(trimTuple,
-			connectionsGroup.getBaseConnection(),
-			getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
+				connectionsGroup.getBaseConnection(),
+				getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
 
 		PlanNode groupBy2 = new GroupByCount(bulkedExternalLeftOuterJoin2);
 
@@ -196,10 +196,10 @@ public class MinCountPropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "MinCountPropertyShape{" +
-			"minCount=" + minCount +
-			", path=" + getPath() +
-			", id=" + id +
-			'}';
+				"minCount=" + minCount +
+				", path=" + getPath() +
+				", id=" + id +
+				'}';
 	}
 
 	@Override

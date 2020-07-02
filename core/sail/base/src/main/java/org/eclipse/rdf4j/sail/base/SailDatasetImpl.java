@@ -251,13 +251,13 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
-		Resource... contexts) throws SailException {
+			Resource... contexts) throws SailException {
 		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
 		CloseableIteration<? extends Statement, SailException> iter;
 		if (changes.isStatementCleared()
-			|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
-			|| contexts.length > 0 && deprecatedContexts != null
-				&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
+				|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
+				|| contexts.length > 0 && deprecatedContexts != null
+						&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
 			iter = null;
 		} else if (contexts.length > 0 && deprecatedContexts != null) {
 			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
@@ -273,9 +273,9 @@ class SailDatasetImpl implements SailDataset {
 		if (changes.hasApproved() && iter != null) {
 
 			return new DistinctModelReducingUnionIteration(
-				iter,
-				changes::removeApproved,
-				() -> changes.getApprovedStatements(subj, pred, obj, contexts));
+					iter,
+					changes::removeApproved,
+					() -> changes.getApprovedStatements(subj, pred, obj, contexts));
 
 		} else if (changes.hasApproved()) {
 			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
@@ -289,7 +289,7 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-		throws SailException {
+			throws SailException {
 		CloseableIteration<? extends Triple, SailException> iter;
 		if (changes.isStatementCleared()) {
 			iter = null;
@@ -321,7 +321,7 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(
-		CloseableIteration<? extends Statement, SailException> result, Function<Statement, Boolean> excluded) {
+			CloseableIteration<? extends Statement, SailException> result, Function<Statement, Boolean> excluded) {
 		return new FilterIteration<Statement, SailException>(result) {
 
 			@Override

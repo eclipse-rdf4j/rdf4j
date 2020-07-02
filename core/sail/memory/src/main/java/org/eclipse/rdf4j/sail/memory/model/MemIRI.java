@@ -115,7 +115,7 @@ public class MemIRI implements IRI, MemResource {
 			String otherStr = other.toString();
 
 			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
-				&& otherStr.startsWith(namespace);
+					&& otherStr.startsWith(namespace);
 		}
 
 		return false;
@@ -138,7 +138,7 @@ public class MemIRI implements IRI, MemResource {
 	@Override
 	public boolean hasStatements() {
 		return subjectStatements != null || predicateStatements != null || objectStatements != null
-			|| contextStatements != null;
+				|| contextStatements != null;
 	}
 
 	@Override

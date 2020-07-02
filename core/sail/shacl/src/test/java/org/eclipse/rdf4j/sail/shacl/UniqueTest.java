@@ -27,7 +27,7 @@ public class UniqueTest {
 	public void tupleCardinality1() {
 
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b"), Arrays.asList("b"),
-			Arrays.asList("c"));
+				Arrays.asList("c"));
 
 		runTest(input);
 
@@ -37,7 +37,7 @@ public class UniqueTest {
 	public void tupleCardinality2() {
 
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b", "2"), Arrays.asList("b"),
-			Arrays.asList("b", "3"), Arrays.asList("b", "2"), Arrays.asList("c", "1"));
+				Arrays.asList("b", "3"), Arrays.asList("b", "2"), Arrays.asList("c", "1"));
 
 		runTest(input);
 
@@ -47,7 +47,7 @@ public class UniqueTest {
 	public void tupleCardinality3() {
 
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("a", "1"),
-			Arrays.asList("a", "1"), Arrays.asList("a", "1"));
+				Arrays.asList("a", "1"), Arrays.asList("a", "1"));
 
 		runTest(input);
 

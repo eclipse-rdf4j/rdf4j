@@ -197,7 +197,7 @@ public class ParsedIRITest {
 	@Test
 	public void testRoundTripQueryString() throws Exception {
 		assertRoundTrip(
-			"http://localhost:8080/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
+				"http://localhost:8080/pipelines/render-html.xpl?result&template=http%3A%2F%2Flocalhost%3A8080%2Fconcept-view.xhtml%3Ftemplate%26realm%3Dhttp%3A%2F%2Flocalhost%3A8080%2F&this=http%3A%2F%2Flocalhost%3A8080%2Fsun&query=view");
 	}
 
 	private void assertRoundTrip(String uri) throws URISyntaxException {
@@ -242,7 +242,7 @@ public class ParsedIRITest {
 	@Test
 	public void testQueryString() throws URISyntaxException {
 		assertResolves("?qs2#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir/dir/file?qs2#frag");
+				"http://example.com/dir/dir/file?qs2#frag");
 	}
 
 	@Test
@@ -253,31 +253,31 @@ public class ParsedIRITest {
 	@Test
 	public void testSameDirectory() throws URISyntaxException {
 		assertResolves("file2?qs#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir/dir/file2?qs#frag");
+				"http://example.com/dir/dir/file2?qs#frag");
 	}
 
 	@Test
 	public void testNestedDirectory() throws URISyntaxException {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir/dir/nested/file?qs#frag");
+				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
 	public void testParentDirectory() throws URISyntaxException {
 		assertResolves("../file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir/file?qs#frag");
+				"http://example.com/dir/file?qs#frag");
 	}
 
 	@Test
 	public void testOtherDirectory() throws URISyntaxException {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir/dir2/file?qs#frag");
+				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
 	public void testSameAuthority() throws URISyntaxException {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/file?qs#frag",
-			"http://example.com/dir2/dir/file?qs#frag");
+				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
 	@Test
@@ -318,7 +318,7 @@ public class ParsedIRITest {
 	@Test
 	public void testNestedDirectoryFileDir() throws URISyntaxException {
 		assertResolves("nested/file?qs#frag", "http://example.com/dir/dir/",
-			"http://example.com/dir/dir/nested/file?qs#frag");
+				"http://example.com/dir/dir/nested/file?qs#frag");
 	}
 
 	@Test
@@ -334,13 +334,13 @@ public class ParsedIRITest {
 	@Test
 	public void testOtherDirectoryFileDir() throws URISyntaxException {
 		assertResolves("../dir2/file?qs#frag", "http://example.com/dir/dir/",
-			"http://example.com/dir/dir2/file?qs#frag");
+				"http://example.com/dir/dir2/file?qs#frag");
 	}
 
 	@Test
 	public void testSameAuthorityDir() throws URISyntaxException {
 		assertResolves("/dir2/dir/file?qs#frag", "http://example.com/dir/dir/",
-			"http://example.com/dir2/dir/file?qs#frag");
+				"http://example.com/dir2/dir/file?qs#frag");
 	}
 
 	@Test
@@ -565,26 +565,26 @@ public class ParsedIRITest {
 	@Test
 	public void testToASCII() throws URISyntaxException {
 		assertEquals("http://r\u00E9sum\u00E9.example.org/",
-			new ParsedIRI("http://r\u00E9sum\u00E9.example.org/").toString());
+				new ParsedIRI("http://r\u00E9sum\u00E9.example.org/").toString());
 		assertEquals("http://xn--rsum-bpad.example.org/",
-			new ParsedIRI("http://r\u00E9sum\u00E9.example.org/").toASCIIString());
+				new ParsedIRI("http://r\u00E9sum\u00E9.example.org/").toASCIIString());
 		assertEquals("http://r\u00E9sum\u00E9.example.org/",
-			new ParsedIRI("http://xn--rsum-bpad.example.org/").normalize().toString());
+				new ParsedIRI("http://xn--rsum-bpad.example.org/").normalize().toString());
 		assertEquals("http://r%C3%A9sum%C3%A9.example.org/",
-			new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").toASCIIString());
+				new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").toASCIIString());
 		assertEquals("http://xn--rsum-bpad.example.org/",
-			new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").normalize().toASCIIString());
+				new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").normalize().toASCIIString());
 		assertEquals("http://r\u00E9sum\u00E9.example.org/",
-			new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").normalize().toString());
+				new ParsedIRI("http://r%C3%A9sum%C3%A9.example.org/").normalize().toString());
 	}
 
 	@Test
 	public void testToASCIIQuery() throws URISyntaxException {
 		assertEquals("http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org",
-			new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Frésumé.example.org").toASCIIString());
+				new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Frésumé.example.org").toASCIIString());
 		assertEquals("uri=http%3A%2F%2Fr\u00E9sum\u00E9.example.org",
-			new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org").normalize()
-				.getQuery());
+				new ParsedIRI("http://validator.w3.org/check?uri=http%3A%2F%2Fr%C3%A9sum%C3%A9.example.org").normalize()
+						.getQuery());
 	}
 
 	@Test
@@ -593,29 +593,29 @@ public class ParsedIRITest {
 		String incorrect = "/Vi\u00EA\u0323t%20Nam"; // containing a LATIN SMALL LETTER E WITH CIRCUMFLEX AND DOT BELOW
 		assertFalse(correct.equals(incorrect));
 		assertEquals("http://example.org" + correct,
-			new ParsedIRI("http://example.org" + incorrect).normalize().toString());
+				new ParsedIRI("http://example.org" + incorrect).normalize().toString());
 		assertEquals("http://example.org/Vi%E1%BB%87t%20Nam",
-			new ParsedIRI("http://example.org" + incorrect).normalize().toASCIIString());
+				new ParsedIRI("http://example.org" + incorrect).normalize().toASCIIString());
 		assertEquals(correct,
-			new ParsedIRI(new ParsedIRI("http://example.org" + incorrect).toASCIIString()).normalize().getPath());
+				new ParsedIRI(new ParsedIRI("http://example.org" + incorrect).toASCIIString()).normalize().getPath());
 	}
 
 	@Test
 	public void testRedRose() throws URISyntaxException {
 		assertEquals("http://www.example.org/red%09ros%C3%A9#red",
-			new ParsedIRI("http://www.example.org/red%09ros\u00E9#red").toASCIIString());
+				new ParsedIRI("http://www.example.org/red%09ros\u00E9#red").toASCIIString());
 	}
 
 	@Test
 	public void testWrongEacute() throws URISyntaxException {
 		assertEquals("http://www.example.org/r%E9sum%E9.html",
-			new ParsedIRI("http://www.example.org/r%E9sum%E9.html").toString());
+				new ParsedIRI("http://www.example.org/r%E9sum%E9.html").toString());
 		assertEquals("http://www.example.org/r%E9sum%E9.html",
-			new ParsedIRI("http://www.example.org/r%E9sum%E9.html").normalize().toString());
+				new ParsedIRI("http://www.example.org/r%E9sum%E9.html").normalize().toString());
 		assertEquals("http://www.example.org/r%C3%A9sum%C3%A9.html",
-			new ParsedIRI("http://www.example.org/r%C3%A9sum%C3%A9.html").toString());
+				new ParsedIRI("http://www.example.org/r%C3%A9sum%C3%A9.html").toString());
 		assertEquals("http://www.example.org/résumé.html",
-			new ParsedIRI("http://www.example.org/r%C3%A9sum%C3%A9.html").normalize().toString());
+				new ParsedIRI("http://www.example.org/r%C3%A9sum%C3%A9.html").normalize().toString());
 	}
 
 	@Test
@@ -632,9 +632,9 @@ public class ParsedIRITest {
 	@Test
 	public void testPunycodeEncoding() throws URISyntaxException {
 		assertEquals("http://xn--99zt52a.example.org/%E2%80%AE",
-			new ParsedIRI("http://xn--99zt52a.example.org/%e2%80%ae").normalize().toASCIIString());
+				new ParsedIRI("http://xn--99zt52a.example.org/%e2%80%ae").normalize().toASCIIString());
 		assertEquals("http://\u7D0D\u8C46.example.org/\u202E",
-			new ParsedIRI("http://\u7D0D\u8C46.example.org/%e2%80%ae").normalize().toString());
+				new ParsedIRI("http://\u7D0D\u8C46.example.org/%e2%80%ae").normalize().toString());
 	}
 
 	private void assertURI2IRI(String uri, String iri) throws URISyntaxException {
@@ -645,7 +645,7 @@ public class ParsedIRITest {
 	@Test
 	public void testCreate() {
 		assertEquals("http://example.org/poorly%20constructed",
-			ParsedIRI.create("http://example.org/poorly constructed").toString());
+				ParsedIRI.create("http://example.org/poorly constructed").toString());
 		assertEquals("Just%20some%0AText!?", ParsedIRI.create("Just some\nText!?").toString());
 		assertEquals("100%25", ParsedIRI.create("100%").toString());
 	}

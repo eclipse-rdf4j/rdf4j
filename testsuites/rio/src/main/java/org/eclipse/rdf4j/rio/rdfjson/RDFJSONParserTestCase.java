@@ -140,7 +140,7 @@ public abstract class RDFJSONParserTestCase {
 			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
 			String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
 			String nextOutputURL = TEST_FILE_BASE_PATH
-				+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString());
+					+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString());
 
 			String nextBaseUrl = BASE_URL + nextTestFile;
 
@@ -178,7 +178,7 @@ public abstract class RDFJSONParserTestCase {
 		 *--------------*/
 
 		public PositiveParserTest(String testName, String inputURL, String outputURL, String baseURL)
-			throws MalformedURLException {
+				throws MalformedURLException {
 			super(testName);
 			this.inputURL = inputURL;
 			if (outputURL != null) {

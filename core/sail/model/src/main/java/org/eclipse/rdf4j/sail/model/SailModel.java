@@ -182,7 +182,7 @@ public class SailModel extends AbstractModel {
 
 			@Override
 			protected void removeFilteredTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-				Resource... contexts) {
+					Resource... contexts) {
 				SailModel.this.removeTermIteration(iter, subj, pred, obj, contexts);
 			}
 		};
@@ -190,7 +190,7 @@ public class SailModel extends AbstractModel {
 
 	@Override
 	public void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
-		Resource... contexts) {
+			Resource... contexts) {
 		try {
 			conn.removeStatements(subj, pred, obj, contexts);
 		} catch (SailException e) {
@@ -210,30 +210,30 @@ public class SailModel extends AbstractModel {
 		try {
 			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
 			return new CloseableIterationIterator<>(
-				new ExceptionConvertingIteration<Statement, ModelException>(iter) {
+					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
 
-					private Statement last;
+						private Statement last;
 
-					@Override
-					public Statement next() {
-						last = super.next();
-						return last;
-					}
-
-					@Override
-					public void remove() {
-						if (last == null) {
-							throw new IllegalStateException("next() not yet called");
+						@Override
+						public Statement next() {
+							last = super.next();
+							return last;
 						}
-						SailModel.this.remove(last);
-						last = null;
-					}
 
-					@Override
-					protected ModelException convert(Exception e) {
-						throw new ModelException(e);
-					}
-				});
+						@Override
+						public void remove() {
+							if (last == null) {
+								throw new IllegalStateException("next() not yet called");
+							}
+							SailModel.this.remove(last);
+							last = null;
+						}
+
+						@Override
+						protected ModelException convert(Exception e) {
+							throw new ModelException(e);
+						}
+					});
 		} catch (SailException e) {
 			throw new ModelException(e);
 		}

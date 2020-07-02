@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class ExclusiveGroup extends AbstractQueryModelNode
-	implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
+		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
 	private static final long serialVersionUID = 9215353191021766797L;
 
 	private static final Logger log = LoggerFactory.getLogger(ExclusiveGroup.class);
@@ -55,7 +55,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	private final FederationEvalStrategy strategy;
 
 	public ExclusiveGroup(Collection<? extends ExclusiveTupleExpr> ownedNodes, StatementSource owner,
-		QueryInfo queryInfo) {
+			QueryInfo queryInfo) {
 		owned.addAll(ownedNodes);
 		this.owner = owner;
 		init(); // init free vars + filter expr
@@ -77,7 +77,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 
 		for (ExclusiveTupleExpr s : owned) {
 			s.visit(visitor);
@@ -90,7 +90,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
-		throws X {
+			throws X {
 		visitor.meetOther(this);
 	}
 
@@ -154,7 +154,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
-		throws QueryEvaluationException {
+			throws QueryEvaluationException {
 
 		try {
 			// use the particular evaluation strategy for evaluation

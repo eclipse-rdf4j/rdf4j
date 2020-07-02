@@ -53,7 +53,7 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 
 		if (filter.getArg() instanceof EmptyResult) {
 			log.debug(
-				"Argument of filter expression does not yield results at the provided sources, replacing Filter node.");
+					"Argument of filter expression does not yield results at the provided sources, replacing Filter node.");
 			filter.replaceWith(filter.getArg());
 			return;
 		}

@@ -131,7 +131,7 @@ import org.eclipse.rdf4j.query.parser.serql.ast.VisitorException;
 class QueryModelBuilder extends AbstractASTVisitor {
 
 	public static TupleExpr buildQueryModel(ASTQueryContainer node, ValueFactory valueFactory)
-		throws MalformedQueryException {
+			throws MalformedQueryException {
 		try {
 			QueryModelBuilder qmBuilder = new QueryModelBuilder(valueFactory);
 			return (TupleExpr) node.jjtAccept(qmBuilder, null);
@@ -353,7 +353,7 @@ class QueryModelBuilder extends AbstractASTVisitor {
 		if (!constructNode.isWildcard()) {
 			TupleExpr constructExpr = (TupleExpr) constructNode.jjtAccept(this, null);
 			tupleExpr = cb.buildConstructor(tupleExpr, constructExpr, constructNode.isDistinct(),
-				constructNode.isReduced());
+					constructNode.isReduced());
 		} else if (node.hasQueryBody()) {
 			tupleExpr = cb.buildConstructor(tupleExpr, constructNode.isDistinct(), constructNode.isReduced());
 		}

@@ -12,5 +12,5 @@ public interface TupleQuery extends Query {
 	TupleQueryResult evaluate() throws QueryEvaluationException;
 
 	void evaluate(TupleQueryResultHandler handler)
-		throws QueryEvaluationException, TupleQueryResultHandlerException;
+			throws QueryEvaluationException, TupleQueryResultHandlerException;
 }

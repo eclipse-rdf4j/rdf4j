@@ -142,7 +142,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			}
 		} else if (BOOLEAN_TAG.equals(tagName)) {
 			QueryResultParseException realException = new QueryResultParseException(
-				"Found boolean results in tuple parser");
+					"Found boolean results in tuple parser");
 			throw new SAXException(realException);
 		}
 	}

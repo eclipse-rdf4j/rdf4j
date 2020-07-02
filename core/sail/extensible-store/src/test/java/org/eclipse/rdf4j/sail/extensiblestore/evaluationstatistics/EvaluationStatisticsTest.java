@@ -48,7 +48,7 @@ public class EvaluationStatisticsTest {
 	public void testStaleStats() throws InterruptedException {
 
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-			null);
+				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
@@ -62,7 +62,7 @@ public class EvaluationStatisticsTest {
 
 		IntStream.range(0, 100).forEach(i -> {
 			extensibleDynamicEvaluationStatistics
-				.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "a")), false));
+					.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "a")), false));
 		});
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
@@ -72,7 +72,7 @@ public class EvaluationStatisticsTest {
 
 		IntStream.range(0, 100000).forEach(i -> {
 			extensibleDynamicEvaluationStatistics
-				.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "b")), false));
+					.add(ex.fromStatement(vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral(i + "b")), false));
 		});
 
 		extensibleDynamicEvaluationStatistics.waitForQueue();
@@ -88,7 +88,7 @@ public class EvaluationStatisticsTest {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-			null);
+				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
@@ -109,64 +109,64 @@ public class EvaluationStatisticsTest {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		ExtensibleDynamicEvaluationStatistics extensibleDynamicEvaluationStatistics = new ExtensibleDynamicEvaluationStatistics(
-			null);
+				null);
 
 		parse.forEach(s -> extensibleDynamicEvaluationStatistics.add(ex.fromStatement(s, false)));
 		extensibleDynamicEvaluationStatistics.waitForQueue();
 
 		ExtensibleDynamicEvaluationStatistics.ExtensibleDynamicEvaluationStatisticsCardinalityCalculator cardinalityCalculator = (ExtensibleDynamicEvaluationStatistics.ExtensibleDynamicEvaluationStatisticsCardinalityCalculator) extensibleDynamicEvaluationStatistics
-			.createCardinalityCalculator();
+				.createCardinalityCalculator();
 
 		IRI bdbmProductType = vf.createIRI("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/", "ProductType");
 		IRI dataFromProducer1Product31 = vf
-			.createIRI("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/", "Product31");
+				.createIRI("http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/", "Product31");
 
 		StatementPattern null_rdfType_bsbmProductType = new StatementPattern(
-			new Var("a", null),
-			new Var("b", RDF.TYPE),
-			new Var("c", bdbmProductType));
+				new Var("a", null),
+				new Var("b", RDF.TYPE),
+				new Var("c", bdbmProductType));
 
 		checkPattern(cardinalityCalculator, null_rdfType_bsbmProductType, 1);
 
 		StatementPattern null_null_null = new StatementPattern(
-			new Var("a", null),
-			new Var("b", null),
-			new Var("c", null));
+				new Var("a", null),
+				new Var("b", null),
+				new Var("c", null));
 
 		checkPattern(cardinalityCalculator, null_null_null, 1);
 
 		StatementPattern null_rdfType_null = new StatementPattern(
-			new Var("a", null),
-			new Var("b", RDF.TYPE),
-			new Var("c", null));
+				new Var("a", null),
+				new Var("b", RDF.TYPE),
+				new Var("c", null));
 
 		checkPattern(cardinalityCalculator, null_rdfType_null, 1);
 
 		StatementPattern nonExistent = new StatementPattern(
-			new Var("a", null),
-			new Var("b", vf.createIRI("http://example.com/fhjerhf2uhfjkdsbf32o")),
-			new Var("c", null));
+				new Var("a", null),
+				new Var("b", vf.createIRI("http://example.com/fhjerhf2uhfjkdsbf32o")),
+				new Var("c", null));
 
 		checkPattern(cardinalityCalculator, nonExistent, 1);
 
 		// this last pattern isn't very accurate, it's actually 46 statements, but the estimate is 100.4
 		StatementPattern bsbmProductType_null_null = new StatementPattern(
-			new Var("a", dataFromProducer1Product31),
-			new Var("b", null),
-			new Var("c", null));
+				new Var("a", dataFromProducer1Product31),
+				new Var("b", null),
+				new Var("c", null));
 
 		checkPattern(cardinalityCalculator, bsbmProductType_null_null, 120);
 
 	}
 
 	private void checkPattern(
-		ExtensibleDynamicEvaluationStatistics.ExtensibleDynamicEvaluationStatisticsCardinalityCalculator cardinalityCalculator,
-		StatementPattern pattern, int percentage) {
+			ExtensibleDynamicEvaluationStatistics.ExtensibleDynamicEvaluationStatisticsCardinalityCalculator cardinalityCalculator,
+			StatementPattern pattern, int percentage) {
 		double estimatedCardinality = cardinalityCalculator.getCardinality(pattern);
 		int actual = parse
-			.filter((Resource) pattern.getSubjectVar().getValue(), (IRI) pattern.getPredicateVar().getValue(),
-				pattern.getObjectVar().getValue())
-			.size();
+				.filter((Resource) pattern.getSubjectVar().getValue(), (IRI) pattern.getPredicateVar().getValue(),
+						pattern.getObjectVar().getValue())
+				.size();
 
 		fuzzyAssert(actual, estimatedCardinality, percentage);
 	}
@@ -176,7 +176,7 @@ public class EvaluationStatisticsTest {
 		double diff = Math.abs(expected - estimated);
 		if (100.0 / expected * diff > percentage) {
 			assertEquals("Estimated cardinality should be within " + percentage + "% of expected cardinality", expected,
-				estimated);
+					estimated);
 		}
 
 	}

@@ -185,11 +185,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		if (parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
 			dir = FSDirectory.open(Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY)));
 		} else if (parameters.containsKey(LuceneSail.LUCENE_RAMDIR_KEY)
-			&& "true".equals(parameters.getProperty(LuceneSail.LUCENE_RAMDIR_KEY))) {
+				&& "true".equals(parameters.getProperty(LuceneSail.LUCENE_RAMDIR_KEY))) {
 			dir = new RAMDirectory();
 		} else {
 			throw new IOException("No luceneIndex set, and no '" + LuceneSail.LUCENE_DIR_KEY + "' or '"
-				+ LuceneSail.LUCENE_RAMDIR_KEY + "' parameter given. ");
+					+ LuceneSail.LUCENE_RAMDIR_KEY + "' parameter given. ");
 		}
 		return dir;
 	}
@@ -208,7 +208,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		Similarity similarity;
 		if (parameters.containsKey(LuceneSail.SIMILARITY_CLASS_KEY)) {
 			similarity = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY))
-				.newInstance();
+					.newInstance();
 		} else {
 			similarity = new ClassicSimilarity();
 		}
@@ -330,8 +330,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 					synchronized (oldmonitors) {
 						if (oldmonitors.size() > 0) {
 							logger.warn(
-								"LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!",
-								oldmonitors.size());
+									"LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!",
+									oldmonitors.size());
 						}
 						for (AbstractReaderMonitor monitor : oldmonitors) {
 							try {
@@ -643,9 +643,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				}
 
 				logger.info("Total documents in the index: " + reader.numDocs()
-					+ ", number of deletable documents in the index: " + reader.numDeletedDocs()
-					+ ", valid documents: " + count + ", total fields in all documents: " + totalFields
-					+ ", average number of fields per document: " + ((double) totalFields) / reader.numDocs());
+						+ ", number of deletable documents in the index: " + reader.numDeletedDocs()
+						+ ", valid documents: " + count + ", total fields in all documents: " + totalFields
+						+ ", average number of fields per document: " + ((double) totalFields) / reader.numDocs());
 				logger.info("Distinct ids in the index: " + ids.size());
 
 			} finally {
@@ -713,7 +713,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-		boolean highlight) throws MalformedQueryException, IOException {
+			boolean highlight) throws MalformedQueryException, IOException {
 		Query q;
 		try {
 			q = getQueryParser(propertyURI).parse(query);
@@ -724,7 +724,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		final Highlighter highlighter;
 		if (highlight) {
 			Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,
-				SearchFields.HIGHLIGHTER_POST_TAG);
+					SearchFields.HIGHLIGHTER_POST_TAG);
 			highlighter = new Highlighter(formatter, new QueryScorer(q));
 		} else {
 			highlighter = null;
@@ -747,7 +747,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	@Override
 	protected Iterable<? extends DocumentDistance> geoQuery(final IRI geoProperty, Point p, final IRI units,
-		double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
 		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
@@ -764,7 +764,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			@Override
 			public DocumentDistance apply(ScoreDoc doc) {
 				return new LuceneDocumentDistance(doc, geoField, units, boundingCircle.getCenter(), requireContext,
-					LuceneIndex.this);
+						LuceneIndex.this);
 			}
 		});
 	}
@@ -780,7 +780,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	@Override
 	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
-		Var contextVar) throws MalformedQueryException, IOException {
+			Var contextVar) throws MalformedQueryException, IOException {
 		SpatialOperation op = toSpatialOp(relation);
 		if (op == null) {
 			return null;

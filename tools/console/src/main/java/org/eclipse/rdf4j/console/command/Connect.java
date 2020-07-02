@@ -44,9 +44,9 @@ public class Connect extends ConsoleCommand {
 	@Override
 	public String getHelpLong() {
 		return PrintHelp.USAGE
-			+ "connect default                         Opens the default repository set for this console\n"
-			+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
-			+ "connect <serverURL> [user [password]]   Connects to an RDF4J server with optional credentials\n";
+				+ "connect default                         Opens the default repository set for this console\n"
+				+ "connect <dataDirectory>                 Opens the repository set in the specified data dir\n"
+				+ "connect <serverURL> [user [password]]   Connects to an RDF4J server with optional credentials\n";
 
 	}
 

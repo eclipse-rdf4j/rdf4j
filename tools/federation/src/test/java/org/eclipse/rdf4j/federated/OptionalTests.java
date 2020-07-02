@@ -51,23 +51,23 @@ public class OptionalTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data4.ttl"));
 
 		String query = "SELECT * WHERE{ " +
-			"	?person a foaf:Person . " +
-			"	OPTIONAL { ?person foaf:name ?name } ." +
-			"	OPTIONAL { ?person foaf:age ?age } . " +
-			"	?author owl:sameAs ?person ." +
-			"}";
+				"	?person a foaf:Person . " +
+				"	OPTIONAL { ?person foaf:name ?name } ." +
+				"	OPTIONAL { ?person foaf:age ?age } . " +
+				"	?author owl:sameAs ?person ." +
+				"}";
 
 		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "name",
-				Sets.newHashSet(l("Person2"), l("Person5")));
+					Sets.newHashSet(l("Person2"), l("Person5")));
 			Assertions.assertTrue(res.stream()
-				.anyMatch(b -> b.getValue("name")
-					.equals(l("Person2")) && b.getValue("age").stringValue().equals("27")));
+					.anyMatch(b -> b.getValue("name")
+							.equals(l("Person2")) && b.getValue("age").stringValue().equals("27")));
 			Assertions.assertTrue(res.stream()
-				.anyMatch(b -> b.getValue("name")
-					.equals(l("Person5")) && b.getValue("age") == null));
+					.anyMatch(b -> b.getValue("name")
+							.equals(l("Person5")) && b.getValue("age") == null));
 		}
 	}
 

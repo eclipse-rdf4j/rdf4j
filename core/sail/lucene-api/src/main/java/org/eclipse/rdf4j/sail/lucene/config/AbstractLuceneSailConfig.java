@@ -100,7 +100,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 		super.parse(graph, implNode);
 
 		Literal indexDirLit = Models.objectLiteral(graph.getStatements(implNode, INDEX_DIR, null))
-			.orElseThrow(() -> new SailConfigException("no value found for " + INDEX_DIR));
+				.orElseThrow(() -> new SailConfigException("no value found for " + INDEX_DIR));
 
 		setIndexDir(indexDirLit.getLabel());
 		for (Statement stmt : graph.getStatements(implNode, null, null)) {

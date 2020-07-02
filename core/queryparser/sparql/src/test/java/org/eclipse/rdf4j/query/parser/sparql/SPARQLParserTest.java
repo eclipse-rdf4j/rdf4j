@@ -282,7 +282,7 @@ public class SPARQLParserTest {
 	@Test
 	public void testLongUnicode() throws Exception {
 		ParsedUpdate ru = parser.parseUpdate("insert data {<urn:test:foo> <urn:test:bar> \"\\U0001F61F\" .}",
-			"urn:test");
+				"urn:test");
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
 		String[] lines = insertData.getDataBlock().split("\n");
 		assertEquals("\uD83D\uDE1F", lines[lines.length - 1].replaceAll(".*\"(.*)\".*", "$1"));

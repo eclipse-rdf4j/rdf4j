@@ -40,35 +40,35 @@ import org.slf4j.LoggerFactory;
 public class ProtocolUtil {
 
 	public static Value parseValueParam(HttpServletRequest request, String paramName, ValueFactory vf)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 		String paramValue = request.getParameter(paramName);
 		try {
 			return Protocol.decodeValue(paramValue, vf);
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-				"Invalid value for parameter '" + paramName + "': " + paramValue);
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
 	public static Resource parseResourceParam(HttpServletRequest request, String paramName, ValueFactory vf)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 		String paramValue = request.getParameter(paramName);
 		try {
 			return Protocol.decodeResource(paramValue, vf);
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-				"Invalid value for parameter '" + paramName + "': " + paramValue);
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
 	public static IRI parseURIParam(HttpServletRequest request, String paramName, ValueFactory vf)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 		String paramValue = request.getParameter(paramName);
 		try {
 			return Protocol.decodeURI(paramValue, vf);
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-				"Invalid value for parameter '" + paramName + "': " + paramValue);
+					"Invalid value for parameter '" + paramName + "': " + paramValue);
 		}
 	}
 
@@ -82,18 +82,18 @@ public class ProtocolUtil {
 			return Protocol.decodeURI("<" + paramValue + ">", vf);
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-				"Invalid value for parameter '" + Protocol.GRAPH_PARAM_NAME + "': " + paramValue);
+					"Invalid value for parameter '" + Protocol.GRAPH_PARAM_NAME + "': " + paramValue);
 		}
 	}
 
 	public static Resource[] parseContextParam(HttpServletRequest request, String paramName, ValueFactory vf)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 		String[] paramValues = request.getParameterValues(paramName);
 		try {
 			return Protocol.decodeContexts(paramValues, vf);
 		} catch (IllegalArgumentException e) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
-				"Invalid value for parameter '" + paramName + "': " + e.getMessage());
+					"Invalid value for parameter '" + paramName + "': " + e.getMessage());
 		}
 	}
 
@@ -107,7 +107,7 @@ public class ProtocolUtil {
 	}
 
 	public static long parseLongParam(HttpServletRequest request, String paramName, long defaultValue)
-		throws ClientHTTPException {
+			throws ClientHTTPException {
 		String paramValue = request.getParameter(paramName);
 		if (paramValue == null) {
 			return defaultValue;
@@ -116,7 +116,7 @@ public class ProtocolUtil {
 				return Long.parseLong(paramValue);
 			} catch (IllegalArgumentException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST,
-					"Invalid value for parameter '" + paramName + "': " + e.getMessage());
+						"Invalid value for parameter '" + paramName + "': " + e.getMessage());
 			}
 		}
 	}
@@ -139,7 +139,7 @@ public class ProtocolUtil {
 	}
 
 	public static <FF extends FileFormat, S> S getAcceptableService(HttpServletRequest request,
-		HttpServletResponse response, FileFormatServiceRegistry<FF, S> serviceRegistry) throws ClientHTTPException {
+			HttpServletResponse response, FileFormatServiceRegistry<FF, S> serviceRegistry) throws ClientHTTPException {
 		// Accept-parameter takes precedence over request headers
 		String mimeType = request.getParameter(Protocol.ACCEPT_PARAM_NAME);
 		boolean hasAcceptParam = mimeType != null;

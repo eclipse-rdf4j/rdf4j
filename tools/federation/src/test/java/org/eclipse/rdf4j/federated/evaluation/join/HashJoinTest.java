@@ -44,14 +44,14 @@ public class HashJoinTest {
 		rightBlock.add(bindingSet(binding("x", irid("p4"))));
 
 		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
-			Sets.newHashSet("x"),
-			Collections.emptyList());
+				Sets.newHashSet("x"),
+				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
 
 		Assertions.assertEquals(Lists.newArrayList(
-			bindingSet(binding("x", irid("p1"))),
-			bindingSet(binding("x", irid("p2")))),
-			joinResult);
+				bindingSet(binding("x", irid("p1"))),
+				bindingSet(binding("x", irid("p2")))),
+				joinResult);
 	}
 
 	@Test
@@ -65,14 +65,14 @@ public class HashJoinTest {
 		rightBlock.add(bindingSet(binding("x", irid("p2")), binding("z", l("something"))));
 
 		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
-			Sets.newHashSet("x"),
-			Collections.emptyList());
+				Sets.newHashSet("x"),
+				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
 
 		Assertions.assertEquals(1, joinResult.size());
 		Assertions.assertEquals(
-			bindingSet(binding("x", irid("p2")), binding("y", l("P2")), binding("z", l("something"))),
-			joinResult.get(0));
+				bindingSet(binding("x", irid("p2")), binding("y", l("P2")), binding("z", l("something"))),
+				joinResult.get(0));
 	}
 
 	@Test
@@ -86,14 +86,14 @@ public class HashJoinTest {
 		rightBlock.add(bindingSet(binding("x", irid("p1")), binding("z", l("something"))));
 
 		CloseableIteration<BindingSet, QueryEvaluationException> joinResultIter = HashJoin.join(leftBlock, rightBlock,
-			Sets.newHashSet("x"),
-			Collections.emptyList());
+				Sets.newHashSet("x"),
+				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
 
 		Assertions.assertEquals(1, joinResult.size());
 		Assertions.assertEquals(
-			bindingSet(binding("x", irid("p1")), binding("y", l("P1")), binding("z", l("something"))),
-			joinResult.get(0));
+				bindingSet(binding("x", irid("p1")), binding("y", l("P1")), binding("z", l("something"))),
+				joinResult.get(0));
 	}
 
 	protected BindingSet bindingSet(Binding... bindings) {

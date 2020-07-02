@@ -15,7 +15,7 @@ import java.util.Locale;
 
 public class StringUtil {
 	private static final char[] IRI_DONT_ESCAPE = new char[] { '_', '~', '.', '-', '!', '$', '&', '\'', '(',
-		')', '*', '+', ',', ';', '=', ':', '/', '?', '#', '@', '%', '[', ']' };
+			')', '*', '+', ',', ';', '=', ':', '/', '?', '#', '@', '%', '[', ']' };
 
 	static {
 		// sorting array to allow simple binary search for char lookup.
@@ -238,7 +238,7 @@ public class StringUtil {
 			// try to find an initial text of a sufficient length
 			endIdx = startIdx + 1;
 			while (endIdx < textLength && ((endIdx - startIdx) < MAX_INITIAL_TEXT_LENGTH)
-				&& isInitialTextChar(text.charAt(endIdx))) {
+					&& isInitialTextChar(text.charAt(endIdx))) {
 				endIdx++;
 			}
 
@@ -319,21 +319,21 @@ public class StringUtil {
 		int charType = Character.getType(c);
 
 		return charType == Character.UPPERCASE_LETTER || charType == Character.LOWERCASE_LETTER
-			|| charType == Character.TITLECASE_LETTER || charType == Character.MODIFIER_LETTER
-			|| charType == Character.OTHER_LETTER || charType == Character.DECIMAL_DIGIT_NUMBER
-			|| charType == Character.START_PUNCTUATION || charType == Character.INITIAL_QUOTE_PUNCTUATION;
+				|| charType == Character.TITLECASE_LETTER || charType == Character.MODIFIER_LETTER
+				|| charType == Character.OTHER_LETTER || charType == Character.DECIMAL_DIGIT_NUMBER
+				|| charType == Character.START_PUNCTUATION || charType == Character.INITIAL_QUOTE_PUNCTUATION;
 	}
 
 	private static boolean isInitialTextChar(char c) {
 		int charType = Character.getType(c);
 
 		return charType == Character.UPPERCASE_LETTER || charType == Character.LOWERCASE_LETTER
-			|| charType == Character.TITLECASE_LETTER || charType == Character.MODIFIER_LETTER
-			|| charType == Character.OTHER_LETTER || charType == Character.DECIMAL_DIGIT_NUMBER
-			|| charType == Character.SPACE_SEPARATOR || charType == Character.CONNECTOR_PUNCTUATION
-			|| charType == Character.DASH_PUNCTUATION || charType == Character.START_PUNCTUATION
-			|| charType == Character.END_PUNCTUATION || charType == Character.INITIAL_QUOTE_PUNCTUATION
-			|| charType == Character.FINAL_QUOTE_PUNCTUATION || charType == Character.OTHER_PUNCTUATION;
+				|| charType == Character.TITLECASE_LETTER || charType == Character.MODIFIER_LETTER
+				|| charType == Character.OTHER_LETTER || charType == Character.DECIMAL_DIGIT_NUMBER
+				|| charType == Character.SPACE_SEPARATOR || charType == Character.CONNECTOR_PUNCTUATION
+				|| charType == Character.DASH_PUNCTUATION || charType == Character.START_PUNCTUATION
+				|| charType == Character.END_PUNCTUATION || charType == Character.INITIAL_QUOTE_PUNCTUATION
+				|| charType == Character.FINAL_QUOTE_PUNCTUATION || charType == Character.OTHER_PUNCTUATION;
 	}
 
 	/**

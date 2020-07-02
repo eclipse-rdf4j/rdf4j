@@ -98,13 +98,13 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 
 		try {
 			Models.objectIRI(model.getStatements(implNode, REPOSITORYURL, null))
-				.ifPresent(iri -> setURL(iri.stringValue()));
+					.ifPresent(iri -> setURL(iri.stringValue()));
 
 			Models.objectLiteral(model.getStatements(implNode, USERNAME, null))
-				.ifPresent(username -> setUsername(username.getLabel()));
+					.ifPresent(username -> setUsername(username.getLabel()));
 
 			Models.objectLiteral(model.getStatements(implNode, PASSWORD, null))
-				.ifPresent(password -> setPassword(password.getLabel()));
+					.ifPresent(password -> setPassword(password.getLabel()));
 
 		} catch (ModelException e) {
 			throw new RepositoryConfigException(e.getMessage(), e);
