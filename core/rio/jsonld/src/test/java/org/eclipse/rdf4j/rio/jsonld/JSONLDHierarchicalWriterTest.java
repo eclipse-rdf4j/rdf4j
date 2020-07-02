@@ -325,8 +325,7 @@ public class JSONLDHierarchicalWriterTest {
 			expectedFile = new FileInputStream(file);
 			os = new ComparingOutputStream(expectedFile);
 		} else {
-			fail(
-					"The file with expected results is missing. Remove this fail clause if you want to generate new file.");
+			fail("The file with expected results is missing. Remove this fail clause if you want to generate new file.");
 			os = Files.newOutputStream(file.toPath());
 		}
 		RDFWriter writer = new JSONLDWriter(os);

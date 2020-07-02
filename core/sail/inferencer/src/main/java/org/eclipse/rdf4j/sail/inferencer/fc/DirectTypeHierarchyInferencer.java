@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
  *    Class A is a direct subclass of B iff:
  *       1. A is a subclass of B and;
  *       2. A and B are not equa and;
- *       3. there is no class C (unequal A and B) such that 
+ *       3. there is no class C (unequal A and B) such that
  *          A is a subclass of C and C of B.
  *
  *    Property P is a direct subproperty of Q iff:
@@ -255,9 +255,8 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 
 		private void evaluateIntoStatements(ParsedGraphQuery query, Collection<Statement> statements)
 				throws SailException, RDFHandlerException, QueryEvaluationException {
-			try (
-					CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
-							.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = getWrappedConnection()
+					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {
 				ValueFactory vf = getValueFactory();
 
 				while (bindingsIter.hasNext()) {

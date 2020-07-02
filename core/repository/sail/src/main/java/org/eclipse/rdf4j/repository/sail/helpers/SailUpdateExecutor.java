@@ -439,9 +439,8 @@ public class SailUpdateExecutor {
 				whereClause = new QueryRoot(whereClause);
 			}
 
-			try (
-					CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = evaluateWhereClause(
-							whereClause, uc, maxExecutionTime)) {
+			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings = evaluateWhereClause(
+					whereClause, uc, maxExecutionTime)) {
 				while (sourceBindings.hasNext()) {
 					BindingSet sourceBinding = sourceBindings.next();
 					deleteBoundTriples(sourceBinding, modify.getDeleteExpr(), uc);
