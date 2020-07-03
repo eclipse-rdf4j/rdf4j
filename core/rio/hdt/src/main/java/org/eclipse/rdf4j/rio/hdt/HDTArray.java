@@ -36,6 +36,7 @@ abstract class HDTArray extends HDTPart {
 		LOG64(1),
 		UINT32(2),
 		UINT64(3);
+
 		private final int value;
 
 		/**

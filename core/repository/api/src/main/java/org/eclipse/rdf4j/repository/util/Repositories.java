@@ -144,7 +144,7 @@ public final class Repositories {
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function.
@@ -178,7 +178,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function.
@@ -206,7 +206,7 @@ public final class Repositories {
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
 	 *
-	 * @param                  <T> The type of the return value.
+	 * @param <T>              The type of the return value.
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -231,7 +231,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
 	 *
-	 * @param                  <T> The type of the return value.
+	 * @param <T>              The type of the return value.
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -257,7 +257,7 @@ public final class Repositories {
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
@@ -271,7 +271,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
@@ -286,7 +286,7 @@ public final class Repositories {
 	 * Performs a SPARQL Select query on the given Repository within a transaction and passes the results to the given
 	 * {@link Function} with the result from the function returned by the method.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Select query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -313,7 +313,7 @@ public final class Repositories {
 	 * Performs a SPARQL Select query on the given Repository without opening a transaction and passes the results to
 	 * the given {@link Function} with the result from the function returned by the method.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Select query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -384,7 +384,7 @@ public final class Repositories {
 	 * Performs a SPARQL Construct or Describe query on the given Repository within a transaction and passes the results
 	 * to the given {@link Function} with the result from the function returned by the method.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Construct or Describe query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -411,7 +411,7 @@ public final class Repositories {
 	 * Performs a SPARQL Construct or Describe query on the given Repository without opening a transaction and passes
 	 * the results to the given {@link Function} with the result from the function returned by the method.
 	 *
-	 * @param                 <T> The type of the return value.
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Construct or Describe query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
