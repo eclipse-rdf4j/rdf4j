@@ -116,7 +116,7 @@ public class ExceptionUtil {
 	 * has a public constructor with String and Throwable as argument. The new message is set to 'msgPrefix.
 	 * ex.getMessage()', all other exception elements remain the same.
 	 *
-	 * @param           <E>
+	 * @param <E>
 	 * @param msgPrefix
 	 * @param ex
 	 * @param exClazz

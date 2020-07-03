@@ -22,6 +22,7 @@ abstract class HDTDictionarySection extends HDTPart {
 		FMINDEX(4),
 		REPAIRDAC(5),
 		HASHHUFF(6);
+
 		private final int value;
 
 		protected int getValue() {

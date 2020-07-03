@@ -49,8 +49,8 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 	/**
 	 * Returns the next element from the source type itertor.
 	 *
-	 * @throws                       java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException If the itertor has been closed.
+	 * @throws java.util.NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException            If the itertor has been closed.
 	 */
 	@Override
 	public T next() {

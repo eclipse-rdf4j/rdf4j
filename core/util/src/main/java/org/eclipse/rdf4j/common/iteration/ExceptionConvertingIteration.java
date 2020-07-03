@@ -74,8 +74,8 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	 * Returns the next element from the wrapped Iteration.
 	 *
 	 * @throws X
-	 * @throws                       java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException If the Iteration has been closed.
+	 * @throws java.util.NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException            If the Iteration has been closed.
 	 */
 	@Override
 	public E next() throws X {
