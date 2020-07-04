@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -207,6 +208,11 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
+	public void begin(TransactionSetting[] settings) {
+		wrappedCon.begin(settings);
+	}
+
+	@Override
 	public void begin() throws SailException {
 		wrappedCon.begin();
 	}
@@ -230,4 +236,5 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	public boolean isActive() throws UnknownSailTransactionStateException {
 		return wrappedCon.isActive();
 	}
+
 }

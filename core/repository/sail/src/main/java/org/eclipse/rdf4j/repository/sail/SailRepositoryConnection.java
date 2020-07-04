@@ -15,6 +15,7 @@ import java.util.Optional;
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
@@ -156,6 +157,15 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			sailConnection.begin(level);
+		} catch (SailException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		try {
+			sailConnection.begin(settings);
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}

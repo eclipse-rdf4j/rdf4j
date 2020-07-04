@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -17,9 +18,11 @@ import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -107,6 +110,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private boolean pendingRemovals;
 
+	private Map<String, TransactionSetting> transactionSettings = new HashMap<>();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -132,6 +137,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	public Map<String, TransactionSetting> getTransactionSettings() {
+		return transactionSettings;
+	}
+
 	/**
 	 * Verifies if a transaction is currently active. Throws a {@link SailException} if no transaction is active.
 	 *
@@ -145,7 +154,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void begin() throws SailException {
-		begin(null);
+		begin(((IsolationLevel) null));
+	}
+
+	@Override
+	public void begin(TransactionSetting[] settings) {
+		this.transactionSettings = Arrays.stream(settings).collect(Collectors.toMap(t -> t.getName(), t -> t));
+		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
+		if (isolationLevel instanceof IsolationLevel) {
+			begin(((IsolationLevel) isolationLevel));
+		} else {
+			begin();
+		}
 	}
 
 	@Override
@@ -153,6 +173,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (level == null) {
 			level = this.sailBase.getDefaultIsolationLevel();
 		}
+
+		transactionSettings.put(level.getName(), level);
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				this.sailBase.getSupportedIsolationLevels());
@@ -375,61 +397,70 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void commit() throws SailException {
-		if (isActive()) {
-			endUpdate(null);
-		}
-		connectionLock.readLock().lock();
 		try {
-			verifyIsOpen();
+			if (isActive()) {
+				endUpdate(null);
+			}
 
-			updateLock.lock();
+			connectionLock.readLock().lock();
 			try {
-				if (txnActive) {
-					if (!txnPrepared) {
-						prepareInternal();
+				verifyIsOpen();
+
+				updateLock.lock();
+				try {
+					if (txnActive) {
+						if (!txnPrepared) {
+							prepareInternal();
+						}
+						commitInternal();
+						txnActive = false;
+						txnPrepared = false;
 					}
-					commitInternal();
-					txnActive = false;
-					txnPrepared = false;
+				} finally {
+					updateLock.unlock();
 				}
 			} finally {
-				updateLock.unlock();
+				connectionLock.readLock().unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			transactionSettings.clear();
 		}
 	}
 
 	@Override
 	public final void rollback() throws SailException {
-		synchronized (added) {
-			added.clear();
-		}
-		synchronized (removed) {
-			removed.clear();
-		}
-		connectionLock.readLock().lock();
 		try {
-			verifyIsOpen();
-
-			updateLock.lock();
+			synchronized (added) {
+				added.clear();
+			}
+			synchronized (removed) {
+				removed.clear();
+			}
+			connectionLock.readLock().lock();
 			try {
-				if (txnActive) {
-					try {
-						rollbackInternal();
-					} finally {
-						txnActive = false;
-						txnPrepared = false;
+				verifyIsOpen();
+
+				updateLock.lock();
+				try {
+					if (txnActive) {
+						try {
+							rollbackInternal();
+						} finally {
+							txnActive = false;
+							txnPrepared = false;
+						}
+					} else {
+						logger.warn("Cannot rollback transaction on connection because transaction is not active",
+								debugEnabled ? new Throwable() : null);
 					}
-				} else {
-					logger.warn("Cannot rollback transaction on connection because transaction is not active",
-							debugEnabled ? new Throwable() : null);
+				} finally {
+					updateLock.unlock();
 				}
 			} finally {
-				updateLock.unlock();
+				connectionLock.readLock().unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			transactionSettings.clear();
 		}
 	}
 

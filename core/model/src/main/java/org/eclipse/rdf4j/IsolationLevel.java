@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.IRI;
  *
  * @author Jeen Broekstra
  */
-public interface IsolationLevel {
+public interface IsolationLevel extends TransactionSetting {
 
 	/**
 	 * Verifies if this transaction isolation level is compatible with the supplied other isolation level - that is, if
@@ -35,4 +35,13 @@ public interface IsolationLevel {
 	 */
 	IRI getURI();
 
+	@Override
+	default String getName() {
+		return IsolationLevel.class.getCanonicalName();
+	}
+
+	@Override
+	default String getValue() {
+		return this.toString();
+	}
 }

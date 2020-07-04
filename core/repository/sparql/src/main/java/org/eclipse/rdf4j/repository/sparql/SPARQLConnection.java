@@ -17,6 +17,7 @@ import java.net.URL;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.OpenRDFUtil;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -457,6 +458,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				throw new RepositoryException("active transaction already exists");
 			}
 		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		throw new UnsupportedOperationException("SPARQLConnection does not support transaction settings");
 	}
 
 	@Override

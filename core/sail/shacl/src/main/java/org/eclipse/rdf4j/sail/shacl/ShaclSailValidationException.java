@@ -22,11 +22,17 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
+	private ValidationReport report;
 	private List<Tuple> invalidTuples;
 
 	ShaclSailValidationException(List<Tuple> invalidTuples) {
 		super("Failed SHACL validation");
 		this.invalidTuples = invalidTuples;
+	}
+
+	public ShaclSailValidationException(ValidationReport report) {
+		this.report = report;
+
 	}
 
 	/**
@@ -52,7 +58,11 @@ public class ShaclSailValidationException extends SailException implements Valid
 	 */
 	@Deprecated
 	public ValidationReport getValidationReport() {
-		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
+
+		if (report != null) {
+			return report;
+		}
+		report = new ValidationReport(invalidTuples.isEmpty());
 
 		for (Tuple invalidTuple : invalidTuples) {
 			ValidationResult parent = null;
@@ -63,7 +73,7 @@ public class ShaclSailValidationException extends SailException implements Valid
 				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
 						invalidTuple.getLine().get(0), invalidTuple.getLine().get(invalidTuple.getLine().size() - 1));
 				if (parent == null) {
-					validationReport.addValidationResult(validationResult);
+					report.addValidationResult(validationResult);
 				} else {
 					parent.setDetail(validationResult);
 				}
@@ -71,6 +81,6 @@ public class ShaclSailValidationException extends SailException implements Valid
 			}
 
 		}
-		return validationReport;
+		return report;
 	}
 }

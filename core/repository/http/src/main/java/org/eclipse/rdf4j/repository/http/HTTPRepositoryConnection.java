@@ -27,6 +27,7 @@ import java.util.Set;
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
@@ -163,6 +164,11 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		throw new UnsupportedOperationException("Not supported yet");
 	}
 
 	/**

@@ -14,6 +14,7 @@ import java.io.Reader;
 import java.net.URL;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -456,6 +457,11 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		getDelegate().begin(level);
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		getDelegate().begin(settings);
 	}
 
 	@Override
