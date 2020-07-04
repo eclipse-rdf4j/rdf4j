@@ -158,8 +158,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
-	public void begin(TransactionSetting[] settings) {
-		this.transactionSettings = Arrays.stream(settings).collect(Collectors.toMap(t -> t.getName(), t -> t));
+	public void begin(TransactionSetting... settings) {
+		this.transactionSettings = Arrays.stream(settings)
+				.collect(Collectors.toMap(TransactionSetting::getName, t -> t));
 		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
 		if (isolationLevel instanceof IsolationLevel) {
 			begin(((IsolationLevel) isolationLevel));

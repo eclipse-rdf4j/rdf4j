@@ -479,5 +479,5 @@ public interface SailConnection extends AutoCloseable {
 		throw new UnsupportedOperationException();
 	}
 
-	void begin(TransactionSetting[] settings);
+	void begin(TransactionSetting... settings);
 }
