@@ -36,6 +36,7 @@ abstract class HDTPart {
 		HEADER((byte) 2),
 		DICTIONARY((byte) 3),
 		TRIPLES((byte) 4);
+
 		private final byte value;
 
 		/**

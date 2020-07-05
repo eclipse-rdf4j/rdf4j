@@ -621,8 +621,12 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			List<NameValuePair> params = new ArrayList<>();
 			if (isolationLevel != null) {
-				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
-						isolationLevel.getURI().stringValue()));
+				params.add(
+						new BasicNameValuePair(
+								Protocol.ISOLATION_LEVEL_PARAM_NAME,
+								isolationLevel.getURI().stringValue()
+						)
+				);
 			}
 
 			method.setEntity(new UrlEncodedFormEntity(params, UTF8));

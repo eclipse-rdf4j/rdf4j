@@ -70,8 +70,8 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 * Returns the next element from the source type iteration.
 	 *
 	 * @throws X
-	 * @throws                       java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException If the iteration has been closed.
+	 * @throws java.util.NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException            If the iteration has been closed.
 	 */
 	@Override
 	public T next() throws X {

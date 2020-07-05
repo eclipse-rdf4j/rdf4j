@@ -103,7 +103,7 @@ public final class ProcessLauncher {
 	/**
 	 * Turn a list of objects into an array of strings
 	 *
-	 * @param      <T>
+	 * @param <T>
 	 * @param list list of objects
 	 * @return array of strings
 	 */

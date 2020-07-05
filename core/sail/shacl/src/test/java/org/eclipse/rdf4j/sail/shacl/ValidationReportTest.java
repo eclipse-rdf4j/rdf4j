@@ -116,15 +116,16 @@ public class ValidationReportTest {
 					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 					"\n" +
-					"_:node1ebr5j3f8x77 a sh:ValidationReport;\n" +
+					"_:node1ecfgke5gx80 a sh:ValidationReport;\n" +
 					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
 					"  sh:conforms false;\n" +
-					"  sh:result _:node1ebr5j3f8x78 .\n" +
+					"  sh:result _:node1ecfgke5gx81 .\n" +
 					"\n" +
-					"_:node1ebr5j3f8x78 a sh:ValidationResult;\n" +
+					"_:node1ecfgke5gx81 a sh:ValidationResult;\n" +
 					"  sh:focusNode ex:node1;\n" +
 					"  sh:sourceConstraintComponent sh:ClassConstraintComponent;\n" +
-					"  sh:sourceShape ex:PersonShape .\n"
+					"  sh:sourceShape ex:PersonShape;\n" +
+					"  sh:value ex:node1 ."
 					+ ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
@@ -174,12 +175,14 @@ public class ValidationReportTest {
 					"              sh:focusNode ex:validPerson1;\n" +
 					"              sh:resultPath ex:age;\n" +
 					"              sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-					"              sh:sourceShape ex:personShapeAgeLong\n" +
+					"              sh:sourceShape ex:personShapeAgeLong;\n" +
+					"              sh:value \"abc\"\n" +
 					"            ];\n" +
 					"          sh:focusNode ex:validPerson1;\n" +
 					"          sh:resultPath ex:age;\n" +
 					"          sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-					"          sh:sourceShape ex:personShapeAgeInteger\n" +
+					"          sh:sourceShape ex:personShapeAgeInteger;\n" +
+					"          sh:value \"abc\"\n" +
 					"        ];\n" +
 					"      sh:focusNode ex:validPerson1;\n" +
 					"      sh:resultPath ex:age;\n" +

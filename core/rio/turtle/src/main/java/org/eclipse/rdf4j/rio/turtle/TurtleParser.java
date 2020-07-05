@@ -165,7 +165,7 @@ public class TurtleParser extends AbstractRDFParser {
 			lineNumber = 1;
 
 			// Allow at most 8 characters to be pushed back:
-			this.reader = new PushbackReader(reader, 8);
+			this.reader = new PushbackReader(reader, 10);
 
 			// Store normalized base URI
 			setBaseURI(baseURI);
