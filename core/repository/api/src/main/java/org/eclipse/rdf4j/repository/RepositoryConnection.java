@@ -625,7 +625,16 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	void begin(IsolationLevel level) throws RepositoryException;
 
-	void begin(TransactionSetting... settings);
+	default void begin(TransactionSetting... settings) {
+		for (TransactionSetting setting : settings) {
+			if (setting instanceof IsolationLevel) {
+				begin(((IsolationLevel) setting));
+				return;
+			}
+		}
+
+		begin();
+	}
 
 	/**
 	 * Commits the active transaction. This operation ends the active transaction.
