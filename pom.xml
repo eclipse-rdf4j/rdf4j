@@ -295,8 +295,8 @@
 		<logback.version>1.1.11</logback.version>
 		<httpclient.version>4.5.10</httpclient.version>
 		<httpcore.version>4.4.12</httpcore.version>
-		<jackson.version>2.9.9</jackson.version>
-		<jsonldjava.version>0.12.5</jsonldjava.version>
+		<jackson.version>2.10.4</jackson.version>
+		<jsonldjava.version>0.13.0</jsonldjava.version>
 		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<lucene.version>7.7.2</lucene.version>
