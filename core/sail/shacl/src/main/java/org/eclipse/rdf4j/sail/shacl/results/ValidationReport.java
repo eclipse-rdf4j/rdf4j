@@ -33,10 +33,10 @@ public class ValidationReport {
 
 	final Resource id = SimpleValueFactory.getInstance().createBNode();
 
-	boolean conforms;
+	boolean conforms = true;
 
 	final List<ValidationResult> validationResult = new ArrayList<>();
-	boolean truncated;
+	boolean truncated = false;
 	List<Tuple> tuples;
 
 	public ValidationReport() {

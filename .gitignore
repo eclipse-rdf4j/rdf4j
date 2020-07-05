@@ -38,3 +38,4 @@ compliance/repository/overlays
 /core/sail/elasticsearch-store/tempElasticsearchDownload/*
 tempElasticsearchDownload
 cache.db
+formatter-maven-cache.properties
