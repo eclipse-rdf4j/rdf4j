@@ -839,7 +839,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
-	 * support for dash:valueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
 	 *
 	 * EXPERIMENTAL!
 	 *
@@ -853,7 +853,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
-	 * support for dash:valueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
 	 *
 	 * EXPERIMENTAL!
 	 *

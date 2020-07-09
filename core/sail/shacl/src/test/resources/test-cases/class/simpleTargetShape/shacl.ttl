@@ -13,7 +13,7 @@ ex:PersonShape
         		a sh:NodeShape ;
         		sh:property [
         			sh:path rdf:type ;
-        			dash:valueIn (ex:Person ex:SecondTarget) ;
+        			dash:hasValueIn (ex:Person ex:SecondTarget) ;
         		]
         	] ;
 

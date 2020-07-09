@@ -38,19 +38,19 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Håvard Ottestad
  */
-public class ValueInPropertyShape extends PathPropertyShape {
+public class HasValueInPropertyShape extends PathPropertyShape {
 
-	private final Set<Value> valueIn;
-	private static final Logger logger = LoggerFactory.getLogger(ValueInPropertyShape.class);
+	private final Set<Value> hasValueIn;
+	private static final Logger logger = LoggerFactory.getLogger(HasValueInPropertyShape.class);
 
-	ValueInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
+	HasValueInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path,
-			Resource valueIn) {
+			Resource hasValueIn) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
-		this.valueIn = toSet(connection, valueIn);
+		this.hasValueIn = toSet(connection, hasValueIn);
 
-		assert (!this.valueIn.isEmpty());
+		assert (!this.hasValueIn.isEmpty());
 
 	}
 
@@ -76,10 +76,9 @@ public class ValueInPropertyShape extends PathPropertyShape {
 			});
 
 			if (negateThisPlan) {
-				invalidTargets = new ValueInFilter(invalidTargets, valueIn).getTrueNode(UnBufferedPlanNode.class);
+				invalidTargets = new ValueInFilter(invalidTargets, hasValueIn).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				invalidTargets = new ValueInFilter(invalidTargets, valueIn).getFalseNode(UnBufferedPlanNode.class);
-
+				invalidTargets = new ValueInFilter(invalidTargets, hasValueIn).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 			if (printPlans) {
@@ -162,16 +161,16 @@ public class ValueInPropertyShape extends PathPropertyShape {
 
 	@Override
 	public SourceConstraintComponent getSourceConstraintComponent() {
-		return SourceConstraintComponent.ValueInConstraintComponent;
+		return SourceConstraintComponent.HasValueInConstraintComponent;
 	}
 
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
 
-		return valueIn
+		return hasValueIn
 				.stream()
 				.map(value -> {
-					String objectVar = "?valueIn_" + UUID.randomUUID().toString().replace("-", "");
+					String objectVar = "?hasValueIn_" + UUID.randomUUID().toString().replace("-", "");
 
 					if (value instanceof IRI) {
 						return "BIND(<" + value + "> as " + objectVar + ")\n"
@@ -192,7 +191,7 @@ public class ValueInPropertyShape extends PathPropertyShape {
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		return valueIn
+		return hasValueIn
 				.stream()
 				.flatMap(value -> getPath().getStatementsPatterns(new Var("?this"),
 						new Var(UUID.randomUUID().toString(), value)));
