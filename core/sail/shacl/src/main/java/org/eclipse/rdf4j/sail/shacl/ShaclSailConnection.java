@@ -41,9 +41,9 @@ import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
-import org.eclipse.rdf4j.sail.shacl.results.LazyValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResultIterator;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

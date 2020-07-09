@@ -31,12 +31,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 @Deprecated
 public class ValidationReport {
 
-	final Resource id = SimpleValueFactory.getInstance().createBNode();
+	protected final Resource id = SimpleValueFactory.getInstance().createBNode();
 
-	boolean conforms = true;
+	protected boolean conforms = true;
 
-	final List<ValidationResult> validationResult = new ArrayList<>();
-	boolean truncated = false;
+	protected final List<ValidationResult> validationResult = new ArrayList<>();
+	protected boolean truncated = false;
 	List<Tuple> tuples;
 
 	public ValidationReport() {
@@ -97,12 +97,14 @@ public class ValidationReport {
 				'}';
 	}
 
+	/**
+	 * Users can enable a limit for the number of validation results they want to accept. If the limit is reached the
+	 * report will be marked as truncated.
+	 *
+	 * @return true if this SHACL validation report has been truncated.
+	 */
 	public boolean isTruncated() {
 		return truncated;
-	}
-
-	public void setTruncated(boolean truncated) {
-		this.truncated = truncated;
 	}
 
 	public void setTuples(List<Tuple> collect) {

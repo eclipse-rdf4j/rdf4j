@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.results;
+package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -17,10 +17,12 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.IteratorCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 @Deprecated
 @InternalUseOnly
@@ -84,7 +86,7 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 			actualList.add(tupleIterator.next());
 		}
 
-		tupleIterator = new IterationWrapper<>(new IteratorIteration<>(actualList.iterator()));
+		tupleIterator = new IteratorCloseableIteration<>(actualList.iterator());
 
 		return Collections.unmodifiableList(actualList);
 	}

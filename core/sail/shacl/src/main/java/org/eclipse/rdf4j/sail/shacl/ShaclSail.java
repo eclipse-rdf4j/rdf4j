@@ -867,18 +867,48 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return dashDataShapes;
 	}
 
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report per constraint, -1 for no limit
+	 */
 	public long getValidationResultsLimitPerConstraint() {
 		return validationResultsLimitPerConstraint;
 	}
 
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitPerConstraint the limit for the number of validation results per report per
+	 *                                            constraint, -1 for no limit
+	 */
 	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
 		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
 	}
 
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report in total, -1 for no limit
+	 */
 	public long getValidationResultsLimitTotal() {
 		return validationResultsLimitTotal;
 	}
 
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitTotal the limit for the number of validation results per report in total, -1 for no
+	 *                                    limit
+	 */
 	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
 		this.validationResultsLimitTotal = validationResultsLimitTotal;
 		validationResultsLimitPerConstraint = Math.max(validationResultsLimitPerConstraint,

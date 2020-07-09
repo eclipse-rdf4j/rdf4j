@@ -19,8 +19,7 @@ public class ShaclSailValidationException extends SailException implements Valid
 	private final ValidationReport validationReport;
 
 	ShaclSailValidationException(ValidationReport validationReport) {
-		super("Failed " +
-				"SHACL validation");
+		super("Failed SHACL validation");
 		this.validationReport = validationReport;
 	}
 

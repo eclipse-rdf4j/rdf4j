@@ -6,7 +6,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl.results;
+package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
 import java.util.Arrays;
 import java.util.List;
@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 /**
  * A ValidationReport that will defer calculating any ValidationResults until the user asks for them
