@@ -879,6 +879,20 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
+	 *
+	 * @return the effective limit per constraint with an upper bound of the total limit
+	 */
+	public long getEffectiveValidationResultsLimitPerConstraint() {
+		if (validationResultsLimitPerConstraint < 0)
+			return validationResultsLimitTotal;
+		if (validationResultsLimitTotal >= 0) {
+			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);
+		}
+
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
 	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
 	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
 	 * and reduces memory usage.
@@ -911,7 +925,5 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
 		this.validationResultsLimitTotal = validationResultsLimitTotal;
-		validationResultsLimitPerConstraint = Math.max(validationResultsLimitPerConstraint,
-				validationResultsLimitTotal);
 	}
 }

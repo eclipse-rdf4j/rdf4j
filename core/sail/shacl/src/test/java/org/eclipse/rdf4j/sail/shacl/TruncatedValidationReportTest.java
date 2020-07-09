@@ -80,6 +80,31 @@ public class TruncatedValidationReportTest {
 	}
 
 	@Test
+	public void testPerConstraint2() throws IOException {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);
+
+		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
+		sail.setValidationResultsLimitPerConstraint(10);
+		sail.setValidationResultsLimitTotal(1);
+		sail.setValidationResultsLimitTotal(-1);
+
+		ValidationReport validationReport = getValidationReport(shaclRepository);
+		shaclRepository.shutDown();
+
+		Map<SourceConstraintComponent, Long> collect = validationReport.getValidationResult()
+				.stream()
+				.collect(Collectors.groupingBy(ValidationResult::getSourceConstraintComponent, Collectors.counting()));
+		long total = collect.values().stream().mapToLong(l -> l).sum();
+
+		assertTrue(validationReport.isTruncated());
+		assertEquals(10, collect.get(SourceConstraintComponent.MinCountConstraintComponent).longValue());
+		assertEquals(10, collect.get(SourceConstraintComponent.DatatypeConstraintComponent).longValue());
+		assertEquals(20, total);
+
+	}
+
+	@Test
 	public void testZeroTotal() throws IOException {
 
 		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl", true);

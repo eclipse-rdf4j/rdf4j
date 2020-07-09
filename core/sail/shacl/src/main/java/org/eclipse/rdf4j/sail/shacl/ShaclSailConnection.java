@@ -375,7 +375,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							}
 
 							ValidationResultIterator validationResults = new ValidationResultIterator(iterator,
-									sail.getValidationResultsLimitPerConstraint());
+									sail.getEffectiveValidationResultsLimitPerConstraint());
 
 							validationExecutionLogger.flush();
 
