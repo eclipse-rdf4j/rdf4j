@@ -168,6 +168,23 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void begin(TransactionSetting... settings) {
+		verifyIsOpen();
+		verifyNotTxnActive("Connection already has an active transaction");
+
+		if (this.getRepository().useCompatibleMode()) {
+			active = true;
+			return;
+		}
+
+		try {
+			client.beginTransaction(settings);
+			active = true;
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException | IllegalStateException | IOException e) {
+			throw new RepositoryException(e);
+		}
+
 		throw new UnsupportedOperationException("Not supported yet");
 	}
 

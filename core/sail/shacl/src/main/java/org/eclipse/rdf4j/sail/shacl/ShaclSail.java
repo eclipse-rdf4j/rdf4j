@@ -27,6 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.SimpleTransactionSetting;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.TransactionSettingImpl;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -865,9 +867,27 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return dashDataShapes;
 	}
 
-	public enum Settings implements TransactionSettingImpl {
 
-		BulkValidation("bulkValidation");
+
+	public static class Settings  {
+
+		public enum Validation implements TransactionSettingImpl{
+
+			Disabled("Disabled"),
+			Bulk("Bulk");
+
+			private final String value;
+
+			Validation(String value) {
+				this.value = value;
+			}
+
+			public String getValue() {
+				return value;
+			}
+		}
+
+
 
 		private final String value;
 

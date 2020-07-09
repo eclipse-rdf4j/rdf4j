@@ -118,7 +118,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void begin(TransactionSetting... settings) {
-		this.transactionSettings = Arrays.stream(settings).collect(Collectors.toMap(t -> t.getName(), t -> t));
+		this.transactionSettings = Arrays.stream(settings).collect(Collectors.toMap(TransactionSetting::getName, t -> t));
 		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
 		if (isolationLevel instanceof IsolationLevel) {
 			currentIsolationLevel = (IsolationLevel) isolationLevel;
@@ -144,7 +144,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		stats.setBaseSailEmpty(isEmpty());
 
-		if (this.transactionSettings.containsKey(ShaclSail.Settings.BulkValidation.getName())) {
+		if (this.transactionSettings.containsKey(ShaclSail.Settings.Validation.Bulk.getName())) {
 			removeConnectionListener(this);
 		} else if (stats.isBaseSailEmpty()) {
 			removeConnectionListener(this);
@@ -162,7 +162,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	boolean isValidationEnabled() {
-		return sail.isValidationEnabled();
+		return sail.isValidationEnabled() && !transactionSettings.containsKey(ShaclSail.Settings.Validation.Disabled.getName());
 	}
 
 	@Override
@@ -685,7 +685,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean isBulkValidation() {
-		return transactionSettings.containsKey(ShaclSail.Settings.BulkValidation.getName());
+		return transactionSettings.containsKey(ShaclSail.Settings.Validation.Bulk.getName());
 	}
 
 	private List<Tuple> serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {

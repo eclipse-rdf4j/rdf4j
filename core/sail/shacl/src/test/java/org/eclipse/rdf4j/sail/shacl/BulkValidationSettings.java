@@ -44,7 +44,7 @@ public class BulkValidationSettings {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.BulkValidation, IsolationLevels.NONE);
+			connection.begin(ShaclSail.Settings.Validation.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -65,7 +65,7 @@ public class BulkValidationSettings {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.BulkValidation, IsolationLevels.NONE);
+			connection.begin(ShaclSail.Settings.Validation.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -89,7 +89,7 @@ public class BulkValidationSettings {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.BulkValidation, IsolationLevels.NONE);
+			connection.begin(ShaclSail.Settings.Validation.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -108,6 +108,30 @@ public class BulkValidationSettings {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+
+		}
+
+	}
+
+	@Test
+	public void testValidationDisabled() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(ShaclSail.Settings.Validation.Disabled, IsolationLevels.NONE);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			try {
+				connection.commit();
+			} catch (Exception e) {
+				throw e.getCause();
+			}
 
 		}
 

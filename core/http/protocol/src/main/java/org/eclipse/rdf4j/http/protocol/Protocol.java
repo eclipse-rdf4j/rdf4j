@@ -186,6 +186,12 @@ public abstract class Protocol {
 	public static final String ISOLATION_LEVEL_PARAM_NAME = "isolation-level";
 
 	/**
+	 * Prefix for transaction settings in the query param
+	 */
+	public static final String TRANSACTION_SETTINGS_PREFIX = "transaction-setting__";
+
+
+	/**
 	 * Parameter name for the action parameter used in transactions.
 	 */
 	public static final String ACTION_PARAM_NAME = "action";

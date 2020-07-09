@@ -7,19 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -49,7 +39,19 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing all
@@ -84,12 +86,12 @@ class Transaction implements AutoCloseable {
 	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
 	 */
 	private final ExecutorService executor = Executors
-			.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
+		.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("rdf4j-transaction-%d").build());
 
 	/**
 	 * Counter of the active operations submitted to the executor
 	 */
-	private AtomicInteger activeOperations = new AtomicInteger();
+	private final AtomicInteger activeOperations = new AtomicInteger();
 
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
@@ -128,6 +130,14 @@ class Transaction implements AutoCloseable {
 		getFromFuture(result);
 	}
 
+	void begin(TransactionSetting... settings) throws InterruptedException, ExecutionException {
+		Future<Boolean> result = submit(() -> {
+			txnConnection.begin(settings);
+			return true;
+		});
+		getFromFuture(result);
+	}
+
 	/**
 	 * Rolls back all updates in the transaction.
 	 *
@@ -157,7 +167,7 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Prepares a query for evaluation on this transaction.
 	 *
-	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
+	 * @param queryLanguage      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
 	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
 	 *                the query does not contain any relative URIs.
@@ -165,9 +175,9 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
-	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
-			throws InterruptedException, ExecutionException {
-		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
+	Query prepareQuery(QueryLanguage queryLanguage, String query, String baseURI)
+		throws InterruptedException, ExecutionException {
+		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLanguage, query, baseURI));
 		return getFromFuture(result);
 	}
 
@@ -221,7 +231,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void exportStatements(Resource subj, IRI pred, Value obj, boolean useInferencing, RDFWriter rdfWriter,
-			Resource... contexts) throws InterruptedException, ExecutionException {
+						  Resource... contexts) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);
 			return true;
@@ -252,7 +262,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void add(InputStream inputStream, String baseURI, RDFFormat format, boolean preserveBNodes, Resource... contexts)
-			throws InterruptedException, ExecutionException {
+		throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			logger.debug("executing add operation");
 			try {
@@ -288,7 +298,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
-			throws InterruptedException, ExecutionException {
+		throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			logger.debug("executing delete operation");
 			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());
@@ -317,7 +327,7 @@ class Transaction implements AutoCloseable {
 	 * @throws InterruptedException
 	 */
 	void executeUpdate(QueryLanguage queryLn, String sparqlUpdateString, String baseURI, boolean includeInferred,
-			Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
+					   Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 			update.setIncludeInferred(includeInferred);

@@ -7,27 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import static javax.servlet.http.HttpServletResponse.SC_CREATED;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -36,6 +24,17 @@ import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+
+import static javax.servlet.http.HttpServletResponse.SC_CREATED;
+
 /**
  * Handles requests for transaction creation on a repository.
  *
@@ -43,15 +42,15 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class TransactionStartController extends AbstractController {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionStartController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_POST });
+		setSupportedMethods(METHOD_POST);
 	}
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-			throws Exception {
+		throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -64,36 +63,64 @@ public class TransactionStartController extends AbstractController {
 			logger.info("transaction started");
 		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-					"Method not allowed: " + reqMethod);
+				"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+										  HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
-		IsolationLevel isolationLevel = null;
-		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
-		if (isolationLevelString != null) {
-			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
+		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
 
-			// FIXME this needs to be adapted to accommodate custom isolation levels
-			// from third party stores.
-			for (IsolationLevel standardLevel : IsolationLevels.values()) {
-				if (standardLevel.getURI().equals(level)) {
-					isolationLevel = standardLevel;
-					break;
+		final IsolationLevel[] isolationLevel = {null};
+
+		request.getParameterMap().forEach((k, v) -> {
+
+			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
+				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, "");
+
+				if (settingsName.equals(IsolationLevels.NONE.getName())) {
+					isolationLevel[0] = IsolationLevels.valueOf(v[0]);
+					transactionSettings.add(isolationLevel[0]);
+				} else {
+					TransactionSetting transactionSetting = new TransactionSetting() {
+						@Override
+						public String getName() {
+							return settingsName;
+						}
+
+						@Override
+						public String getValue() {
+							return v[0];
+						}
+					};
+
+					transactionSettings.add(transactionSetting);
 				}
+
+
 			}
+
+		});
+
+
+		if(isolationLevel[0] == null){
+			throw new IllegalStateException("Isolation level must be specified");
 		}
 
 		Transaction txn = null;
 		boolean allGood = false;
 		try {
 			txn = new Transaction(repository);
-			txn.begin(isolationLevel);
+
+			if (transactionSettings.isEmpty()) {
+				txn.begin(isolationLevel[0]);
+			} else {
+				txn.begin(transactionSettings.toArray(new TransactionSetting[0]));
+			}
 
 			UUID txnId = txn.getID();
 
