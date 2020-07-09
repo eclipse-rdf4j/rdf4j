@@ -62,7 +62,7 @@
 {{ if ne .Page.Params.disable_css "true" }}
 {{- with .Site.Params.styles | default "https://eclipse.org/eclipse.org-common/themes/solstice/public/stylesheets/quicksilver.min.css" }}
 <link rel="stylesheet" href="{{ . | absURL }}">
-<link rel="stylesheet" href="css/rdf4j.css">
+<link rel="stylesheet" href="/css/rdf4j.css">
 {{- end }}
 {{- end }}
 {{- partial "google_tag_manager.html" . }}

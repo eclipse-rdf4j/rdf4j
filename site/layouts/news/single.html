@@ -1,0 +1,18 @@
+{{ define "main" }}
+  {{ if .Page.Params.authors }}
+    <p>by  
+      {{range first 1 .Page.Params.authors }}
+        {{- with $.Site.GetPage "taxonomyTerm" (printf "authors/%s" (urlize .)) }}
+        <a href="{{ .Permalink }}">{{ .Params.name }}</a>
+        {{ end }}
+      {{ end }}
+      {{range after 1 .Page.Params.authors }}
+       {{- with $.Site.GetPage "taxonomyTerm" (printf "authors/%s" (urlize .)) }}
+        , <a href="{{ .Permalink }}">{{ .Params.name }}</a>
+        {{ end }}
+      {{ end }}
+    </p>
+  {{ end }}
+  <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
+  {{ .Content }}
+{{ end }}

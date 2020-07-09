@@ -380,7 +380,7 @@ Shapes need to be loaded into the following context:
 
     <http://rdf4j.org/schema/rdf4j#SHACLShapeGraph>
 
-<img src="images/loadShapes.png" alt="Loading shapes" class="img-responsive"/>
+<img src="../images/loadShapes.png" alt="Loading shapes" class="img-responsive"/>
 
 This context is a hidden context that is only available through the following commands:
 
@@ -404,7 +404,7 @@ want to use is `1`, you can use the following URL to download your shapes as RDF
 All transactions are validated before being committed. A validation error when uploading data in
 the workbench looks like this:
 
-<img src="images/shaclValidationError.png" alt="Validation error" class="img-responsive"/>
+<img src="../images/shaclValidationError.png" alt="Validation error" class="img-responsive"/>
 
 Your data will only be committed if it passes validation.
 
