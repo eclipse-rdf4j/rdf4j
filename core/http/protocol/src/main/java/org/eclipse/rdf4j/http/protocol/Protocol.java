@@ -190,7 +190,6 @@ public abstract class Protocol {
 	 */
 	public static final String TRANSACTION_SETTINGS_PREFIX = "transaction-setting__";
 
-
 	/**
 	 * Parameter name for the action parameter used in transactions.
 	 */

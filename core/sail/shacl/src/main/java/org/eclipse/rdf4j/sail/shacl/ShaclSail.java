@@ -867,11 +867,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return dashDataShapes;
 	}
 
+	public static class Settings {
 
-
-	public static class Settings  {
-
-		public enum Validation implements TransactionSettingImpl{
+		public enum Validation implements TransactionSettingImpl {
 
 			Disabled("Disabled"),
 			Bulk("Bulk");
@@ -886,8 +884,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 				return value;
 			}
 		}
-
-
 
 		private final String value;
 

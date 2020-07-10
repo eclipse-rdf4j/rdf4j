@@ -118,7 +118,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void begin(TransactionSetting... settings) {
-		this.transactionSettings = Arrays.stream(settings).collect(Collectors.toMap(TransactionSetting::getName, t -> t));
+		this.transactionSettings = Arrays.stream(settings)
+				.collect(Collectors.toMap(TransactionSetting::getName, t -> t));
 		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
 		if (isolationLevel instanceof IsolationLevel) {
 			currentIsolationLevel = (IsolationLevel) isolationLevel;
@@ -162,7 +163,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	boolean isValidationEnabled() {
-		return sail.isValidationEnabled() && !transactionSettings.containsKey(ShaclSail.Settings.Validation.Disabled.getName());
+		return sail.isValidationEnabled()
+				&& !transactionSettings.containsKey(ShaclSail.Settings.Validation.Disabled.getName());
 	}
 
 	@Override

@@ -7,6 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
+import static javax.servlet.http.HttpServletResponse.SC_CREATED;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.TransactionSetting;
@@ -24,17 +36,6 @@ import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.AbstractController;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-
-import static javax.servlet.http.HttpServletResponse.SC_CREATED;
-
 /**
  * Handles requests for transaction creation on a repository.
  *
@@ -50,7 +51,7 @@ public class TransactionStartController extends AbstractController {
 
 	@Override
 	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
-		throws Exception {
+			throws Exception {
 		ModelAndView result;
 
 		Repository repository = RepositoryInterceptor.getRepository(request);
@@ -63,19 +64,19 @@ public class TransactionStartController extends AbstractController {
 			logger.info("transaction started");
 		} else {
 			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,
-				"Method not allowed: " + reqMethod);
+					"Method not allowed: " + reqMethod);
 		}
 		return result;
 	}
 
 	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-										  HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
 		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
 
-		final IsolationLevel[] isolationLevel = {null};
+		final IsolationLevel[] isolationLevel = { null };
 
 		request.getParameterMap().forEach((k, v) -> {
 
@@ -101,13 +102,11 @@ public class TransactionStartController extends AbstractController {
 					transactionSettings.add(transactionSetting);
 				}
 
-
 			}
 
 		});
 
-
-		if(isolationLevel[0] == null){
+		if (isolationLevel[0] == null) {
 			throw new IllegalStateException("Isolation level must be specified");
 		}
 
