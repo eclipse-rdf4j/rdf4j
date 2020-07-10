@@ -185,7 +185,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			throw new RepositoryException(e);
 		}
 
-		throw new UnsupportedOperationException("Not supported yet");
 	}
 
 	/**

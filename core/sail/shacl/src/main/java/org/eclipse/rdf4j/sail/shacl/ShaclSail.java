@@ -870,35 +870,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return dashDataShapes;
 	}
 
-	public static class Settings {
-
-		public enum Validation implements TransactionSettingImpl {
-
-			Disabled("Disabled"),
-			Bulk("Bulk");
-
-			private final String value;
-
-			Validation(String value) {
-				this.value = value;
-			}
-
-			public String getValue() {
-				return value;
-			}
-		}
-
-		private final String value;
-
-		Settings(String value) {
-			this.value = value;
-		}
-
-		public String getValue() {
-			return value;
-		}
-	}
-
 	/**
 	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
 	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
@@ -958,4 +929,34 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
 		this.validationResultsLimitTotal = validationResultsLimitTotal;
 	}
+
+	public static class Settings {
+
+		public enum Validation implements TransactionSettingImpl {
+
+			Disabled("Disabled"),
+			Bulk("Bulk");
+
+			private final String value;
+
+			Validation(String value) {
+				this.value = value;
+			}
+
+			public String getValue() {
+				return value;
+			}
+		}
+
+		private final String value;
+
+		Settings(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+	}
+
 }

@@ -625,6 +625,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			List<NameValuePair> params = new ArrayList<>();
 
 			for (TransactionSetting transactionSetting : transactionSettings) {
+				if (transactionSetting == null)
+					continue;
 				params.add(
 						new BasicNameValuePair(
 								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),
