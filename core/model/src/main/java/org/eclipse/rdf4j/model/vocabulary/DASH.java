@@ -29,8 +29,8 @@ public class DASH {
 
 	public static final IRI AllObjectsTarget = createIRI("AllObjectsTarget");
 	public static final IRI AllSubjectsTarget = createIRI("AllSubjectsTarget");
-	public static final IRI valueIn = createIRI("valueIn");
-	public static final IRI ValueInConstraintComponent = createIRI("HasValueConstraintComponent");
+	public static final IRI hasValueIn = createIRI("hasValueIn");
+	public static final IRI HasValueInConstraintComponent = createIRI("HasValueInConstraintComponent");
 
 	private static IRI createIRI(String allObjectsTarget) {
 		return vf.createIRI(NAMESPACE, allObjectsTarget);

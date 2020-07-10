@@ -26,7 +26,7 @@ public enum SourceConstraintComponent {
 
 	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other),
 	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	ValueInConstraintComponent(DASH.ValueInConstraintComponent, ConstraintType.Other),
+	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other),
 	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
 
 	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange),

@@ -15,7 +15,7 @@ ex:PersonShape
         	a sh:Shape ;
         	sh:property [
         		sh:path rdf:type ;
-        		dash:valueIn (rdfs:Resource rdfs:class);
+        		dash:hasValueIn (rdfs:Resource rdfs:class);
         	]
         ] ;
 

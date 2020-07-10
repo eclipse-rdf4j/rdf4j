@@ -12,6 +12,6 @@ ex:PersonShape
 	sh:targetClass ex:Person ;
 	sh:property [
 		sh:path ex:knows ;
-		dash:valueIn (ex:peter ex:mary ex:kate) ;
+		sh:not [dash:hasValueIn (ex:peter ex:mary ex:kate)  ];
 	] .
 

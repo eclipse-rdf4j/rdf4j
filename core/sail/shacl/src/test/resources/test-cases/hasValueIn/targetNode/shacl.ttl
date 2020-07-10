@@ -9,9 +9,7 @@
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetClass ex:Person ;
-	sh:property [
-		sh:path ex:knows ;
-		sh:not [dash:valueIn (ex:peter ex:mary ex:kate)  ];
-	] .
+	sh:targetNode ex:peter ;
+	dash:hasValueIn (ex:peter ex:mary ex:kate) ;
+	 .
 
