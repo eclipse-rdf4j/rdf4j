@@ -51,8 +51,8 @@ public class Temp {
 					"        sh:minCount 1 ."), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT, ShaclSail.Settings.Validation.Disabled);
-			connection.add(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
+			connection.begin(IsolationLevels.SNAPSHOT, ShaclSail.Settings.Validation.Bulk);
+			connection.add(RDF.PROPERTY, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
 		}

@@ -16,7 +16,8 @@ rm -rf ../../../../target/
 cd ../../../../..
 MVN_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
 
-mvn -T 2 -Passembly install -DskipTests -Dmaven.test.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Danimal.sniffer.skip=true
+mvn clean
+mvn -T 2 -Passembly install -DskipTests -Dmaven.javadoc.skip=true -Dmaven.test.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Danimal.sniffer.skip=true
 cd $CURRENT
 
 # find .zip file

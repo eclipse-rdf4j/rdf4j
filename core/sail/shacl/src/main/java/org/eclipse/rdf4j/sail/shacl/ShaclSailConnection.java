@@ -606,8 +606,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				before = System.currentTimeMillis();
 			}
 
-			boolean useSerializableValidation = sail.isSerializableValidation()
-					&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
+			boolean useSerializableValidation = sail.isSerializableValidation() &&
+					currentIsolationLevel == IsolationLevels.SNAPSHOT &&
+					!isBulkValidation() &&
+					isValidationEnabled();
 
 			if (useSerializableValidation) {
 				if (!(writeLock != null && writeLock.isActive())) {
@@ -628,7 +630,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			stats.setEmpty(isEmpty());
 
-			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !shapesModifiedInCurrentTransaction) {
+			if (connectionListenerActive && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()
+					&& !shapesModifiedInCurrentTransaction) {
 				if (!(stats.isBaseSailEmpty() && !stats.isEmpty())) {
 					logger.debug("Nothing has changed, nothing to validate.");
 					return;

@@ -15,7 +15,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.AfterClass;
@@ -25,7 +27,7 @@ import org.junit.Test;
 /**
  * @author Håvard Ottestad
  */
-public class BulkValidationSettings {
+public class BulkValidationSettingsTest {
 
 	@BeforeClass
 	public static void beforeClass() {
@@ -74,7 +76,31 @@ public class BulkValidationSettings {
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			try {
 				connection.commit();
-			} catch (Exception e) {
+			} catch (RepositoryException e) {
+				throw e.getCause();
+			}
+
+		}
+
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void testInvalidSnapshot() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(ShaclSail.Settings.Validation.Bulk, IsolationLevels.SNAPSHOT);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
 				throw e.getCause();
 			}
 
@@ -113,7 +139,7 @@ public class BulkValidationSettings {
 
 	}
 
-	@Test
+	@Test(expected = ShaclSailValidationException.class)
 	public void testValidationDisabled() throws Throwable {
 
 		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
@@ -127,10 +153,48 @@ public class BulkValidationSettings {
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			try {
+
+			connection.commit();
+
+			connection.begin(ShaclSail.Settings.Validation.Bulk, IsolationLevels.SNAPSHOT);
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			}
+
+		}
+
+	}
+
+	@Test
+	public void testValidationDisabledSnapshotSerializableValidation() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(ShaclSail.Settings.Validation.Disabled, IsolationLevels.SNAPSHOT);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.commit();
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
+
+			connection.begin(ShaclSail.Settings.Validation.Disabled, IsolationLevels.SNAPSHOT);
+
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+
+				connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
 				connection.commit();
-			} catch (Exception e) {
-				throw e.getCause();
+
 			}
 
 		}
