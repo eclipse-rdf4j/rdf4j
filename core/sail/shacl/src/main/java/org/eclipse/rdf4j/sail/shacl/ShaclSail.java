@@ -190,6 +190,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
+	private long validationResultsLimitTotal = -1;
+	private long validationResultsLimitPerConstraint = -1;
+
 	static {
 		try {
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
@@ -862,5 +865,65 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Experimental
 	public boolean isDashDataShapes() {
 		return dashDataShapes;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report per constraint, -1 for no limit
+	 */
+	public long getValidationResultsLimitPerConstraint() {
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 *
+	 * @return the effective limit per constraint with an upper bound of the total limit
+	 */
+	public long getEffectiveValidationResultsLimitPerConstraint() {
+		if (validationResultsLimitPerConstraint < 0)
+			return validationResultsLimitTotal;
+		if (validationResultsLimitTotal >= 0) {
+			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);
+		}
+
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitPerConstraint the limit for the number of validation results per report per
+	 *                                            constraint, -1 for no limit
+	 */
+	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report in total, -1 for no limit
+	 */
+	public long getValidationResultsLimitTotal() {
+		return validationResultsLimitTotal;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitTotal the limit for the number of validation results per report in total, -1 for no
+	 *                                    limit
+	 */
+	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+		this.validationResultsLimitTotal = validationResultsLimitTotal;
 	}
 }

@@ -8,25 +8,19 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayDeque;
-import java.util.List;
-
 import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
-	private List<Tuple> invalidTuples;
+	private final ValidationReport validationReport;
 
-	ShaclSailValidationException(List<Tuple> invalidTuples) {
+	ShaclSailValidationException(ValidationReport validationReport) {
 		super("Failed SHACL validation");
-		this.invalidTuples = invalidTuples;
+		this.validationReport = validationReport;
 	}
 
 	/**
@@ -52,25 +46,6 @@ public class ShaclSailValidationException extends SailException implements Valid
 	 */
 	@Deprecated
 	public ValidationReport getValidationReport() {
-		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
-
-		for (Tuple invalidTuple : invalidTuples) {
-			ValidationResult parent = null;
-			ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
-
-			while (!propertyShapes.isEmpty()) {
-
-				ValidationResult validationResult = new ValidationResult(propertyShapes.pop(),
-						invalidTuple.getLine().get(0), invalidTuple.getLine().get(invalidTuple.getLine().size() - 1));
-				if (parent == null) {
-					validationReport.addValidationResult(validationResult);
-				} else {
-					parent.setDetail(validationResult);
-				}
-				parent = validationResult;
-			}
-
-		}
 		return validationReport;
 	}
 }

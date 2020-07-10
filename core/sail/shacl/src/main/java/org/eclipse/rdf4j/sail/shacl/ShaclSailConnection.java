@@ -8,9 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -44,6 +42,8 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,8 +64,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	Sail addedStatements;
 	Sail removedStatements;
 
-	private HashSet<Statement> addedStatementsSet = new HashSet<>();
-	private HashSet<Statement> removedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> addedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> removedStatementsSet = new HashSet<>();
 
 	private boolean isShapeRefreshNeeded = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
@@ -78,7 +78,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private boolean preparedHasRun = false;
 
-	private SailRepositoryConnection shapesRepoConnection;
+	private final SailRepositoryConnection shapesRepoConnection;
+
+	private boolean validationReportTruncated;
 
 	// write lock
 	private Lock writeLock;
@@ -133,6 +135,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} else {
 			setupConnectionListener();
 		}
+
+		validationReportTruncated = false;
 
 	}
 
@@ -300,11 +304,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> validate(List<NodeShape> nodeShapes, boolean validateEntireBaseSail) {
+	private ValidationReport validate(List<NodeShape> nodeShapes, boolean validateEntireBaseSail) {
 
 		try {
 			if (!sail.isValidationEnabled()) {
-				return Collections.emptyList();
+				return new ValidationReport(true);
 			}
 
 			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {
@@ -337,7 +341,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				this::getRdfsSubClassOfReasoner);
 	}
 
-	private static List<Tuple> performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
+	private ValidationReport performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) {
 		long beforeValidation = 0;
 
@@ -348,7 +352,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			Stream<Callable<List<Tuple>>> callableStream = nodeShapes
+			Stream<Callable<ValidationResultIterator>> callableStream = nodeShapes
 					.stream()
 					.flatMap(nodeShape -> nodeShape
 							.generatePlans(connectionsGroup, nodeShape, sail.isLogValidationPlans(),
@@ -358,7 +362,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);
 
-						try (Stream<Tuple> stream = planNode.iterator().stream()) {
+						try (CloseableIteration<Tuple, SailException> iterator = planNode.iterator()) {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
@@ -370,7 +374,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							ValidationResultIterator validationResults = new ValidationResultIterator(iterator,
+									sail.getEffectiveValidationResultsLimitPerConstraint());
+
 							validationExecutionLogger.flush();
 
 							if (sail.isPerformanceLogging()) {
@@ -387,34 +393,38 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 										propertyShape.toString());
 							}
 
-							boolean valid = collect.isEmpty();
+							if (sail.isLogValidationViolations()) {
+								List<Tuple> tuples = validationResults.getTuples();
+								if (!validationResults.conforms()) {
 
-							if (!valid && sail.isLogValidationViolations()) {
-								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+									PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 
-								logger.info(
-										"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-										propertyShape.getNodeShape().getId(), propertyShape.getId(),
-										collect.stream()
-												.map(a -> a.toString() + " -cause-> " + a.getCause())
-												.collect(Collectors.joining("\n\t\t")));
+									logger.info(
+											"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+											propertyShape.getNodeShape().getId(), propertyShape.getId(),
+											tuples.stream()
+													.map(a -> a.toString() + " -cause-> " + a.getCause())
+													.collect(Collectors.joining("\n\t\t")));
+								}
 							}
 
-							return collect;
+							return validationResults;
 						}
 					});
 
+			List<ValidationResultIterator> validationResultIterators;
+
 			if (sail.isParallelValidation()) {
 
-				return callableStream
+				validationResultIterators = callableStream
 						.map(sail::submitRunnableToExecutorService)
 						// Creating a list is needed to actually make things run multi-threaded, without this the
 						// laziness of java streams will make this run serially
 						.collect(Collectors.toList())
 						.stream()
-						.flatMap(f -> {
+						.map(f -> {
 							try {
-								return f.get().stream();
+								return f.get();
 							} catch (InterruptedException | ExecutionException e) {
 								throw new RuntimeException(e);
 							}
@@ -422,14 +432,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						.collect(Collectors.toList());
 
 			} else {
-				return callableStream.flatMap(c -> {
+				validationResultIterators = callableStream.map(c -> {
 					try {
-						return c.call().stream();
+						return c.call();
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
 				}).collect(Collectors.toList());
+
 			}
+
+			return new LazyValidationReport(validationResultIterators, sail.getValidationResultsLimitTotal());
 
 		} finally {
 			if (sail.isPerformanceLogging()) {
@@ -603,7 +616,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			prepareValidation();
 
-			List<Tuple> invalidTuples = null;
+			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
 				synchronized (sail) {
 
@@ -625,7 +638,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
 			}
 
-			boolean valid = invalidTuples.isEmpty();
+			boolean valid = invalidTuples.conforms();
 
 			if (sail.isPerformanceLogging()) {
 				logger.info("prepare() including validation excluding locking and super.prepare() took {} ms",
@@ -650,8 +663,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
-		List<Tuple> invalidTuples;
+	private ValidationReport serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
 		try {
 			try {
 				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(sail,
@@ -682,7 +694,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					serializableConnection.flush();
 
-					invalidTuples = performValidation(nodeShapesAfterRefresh,
+					return performValidation(nodeShapesAfterRefresh,
 							shapesModifiedInCurrentTransaction, connectionsGroup);
 
 				} finally {
@@ -695,7 +707,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			rdfsSubClassOfReasoner = null;
 
 		}
-		return invalidTuples;
 	}
 
 	private void loadCachedNodeShapes() {
@@ -766,7 +777,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		loadCachedNodeShapes();
 		prepareValidation();
-		List<Tuple> validate = validate(this.nodeShapes, true);
+		ValidationReport validate = validate(this.nodeShapes, true);
 
 		return new ShaclSailValidationException(validate).getValidationReport();
 	}
