@@ -842,6 +842,8 @@
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+								<exclude>org.eclipse.rdf4j.IsolationLevel#getValue()</exclude>
+								<exclude>org.eclipse.rdf4j.IsolationLevel#getName()</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
 								<overrideCompatibilityChangeParameter>

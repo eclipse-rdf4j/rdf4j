@@ -568,7 +568,11 @@ abstract public class AbstractShaclTest {
 			shaclSailConnection.begin();
 			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
 
-			shaclSailConnection.commit();
+			try {
+				shaclSailConnection.commit();
+			} catch (RepositoryException ignored) {
+
+			}
 		}
 
 		shaclRepository.shutDown();
