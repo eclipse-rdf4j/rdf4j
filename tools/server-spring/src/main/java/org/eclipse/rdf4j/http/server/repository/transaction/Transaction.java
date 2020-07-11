@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -119,18 +117,11 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Start the transaction.
 	 *
-	 * @param level the {@link IsolationLevel} to use for this transction.
+	 * @param settings the {@link TransactionSetting}s to use for this transaction (including {@link IsolationLevel}).
+	 *                 Optional vararg argument.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while starting the transaction.
 	 */
-	void begin(IsolationLevel level) throws InterruptedException, ExecutionException {
-		Future<Boolean> result = submit(() -> {
-			txnConnection.begin(level);
-			return true;
-		});
-		getFromFuture(result);
-	}
-
 	void begin(TransactionSetting... settings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			txnConnection.begin(settings);

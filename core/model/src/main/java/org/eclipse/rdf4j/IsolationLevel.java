@@ -35,13 +35,4 @@ public interface IsolationLevel extends TransactionSetting {
 	 */
 	IRI getURI();
 
-	@Override
-	default String getName() {
-		return IsolationLevel.class.getCanonicalName();
-	}
-
-	@Override
-	default String getValue() {
-		return this.toString();
-	}
 }

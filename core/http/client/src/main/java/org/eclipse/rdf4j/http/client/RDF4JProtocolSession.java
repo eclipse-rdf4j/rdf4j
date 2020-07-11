@@ -609,6 +609,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		pingTransaction();
 	}
 
+	public synchronized void beginTransaction(IsolationLevel isolationLevel)
+			throws RDF4JException, IOException, UnauthorizedException {
+		beginTransaction((TransactionSetting) isolationLevel);
+	}
+
 	public synchronized void beginTransaction(TransactionSetting... transactionSettings)
 			throws RDF4JException, IOException, UnauthorizedException {
 		checkRepositoryURL();
@@ -625,8 +630,16 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			List<NameValuePair> params = new ArrayList<>();
 
 			for (TransactionSetting transactionSetting : transactionSettings) {
-				if (transactionSetting == null)
+				if (transactionSetting == null) {
 					continue;
+				}
+				if (transactionSetting instanceof IsolationLevel) {
+					// also send isolation level with dedicated parameter for backward compatibility with older RDF4J
+					// Server
+					IsolationLevel isolationLevel = (IsolationLevel) transactionSetting;
+					params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
+							isolationLevel.getURI().stringValue()));
+				}
 				params.add(
 						new BasicNameValuePair(
 								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),

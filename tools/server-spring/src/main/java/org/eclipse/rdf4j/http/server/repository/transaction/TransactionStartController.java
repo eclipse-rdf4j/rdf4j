@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -78,8 +80,20 @@ public class TransactionStartController extends AbstractController {
 
 		final IsolationLevel[] isolationLevel = { null };
 
-		request.getParameterMap().forEach((k, v) -> {
+		// process legacy isolation level param for backward compatibility with older clients
+		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
+		if (isolationLevelString != null) {
+			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
 
+			for (IsolationLevel standardLevel : IsolationLevels.values()) {
+				if (standardLevel.getURI().equals(level)) {
+					isolationLevel[0] = standardLevel;
+					break;
+				}
+			}
+		}
+
+		request.getParameterMap().forEach((k, v) -> {
 			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
 				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, "");
 
@@ -101,14 +115,8 @@ public class TransactionStartController extends AbstractController {
 
 					transactionSettings.add(transactionSetting);
 				}
-
 			}
-
 		});
-
-		if (isolationLevel[0] == null) {
-			throw new IllegalStateException("Isolation level must be specified");
-		}
 
 		Transaction txn = null;
 		boolean allGood = false;
