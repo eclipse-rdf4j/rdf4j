@@ -12,7 +12,12 @@ import static org.junit.Assert.fail;
 
 import java.io.InputStream;
 import java.io.StringReader;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.LinkedList;
+import java.util.TreeSet;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;

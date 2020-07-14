@@ -214,12 +214,13 @@ public class NTriplesParser extends AbstractRDFParser {
 	protected int skipLine(int c, StringBuilder sb) throws IOException {
 		while (c != -1 && c != '\r' && c != '\n') {
 			c = readCodePoint();
-			if (sb != null) {
+			// make sure c is not EOF
+			if (sb != null && c != -1) {
 				sb.append(Character.toChars(c));
 			}
 		}
-		// delete last appended char as it is the line break
-		if (sb != null) {
+		// delete last appended char as it is the line break, unless `c` is EOF and then we did not append it
+		if (sb != null && c != -1) {
 			sb.deleteCharAt(sb.length() - 1);
 		}
 
@@ -254,7 +255,9 @@ public class NTriplesParser extends AbstractRDFParser {
 	private int parseComment(int c) throws IOException {
 		StringBuilder sb = new StringBuilder(100);
 		int res = skipLine(c, sb);
-		rdfHandler.handleComment(sb.toString());
+		if (rdfHandler != null) {
+			rdfHandler.handleComment(sb.toString());
+		}
 		return res;
 	}
 
