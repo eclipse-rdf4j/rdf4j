@@ -12,10 +12,12 @@ import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -46,6 +48,11 @@ public class AbstractSailTest {
 			@Override
 			public ValueFactory getValueFactory() {
 				return SimpleValueFactory.getInstance();
+			}
+
+			@Override
+			public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+				return null;
 			}
 
 			@Override

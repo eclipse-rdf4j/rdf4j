@@ -10,9 +10,11 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -156,4 +158,8 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		return ExtensibleStatementHelper.getDefaultImpl();
 	}
 
+	@Override
+	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+		return Optional.empty();
+	}
 }

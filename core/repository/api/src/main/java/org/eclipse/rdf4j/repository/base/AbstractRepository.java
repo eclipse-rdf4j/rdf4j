@@ -7,10 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.base;
 
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
 
 /**
  * Base class for {@link Repository} implementation, offering common functionality.
@@ -60,4 +63,8 @@ public abstract class AbstractRepository implements Repository {
 
 	protected abstract void shutDownInternal() throws RepositoryException;
 
+	@Override
+	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+		return Optional.empty();
+	}
 }

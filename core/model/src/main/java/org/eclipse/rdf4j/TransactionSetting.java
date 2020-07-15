@@ -2,8 +2,12 @@ package org.eclipse.rdf4j;
 
 public interface TransactionSetting {
 
-	String getName();
+	default String getName() {
+		return getClass().getCanonicalName();
+	}
 
-	String getValue();
+	default String getValue() {
+		return this.toString();
+	}
 
 }

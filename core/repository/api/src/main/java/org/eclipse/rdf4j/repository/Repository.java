@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.repository;
 
 import java.io.File;
+import java.util.Optional;
 
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
@@ -107,4 +109,6 @@ public interface Repository {
 	 * @return A repository-specific ValueFactory.
 	 */
 	ValueFactory getValueFactory();
+
+	Optional<TransactionSetting> internTransactionSetting(String name, String value);
 }

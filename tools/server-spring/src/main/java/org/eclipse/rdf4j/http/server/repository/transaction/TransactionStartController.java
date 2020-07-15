@@ -101,19 +101,7 @@ public class TransactionStartController extends AbstractController {
 					isolationLevel[0] = IsolationLevels.valueOf(v[0]);
 					transactionSettings.add(isolationLevel[0]);
 				} else {
-					TransactionSetting transactionSetting = new TransactionSetting() {
-						@Override
-						public String getName() {
-							return settingsName;
-						}
-
-						@Override
-						public String getValue() {
-							return v[0];
-						}
-					};
-
-					transactionSettings.add(transactionSetting);
+					repository.internTransactionSetting(settingsName, v[0]).ifPresent(transactionSettings::add);
 				}
 			}
 		});

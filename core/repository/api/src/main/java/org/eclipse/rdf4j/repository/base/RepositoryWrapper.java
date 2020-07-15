@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.repository.base;
 
 import java.io.File;
+import java.util.Optional;
 
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
@@ -82,6 +84,11 @@ public class RepositoryWrapper implements DelegatingRepository {
 	@Override
 	public ValueFactory getValueFactory() {
 		return getDelegate().getValueFactory();
+	}
+
+	@Override
+	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+		return getDelegate().internTransactionSetting(name, value);
 	}
 
 	@Override

@@ -14,10 +14,12 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -411,5 +413,10 @@ public abstract class AbstractSail implements Sail {
 	 */
 	public void setTrackResultSize(boolean trackResultSize) {
 		this.trackResultSize = trackResultSize;
+	}
+
+	@Override
+	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+		return Optional.empty();
 	}
 }

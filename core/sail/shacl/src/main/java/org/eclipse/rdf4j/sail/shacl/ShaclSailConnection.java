@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.SimpleTransactionSetting;
 import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -83,8 +84,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private boolean preparedHasRun = false;
 
 	private final SailRepositoryConnection shapesRepoConnection;
-
-	private boolean validationReportTruncated;
 
 	// write lock
 	private Lock writeLock;
@@ -148,14 +147,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		stats.setBaseSailEmpty(isEmpty());
 
-		if (this.transactionSettings.containsKey(ShaclSail.Settings.Validation.Bulk.getName())) {
+		if (transactionSettings.get(ShaclSail.Settings.Validation.Disabled.getName()) == ShaclSail.Settings.Validation.Disabled|| transactionSettings.get(ShaclSail.Settings.Validation.Bulk.getName()) == ShaclSail.Settings.Validation.Bulk) {
 			removeConnectionListener(this);
 		} else if (stats.isBaseSailEmpty()) {
 			removeConnectionListener(this);
 		} else {
 			addConnectionListener(this);
 		}
-		validationReportTruncated = false;
 
 	}
 
@@ -169,7 +167,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	boolean isValidationEnabled() {
 		return sail.isValidationEnabled()
-				&& !transactionSettings.containsKey(ShaclSail.Settings.Validation.Disabled.getName());
+				&& transactionSettings.get(ShaclSail.Settings.Validation.Disabled.getName()) != ShaclSail.Settings.Validation.Disabled;
 	}
 
 	@Override
@@ -704,7 +702,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean isBulkValidation() {
-		return transactionSettings.containsKey(ShaclSail.Settings.Validation.Bulk.getName());
+		return transactionSettings.get(ShaclSail.Settings.Validation.Bulk.getName()) == ShaclSail.Settings.Validation.Bulk;
 	}
 
 	private ValidationReport serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
