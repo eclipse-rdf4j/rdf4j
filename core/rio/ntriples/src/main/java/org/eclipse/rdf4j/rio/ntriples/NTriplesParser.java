@@ -145,8 +145,8 @@ public class NTriplesParser extends AbstractRDFParser {
 
 			while (c != -1) {
 				if (c == '#') {
-					// Comment, ignore
-					c = skipLine(c);
+					// Comment
+					c = parseComment(c);
 				} else if (c == '\r' || c == '\n') {
 					// Empty line, ignore
 					c = skipLine(c);
@@ -211,9 +211,17 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Reads characters from reader until the first EOL has been read. The first character after the EOL is returned. In
 	 * case the end of the character stream has been reached, -1 is returned.
 	 */
-	protected int skipLine(int c) throws IOException {
+	protected int skipLine(int c, StringBuilder sb) throws IOException {
 		while (c != -1 && c != '\r' && c != '\n') {
 			c = readCodePoint();
+			// make sure c is not EOF
+			if (sb != null && c != -1) {
+				sb.append(Character.toChars(c));
+			}
+		}
+		// delete last appended char as it is the line break, unless `c` is EOF and then we did not append it
+		if (sb != null && c != -1) {
+			sb.deleteCharAt(sb.length() - 1);
 		}
 
 		// c is equal to -1, \r or \n. In case of a \r, we should
@@ -238,6 +246,19 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 
 		return c;
+	}
+
+	protected int skipLine(int c) throws IOException {
+		return skipLine(c, null);
+	}
+
+	private int parseComment(int c) throws IOException {
+		StringBuilder sb = new StringBuilder(100);
+		int res = skipLine(c, sb);
+		if (rdfHandler != null) {
+			rdfHandler.handleComment(sb.toString());
+		}
+		return res;
 	}
 
 	private int parseTriple(int c) throws IOException, RDFParseException, RDFHandlerException {
