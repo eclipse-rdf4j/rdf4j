@@ -8,7 +8,26 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -33,24 +52,6 @@ import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.lang.ref.PhantomReference;
-import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 //@formatter:off
 
@@ -198,13 +199,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 	static {
 		try {
 			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
+					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
 			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
-				"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
+					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
-				"shacl-sparql-inference/propertyShapeWithTarget.rq");
+					"shacl-sparql-inference/propertyShapeWithTarget.rq");
 			DASH_CONSTANTS = resourceAsString(
-				"shacl-sparql-inference/dashConstants.rq");
+					"shacl-sparql-inference/dashConstants.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -217,14 +218,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 		super(baseSail);
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
-			executorService);
+				executorService);
 	}
 
 	public ShaclSail() {
 		super();
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
-			executorService);
+				executorService);
 	}
 
 	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.
@@ -252,36 +253,36 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
 		return Arrays.asList(
-			SHACL.TARGET_CLASS,
-			SHACL.PATH,
-			SHACL.PROPERTY,
-			SHACL.OR,
-			SHACL.AND,
-			SHACL.MIN_COUNT,
-			SHACL.MAX_COUNT,
-			SHACL.MIN_LENGTH,
-			SHACL.MAX_LENGTH,
-			SHACL.PATTERN,
-			SHACL.FLAGS,
-			SHACL.NODE_KIND_PROP,
-			SHACL.LANGUAGE_IN,
-			SHACL.DATATYPE,
-			SHACL.MIN_EXCLUSIVE,
-			SHACL.MIN_INCLUSIVE,
-			SHACL.MAX_EXCLUSIVE,
-			SHACL.MAX_INCLUSIVE,
-			SHACL.CLASS,
-			SHACL.TARGET_NODE,
-			SHACL.DEACTIVATED,
-			SHACL.TARGET_SUBJECTS_OF,
-			SHACL.IN,
-			SHACL.UNIQUE_LANG,
-			SHACL.NOT,
-			SHACL.TARGET_OBJECTS_OF,
-			SHACL.HAS_VALUE,
-			SHACL.TARGET_PROP,
-			SHACL.INVERSE_PATH,
-			SHACL.TARGET_SHAPE);
+				SHACL.TARGET_CLASS,
+				SHACL.PATH,
+				SHACL.PROPERTY,
+				SHACL.OR,
+				SHACL.AND,
+				SHACL.MIN_COUNT,
+				SHACL.MAX_COUNT,
+				SHACL.MIN_LENGTH,
+				SHACL.MAX_LENGTH,
+				SHACL.PATTERN,
+				SHACL.FLAGS,
+				SHACL.NODE_KIND_PROP,
+				SHACL.LANGUAGE_IN,
+				SHACL.DATATYPE,
+				SHACL.MIN_EXCLUSIVE,
+				SHACL.MIN_INCLUSIVE,
+				SHACL.MAX_EXCLUSIVE,
+				SHACL.MAX_INCLUSIVE,
+				SHACL.CLASS,
+				SHACL.TARGET_NODE,
+				SHACL.DEACTIVATED,
+				SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN,
+				SHACL.UNIQUE_LANG,
+				SHACL.NOT,
+				SHACL.TARGET_OBJECTS_OF,
+				SHACL.HAS_VALUE,
+				SHACL.TARGET_PROP,
+				SHACL.INVERSE_PATH,
+				SHACL.TARGET_SHAPE);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -397,14 +398,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
 		if (executorService[0] == null) {
 			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
-				r -> {
-					Thread t = Executors.defaultThreadFactory().newThread(r);
-					// this thread pool does not need to stick around if the all other threads are done, because it
-					// is only used for SHACL validation and if all other threads have ended then there would be no
-					// thread to receive the validation results.
-					t.setDaemon(true);
-					return t;
-				});
+					r -> {
+						Thread t = Executors.defaultThreadFactory().newThread(r);
+						// this thread pool does not need to stick around if the all other threads are done, because it
+						// is only used for SHACL validation and if all other threads have ended then there would be no
+						// thread to receive the validation results.
+						t.setDaemon(true);
+						return t;
+					});
 		}
 		return executorService[0].submit(runnable);
 	}
@@ -413,8 +414,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public NotifyingSailConnection getConnection() throws SailException {
 
 		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
-			super.getConnection(), super.getConnection(), super.getConnection(),
-			shapesRepo.getConnection());
+				super.getConnection(), super.getConnection(), super.getConnection(),
+				shapesRepo.getConnection());
 
 		// don't synchronize the entire method, because this can cause a deadlock when trying to get a new connection
 		// while at the same time closing another connection
@@ -469,9 +470,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
-				"Deadlock detected when a single thread uses multiple connections " +
-					"interleaved and one connection has modified the shapes without calling commit() " +
-					"while another connection also tries to modify the shapes!");
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection also tries to modify the shapes!");
 		}
 
 		try {
@@ -498,9 +499,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	Lock acquireReadLock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
-				"Deadlock detected when a single thread uses multiple connections " +
-					"interleaved and one connection has modified the shapes without calling commit() " +
-					"while another connection calls commit()!");
+					"Deadlock detected when a single thread uses multiple connections " +
+							"interleaved and one connection has modified the shapes without calling commit() " +
+							"while another connection calls commit()!");
 		}
 		try {
 			return lockManager.getReadLock();
@@ -774,11 +775,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static String resourceAsString(String s) throws IOException {
 		return IOUtils.toString(Objects.requireNonNull(ShaclSail.class.getClassLoader().getResourceAsStream(s)),
-			StandardCharsets.UTF_8);
+				StandardCharsets.UTF_8);
 	}
 
 	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,
-								 AtomicBoolean initialized, ExecutorService[] executorService) {
+			AtomicBoolean initialized, ExecutorService[] executorService) {
 
 		ExecutorService ex = Executors.newSingleThreadExecutor(r -> {
 			Thread t = Executors.defaultThreadFactory().newThread(r);
@@ -930,14 +931,20 @@ public class ShaclSail extends NotifyingSailWrapper {
 		this.validationResultsLimitTotal = validationResultsLimitTotal;
 	}
 
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return super.getDefaultIsolationLevel();
+	}
 
 	@Override
 	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		if (Settings.Validation.Disabled.getName().equals(name) && Settings.Validation.Disabled.getValue().equals(value)) {
-			return Optional.of(Settings.Validation.Disabled);
+		if (Settings.ValidationApproach.Disabled.getName().equals(name)
+				&& Settings.ValidationApproach.Disabled.getValue().equals(value)) {
+			return Optional.of(Settings.ValidationApproach.Disabled);
 		}
-		if (Settings.Validation.Bulk.getName().equals(name) && Settings.Validation.Bulk.getValue().equals(value)) {
-			return Optional.of(Settings.Validation.Bulk);
+		if (Settings.ValidationApproach.Bulk.getName().equals(name)
+				&& Settings.ValidationApproach.Bulk.getValue().equals(value)) {
+			return Optional.of(Settings.ValidationApproach.Bulk);
 		}
 		return getBaseSail().internTransactionSetting(name, value);
 
@@ -945,26 +952,26 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public static class Settings {
 
-		public enum Validation implements TransactionSetting {
+		public enum ValidationApproach implements TransactionSetting {
 
 			Disabled("Disabled"),
+			Auto("Auto"),
 			Bulk("Bulk");
 
 			private final String value;
 
-			Validation(String value) {
+			ValidationApproach(String value) {
 				this.value = value;
 			}
 
 			@Override
 			public String getName() {
-				return Validation.class.getCanonicalName();
+				return ValidationApproach.class.getCanonicalName();
 			}
 
 			public String getValue() {
 				return value;
 			}
-
 
 		}
 

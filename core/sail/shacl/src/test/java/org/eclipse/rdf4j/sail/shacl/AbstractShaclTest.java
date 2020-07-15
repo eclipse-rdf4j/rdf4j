@@ -539,11 +539,10 @@ abstract public class AbstractShaclTest {
 			throw new RuntimeException(e);
 		}
 
-		ValidationReport report;
+		ValidationReport report = new ValidationReport(true);
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			((ShaclSail) shaclRepository.getSail()).disableValidation();
-			shaclSailConnection.begin(isolationLevel);
+			shaclSailConnection.begin(isolationLevel, ShaclSail.Settings.ValidationApproach.Disabled);
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
@@ -563,15 +562,14 @@ abstract public class AbstractShaclTest {
 
 			shaclSailConnection.commit();
 
-			((ShaclSail) shaclRepository.getSail()).enableValidation();
-
-			shaclSailConnection.begin();
-			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
+			shaclSailConnection.begin(ShaclSail.Settings.ValidationApproach.Bulk);
 
 			try {
 				shaclSailConnection.commit();
-			} catch (RepositoryException ignored) {
-
+			} catch (RepositoryException e) {
+				if (e.getCause() instanceof ShaclSailValidationException) {
+					report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+				}
 			}
 		}
 

@@ -52,7 +52,7 @@ public class AbstractSailTest {
 
 			@Override
 			public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-				return null;
+				return Optional.empty();
 			}
 
 			@Override

@@ -14,7 +14,7 @@ public class SimpleTransactionSetting implements TransactionSetting {
 		}
 		SimpleTransactionSetting that = (SimpleTransactionSetting) o;
 		return Objects.equals(getName(), that.getName()) &&
-			Objects.equals(getValue(), that.getValue());
+				Objects.equals(getValue(), that.getValue());
 	}
 
 	@Override

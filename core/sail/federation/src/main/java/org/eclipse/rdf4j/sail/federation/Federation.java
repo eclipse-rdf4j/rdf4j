@@ -7,7 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -37,19 +50,7 @@ import org.eclipse.rdf4j.sail.federation.evaluation.FederationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /**
  * Union multiple (possibly remote) Repositories into a single RDF store.
@@ -60,7 +61,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Deprecated
 public class Federation implements Sail, Executor, FederatedServiceResolverClient, RepositoryResolverClient,
-	HttpClientDependent, SessionManagerDependent {
+		HttpClientDependent, SessionManagerDependent {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(Federation.class);
 
@@ -69,7 +70,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	private final Map<Repository, RepositoryBloomFilter> bloomFilters = new HashMap<>();
 
 	private final ExecutorService executor = Executors
-		.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
+			.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("rdf4j-federation-%d").build());
 
 	private PrefixHashSet localPropertySpace; // NOPMD
 
@@ -323,7 +324,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 				connections.add(member.getConnection());
 			}
 			SailConnection result = readOnly ? new ReadOnlyConnection(this, connections)
-				: new WritableConnection(this, connections);
+					: new WritableConnection(this, connections);
 			allGood = true;
 			return result;
 		} catch (RepositoryException e) {
@@ -337,7 +338,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	}
 
 	protected EvaluationStrategy createEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
-														  FederatedServiceResolver resolver) {
+			FederatedServiceResolver resolver) {
 		return new FederationStrategy(this, tripleSource, dataset, getFederatedServiceResolver());
 	}
 
@@ -353,7 +354,7 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 
 	@Override
 	public List<IsolationLevel> getSupportedIsolationLevels() {
-		return Arrays.asList(new IsolationLevel[]{IsolationLevels.NONE});
+		return Arrays.asList(new IsolationLevel[] { IsolationLevels.NONE });
 	}
 
 	@Override
@@ -364,10 +365,10 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	@Override
 	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
 		return members
-			.stream()
-			.map(r -> r.internTransactionSetting(name, value))
-			.filter(Optional::isPresent)
-			.findFirst()
-			.orElse(Optional.empty());
+				.stream()
+				.map(r -> r.internTransactionSetting(name, value))
+				.filter(Optional::isPresent)
+				.findFirst()
+				.orElse(Optional.empty());
 	}
 }

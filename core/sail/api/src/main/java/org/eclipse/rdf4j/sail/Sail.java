@@ -108,5 +108,7 @@ public interface Sail {
 	 */
 	IsolationLevel getDefaultIsolationLevel();
 
-	Optional<TransactionSetting> internTransactionSetting(String name, String value);
+	default Optional<TransactionSetting> internTransactionSetting(String name, String value) {
+		return Optional.empty();
+	}
 }

@@ -15,6 +15,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -160,6 +161,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@Override
 	public void begin(TransactionSetting... settings) {
 		this.transactionSettings = Arrays.stream(settings)
+				.filter(Objects::nonNull)
 				.collect(Collectors.toMap(TransactionSetting::getName, t -> t));
 		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
 		if (isolationLevel instanceof IsolationLevel) {

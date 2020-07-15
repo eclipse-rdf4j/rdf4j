@@ -160,7 +160,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
-			sailConnection.begin(level);
+			if (level != null) {
+				sailConnection.begin(level);
+			} else {
+				sailConnection.begin();
+			}
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}

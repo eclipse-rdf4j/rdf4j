@@ -46,7 +46,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	/**
 	 * The wrapped SailConnection.
 	 */
-	private SailConnection wrappedCon;
+	private final SailConnection wrappedCon;
 
 	/*--------------*
 	 * Constructors *

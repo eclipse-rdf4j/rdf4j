@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.base;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Optional;
 
 /**
  * Base class for {@link Repository} implementation, offering common functionality.

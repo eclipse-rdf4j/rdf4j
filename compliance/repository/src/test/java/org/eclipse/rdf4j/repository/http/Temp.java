@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.StringReader;
 
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -51,7 +50,7 @@ public class Temp {
 					"        sh:minCount 1 ."), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT, ShaclSail.Settings.Validation.Bulk);
+			connection.begin(IsolationLevels.SNAPSHOT, ShaclSail.Settings.ValidationApproach.Bulk);
 			connection.add(RDF.PROPERTY, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 

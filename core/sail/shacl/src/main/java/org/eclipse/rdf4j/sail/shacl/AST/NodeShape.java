@@ -109,7 +109,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		SailConnection removedStatements;
 
 		if (validateEntireBaseSail) {
-			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+			if (connectionsGroup.getTransactionSettings().isCacheSelectNodes()) {
 				PlanNode overrideTargetNode = getPlan(connectionsGroup, printPlans, null, false, false);
 				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
 			} else {

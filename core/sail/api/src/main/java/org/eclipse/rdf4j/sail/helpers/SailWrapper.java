@@ -136,7 +136,7 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 
 	@Override
 	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return baseSail.internTransactionSetting(name,value );
+		return baseSail.internTransactionSetting(name, value);
 	}
 
 }
