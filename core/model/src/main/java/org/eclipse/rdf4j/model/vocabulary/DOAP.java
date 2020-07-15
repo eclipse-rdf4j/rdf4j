@@ -9,97 +9,192 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Constants for DOAP primitives and for the DOAP namespace.
+ * Constants for the Description of a Project.
+ *
+ * @see <a href="https://github.com/ewilderj/doap/wiki">Description of a Project</a>
  */
 public class DOAP {
-
-	/**
-	 * The recommended prefix for the DOAP namespace: "doap"
-	 */
-	public static final String PREFIX = "doap";
-
 	/**
 	 * The DOAP namespace: http://usefulinc.com/ns/doap#
 	 */
 	public static final String NAMESPACE = "http://usefulinc.com/ns/doap#";
 
 	/**
-	 * An immutable {@link Namespace} constant that represents the DOAP namespace.
+	 * Recommended prefix for the namespace: "doap"
+	 */
+	public static final String PREFIX = "doap";
+
+	/**
+	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
 	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
 
-	/**
-	 * Classes
-	 */
+	// Classes
+	/** <tt>doap:ArchRepository</tt> */
+	public static final IRI ARCH_REPOSITORY = create("ArchRepository");
 
-	public final static IRI PROJECT;
+	/** <tt>doap:BKRepository</tt> */
+	public static final IRI BKREPOSITORY = create("BKRepository");
 
-	public final static IRI VERSION;
+	/** <tt>doap:BazaarBranch</tt> */
+	public static final IRI BAZAAR_BRANCH = create("BazaarBranch");
 
-	/**
-	 * Properties
-	 */
+	/** <tt>doap:CVSRepository</tt> */
+	public static final IRI CVSREPOSITORY = create("CVSRepository");
 
-	public final static IRI NAME;
+	/** <tt>doap:DarcsRepository</tt> */
+	public static final IRI DARCS_REPOSITORY = create("DarcsRepository");
 
-	public final static IRI HOMEPAGE;
+	/** <tt>doap:GitBranch</tt> */
+	public static final IRI GIT_BRANCH = create("GitBranch");
 
-	public final static IRI OLD_HOMEPAGE;
+	/** <tt>doap:GitRepository</tt> */
+	public static final IRI GIT_REPOSITORY = create("GitRepository");
 
-	public final static IRI LICENSE;
+	/** <tt>doap:HgRepository</tt> */
+	public static final IRI HG_REPOSITORY = create("HgRepository");
 
-	public final static IRI DESCRIPTION;
+	/** <tt>doap:Project</tt> */
+	public static final IRI PROJECT = create("Project");
 
-	public final static IRI PROGRAMMING_LANGUAGE;
+	/** <tt>doap:Repository</tt> */
+	public static final IRI REPOSITORY = create("Repository");
 
-	public final static IRI IMPLEMENTS;
+	/** <tt>doap:SVNRepository</tt> */
+	public static final IRI SVNREPOSITORY = create("SVNRepository");
 
-	public final static IRI CATEGORY;
+	/** <tt>doap:Specification</tt> */
+	public static final IRI SPECIFICATION = create("Specification");
 
-	public final static IRI DOWNLOAD_PAGE;
+	/** <tt>doap:Version</tt> */
+	public static final IRI VERSION = create("Version");
 
-	public final static IRI MAILING_LIST;
+	// Properties
+	/** <tt>doap:anon-root</tt> */
+	public static final IRI ANON_ROOT = create("anon-root");
 
-	public final static IRI BUG_DATABASE;
+	/** <tt>doap:audience</tt> */
+	public static final IRI AUDIENCE = create("audience");
 
-	public final static IRI BLOG;
+	/** <tt>doap:blog</tt> */
+	public static final IRI BLOG = create("blog");
 
-	public final static IRI DEVELOPER;
+	/** <tt>doap:browse</tt> */
+	public static final IRI BROWSE = create("browse");
 
-	public final static IRI MAINTAINER;
+	/** <tt>doap:bug-database</tt> */
+	public static final IRI BUG_DATABASE = create("bug-database");
 
-	public final static IRI DOCUMENTER;
+	/** <tt>doap:category</tt> */
+	public static final IRI CATEGORY = create("category");
 
-	public final static IRI RELEASE;
+	/** <tt>doap:created</tt> */
+	public static final IRI CREATED = create("created");
 
-	public final static IRI CREATED;
+	/** <tt>doap:description</tt> */
+	public static final IRI DESCRIPTION = create("description");
 
-	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		PROJECT = factory.createIRI(DOAP.NAMESPACE, "Project");
-		VERSION = factory.createIRI(DOAP.NAMESPACE, "Version");
+	/** <tt>doap:developer</tt> */
+	public static final IRI DEVELOPER = create("developer");
 
-		NAME = factory.createIRI(DOAP.NAMESPACE, "name");
-		HOMEPAGE = factory.createIRI(DOAP.NAMESPACE, "homepage");
-		OLD_HOMEPAGE = factory.createIRI(DOAP.NAMESPACE, "old-homepage");
-		LICENSE = factory.createIRI(DOAP.NAMESPACE, "license");
-		DESCRIPTION = factory.createIRI(DOAP.NAMESPACE, "description");
-		PROGRAMMING_LANGUAGE = factory.createIRI(DOAP.NAMESPACE, "programming-language");
-		IMPLEMENTS = factory.createIRI(DOAP.NAMESPACE, "implements");
-		CATEGORY = factory.createIRI(DOAP.NAMESPACE, "category");
-		DOWNLOAD_PAGE = factory.createIRI(DOAP.NAMESPACE, "download-page");
-		MAILING_LIST = factory.createIRI(DOAP.NAMESPACE, "mailing-list");
-		BUG_DATABASE = factory.createIRI(DOAP.NAMESPACE, "bug-database");
-		BLOG = factory.createIRI(DOAP.NAMESPACE, "blog");
-		DEVELOPER = factory.createIRI(DOAP.NAMESPACE, "developer");
-		MAINTAINER = factory.createIRI(DOAP.NAMESPACE, "maintainer");
-		DOCUMENTER = factory.createIRI(DOAP.NAMESPACE, "documenter");
-		RELEASE = factory.createIRI(DOAP.NAMESPACE, "release");
-		CREATED = factory.createIRI(DOAP.NAMESPACE, "created");
+	/** <tt>doap:developer-forum</tt> */
+	public static final IRI DEVELOPER_FORUM = create("developer-forum");
+
+	/** <tt>doap:documenter</tt> */
+	public static final IRI DOCUMENTER = create("documenter");
+
+	/** <tt>doap:download-mirror</tt> */
+	public static final IRI DOWNLOAD_MIRROR = create("download-mirror");
+
+	/** <tt>doap:download-page</tt> */
+	public static final IRI DOWNLOAD_PAGE = create("download-page");
+
+	/** <tt>doap:file-release</tt> */
+	public static final IRI FILE_RELEASE = create("file-release");
+
+	/** <tt>doap:helper</tt> */
+	public static final IRI HELPER = create("helper");
+
+	/** <tt>doap:homepage</tt> */
+	public static final IRI HOMEPAGE = create("homepage");
+
+	/** <tt>doap:implements</tt> */
+	public static final IRI IMPLEMENTS = create("implements");
+
+	/** <tt>doap:language</tt> */
+	public static final IRI LANGUAGE = create("language");
+
+	/** <tt>doap:license</tt> */
+	public static final IRI LICENSE = create("license");
+
+	/** <tt>doap:location</tt> */
+	public static final IRI LOCATION = create("location");
+
+	/** <tt>doap:mailing-list</tt> */
+	public static final IRI MAILING_LIST = create("mailing-list");
+
+	/** <tt>doap:maintainer</tt> */
+	public static final IRI MAINTAINER = create("maintainer");
+
+	/** <tt>doap:module</tt> */
+	public static final IRI MODULE = create("module");
+
+	/** <tt>doap:name</tt> */
+	public static final IRI NAME = create("name");
+
+	/** <tt>doap:old-homepage</tt> */
+	public static final IRI OLD_HOMEPAGE = create("old-homepage");
+
+	/** <tt>doap:os</tt> */
+	public static final IRI OS = create("os");
+
+	/** <tt>doap:platform</tt> */
+	public static final IRI PLATFORM = create("platform");
+
+	/** <tt>doap:programming-language</tt> */
+	public static final IRI PROGRAMMING_LANGUAGE = create("programming-language");
+
+	/** <tt>doap:release</tt> */
+	public static final IRI RELEASE = create("release");
+
+	/** <tt>doap:repository</tt> */
+	public static final IRI REPOSITORY_PROP = create("repository");
+
+	/** <tt>doap:repositoryOf</tt> */
+	public static final IRI REPOSITORY_OF = create("repositoryOf");
+
+	/** <tt>doap:revision</tt> */
+	public static final IRI REVISION = create("revision");
+
+	/** <tt>doap:screenshots</tt> */
+	public static final IRI SCREENSHOTS = create("screenshots");
+
+	/** <tt>doap:service-endpoint</tt> */
+	public static final IRI SERVICE_ENDPOINT = create("service-endpoint");
+
+	/** <tt>doap:shortdesc</tt> */
+	public static final IRI SHORTDESC = create("shortdesc");
+
+	/** <tt>doap:support-forum</tt> */
+	public static final IRI SUPPORT_FORUM = create("support-forum");
+
+	/** <tt>doap:tester</tt> */
+	public static final IRI TESTER = create("tester");
+
+	/** <tt>doap:translator</tt> */
+	public static final IRI TRANSLATOR = create("translator");
+
+	/** <tt>doap:vendor</tt> */
+	public static final IRI VENDOR = create("vendor");
+
+	/** <tt>doap:wiki</tt> */
+	public static final IRI WIKI = create("wiki");
+
+	private static IRI create(String localName) {
+		return SimpleValueFactory.getInstance().createIRI(DOAP.NAMESPACE, localName);
 	}
 }
