@@ -138,7 +138,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	public Map<String, TransactionSetting> getTransactionSettings() {
+	protected Map<String, TransactionSetting> getTransactionSettings() {
 		return transactionSettings;
 	}
 
@@ -155,7 +155,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void begin() throws SailException {
-		begin(((IsolationLevel) null));
+		begin((TransactionSetting) null);
+	}
+
+	@Override
+	public void begin(IsolationLevel level) throws SailException {
+		begin((TransactionSetting) level);
 	}
 
 	@Override
@@ -163,27 +168,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 		this.transactionSettings = Arrays.stream(settings)
 				.filter(Objects::nonNull)
 				.collect(Collectors.toMap(TransactionSetting::getName, t -> t));
-		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.class.getCanonicalName());
-		if (isolationLevel instanceof IsolationLevel) {
-			begin(((IsolationLevel) isolationLevel));
-		} else {
-			begin();
-		}
-	}
 
-	@Override
-	public void begin(IsolationLevel level) throws SailException {
-		if (level == null) {
-			level = this.sailBase.getDefaultIsolationLevel();
+		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.NAME);
+
+		if (isolationLevel == null) {
+			isolationLevel = this.sailBase.getDefaultIsolationLevel();
 		}
 
-		transactionSettings.put(level.getName(), level);
+		assert isolationLevel instanceof IsolationLevel;
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
+		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel((IsolationLevel) isolationLevel,
 				this.sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-					"Isolation level " + level + " not compatible with this Sail");
+					"Isolation level " + isolationLevel + " not compatible with this Sail");
 		}
 		this.transactionIsolationLevel = compatibleLevel;
 
@@ -720,6 +718,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.readLock());
 	}
@@ -727,6 +726,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.writeLock());
 	}

@@ -10,13 +10,18 @@ package org.eclipse.rdf4j;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
- * A Transaction Isolation Level. Defaul levels supported by Sesame are provided by {@link IsolationLevels}, third-party
+ * A Transaction Isolation Level. Default levels supported by RDF4J are provided by {@link IsolationLevels}, third-party
  * triplestore implementors may choose to add additional IsolationLevel implementations if their triplestore's isolation
  * contract is different from what is provided by default.
  *
  * @author Jeen Broekstra
  */
 public interface IsolationLevel extends TransactionSetting {
+
+	/**
+	 * Shared constant for the {@link TransactionSetting} name used for isolation levels.
+	 */
+	static String NAME = IsolationLevel.class.getCanonicalName();
 
 	/**
 	 * Verifies if this transaction isolation level is compatible with the supplied other isolation level - that is, if
@@ -37,7 +42,7 @@ public interface IsolationLevel extends TransactionSetting {
 
 	@Override
 	default String getName() {
-		return IsolationLevel.class.getCanonicalName();
+		return NAME;
 	}
 
 	@Override
