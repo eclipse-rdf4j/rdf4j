@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.Settings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.AfterClass;
 import org.junit.runner.RunWith;
@@ -542,7 +543,7 @@ abstract public class AbstractShaclTest {
 		ValidationReport report = new ValidationReport(true);
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			shaclSailConnection.begin(isolationLevel, ShaclSail.Settings.ValidationApproach.Disabled);
+			shaclSailConnection.begin(isolationLevel, ValidationApproach.Disabled);
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
@@ -562,7 +563,7 @@ abstract public class AbstractShaclTest {
 
 			shaclSailConnection.commit();
 
-			shaclSailConnection.begin(ShaclSail.Settings.ValidationApproach.Bulk);
+			shaclSailConnection.begin(ValidationApproach.Bulk);
 
 			try {
 				shaclSailConnection.commit();

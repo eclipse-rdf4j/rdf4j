@@ -9,12 +9,10 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Optional;
 import java.util.Timer;
 import java.util.TimerTask;
 
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -366,11 +364,6 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 		}
 
 		return store.getValueFactory();
-	}
-
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return Optional.empty();
 	}
 
 	@Override

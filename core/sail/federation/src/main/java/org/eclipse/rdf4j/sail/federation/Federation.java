@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,7 +24,6 @@ import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -362,13 +360,4 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		return IsolationLevels.NONE;
 	}
 
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return members
-				.stream()
-				.map(r -> r.internTransactionSetting(name, value))
-				.filter(Optional::isPresent)
-				.findFirst()
-				.orElse(Optional.empty());
-	}
 }

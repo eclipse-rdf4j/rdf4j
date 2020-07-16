@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;

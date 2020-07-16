@@ -8,10 +8,8 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import java.io.File;
-import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -192,11 +190,6 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 			init();
 		}
 		return sail.getValueFactory();
-	}
-
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return sail.internTransactionSetting(name, value);
 	}
 
 	@Override

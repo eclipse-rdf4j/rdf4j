@@ -9,10 +9,8 @@ package org.eclipse.rdf4j.sail;
 
 import java.io.File;
 import java.util.List;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
@@ -108,7 +106,4 @@ public interface Sail {
 	 */
 	IsolationLevel getDefaultIsolationLevel();
 
-	default Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return Optional.empty();
-	}
 }

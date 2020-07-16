@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.base;
 
-import java.util.Optional;
-
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -63,8 +60,4 @@ public abstract class AbstractRepository implements Repository {
 
 	protected abstract void shutDownInternal() throws RepositoryException;
 
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return Optional.empty();
-	}
 }

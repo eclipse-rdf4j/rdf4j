@@ -8,10 +8,8 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import java.io.File;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -136,11 +134,6 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 	@Override
 	public ValueFactory getValueFactory() {
 		return getProxiedRepository().getValueFactory();
-	}
-
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		return proxiedRepository.internTransactionSetting(name, value);
 	}
 
 	@Override

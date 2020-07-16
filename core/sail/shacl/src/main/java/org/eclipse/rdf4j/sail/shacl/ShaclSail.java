@@ -18,7 +18,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,10 +28,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -936,20 +935,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return super.getDefaultIsolationLevel();
 	}
 
-	@Override
-	public Optional<TransactionSetting> internTransactionSetting(String name, String value) {
-		if (Settings.ValidationApproach.Disabled.getName().equals(name)
-				&& Settings.ValidationApproach.Disabled.getValue().equals(value)) {
-			return Optional.of(Settings.ValidationApproach.Disabled);
-		}
-		if (Settings.ValidationApproach.Bulk.getName().equals(name)
-				&& Settings.ValidationApproach.Bulk.getValue().equals(value)) {
-			return Optional.of(Settings.ValidationApproach.Bulk);
-		}
-		return getBaseSail().internTransactionSetting(name, value);
-
-	}
-
 	public static class Settings {
 
 		public enum ValidationApproach implements TransactionSetting {
@@ -969,6 +954,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				return ValidationApproach.class.getCanonicalName();
 			}
 
+			@Override
 			public String getValue() {
 				return value;
 			}

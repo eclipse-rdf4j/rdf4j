@@ -9,10 +9,8 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.InputStream;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.TransactionSetting;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -22,6 +20,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.Settings.ValidationApproach;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -48,7 +47,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Bulk), IsolationLevels.NONE);
+			connection.begin(ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -69,7 +68,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Bulk), IsolationLevels.NONE);
+			connection.begin(ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -93,7 +92,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Bulk), IsolationLevels.SNAPSHOT);
+			connection.begin(ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -117,7 +116,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Bulk), IsolationLevels.NONE);
+			connection.begin(ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -148,7 +147,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Disabled), null);
+			connection.begin(ValidationApproach.Disabled, null);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -158,7 +157,7 @@ public class BulkValidationSettingsTest {
 
 			connection.commit();
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Bulk), null);
+			connection.begin(ValidationApproach.Bulk, null);
 			try (SailRepositoryConnection connection1 = repository.getConnection()) {
 
 				try {
@@ -179,7 +178,7 @@ public class BulkValidationSettingsTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Disabled), IsolationLevels.SNAPSHOT);
+			connection.begin(ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
 
 			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
 				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -189,7 +188,7 @@ public class BulkValidationSettingsTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
 
-			connection.begin(asIfThroughREST(ShaclSail.Settings.ValidationApproach.Disabled), IsolationLevels.SNAPSHOT);
+			connection.begin(ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
 
 			try (SailRepositoryConnection connection1 = repository.getConnection()) {
 
@@ -201,14 +200,6 @@ public class BulkValidationSettingsTest {
 
 		}
 
-	}
-
-	TransactionSetting asIfThroughREST(TransactionSetting transactionSetting) {
-		SailRepository sailRepository = new SailRepository(new ShaclSail(new MemoryStore()));
-		Optional<TransactionSetting> transactionSetting1 = sailRepository
-				.internTransactionSetting(transactionSetting.getName(), transactionSetting.getValue());
-		sailRepository.shutDown();
-		return transactionSetting1.get();
 	}
 
 }

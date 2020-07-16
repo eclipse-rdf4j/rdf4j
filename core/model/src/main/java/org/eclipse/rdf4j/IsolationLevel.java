@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j;
 
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
