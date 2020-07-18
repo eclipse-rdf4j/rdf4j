@@ -38,11 +38,10 @@ public interface Function {
 	Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException;
 
 	/**
-	 * Evaluate the function over the supplied input arguments, using the supplied {@link ValueFactory} to produce the
-	 * result.
+	 * Evaluate the function over the supplied input arguments.
 	 *
-	 * @param tripleSource the {@link TripleSource} used in the query's evaluation plan. This can be used to access the
-	 *                     current state of the store.
+	 * @param tripleSource the {@link TripleSource} used in the query evaluation. This can be used to access the current
+	 *                     state of the store.
 	 * @param args         the function input arguments.
 	 * @return the function result value.
 	 * @throws ValueExprEvaluationException
