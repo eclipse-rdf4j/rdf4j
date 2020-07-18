@@ -326,8 +326,6 @@ public class ClassPropertyShape extends PathPropertyShape {
 				PlanNode newAddedByClassResource = new Select(connectionsGroup.getAddedStatements(),
 						"?a a <" + classResource + ">", "?a");
 
-				newAddedByClassResource = newAddedByClassResource;
-
 				// Build a query to run against the base sail. eg:
 				// ?c foaf:knows ?a.
 				// ?c a foaf:Person.
