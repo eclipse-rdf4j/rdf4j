@@ -90,6 +90,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private IsolationLevel currentIsolationLevel = null;
 
 	private Settings transactionSettings;
+	private TransactionSetting[] transactionSettingsRaw;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			SailConnection previousStateConnection, SailConnection serializableConnection,
@@ -109,23 +110,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
+	public void receiveTransactionSettings(TransactionSetting[] settings) {
+		super.receiveTransactionSettings(settings);
+		this.transactionSettingsRaw = settings;
+	}
+
+	@Override
 	public void begin() throws SailException {
 		begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
-		begin(((TransactionSetting) level));
-	}
 
-	@Override
-	public void begin(TransactionSetting... settings) {
 		transactionSettings = getDefaultSettings(sail);
-		Arrays.stream(settings)
+		Arrays.stream(transactionSettingsRaw)
 				.filter(Objects::nonNull)
 				.forEach(setting -> {
-					if (setting instanceof ShaclSail.Settings.ValidationApproach) {
-						transactionSettings.validationApproach = (ShaclSail.Settings.ValidationApproach) setting;
+					if (setting instanceof ShaclSail.TransactionSettings.ValidationApproach) {
+						transactionSettings.validationApproach = (ShaclSail.TransactionSettings.ValidationApproach) setting;
 					}
 
 					if (setting instanceof IsolationLevel) {
@@ -145,7 +148,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		// start two transactions, synchronize on underlying sail so that we get two transactions immediately
 		// successively
 		synchronized (sail) {
-			super.begin(settings);
+			super.begin(level);
 			hasStatement(null, null, null, false); // actually force a transaction to start
 			shapesRepoConnection.begin(currentIsolationLevel);
 			previousStateConnection.begin(currentIsolationLevel);
@@ -154,8 +157,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		stats.setBaseSailEmpty(isEmpty());
 
-		if (transactionSettings.validationApproach == ShaclSail.Settings.ValidationApproach.Disabled ||
-				transactionSettings.validationApproach == ShaclSail.Settings.ValidationApproach.Bulk) {
+		if (transactionSettings.validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
+				transactionSettings.validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
 			removeConnectionListener(this);
 		} else if (stats.isBaseSailEmpty()) {
 			removeConnectionListener(this);
@@ -175,7 +178,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	boolean isValidationEnabled() {
 		return sail.isValidationEnabled()
-				&& transactionSettings.validationApproach != ShaclSail.Settings.ValidationApproach.Disabled;
+				&& transactionSettings.validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Disabled;
 	}
 
 	@Override
@@ -713,7 +716,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean isBulkValidation() {
-		return transactionSettings.validationApproach == ShaclSail.Settings.ValidationApproach.Bulk;
+		return transactionSettings.validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
 	}
 
 	private ValidationReport serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
@@ -837,19 +840,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	public static class Settings {
 
-		ShaclSail.Settings.ValidationApproach validationApproach = ShaclSail.Settings.ValidationApproach.Auto;
-		boolean cacheSelectedNodes = false;
+		private ShaclSail.TransactionSettings.ValidationApproach validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Auto;
+		private boolean cacheSelectedNodes = false;
 
 		public Settings(boolean cacheSelectNodes) {
 			this.cacheSelectedNodes = cacheSelectNodes;
 		}
 
-		public ShaclSail.Settings.ValidationApproach getValidationApproach() {
+		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {
 			return validationApproach;
 		}
 
 		public boolean isCacheSelectNodes() {
-			return cacheSelectedNodes && validationApproach != ShaclSail.Settings.ValidationApproach.Bulk;
+			return cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
 		}
 
 	}

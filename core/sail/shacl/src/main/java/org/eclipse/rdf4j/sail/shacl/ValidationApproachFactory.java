@@ -11,7 +11,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.common.transaction.TransactionSettingFactory;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail.Settings.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 
 /**
  * Factory class for producing instances of {@link ValidationApproach} from string values.

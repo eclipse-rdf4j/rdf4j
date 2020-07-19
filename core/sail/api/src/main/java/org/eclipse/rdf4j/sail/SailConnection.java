@@ -189,25 +189,11 @@ public interface SailConnection extends AutoCloseable {
 	void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
 
 	/**
-	 * Begins a transaction with the specified {@link TransactionSetting}s, requiring {@link #commit()} or
-	 * {@link #rollback()} to be called to close the transaction.
 	 *
-	 * @param settings the transaction settings on which this transaction operates. This is a vararg and as such is
-	 *                 optional.
-	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation
-	 * @throws SailException                        If the connection could not start a transaction, if the supplied
-	 *                                              transaction isolation level is not supported, or if a transaction is
-	 *                                              already active on this connection.
+	 * @param settings the transaction settings on which this transaction operates.
 	 */
-	default void begin(TransactionSetting... settings) throws UnknownSailTransactionStateException, SailException {
-		for (TransactionSetting setting : settings) {
-			if (setting instanceof IsolationLevel) {
-				begin(((IsolationLevel) setting));
-				return;
-			}
-		}
+	default void receiveTransactionSettings(TransactionSetting[] settings) {
 
-		begin();
 	}
 
 	/**

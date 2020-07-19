@@ -935,7 +935,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return super.getDefaultIsolationLevel();
 	}
 
-	public static class Settings {
+	public static class TransactionSettings {
 
 		public enum ValidationApproach implements TransactionSetting {
 
@@ -963,7 +963,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		private final String value;
 
-		Settings(String value) {
+		TransactionSettings(String value) {
 			this.value = value;
 		}
 

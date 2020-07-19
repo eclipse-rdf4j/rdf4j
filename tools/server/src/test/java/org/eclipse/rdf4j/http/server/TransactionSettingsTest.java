@@ -91,7 +91,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Bulk, IsolationLevels.NONE);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -110,7 +110,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Bulk, IsolationLevels.NONE);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -132,7 +132,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -154,7 +154,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Bulk, IsolationLevels.NONE);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.NONE);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -183,7 +183,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Disabled, IsolationLevels.NONE);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled, IsolationLevels.NONE);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -191,7 +191,7 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
 			try (RepositoryConnection connection1 = repository.getConnection()) {
 
 				try {
@@ -212,7 +212,7 @@ public class TransactionSettingsTest {
 				Protocol.getRepositoryLocation(TestServer.SERVER_URL, TestServer.TEST_SHACL_REPO_ID));
 		try (RepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
 
 			connection.add(new StringReader(shacl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
@@ -220,7 +220,7 @@ public class TransactionSettingsTest {
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
 
-			connection.begin(ShaclSail.Settings.ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled, IsolationLevels.SNAPSHOT);
 
 			try (RepositoryConnection connection1 = repository.getConnection()) {
 

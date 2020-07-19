@@ -106,7 +106,8 @@ public class TransactionStartController extends AbstractController {
 				} else {
 					TransactionSettingRegistry.getInstance()
 							.get(settingsName)
-							.ifPresent(f -> f.getTransactionSetting(v[0]).ifPresent(transactionSettings::add));
+							.flatMap(factory -> factory.getTransactionSetting(v[0]))
+							.ifPresent(transactionSettings::add);
 				}
 			}
 		});
@@ -117,7 +118,11 @@ public class TransactionStartController extends AbstractController {
 			txn = new Transaction(repository);
 
 			if (transactionSettings.isEmpty()) {
-				txn.begin(isolationLevel[0]);
+				if (isolationLevel[0] == null) {
+					txn.begin();
+				} else {
+					txn.begin(isolationLevel[0]);
+				}
 			} else {
 				txn.begin(transactionSettings.toArray(new TransactionSetting[0]));
 			}

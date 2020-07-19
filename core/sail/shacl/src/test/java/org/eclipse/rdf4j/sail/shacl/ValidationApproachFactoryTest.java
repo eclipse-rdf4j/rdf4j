@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
-import org.eclipse.rdf4j.sail.shacl.ShaclSail.Settings.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.junit.Test;
 
 /**

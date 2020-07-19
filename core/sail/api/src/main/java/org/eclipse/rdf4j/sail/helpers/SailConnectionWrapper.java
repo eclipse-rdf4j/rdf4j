@@ -208,11 +208,6 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public void begin(TransactionSetting... settings) {
-		wrappedCon.begin(settings);
-	}
-
-	@Override
 	public void begin() throws SailException {
 		wrappedCon.begin();
 	}
@@ -220,6 +215,11 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
 		wrappedCon.begin(level);
+	}
+
+	@Override
+	public void receiveTransactionSettings(TransactionSetting[] settings) {
+		wrappedCon.receiveTransactionSettings(settings);
 	}
 
 	@Override

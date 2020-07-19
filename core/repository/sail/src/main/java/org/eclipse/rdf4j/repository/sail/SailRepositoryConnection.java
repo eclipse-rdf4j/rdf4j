@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.repository.sail;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
@@ -147,6 +149,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin() throws RepositoryException {
 		try {
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.receiveTransactionSettings(new TransactionSetting[0]);
+
 			if (getIsolationLevel() != null) {
 				sailConnection.begin(getIsolationLevel());
 			} else {
@@ -160,6 +165,9 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.receiveTransactionSettings(new TransactionSetting[0]);
+
 			if (level != null) {
 				sailConnection.begin(level);
 			} else {
@@ -173,7 +181,25 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(TransactionSetting... settings) {
 		try {
-			sailConnection.begin(settings);
+			// Asserts to catch any of these issues in our tests. These asserts don't run in production since they are
+			// slow. Nulls in the transaction settings or multiple isolation levels have undefined behaviour.
+			assert Arrays.stream(settings).noneMatch(Objects::isNull) : "No transaction settings should be null!";
+			assert Arrays.stream(settings)
+					.filter(setting -> setting instanceof IsolationLevel)
+					.count() <= 1 : "There should never be more than one isolation level";
+
+			sailConnection.receiveTransactionSettings(settings);
+
+			for (TransactionSetting setting : settings) {
+				if (setting instanceof IsolationLevel) {
+					sailConnection.begin((IsolationLevel) setting);
+					return;
+				}
+			}
+
+			// if none of the transaction settings are isolation levels
+			sailConnection.begin();
+
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}

@@ -155,30 +155,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void begin() throws SailException {
-		begin((TransactionSetting) null);
+		begin(sailBase.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
-		begin((TransactionSetting) level);
-	}
-
-	@Override
-	public void begin(TransactionSetting... settings) {
-		this.transactionSettings = Arrays.stream(settings)
-				.filter(Objects::nonNull)
-				.collect(Collectors.toMap(TransactionSetting::getName, t -> t));
-
-		TransactionSetting isolationLevel = this.transactionSettings.get(IsolationLevel.NAME);
-
+	public void begin(IsolationLevel isolationLevel) throws SailException {
 		if (isolationLevel == null) {
-			isolationLevel = this.sailBase.getDefaultIsolationLevel();
+			isolationLevel = sailBase.getDefaultIsolationLevel();
 		}
 
-		assert isolationLevel instanceof IsolationLevel;
-
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel((IsolationLevel) isolationLevel,
-				this.sailBase.getSupportedIsolationLevels());
+		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(isolationLevel,
+				sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
 					"Isolation level " + isolationLevel + " not compatible with this Sail");
