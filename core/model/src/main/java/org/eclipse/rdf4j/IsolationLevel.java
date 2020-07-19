@@ -37,8 +37,11 @@ public interface IsolationLevel extends TransactionSetting {
 	/**
 	 * Get a URI uniquely representing this isolation level.
 	 *
+	 * @deprecated use getName() and getValue() instead.
+	 *
 	 * @return a URI that uniquely represents this isolation level.
 	 */
+	@Deprecated
 	IRI getURI();
 
 	@Override

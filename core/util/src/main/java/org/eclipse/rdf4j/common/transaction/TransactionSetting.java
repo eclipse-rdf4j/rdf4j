@@ -16,12 +16,20 @@ package org.eclipse.rdf4j.common.transaction;
  */
 public interface TransactionSetting {
 
-	// FIXME we should perhaps use getURI (with an IRI return type) to uniquely identify settings. Same as what we do
-	// for IsolationLevels.
+	/**
+	 * The globally unique transaction settings name. Warning: do not use double underscore (__) in the name.
+	 *
+	 * @return the name of this setting, typically its canonical class name
+	 */
 	default String getName() {
 		return getClass().getCanonicalName();
 	}
 
+	/**
+	 * The value for this transaction setting.
+	 *
+	 * @return a string representation of the value
+	 */
 	default String getValue() {
 		return this.toString();
 	}
