@@ -8,10 +8,11 @@
 @prefix foaf: <http://xmlns.com/foaf/0.1/>.
 @prefix rdf4j-sh: <http://rdf4j.org/schema/rdf4j-shacl#> .
 @prefix dash: <http://datashapes.org/dash#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetShape [
+	rsx:targetShape [
         	a sh:Shape ;
         	sh:property [
         		sh:path rdf:type ;

@@ -6,10 +6,11 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix dash: <http://datashapes.org/dash#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetShape [
+	rsx:targetShape [
         		a sh:NodeShape ;
         		sh:property [
         			sh:path rdf:type ;
