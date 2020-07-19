@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
@@ -245,7 +246,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
 	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
-	 * paths are supported. sh:targetShape requires that experimental support is enabled for that feature.
+	 * paths are supported. DASH and RSX features may need to be enabled.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -280,6 +281,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
+				DASH.hasValueIn,
 				RSX.targetShape);
 	}
 
