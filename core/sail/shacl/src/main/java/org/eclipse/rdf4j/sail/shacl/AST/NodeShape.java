@@ -285,7 +285,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					if (shaclSail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
 						logger.info(
-								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setExperimentalDashSupport(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
+								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setDashDataShapes(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
 
 						propertyShapes
 								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated()));

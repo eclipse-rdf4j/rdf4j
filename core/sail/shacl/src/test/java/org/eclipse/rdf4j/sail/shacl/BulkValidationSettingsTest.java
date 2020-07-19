@@ -31,11 +31,6 @@ public class BulkValidationSettingsTest {
 
 	@BeforeClass
 	public static void beforeClass() {
-		// GlobalValidationExecutionLogging.loggingEnabled = true;
-	}
-
-	@AfterClass
-	public static void afterClass() {
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 

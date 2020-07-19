@@ -190,7 +190,12 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 *
-	 * @param settings the transaction settings on which this transaction operates.
+	 * Override this method to receive the transaction settings. This method is always called (by the SailRepository)
+	 * before any .begin method is called, but may not be called if the sail is being used outside of the
+	 * SailRepository. Always remember to call super. receiveTransactionSettings(settings) if you override this method.
+	 *
+	 * @param settings the transaction settings on which this transaction operates. It may or may not contain the
+	 *                 isolation level.
 	 */
 	default void receiveTransactionSettings(TransactionSetting[] settings) {
 
