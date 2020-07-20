@@ -46,12 +46,16 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	private final int nWorkers;
 	private final String name;
+	private final TaskWrapper taskWrapper;
 
 	/**
 	 * Construct a new instance with 20 workers.
+	 * 
+	 * @deprecated use {@link #ControlledWorkerScheduler(int, String, TaskWrapper)}. Scheduled to be removed in 4.0
 	 */
+	@Deprecated
 	public ControlledWorkerScheduler() {
-		this(20, "FedX Worker");
+		this(20, "FedX Worker", DefaultTaskWrapper.INSTANCE);
 	}
 
 	/**
@@ -59,10 +63,24 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	 *
 	 * @param nWorkers
 	 * @param name
+	 * @deprecated use {@link #ControlledWorkerScheduler(int, String, TaskWrapper)}. Scheduled to be removed in 4.0
 	 */
+	@Deprecated
 	public ControlledWorkerScheduler(int nWorkers, String name) {
+		this(nWorkers, name, DefaultTaskWrapper.INSTANCE);
+	}
+
+	/**
+	 * Construct a new instance with the specified number of workers, the given name and {@link TaskWrapper}.
+	 *
+	 * @param nWorkers
+	 * @param name
+	 * @param taskWrapper
+	 */
+	public ControlledWorkerScheduler(int nWorkers, String name, TaskWrapper taskWrapper) {
 		this.nWorkers = nWorkers;
 		this.name = name;
+		this.taskWrapper = taskWrapper;
 		this.executor = createExecutorService();
 	}
 
@@ -76,7 +94,11 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 		WorkerRunnable runnable = new WorkerRunnable(task);
 
-		Future<?> future = executor.submit(runnable);
+		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+		// default the unmodified runnable is returned from the task wrapper
+		Runnable wrappedRunnable = taskWrapper.wrap(runnable);
+
+		Future<?> future = executor.submit(wrappedRunnable);
 
 		// register the future to the task
 		if (task instanceof ParallelTaskBase<?>) {

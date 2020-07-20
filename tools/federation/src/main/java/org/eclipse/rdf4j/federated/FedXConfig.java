@@ -13,6 +13,8 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.DefaultTaskWrapper;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
 import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
@@ -60,6 +62,8 @@ public class FedXConfig {
 	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategy.class;
 
 	private Class<? extends WriteStrategyFactory> writeStrategyFactory = DefaultWriteStrategyFactory.class;
+
+	private TaskWrapper taskWrapper = DefaultTaskWrapper.INSTANCE;
 
 	private String prefixDeclarations = null;
 
@@ -293,6 +297,19 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
+	 * {@link DefaultTaskWrapper} is used. See {@link TaskWrapper} for more information.
+	 * 
+	 * @param taskWrapper the {@link TaskWrapper}
+	 * @return the current config
+	 * @see TaskWrapper
+	 */
+	public FedXConfig withTaskWrapper(TaskWrapper taskWrapper) {
+		this.taskWrapper = taskWrapper;
+		return this;
+	}
+
+	/**
 	 * The (maximum) number of join worker threads used in the {@link ControlledWorkerScheduler} for join operations.
 	 * Default is 20.
 	 *
@@ -478,5 +495,15 @@ public class FedXConfig {
 	 */
 	public boolean isDebugQueryPlan() {
 		return debugQueryPlan;
+	}
+
+	/**
+	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
+	 * {@link DefaultTaskWrapper} is used. See {@link TaskWrapper} for more information.
+	 * 
+	 * @return the {@link TaskWrapper}, {@link DefaultTaskWrapper} if none is explicitly configured
+	 */
+	public TaskWrapper getTaskWrapper() {
+		return taskWrapper;
 	}
 }

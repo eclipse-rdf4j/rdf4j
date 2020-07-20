@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.NamingThreadFactory;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.Scheduler;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
 import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
@@ -103,28 +104,43 @@ public class FederationManager {
 			log.debug("Scheduler for join and union are reset.");
 		}
 
+		TaskWrapper taskWrapper = federationContext.getConfig().getTaskWrapper();
 		if (joinScheduler != null) {
 			joinScheduler.abort();
 		}
 		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
-				"Join Scheduler");
+				"Join Scheduler", taskWrapper);
 
 		if (unionScheduler != null) {
 			unionScheduler.abort();
 		}
 		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
-				"Union Scheduler");
+				"Union Scheduler", taskWrapper);
 
 		if (leftJoinScheduler != null) {
 			leftJoinScheduler.abort();
 		}
 		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
-				"Left Join Scheduler");
+				"Left Join Scheduler", taskWrapper);
 
 	}
 
+	/**
+	 * Returns the managed {@link Executor} which takes for properly handling any configured
+	 * {@link FedXConfig#getTaskWrapper()}
+	 * 
+	 * @return
+	 */
 	public Executor getExecutor() {
-		return executor;
+		final TaskWrapper taskWrapper = federationContext.getConfig().getTaskWrapper();
+		return (runnable) -> {
+
+			// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+			// default the unmodified runnable is returned from the task wrapper
+			Runnable wrappedRunnable = taskWrapper.wrap(runnable);
+
+			executor.execute(wrappedRunnable);
+		};
 	}
 
 	public FedX getFederation() {
