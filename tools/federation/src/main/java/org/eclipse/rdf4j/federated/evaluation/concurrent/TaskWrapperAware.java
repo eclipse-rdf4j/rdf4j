@@ -8,21 +8,18 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 /**
- * Default implementation of {@link TaskWrapper} which returns the unmodified original task
+ * Classes implementing this interface can accept a custom {@link TaskWrapper}.
  * 
  * @author Andreas Schwarte
  *
  */
-public class DefaultTaskWrapper implements TaskWrapper {
+public interface TaskWrapperAware {
 
-	public static DefaultTaskWrapper INSTANCE = new DefaultTaskWrapper();
-
-	private DefaultTaskWrapper() {
-	}
-
-	@Override
-	public Runnable wrap(Runnable runnable) {
-		return runnable;
-	}
-
+	/**
+	 * Set the {@link TaskWrapper} to the respective instance
+	 * 
+	 * @param taskWrapper
+	 * @return
+	 */
+	public void setTaskWrapper(TaskWrapper taskWrapper);
 }

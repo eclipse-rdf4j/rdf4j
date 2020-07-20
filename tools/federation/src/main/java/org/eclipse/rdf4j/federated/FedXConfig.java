@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
-import org.eclipse.rdf4j.federated.evaluation.concurrent.DefaultTaskWrapper;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
@@ -63,7 +62,7 @@ public class FedXConfig {
 
 	private Class<? extends WriteStrategyFactory> writeStrategyFactory = DefaultWriteStrategyFactory.class;
 
-	private TaskWrapper taskWrapper = DefaultTaskWrapper.INSTANCE;
+	private TaskWrapper taskWrapper = TaskWrapper.DEFAULT;
 
 	private String prefixDeclarations = null;
 
@@ -298,7 +297,7 @@ public class FedXConfig {
 
 	/**
 	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
-	 * {@link DefaultTaskWrapper} is used. See {@link TaskWrapper} for more information.
+	 * {@link TaskWrapper#DEFAULT} is used. See {@link TaskWrapper} for more information.
 	 * 
 	 * @param taskWrapper the {@link TaskWrapper}
 	 * @return the current config
@@ -499,9 +498,9 @@ public class FedXConfig {
 
 	/**
 	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
-	 * {@link DefaultTaskWrapper} is used. See {@link TaskWrapper} for more information.
+	 * {@link TaskWrapper#DEFAULT} is used. See {@link TaskWrapper} for more information.
 	 * 
-	 * @return the {@link TaskWrapper}, {@link DefaultTaskWrapper} if none is explicitly configured
+	 * @return the {@link TaskWrapper}, {@link TaskWrapper#DEFAULT} if none is explicitly configured
 	 */
 	public TaskWrapper getTaskWrapper() {
 		return taskWrapper;
