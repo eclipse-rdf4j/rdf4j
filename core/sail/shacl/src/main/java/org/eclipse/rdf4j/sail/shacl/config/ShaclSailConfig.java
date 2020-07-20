@@ -49,7 +49,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
 	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
-	public static final boolean SHACL_ADVANCED_FEATURES_DEFAULT = false;
+	public static final boolean ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT = false;
 	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
 	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = -1;
 	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = -1;
@@ -65,7 +65,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;
 	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;
-	private boolean shaclAdvancedFeatures = SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean eclipseRdf4jShaclExtensions = ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
 	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;
 	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
 	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
@@ -173,13 +173,13 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	}
 
 	@Experimental
-	public boolean isShaclAdvancedFeatures() {
-		return shaclAdvancedFeatures;
+	public boolean isEclipseRdf4jShaclExtensions() {
+		return eclipseRdf4jShaclExtensions;
 	}
 
 	@Experimental
-	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
-		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
+	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;
 	}
 
 	@Experimental
@@ -225,7 +225,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));
 		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));
 		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));
-		m.add(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, BooleanLiteral.valueOf(isShaclAdvancedFeatures()));
+		m.add(implNode, ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS,
+				BooleanLiteral.valueOf(isEclipseRdf4jShaclExtensions()));
 		m.add(implNode, ShaclSailSchema.DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));
 
 		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL,
@@ -273,8 +274,8 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))
 					.ifPresent(l -> setSerializableValidation(l.booleanValue()));
 
-			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.SHACL_ADVANCED_FEATURES, null))
-					.ifPresent(l -> setShaclAdvancedFeatures(l.booleanValue()));
+			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS, null))
+					.ifPresent(l -> setEclipseRdf4jShaclExtensions(l.booleanValue()));
 
 			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.DASH_DATA_SHAPES, null))
 					.ifPresent(l -> setDashDataShapes(l.booleanValue()));

@@ -88,7 +88,7 @@ public class ExtendedFeaturesetTest {
 				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
 
 		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
-		((ShaclSail) shaclRepository.getSail()).setShaclAdvancedFeatures(true);
+		((ShaclSail) shaclRepository.getSail()).setEclipseRdf4jShaclExtensions(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

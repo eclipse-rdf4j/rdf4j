@@ -251,7 +251,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 										shaclProperties.getTargetObjectsOf()));
 					}
 
-					if (shaclSail.isShaclAdvancedFeatures()) {
+					if (shaclSail.isEclipseRdf4jShaclExtensions()) {
 						shaclProperties.getTargetShape()
 								.stream()
 								.map(targetShape -> new TargetShape(shapeId, shaclSail, connection,

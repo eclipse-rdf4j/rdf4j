@@ -203,7 +203,7 @@ public class ShaclProperties {
 					}
 					hasValueIn = (Resource) object;
 					break;
-				case "http://www.w3.org/ns/shacl#targetShape":
+				case "http://rdf4j.org/shacl-extensions#targetShape":
 					targetShape.add((Resource) object);
 					break;
 				default:

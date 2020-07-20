@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 /**
- * sh:targetObjectsOf
+ * rsx:targetShape
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -51,7 +51,7 @@ public class TargetShape extends NodeShape {
 
 		if (connection.hasStatement(targetShape, SHACL.PATH, null, false)) {
 			throw new UnsupportedOperationException(
-					"Experimental sh:targetShape support only supports sh:NodeShape and not sh:PropertyShape");
+					"Experimental rsx:targetShape support only supports sh:NodeShape and not sh:PropertyShape");
 		}
 
 		this.targetShape = new NodeShape(targetShape, shaclSail, connection, false);
@@ -149,26 +149,6 @@ public class TargetShape extends NodeShape {
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, 0,
 				getQuery("?a", null, null), "?a")
 						.getTrueNode(UnBufferedPlanNode.class);
-	}
-
-	private PlanNode getAllSubjectsPlan(SailConnection sailConnection) {
-		// @formatter:off
-		return new Unique(
-			new Sort(
-				new TrimTuple(
-					new UnorderedSelect(
-						sailConnection,
-						null,
-						null,
-						null,
-						UnorderedSelect.OutputPattern.SubjectPredicateObject
-					),
-					0,
-					1)
-			)
-		);
-		// @formatter:on
-
 	}
 
 	@Override

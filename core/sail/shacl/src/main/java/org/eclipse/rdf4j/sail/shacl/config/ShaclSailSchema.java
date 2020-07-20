@@ -55,7 +55,7 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
-	public final static IRI SHACL_ADVANCED_FEATURES = create("shaclAdvancedFeatures");
+	public final static IRI ECLIPSE_RDF4J_SHACL_EXTENSIONS = create("eclipseRdf4jShaclExtensions");
 
 	public final static IRI DASH_DATA_SHAPES = create("dashDataShapes");
 

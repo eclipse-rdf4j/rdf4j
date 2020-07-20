@@ -32,7 +32,9 @@ import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -187,7 +189,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
-	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
 	private long validationResultsLimitTotal = -1;
@@ -244,7 +246,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
 	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
-	 * paths are supported. sh:targetShape requires that experimental support is enabled for that feature.
+	 * paths are supported. DASH and RSX features may need to be enabled.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -279,7 +281,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
-				SHACL.TARGET_SHAPE);
+				DASH.hasValueIn,
+				RSX.targetShape);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -814,30 +817,30 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
-	 * currently enables support for sh:targetShape.
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
 	 *
 	 * EXPERIMENTAL!
 	 *
-	 * @param shaclAdvancedFeatures true to enable (default: false)
+	 * @param eclipseRdf4jShaclExtensions true to enable (default: false)
 	 */
 	@Experimental
-	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
-		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
+	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;
 		forceRefreshShapes();
 	}
 
 	/**
-	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
-	 * currently enables support for sh:targetShape.
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
 	 *
 	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
 	 */
 	@Experimental
-	public boolean isShaclAdvancedFeatures() {
-		return shaclAdvancedFeatures;
+	public boolean isEclipseRdf4jShaclExtensions() {
+		return eclipseRdf4jShaclExtensions;
 	}
 
 	/**
