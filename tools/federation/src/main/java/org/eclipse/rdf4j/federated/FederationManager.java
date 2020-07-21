@@ -111,21 +111,21 @@ public class FederationManager {
 		}
 		joinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getJoinWorkerThreads(),
 				"Join Scheduler");
-		joinScheduler.setTaskWrapper(taskWrapper);
+		taskWrapper.ifPresent(joinScheduler::setTaskWrapper);
 
 		if (unionScheduler != null) {
 			unionScheduler.abort();
 		}
 		unionScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getUnionWorkerThreads(),
 				"Union Scheduler");
-		unionScheduler.setTaskWrapper(taskWrapper);
+		taskWrapper.ifPresent(unionScheduler::setTaskWrapper);
 
 		if (leftJoinScheduler != null) {
 			leftJoinScheduler.abort();
 		}
 		leftJoinScheduler = new ControlledWorkerScheduler<>(federationContext.getConfig().getLeftJoinWorkerThreads(),
 				"Left Join Scheduler");
-		leftJoinScheduler.setTaskWrapper(taskWrapper);
+		taskWrapper.ifPresent(leftJoinScheduler::setTaskWrapper);
 
 	}
 
