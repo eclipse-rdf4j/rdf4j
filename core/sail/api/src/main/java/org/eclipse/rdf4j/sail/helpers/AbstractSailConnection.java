@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -111,8 +110,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private boolean pendingRemovals;
 
-	private Map<String, TransactionSetting> transactionSettings = new HashMap<>();
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -136,10 +133,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (!isOpen) {
 			throw new IllegalStateException("Connection has been closed");
 		}
-	}
-
-	protected Map<String, TransactionSetting> getTransactionSettings() {
-		return transactionSettings;
 	}
 
 	/**
@@ -385,70 +378,62 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void commit() throws SailException {
+		if (isActive()) {
+			endUpdate(null);
+		}
+
+		connectionLock.readLock().lock();
 		try {
-			if (isActive()) {
-				endUpdate(null);
-			}
+			verifyIsOpen();
 
-			connectionLock.readLock().lock();
+			updateLock.lock();
 			try {
-				verifyIsOpen();
-
-				updateLock.lock();
-				try {
-					if (txnActive) {
-						if (!txnPrepared) {
-							prepareInternal();
-						}
-						commitInternal();
-						txnActive = false;
-						txnPrepared = false;
+				if (txnActive) {
+					if (!txnPrepared) {
+						prepareInternal();
 					}
-				} finally {
-					updateLock.unlock();
+					commitInternal();
+					txnActive = false;
+					txnPrepared = false;
 				}
 			} finally {
-				connectionLock.readLock().unlock();
+				updateLock.unlock();
 			}
 		} finally {
-			transactionSettings.clear();
+			connectionLock.readLock().unlock();
 		}
 	}
 
 	@Override
 	public final void rollback() throws SailException {
+		synchronized (added) {
+			added.clear();
+		}
+		synchronized (removed) {
+			removed.clear();
+		}
+		connectionLock.readLock().lock();
 		try {
-			synchronized (added) {
-				added.clear();
-			}
-			synchronized (removed) {
-				removed.clear();
-			}
-			connectionLock.readLock().lock();
-			try {
-				verifyIsOpen();
+			verifyIsOpen();
 
-				updateLock.lock();
-				try {
-					if (txnActive) {
-						try {
-							rollbackInternal();
-						} finally {
-							txnActive = false;
-							txnPrepared = false;
-						}
-					} else {
-						logger.warn("Cannot rollback transaction on connection because transaction is not active",
-								debugEnabled ? new Throwable() : null);
+			updateLock.lock();
+			try {
+				if (txnActive) {
+					try {
+						rollbackInternal();
+					} finally {
+						txnActive = false;
+						txnPrepared = false;
 					}
-				} finally {
-					updateLock.unlock();
+				} else {
+					logger.warn("Cannot rollback transaction on connection because transaction is not active",
+							debugEnabled ? new Throwable() : null);
 				}
 			} finally {
-				connectionLock.readLock().unlock();
+				updateLock.unlock();
 			}
 		} finally {
-			transactionSettings.clear();
+			connectionLock.readLock().unlock();
 		}
 	}
 

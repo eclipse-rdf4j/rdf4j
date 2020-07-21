@@ -774,6 +774,10 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	public void begin(IsolationLevel level)
 			throws SailException {
 
+		if (level == null) {
+			level = sail.getDefaultIsolationLevel();
+		}
+
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
