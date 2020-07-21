@@ -461,11 +461,6 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
-	public void begin(TransactionSetting... settings) {
-		throw new UnsupportedOperationException("SPARQLConnection does not support transaction settings");
-	}
-
-	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
 		OpenRDFUtil.verifyContextNotNull(contexts);
