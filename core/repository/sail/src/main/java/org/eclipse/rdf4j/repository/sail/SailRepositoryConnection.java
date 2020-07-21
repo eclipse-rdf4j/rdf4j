@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.List;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -28,10 +28,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
-import org.eclipse.rdf4j.query.algebra.DeleteData;
-import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -40,7 +37,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
@@ -146,7 +142,14 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin() throws RepositoryException {
 		try {
-			sailConnection.begin(getIsolationLevel());
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+
+			if (getIsolationLevel() != null) {
+				sailConnection.begin(getIsolationLevel());
+			} else {
+				sailConnection.begin();
+			}
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
@@ -155,7 +158,41 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
-			sailConnection.begin(level);
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+
+			if (level != null) {
+				sailConnection.begin(level);
+			} else {
+				sailConnection.begin();
+			}
+		} catch (SailException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		try {
+			// Asserts to catch any of these issues in our tests. These asserts don't run in production since they are
+			// slow. Nulls in the transaction settings or multiple isolation levels have undefined behaviour.
+			assert Arrays.stream(settings).noneMatch(Objects::isNull) : "No transaction settings should be null!";
+			assert Arrays.stream(settings)
+					.filter(setting -> setting instanceof IsolationLevel)
+					.count() <= 1 : "There should never be more than one isolation level";
+
+			sailConnection.setTransactionSettings(settings);
+
+			for (TransactionSetting setting : settings) {
+				if (setting instanceof IsolationLevel) {
+					sailConnection.begin((IsolationLevel) setting);
+					return;
+				}
+			}
+
+			// if none of the transaction settings are isolation levels
+			sailConnection.begin();
+
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}

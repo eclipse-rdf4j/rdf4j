@@ -26,10 +26,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
@@ -886,8 +888,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * @return the effective limit per constraint with an upper bound of the total limit
 	 */
 	public long getEffectiveValidationResultsLimitPerConstraint() {
-		if (validationResultsLimitPerConstraint < 0)
+		if (validationResultsLimitPerConstraint < 0) {
 			return validationResultsLimitTotal;
+		}
 		if (validationResultsLimitTotal >= 0) {
 			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);
 		}
@@ -929,4 +932,47 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
 		this.validationResultsLimitTotal = validationResultsLimitTotal;
 	}
+
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return super.getDefaultIsolationLevel();
+	}
+
+	public static class TransactionSettings {
+
+		public enum ValidationApproach implements TransactionSetting {
+
+			Disabled("Disabled"),
+			Auto("Auto"),
+			Bulk("Bulk");
+
+			private final String value;
+
+			ValidationApproach(String value) {
+				this.value = value;
+			}
+
+			@Override
+			public String getName() {
+				return ValidationApproach.class.getCanonicalName();
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
+		private final String value;
+
+		TransactionSettings(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+	}
+
 }

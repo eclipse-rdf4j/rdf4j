@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -45,7 +46,7 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	/**
 	 * The wrapped SailConnection.
 	 */
-	private SailConnection wrappedCon;
+	private final SailConnection wrappedCon;
 
 	/*--------------*
 	 * Constructors *
@@ -217,6 +218,11 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		wrappedCon.setTransactionSettings(settings);
+	}
+
+	@Override
 	public void flush() throws SailException {
 		wrappedCon.flush();
 	}
@@ -230,4 +236,5 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	public boolean isActive() throws UnknownSailTransactionStateException {
 		return wrappedCon.isActive();
 	}
+
 }

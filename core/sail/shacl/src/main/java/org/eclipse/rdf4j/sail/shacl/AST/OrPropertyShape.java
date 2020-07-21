@@ -131,7 +131,7 @@ public class OrPropertyShape extends PathPropertyShape {
 			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
-			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+			if (connectionsGroup.getTransactionSettings().isCacheSelectNodes()) {
 				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
 			} else {
 				targetNodesToValidate = overrideTargetNode;

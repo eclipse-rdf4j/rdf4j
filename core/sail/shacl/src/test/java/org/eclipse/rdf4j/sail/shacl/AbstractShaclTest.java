@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.AfterClass;
 import org.junit.runner.RunWith;
@@ -539,11 +540,10 @@ abstract public class AbstractShaclTest {
 			throw new RuntimeException(e);
 		}
 
-		ValidationReport report;
+		ValidationReport report = new ValidationReport(true);
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			((ShaclSail) shaclRepository.getSail()).disableValidation();
-			shaclSailConnection.begin(isolationLevel);
+			shaclSailConnection.begin(isolationLevel, ValidationApproach.Disabled);
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
@@ -563,12 +563,15 @@ abstract public class AbstractShaclTest {
 
 			shaclSailConnection.commit();
 
-			((ShaclSail) shaclRepository.getSail()).enableValidation();
+			shaclSailConnection.begin(ValidationApproach.Bulk);
 
-			shaclSailConnection.begin();
-			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
-
-			shaclSailConnection.commit();
+			try {
+				shaclSailConnection.commit();
+			} catch (RepositoryException e) {
+				if (e.getCause() instanceof ShaclSailValidationException) {
+					report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+				}
+			}
 		}
 
 		shaclRepository.shutDown();

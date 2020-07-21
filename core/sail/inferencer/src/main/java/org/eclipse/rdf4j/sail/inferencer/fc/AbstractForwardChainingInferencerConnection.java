@@ -114,14 +114,11 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	@Override
 	public void begin() throws SailException {
-		this.begin(null);
+		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
-		if (level == null) {
-			level = sail.getDefaultIsolationLevel();
-		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());
