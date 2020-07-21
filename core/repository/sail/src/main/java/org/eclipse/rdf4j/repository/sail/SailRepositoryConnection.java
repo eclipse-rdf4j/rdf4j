@@ -7,10 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
-import java.io.IOException;
-import java.io.StringReader;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -31,10 +28,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
-import org.eclipse.rdf4j.query.algebra.DeleteData;
-import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -43,7 +37,6 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
@@ -150,7 +143,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin() throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.receiveTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
 
 			if (getIsolationLevel() != null) {
 				sailConnection.begin(getIsolationLevel());
@@ -166,7 +159,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
 			// always call receiveTransactionSettings(...) before calling begin();
-			sailConnection.receiveTransactionSettings(new TransactionSetting[0]);
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
 
 			if (level != null) {
 				sailConnection.begin(level);
@@ -188,7 +181,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 					.filter(setting -> setting instanceof IsolationLevel)
 					.count() <= 1 : "There should never be more than one isolation level";
 
-			sailConnection.receiveTransactionSettings(settings);
+			sailConnection.setTransactionSettings(settings);
 
 			for (TransactionSetting setting : settings) {
 				if (setting instanceof IsolationLevel) {

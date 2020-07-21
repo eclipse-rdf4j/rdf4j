@@ -110,8 +110,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	@Override
-	public void receiveTransactionSettings(TransactionSetting[] settings) {
-		super.receiveTransactionSettings(settings);
+	public void setTransactionSettings(TransactionSetting... settings) {
+		super.setTransactionSettings(settings);
 		this.transactionSettingsRaw = settings;
 	}
 

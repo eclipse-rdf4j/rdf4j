@@ -189,15 +189,18 @@ public interface SailConnection extends AutoCloseable {
 	void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
 
 	/**
+	 * Pass any transaction-specific settings to the SailConnection. This method needs to be called before the
+	 * transaction is {@link #begin() started }.
+	 * <p>
+	 * Sail implementations can override this method to receive the transaction settings (to inspect and/or pass them
+	 * along to any wrapped sail objects). Remember to call <code>super.setTransactionSettings(settings)</code> if you
+	 * override this method.
 	 *
-	 * Override this method to receive the transaction settings. This method is always called (by the SailRepository)
-	 * before any .begin method is called, but may not be called if the sail is being used outside of the
-	 * SailRepository. Always remember to call super. receiveTransactionSettings(settings) if you override this method.
-	 *
-	 * @param settings the transaction settings on which this transaction operates. It may or may not contain the
+	 * @param settings the transaction settings on which the next transaction operates. It may or may not contain the
 	 *                 isolation level.
+	 * @since 3.3.0
 	 */
-	default void receiveTransactionSettings(TransactionSetting[] settings) {
+	default void setTransactionSettings(TransactionSetting... settings) {
 
 	}
 

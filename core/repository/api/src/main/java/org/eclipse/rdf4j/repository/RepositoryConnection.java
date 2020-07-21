@@ -645,6 +645,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #commit()
 	 * @see #rollback()
 	 * @see #setIsolationLevel(IsolationLevel)
+	 * @since 3.3.0
 	 */
 	default void begin(TransactionSetting... settings) {
 		for (TransactionSetting setting : settings) {

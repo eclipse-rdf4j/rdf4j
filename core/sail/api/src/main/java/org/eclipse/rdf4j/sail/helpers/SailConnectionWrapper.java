@@ -218,8 +218,8 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public void receiveTransactionSettings(TransactionSetting[] settings) {
-		wrappedCon.receiveTransactionSettings(settings);
+	public void setTransactionSettings(TransactionSetting... settings) {
+		wrappedCon.setTransactionSettings(settings);
 	}
 
 	@Override
