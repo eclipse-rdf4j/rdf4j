@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.AfterClass;
@@ -182,12 +183,12 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValue/not2",
 //		"test-cases/hasValue/targetNode",
 //		"test-cases/hasValue/targetNode2",
-//		"test-cases/valueIn/simple",
-//		"test-cases/valueIn/and",
-//		"test-cases/valueIn/not",
-//		"test-cases/valueIn/not2",
-//		"test-cases/valueIn/targetNode",
-//		"test-cases/valueIn/targetNode2",
+//		"test-cases/hasValueIn/simple",
+//		"test-cases/hasValueIn/and",
+//		"test-cases/hasValueIn/not",
+//		"test-cases/hasValueIn/not2",
+//		"test-cases/hasValueIn/targetNode",
+//		"test-cases/hasValueIn/targetNode2",
 		//		"test-cases/and-or/datatypeNodeShape",
 //		"test-cases/class/and",
 //		"test-cases/class/and2",
@@ -280,7 +281,6 @@ abstract public class AbstractShaclTest {
 //		"test-cases/functionalProperty/singleFunctional",
 //		"test-cases/functionalProperty/multipleFunctional",
 //		"test-cases/functionalProperty/multipleFunctionalOr"
-
 	)
 		.distinct()
 		.sorted()
@@ -689,11 +689,10 @@ abstract public class AbstractShaclTest {
 			throw new RuntimeException(e);
 		}
 
-		ValidationReport report;
+		ValidationReport report = new ValidationReport(true);
 
 		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			((ShaclSail) shaclRepository.getSail()).disableValidation();
-			shaclSailConnection.begin(isolationLevel);
+			shaclSailConnection.begin(isolationLevel, ValidationApproach.Disabled);
 
 			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
 			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
@@ -713,12 +712,15 @@ abstract public class AbstractShaclTest {
 
 			shaclSailConnection.commit();
 
-			((ShaclSail) shaclRepository.getSail()).enableValidation();
+			shaclSailConnection.begin(ValidationApproach.Bulk);
 
-			shaclSailConnection.begin();
-			report = ((ShaclSailConnection) shaclSailConnection.getSailConnection()).revalidate();
-
-			shaclSailConnection.commit();
+			try {
+				shaclSailConnection.commit();
+			} catch (RepositoryException e) {
+				if (e.getCause() instanceof ShaclSailValidationException) {
+					report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+				}
+			}
 		}
 
 		shaclRepository.shutDown();
@@ -845,7 +847,7 @@ abstract public class AbstractShaclTest {
 		shaclSail.setParallelValidation(true);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
-		shaclSail.setShaclAdvancedFeatures(true);
+		shaclSail.setEclipseRdf4jShaclExtensions(true);
 		shaclSail.setDashDataShapes(true);
 
 		repository.init();

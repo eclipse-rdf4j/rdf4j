@@ -109,7 +109,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 		SailConnection removedStatements;
 
 		if (validateEntireBaseSail) {
-			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+			if (connectionsGroup.getTransactionSettings().isCacheSelectNodes()) {
 				PlanNode overrideTargetNode = getPlan(connectionsGroup, printPlans, null, false, false);
 				overrideTargetNodeBufferedSplitter = new BufferedSplitter(overrideTargetNode);
 			} else {
@@ -251,7 +251,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 										shaclProperties.getTargetObjectsOf()));
 					}
 
-					if (shaclSail.isShaclAdvancedFeatures()) {
+					if (shaclSail.isEclipseRdf4jShaclExtensions()) {
 						shaclProperties.getTargetShape()
 								.stream()
 								.map(targetShape -> new TargetShape(shapeId, shaclSail, connection,
@@ -285,7 +285,7 @@ public class NodeShape implements PlanGenerator, RequiresEvalutation, QueryGener
 
 					if (shaclSail.isUndefinedTargetValidatesAllSubjects() && propertyShapes.isEmpty()) {
 						logger.info(
-								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setExperimentalDashSupport(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
+								"isUndefinedTargetValidatesAllSubjects() is deprecated, please use .setDashDataShapes(true) and use the custom targets from http://datashapes.org/dash#AllSubjectsTarget");
 
 						propertyShapes
 								.add(new NodeShape(shapeId, shaclSail, connection, shaclProperties.isDeactivated()));

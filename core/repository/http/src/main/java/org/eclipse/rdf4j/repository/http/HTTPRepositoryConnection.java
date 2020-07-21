@@ -28,6 +28,7 @@ import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -163,6 +164,27 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		} catch (RDF4JException | IllegalStateException | IOException e) {
 			throw new RepositoryException(e);
 		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		verifyIsOpen();
+		verifyNotTxnActive("Connection already has an active transaction");
+
+		if (this.getRepository().useCompatibleMode()) {
+			active = true;
+			return;
+		}
+
+		try {
+			client.beginTransaction(settings);
+			active = true;
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException | IllegalStateException | IOException e) {
+			throw new RepositoryException(e);
+		}
+
 	}
 
 	/**

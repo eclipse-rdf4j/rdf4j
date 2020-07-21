@@ -8,6 +8,7 @@ ex:PersonPropertyShape a <http://www.w3.org/ns/shacl#PropertyShape>;
 
 _:node1ebucrv36x2347 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://www.w3.org/ns/shacl#conforms> false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#result> _:72aa6bfb-10e5-487f-be18-20f1d86b2f9a .
 
 _:72aa6bfb-10e5-487f-be18-20f1d86b2f9a a <http://www.w3.org/ns/shacl#ValidationResult>;

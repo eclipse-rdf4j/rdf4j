@@ -59,20 +59,29 @@ public class ValidationReportTest {
 
 			Rio.write(actual, System.out, RDFFormat.TURTLE);
 
-			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n"
-					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
-					+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
-					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
-					+ "_:node1d1gi0h02x12 a sh:ValidationReport;\n" + "  sh:conforms false;\n"
-					+ "  sh:result _:node1d1gi0h02x13 .\n" + "\n" + "_:node1d1gi0h02x13 a sh:ValidationResult;\n"
-					+ "  sh:focusNode rdf:subject;\n" + "  sh:resultPath rdfs:label;\n"
-					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
-					+ "  sh:sourceShape ex:PersonShapeProperty .\n" + "\n"
-					+ "_:node1d1gi0h02x12 sh:result _:node1d1gi0h02x14 .\n" + "\n"
-					+ "_:node1d1gi0h02x14 a sh:ValidationResult;\n" + "  sh:focusNode rdfs:Class;\n"
-					+ "  sh:resultPath rdfs:label;\n"
-					+ "  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n"
-					+ "  sh:sourceShape ex:PersonShapeProperty ." + ""), "", RDFFormat.TURTLE);
+			Model expected = Rio.parse(new StringReader("" + "@prefix ex: <http://example.com/ns#> .\n" +
+					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"_:node1ebr5j3f8x20 a sh:ValidationReport;\n" +
+					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
+					"  sh:conforms false;\n" +
+					"  sh:result _:node1ebr5j3f8x21 .\n" +
+					"\n" +
+					"_:node1ebr5j3f8x21 a sh:ValidationResult;\n" +
+					"  sh:focusNode rdf:subject;\n" +
+					"  sh:resultPath rdfs:label;\n" +
+					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"  sh:sourceShape ex:PersonShapeProperty .\n" +
+					"\n" +
+					"_:node1ebr5j3f8x20 sh:result _:node1ebr5j3f8x22 .\n" +
+					"\n" +
+					"_:node1ebr5j3f8x22 a sh:ValidationResult;\n" +
+					"  sh:focusNode rdfs:Class;\n" +
+					"  sh:resultPath rdfs:label;\n" +
+					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"  sh:sourceShape ex:PersonShapeProperty .\n" + ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
 
@@ -107,14 +116,16 @@ public class ValidationReportTest {
 					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 					"\n" +
-					"_:node1e4dsta0ax19 a sh:ValidationReport;\n" +
+					"_:node1ecfgke5gx80 a sh:ValidationReport;\n" +
+					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
 					"  sh:conforms false;\n" +
-					"  sh:result _:node1e4dsta0ax20 .\n" +
+					"  sh:result _:node1ecfgke5gx81 .\n" +
 					"\n" +
-					"_:node1e4dsta0ax20 a sh:ValidationResult;\n" +
+					"_:node1ecfgke5gx81 a sh:ValidationResult;\n" +
 					"  sh:focusNode ex:node1;\n" +
 					"  sh:sourceConstraintComponent sh:ClassConstraintComponent;\n" +
-					"  sh:sourceShape ex:PersonShape ."
+					"  sh:sourceShape ex:PersonShape;\n" +
+					"  sh:value ex:node1 ."
 					+ ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
@@ -151,10 +162,12 @@ public class ValidationReportTest {
 			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
 
 			Model expected = Rio.parse(new StringReader(""
-					+ "@prefix ex: <http://example.com/ns#> .\n"
-					+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
-					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" + "\n"
-					+ "[] a sh:ValidationReport;\n" +
+					+ "@prefix ex: <http://example.com/ns#> .\n" +
+					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"[] a sh:ValidationReport;\n" +
+					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
 					"  sh:conforms false;\n" +
 					"  sh:result [ a sh:ValidationResult;\n" +
 					"      sh:detail [ a sh:ValidationResult;\n" +
@@ -162,12 +175,14 @@ public class ValidationReportTest {
 					"              sh:focusNode ex:validPerson1;\n" +
 					"              sh:resultPath ex:age;\n" +
 					"              sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-					"              sh:sourceShape ex:personShapeAgeLong\n" +
+					"              sh:sourceShape ex:personShapeAgeLong;\n" +
+					"              sh:value \"abc\"\n" +
 					"            ];\n" +
 					"          sh:focusNode ex:validPerson1;\n" +
 					"          sh:resultPath ex:age;\n" +
 					"          sh:sourceConstraintComponent sh:DatatypeConstraintComponent;\n" +
-					"          sh:sourceShape ex:personShapeAgeInteger\n" +
+					"          sh:sourceShape ex:personShapeAgeInteger;\n" +
+					"          sh:value \"abc\"\n" +
 					"        ];\n" +
 					"      sh:focusNode ex:validPerson1;\n" +
 					"      sh:resultPath ex:age;\n" +

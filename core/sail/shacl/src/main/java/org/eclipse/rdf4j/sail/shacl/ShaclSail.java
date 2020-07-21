@@ -27,16 +27,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -197,8 +201,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
-	private boolean shaclAdvancedFeatures = ShaclSailConfig.SHACL_ADVANCED_FEATURES_DEFAULT;
+	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
+
+	private long validationResultsLimitTotal = -1;
+	private long validationResultsLimitPerConstraint = -1;
 
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static SchemaCachingRDFSInferencer shaclVocabulary;
@@ -273,7 +280,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
 	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
-	 * paths are supported. sh:targetShape requires that experimental support is enabled for that feature.
+	 * paths are supported. DASH and RSX features may need to be enabled.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -308,7 +315,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
-				SHACL.TARGET_SHAPE);
+				DASH.hasValueIn,
+				RSX.targetShape);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -875,35 +883,35 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
-	 * currently enables support for sh:targetShape.
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
 	 *
 	 * EXPERIMENTAL!
 	 *
-	 * @param shaclAdvancedFeatures true to enable (default: false)
+	 * @param eclipseRdf4jShaclExtensions true to enable (default: false)
 	 */
 	@Experimental
-	public void setShaclAdvancedFeatures(boolean shaclAdvancedFeatures) {
-		this.shaclAdvancedFeatures = shaclAdvancedFeatures;
+	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;
 		forceRefreshShapes();
 	}
 
 	/**
-	 * Support for SHACL Advanced Features W3C Working Group Note (https://www.w3.org/TR/shacl-af/). Enabling this
-	 * currently enables support for sh:targetShape.
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
 	 *
 	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
 	 */
 	@Experimental
-	public boolean isShaclAdvancedFeatures() {
-		return shaclAdvancedFeatures;
+	public boolean isEclipseRdf4jShaclExtensions() {
+		return eclipseRdf4jShaclExtensions;
 	}
 
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
-	 * support for dash:valueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
 	 *
 	 * EXPERIMENTAL!
 	 *
@@ -917,7 +925,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
-	 * support for dash:valueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
 	 *
 	 * EXPERIMENTAL!
 	 *
@@ -927,4 +935,108 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public boolean isDashDataShapes() {
 		return dashDataShapes;
 	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report per constraint, -1 for no limit
+	 */
+	public long getValidationResultsLimitPerConstraint() {
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 *
+	 * @return the effective limit per constraint with an upper bound of the total limit
+	 */
+	public long getEffectiveValidationResultsLimitPerConstraint() {
+		if (validationResultsLimitPerConstraint < 0) {
+			return validationResultsLimitTotal;
+		}
+		if (validationResultsLimitTotal >= 0) {
+			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);
+		}
+
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitPerConstraint the limit for the number of validation results per report per
+	 *                                            constraint, -1 for no limit
+	 */
+	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report in total, -1 for no limit
+	 */
+	public long getValidationResultsLimitTotal() {
+		return validationResultsLimitTotal;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitTotal the limit for the number of validation results per report in total, -1 for no
+	 *                                    limit
+	 */
+	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+		this.validationResultsLimitTotal = validationResultsLimitTotal;
+	}
+
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return super.getDefaultIsolationLevel();
+	}
+
+	public static class TransactionSettings {
+
+		public enum ValidationApproach implements TransactionSetting {
+
+			Disabled("Disabled"),
+			Auto("Auto"),
+			Bulk("Bulk");
+
+			private final String value;
+
+			ValidationApproach(String value) {
+				this.value = value;
+			}
+
+			@Override
+			public String getName() {
+				return ValidationApproach.class.getCanonicalName();
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
+		private final String value;
+
+		TransactionSettings(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+	}
+
 }

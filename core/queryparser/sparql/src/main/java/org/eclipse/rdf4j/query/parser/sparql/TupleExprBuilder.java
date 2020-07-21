@@ -1754,7 +1754,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				} else {
 					// upperbound is abitrary-length
 
-					result = new ArbitraryLengthPath(scope, subjVar, te, endVar, contextVar, lowerBound);
+					result = new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
+							lowerBound);
 				}
 			} else {
 				// create single path of fixed length.
@@ -1873,8 +1874,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		public void meet(Var var) {
 			if (toBeReplaced.equals(var)) {
 				QueryModelNode parent = var.getParentNode();
-				parent.replaceChildNode(var, replacement);
-				replacement.setParentNode(parent);
+				Var replacementVar = replacement.clone();
+				parent.replaceChildNode(var, replacementVar);
+				replacementVar.setParentNode(parent);
 			}
 		}
 	}

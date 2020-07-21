@@ -111,6 +111,10 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 				factory.withMembers(members);
 			}
 
+			if (fedXConfig.getConfig() != null) {
+				factory.withConfig(fedXConfig.getConfig());
+			}
+
 			fedxRepo = factory.create();
 
 			fedxRepo.init();

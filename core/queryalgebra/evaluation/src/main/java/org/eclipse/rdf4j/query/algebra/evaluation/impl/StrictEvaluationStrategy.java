@@ -1545,7 +1545,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			argValues[i] = evaluate(args.get(i), bindings);
 		}
 
-		return function.evaluate(tripleSource.getValueFactory(), argValues);
+		return function.evaluate(tripleSource, argValues);
 
 	}
 

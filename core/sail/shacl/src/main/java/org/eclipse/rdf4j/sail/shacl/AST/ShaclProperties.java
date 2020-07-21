@@ -45,7 +45,7 @@ public class ShaclProperties {
 	private Resource datatype;
 	private Resource in;
 	private final List<Value> hasValue = new ArrayList<>();
-	private Resource valueIn;
+	private Resource hasValueIn;
 
 	private Long minLength;
 	private Long maxLength;
@@ -255,13 +255,13 @@ public class ShaclProperties {
 				case "http://www.w3.org/ns/shacl#hasValue":
 					hasValue.add(object);
 					break;
-				case "http://datashapes.org/dash#valueIn":
-					if (valueIn != null) {
+				case "http://datashapes.org/dash#hasValueIn":
+					if (hasValueIn != null) {
 						throw new IllegalStateException(predicate + " already populated");
 					}
-					valueIn = (Resource) object;
+					hasValueIn = (Resource) object;
 					break;
-				case "http://www.w3.org/ns/shacl#targetShape":
+				case "http://rdf4j.org/shacl-extensions#targetShape":
 					targetShape.add((Resource) object);
 					break;
 				default:
@@ -437,7 +437,7 @@ public class ShaclProperties {
 		return targetShape;
 	}
 
-	public Resource getValueIn() {
-		return valueIn;
+	public Resource getHasValueIn() {
+		return hasValueIn;
 	}
 }

@@ -9,6 +9,7 @@ ex:PersonPropertyShape a sh:PropertyShape;
 
 [] a sh:ValidationReport;
   sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:age;

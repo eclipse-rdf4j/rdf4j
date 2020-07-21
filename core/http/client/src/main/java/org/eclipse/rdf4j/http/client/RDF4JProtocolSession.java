@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import static org.eclipse.rdf4j.http.protocol.Protocol.TRANSACTION_SETTINGS_PREFIX;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -54,6 +56,7 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -608,6 +611,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	public synchronized void beginTransaction(IsolationLevel isolationLevel)
 			throws RDF4JException, IOException, UnauthorizedException {
+		beginTransaction((TransactionSetting) isolationLevel);
+	}
+
+	public synchronized void beginTransaction(TransactionSetting... transactionSettings)
+			throws RDF4JException, IOException, UnauthorizedException {
 		checkRepositoryURL();
 
 		if (transactionURL != null) {
@@ -620,9 +628,24 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
 			List<NameValuePair> params = new ArrayList<>();
-			if (isolationLevel != null) {
-				params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
-						isolationLevel.getURI().stringValue()));
+
+			for (TransactionSetting transactionSetting : transactionSettings) {
+				if (transactionSetting == null) {
+					continue;
+				}
+				if (transactionSetting instanceof IsolationLevel) {
+					// also send isolation level with dedicated parameter for backward compatibility with older RDF4J
+					// Server
+					IsolationLevel isolationLevel = (IsolationLevel) transactionSetting;
+					params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
+							isolationLevel.getURI().stringValue()));
+				}
+				params.add(
+						new BasicNameValuePair(
+								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),
+								transactionSetting.getValue()
+						)
+				);
 			}
 
 			method.setEntity(new UrlEncodedFormEntity(params, UTF8));
@@ -1150,5 +1173,4 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 		return method;
 	}
-
 }

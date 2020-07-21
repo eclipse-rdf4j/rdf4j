@@ -8,15 +8,18 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -145,20 +148,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void begin() throws SailException {
-		begin(null);
+		begin(sailBase.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
-		if (level == null) {
-			level = this.sailBase.getDefaultIsolationLevel();
+	public void begin(IsolationLevel isolationLevel) throws SailException {
+		if (isolationLevel == null) {
+			isolationLevel = sailBase.getDefaultIsolationLevel();
 		}
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
-				this.sailBase.getSupportedIsolationLevels());
+		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(isolationLevel,
+				sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-					"Isolation level " + level + " not compatible with this Sail");
+					"Isolation level " + isolationLevel + " not compatible with this Sail");
 		}
 		this.transactionIsolationLevel = compatibleLevel;
 
@@ -378,6 +381,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (isActive()) {
 			endUpdate(null);
 		}
+
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
@@ -686,6 +690,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.readLock());
 	}
@@ -693,6 +698,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.writeLock());
 	}

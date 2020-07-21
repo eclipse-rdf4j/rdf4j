@@ -62,7 +62,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
-		throw new UnsupportedOperationException();
+		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 
 }

@@ -14,10 +14,13 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 
 /**
  * The ValidationReport represents the report from a SHACL validation in an easy-to-use Java API.
@@ -28,11 +31,17 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 @Deprecated
 public class ValidationReport {
 
-	private Resource id = SimpleValueFactory.getInstance().createBNode();
+	protected final Resource id = SimpleValueFactory.getInstance().createBNode();
 
-	private boolean conforms;
+	protected boolean conforms = true;
 
-	private List<ValidationResult> validationResult = new ArrayList<>();
+	protected final List<ValidationResult> validationResult = new ArrayList<>();
+	protected boolean truncated = false;
+	List<Tuple> tuples;
+
+	public ValidationReport() {
+
+	}
 
 	public ValidationReport(boolean conforms) {
 		this.conforms = conforms;
@@ -48,6 +57,7 @@ public class ValidationReport {
 
 		model.add(getId(), SHACL.CONFORMS, vf.createLiteral(conforms));
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
+		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
 		for (ValidationResult result : validationResult) {
 			model.add(getId(), SHACL.RESULT, result.getId());
@@ -85,5 +95,19 @@ public class ValidationReport {
 				"conforms=" + conforms +
 				", validationResult=" + Arrays.toString(validationResult.toArray()) +
 				'}';
+	}
+
+	/**
+	 * Users can enable a limit for the number of validation results they want to accept. If the limit is reached the
+	 * report will be marked as truncated.
+	 *
+	 * @return true if this SHACL validation report has been truncated.
+	 */
+	public boolean isTruncated() {
+		return truncated;
+	}
+
+	public void setTuples(List<Tuple> collect) {
+		this.tuples = collect;
 	}
 }

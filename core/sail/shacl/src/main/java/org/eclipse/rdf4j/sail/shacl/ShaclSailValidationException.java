@@ -8,24 +8,19 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Deque;
-import java.util.List;
-
 import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class ShaclSailValidationException extends SailException implements ValidationException {
 
-	private List<ValidationTuple> invalidTuples;
+	private final ValidationReport validationReport;
 
-	ShaclSailValidationException(List<ValidationTuple> invalidTuples) {
+	ShaclSailValidationException(ValidationReport validationReport) {
 		super("Failed SHACL validation");
-		this.invalidTuples = invalidTuples;
+		this.validationReport = validationReport;
 	}
 
 	/**
@@ -51,25 +46,6 @@ public class ShaclSailValidationException extends SailException implements Valid
 	 */
 	@Deprecated
 	public ValidationReport getValidationReport() {
-		ValidationReport validationReport = new ValidationReport(invalidTuples.isEmpty());
-
-		for (ValidationTuple invalidTuple : invalidTuples) {
-
-			Deque<ValidationResult> validationResults = invalidTuple.toValidationResult();
-
-			ValidationResult mainValidationResult = null;
-
-			for (ValidationResult validationResult : validationResults) {
-				if (mainValidationResult == null) {
-					mainValidationResult = validationResult;
-					validationReport.addValidationResult(mainValidationResult);
-				} else {
-					mainValidationResult.setDetail(validationResult);
-					mainValidationResult = validationResult;
-				}
-			}
-
-		}
 		return validationReport;
 	}
 }

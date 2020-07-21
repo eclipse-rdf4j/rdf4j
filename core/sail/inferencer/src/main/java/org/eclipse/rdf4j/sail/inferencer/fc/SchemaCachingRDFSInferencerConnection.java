@@ -767,7 +767,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void begin()
 			throws SailException {
-		this.begin(null);
+		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override

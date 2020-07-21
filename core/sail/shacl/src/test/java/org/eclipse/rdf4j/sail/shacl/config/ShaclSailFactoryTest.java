@@ -58,8 +58,11 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
-		config.setShaclAdvancedFeatures(!config.isShaclAdvancedFeatures());
+		config.setEclipseRdf4jShaclExtensions(!config.isEclipseRdf4jShaclExtensions());
 		config.setDashDataShapes(!config.isDashDataShapes());
+
+		config.setValidationResultsLimitTotal(100);
+		config.setValidationResultsLimitPerConstraint(3);
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -78,8 +81,12 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
-		assertThat(sail.isShaclAdvancedFeatures()).isEqualTo(config.isShaclAdvancedFeatures());
+		assertThat(sail.isEclipseRdf4jShaclExtensions()).isEqualTo(config.isEclipseRdf4jShaclExtensions());
 		assertThat(sail.isDashDataShapes()).isEqualTo(config.isDashDataShapes());
+		assertThat(sail.getValidationResultsLimitTotal()).isEqualTo(config.getValidationResultsLimitTotal());
+		assertThat(sail.getValidationResultsLimitPerConstraint())
+				.isEqualTo(config.getValidationResultsLimitPerConstraint());
+
 	}
 
 }

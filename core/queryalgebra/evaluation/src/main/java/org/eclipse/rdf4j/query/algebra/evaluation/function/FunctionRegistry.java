@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function;
 import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
+ * A ServiceRegistry for implementations of the {@link Function} interface. Functions are registered by their
+ * {@link Function#getURI() IRI}.
+ *
  * @author Arjohn Kampman
  */
 public class FunctionRegistry extends ServiceRegistry<String, Function> {

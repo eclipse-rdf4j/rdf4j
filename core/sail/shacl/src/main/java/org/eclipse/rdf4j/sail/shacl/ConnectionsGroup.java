@@ -29,13 +29,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 @InternalUseOnly
 public class ConnectionsGroup implements Closeable {
 
-	private final ShaclSail sail;
-
 	private final SailConnection baseConnection;
 	private final SailConnection previousStateConnection;
 
 	private final Sail addedStatements;
 	private final Sail removedStatements;
+
+	private final ShaclSailConnection.Settings transactionSettings;
 
 	private final Stats stats;
 
@@ -46,16 +46,17 @@ public class ConnectionsGroup implements Closeable {
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private final Map<PlanNode, BufferedSplitter> selectNodeCache = new HashMap<>();
 
-	ConnectionsGroup(ShaclSail sail, SailConnection baseConnection,
+	ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
-			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider) {
-		this.sail = sail;
+			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
+			ShaclSailConnection.Settings transactionSettings) {
 		this.baseConnection = baseConnection;
 		this.previousStateConnection = previousStateConnection;
 		this.addedStatements = addedStatements;
 		this.removedStatements = removedStatements;
 		this.stats = stats;
 		this.rdfsSubClassOfReasonerProvider = rdfsSubClassOfReasonerProvider;
+		this.transactionSettings = transactionSettings;
 	}
 
 	public SailConnection getPreviousStateConnection() {
@@ -81,17 +82,13 @@ public class ConnectionsGroup implements Closeable {
 		}
 	}
 
-	public ShaclSail getSail() {
-		return sail;
-	}
-
 	public SailConnection getBaseConnection() {
 		return baseConnection;
 	}
 
 	synchronized public PlanNode getCachedNodeFor(PlanNode select) {
 
-		if (!sail.isCacheSelectNodes()) {
+		if (!transactionSettings.isCacheSelectNodes()) {
 			return select;
 		}
 
@@ -111,6 +108,10 @@ public class ConnectionsGroup implements Closeable {
 	public org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode getCachedNodeFor(
 			org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode select) {
 		return select;
+	}
+
+	public ShaclSailConnection.Settings getTransactionSettings() {
+		return transactionSettings;
 	}
 
 	interface RdfsSubClassOfReasonerProvider {

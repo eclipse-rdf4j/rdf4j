@@ -89,7 +89,10 @@ public class ValidationResult {
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
 
 		model.add(getId(), SHACL.FOCUS_NODE, focusNode);
-		model.add(getId(), SHACL.VALUE, value);
+
+		if (value != null) {
+			model.add(getId(), SHACL.VALUE, value);
+		}
 
 		if (this.path != null) {
 			path.toModel(path.getId(), null, model, new HashSet<>());

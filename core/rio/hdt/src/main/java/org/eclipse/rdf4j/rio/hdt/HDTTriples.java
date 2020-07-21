@@ -43,6 +43,7 @@ class HDTTriples extends HDTPart {
 		POS(4),
 		OSP(5),
 		OPS(6);
+
 		private final int value;
 
 		protected int getValue() {
