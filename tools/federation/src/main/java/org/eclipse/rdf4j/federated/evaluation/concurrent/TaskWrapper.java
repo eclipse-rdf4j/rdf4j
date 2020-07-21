@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.federated.FedXConfig;
  */
 public interface TaskWrapper {
 
-
 	/**
 	 * Wrap the given {@link Runnable} and add custom logic.
 	 * 
