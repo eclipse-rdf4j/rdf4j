@@ -625,6 +625,27 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	void begin(IsolationLevel level) throws RepositoryException;
 
+	/**
+	 * Begins a new transaction with the supplied {@link TransactionSetting}, requiring {@link #commit()} or
+	 * {@link #rollback()} to be called to end the transaction.
+	 *
+	 * @param settings The {@link TransactionSetting} (zero or more) for this transaction. If an isolation level is
+	 *                 provided in the settings this will be used for the transaction. If none is provided then the
+	 *                 default will be used. Behaviour of this method is undefined if more than one isolation level is
+	 *                 provided. Behaviour of this method is undefined if one or more settings is null.
+	 * @throws RepositoryException If the connection could not start the transaction. Possible reasons this may happen
+	 *                             are:
+	 *                             <ul>
+	 *                             <li>a transaction is already {@link #isActive() active} on the current connection.
+	 *                             <li>the specified {@link IsolationLevel} is not supported by the store, and no
+	 *                             compatible level could be found.
+	 *                             </ul>
+	 * @see #begin()
+	 * @see #isActive()
+	 * @see #commit()
+	 * @see #rollback()
+	 * @see #setIsolationLevel(IsolationLevel)
+	 */
 	default void begin(TransactionSetting... settings) {
 		for (TransactionSetting setting : settings) {
 			if (setting instanceof IsolationLevel) {
