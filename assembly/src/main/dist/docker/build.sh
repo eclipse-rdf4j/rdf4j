@@ -14,10 +14,10 @@ rm -rf ../../../../target/
 
 # go to root of project and do clean, format, install and assembly
 cd ../../../../..
-MVN_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
-
+MVN_VERSION=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)
 mvn clean
-mvn -T 2 -Passembly install -DskipTests -Dmaven.javadoc.skip=true -Dmaven.test.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Danimal.sniffer.skip=true
+mvn formatter:format
+mvn -Passembly install -DskipTests
 cd $CURRENT
 
 # find .zip file
