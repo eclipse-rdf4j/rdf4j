@@ -32,7 +32,8 @@ public interface Function {
 	 * @param args         the function input arguments.
 	 * @return the function result value.
 	 * @throws ValueExprEvaluationException
-	 * @deprecated since 3.3.0. Use {@link #evaluate(TripleSource, Value...)} instead.
+	 * @deprecated since 3.3.0. Use {@link #evaluate(TripleSource, Value...)} instead. A reference to a ValueFactory can
+	 *             be retrieved using {@link TripleSource#getValueFactory()} if needed.
 	 */
 	@Deprecated
 	Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException;
