@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * @see ControlledWorkerJoin
  * @see ControlledWorkerBoundJoin
  */
-public class ControlledWorkerScheduler<T> implements Scheduler<T> {
+public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAware {
 
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);
 
@@ -46,10 +46,14 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	private final int nWorkers;
 	private final String name;
+	private TaskWrapper taskWrapper;
 
 	/**
 	 * Construct a new instance with 20 workers.
+	 * 
+	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
 	 */
+	@Deprecated
 	public ControlledWorkerScheduler() {
 		this(20, "FedX Worker");
 	}
@@ -74,7 +78,13 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	@Override
 	public void schedule(ParallelTask<T> task) {
 
-		WorkerRunnable runnable = new WorkerRunnable(task);
+		Runnable runnable = new WorkerRunnable(task);
+
+		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+		// default the unmodified runnable is used
+		if (taskWrapper != null) {
+			runnable = taskWrapper.wrap(runnable);
+		}
 
 		Future<?> future = executor.submit(runnable);
 
@@ -246,5 +256,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 			throw new FedXRuntimeException(e);
 		}
 
+	}
+
+	@Override
+	public void setTaskWrapper(TaskWrapper taskWrapper) {
+		this.taskWrapper = taskWrapper;
 	}
 }
