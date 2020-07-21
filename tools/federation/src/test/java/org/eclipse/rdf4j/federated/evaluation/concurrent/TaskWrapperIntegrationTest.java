@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 import java.util.Arrays;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
@@ -46,6 +47,12 @@ public class TaskWrapperIntegrationTest extends SPARQLBaseTest {
 		public Runnable wrap(Runnable runnable) {
 			taskCount.incrementAndGet();
 			return runnable;
+		}
+
+		@Override
+		public <T> Callable<T> wrap(Callable<T> callable) {
+			taskCount.incrementAndGet();
+			return callable;
 		}
 	}
 

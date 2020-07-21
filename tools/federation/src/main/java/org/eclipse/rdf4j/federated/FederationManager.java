@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -104,7 +105,7 @@ public class FederationManager {
 			log.debug("Scheduler for join and union are reset.");
 		}
 
-		TaskWrapper taskWrapper = federationContext.getConfig().getTaskWrapper();
+		Optional<TaskWrapper> taskWrapper = federationContext.getConfig().getTaskWrapper();
 		if (joinScheduler != null) {
 			joinScheduler.abort();
 		}
@@ -135,12 +136,12 @@ public class FederationManager {
 	 * @return
 	 */
 	public Executor getExecutor() {
-		final TaskWrapper taskWrapper = federationContext.getConfig().getTaskWrapper();
+		final Optional<TaskWrapper> taskWrapper = federationContext.getConfig().getTaskWrapper();
 		return (runnable) -> {
 
 			// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
 			// default the unmodified runnable is returned from the task wrapper
-			Runnable wrappedRunnable = taskWrapper.wrap(runnable);
+			Runnable wrappedRunnable = taskWrapper.map(tw -> tw.wrap(runnable)).orElse(runnable);
 
 			executor.execute(wrappedRunnable);
 		};

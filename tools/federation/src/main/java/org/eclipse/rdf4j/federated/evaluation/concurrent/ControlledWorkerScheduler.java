@@ -78,13 +78,15 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	@Override
 	public void schedule(ParallelTask<T> task) {
 
-		WorkerRunnable runnable = new WorkerRunnable(task);
+		Runnable runnable = new WorkerRunnable(task);
 
 		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
-		// default the unmodified runnable is returned from the task wrapper
-		Runnable wrappedRunnable = taskWrapper.wrap(runnable);
+		// default the unmodified runnable is used
+		if (taskWrapper != null) {
+			runnable = taskWrapper.wrap(runnable);
+		}
 
-		Future<?> future = executor.submit(wrappedRunnable);
+		Future<?> future = executor.submit(runnable);
 
 		// register the future to the task
 		if (task instanceof ParallelTaskBase<?>) {

@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
@@ -62,7 +64,7 @@ public class FedXConfig {
 
 	private Class<? extends WriteStrategyFactory> writeStrategyFactory = DefaultWriteStrategyFactory.class;
 
-	private TaskWrapper taskWrapper = TaskWrapper.DEFAULT;
+	private TaskWrapper taskWrapper = null;
 
 	private String prefixDeclarations = null;
 
@@ -296,8 +298,8 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
-	 * {@link TaskWrapper#DEFAULT} is used. See {@link TaskWrapper} for more information.
+	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper is
+	 * explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
 	 * 
 	 * @param taskWrapper the {@link TaskWrapper}
 	 * @return the current config
@@ -497,12 +499,12 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. By default
-	 * {@link TaskWrapper#DEFAULT} is used. See {@link TaskWrapper} for more information.
+	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper
+	 * is explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
 	 * 
-	 * @return the {@link TaskWrapper}, {@link TaskWrapper#DEFAULT} if none is explicitly configured
+	 * @return the {@link TaskWrapper}, an empty {@link Optional} if none is explicitly configured
 	 */
-	public TaskWrapper getTaskWrapper() {
-		return taskWrapper;
+	public Optional<TaskWrapper> getTaskWrapper() {
+		return Optional.ofNullable(taskWrapper);
 	}
 }

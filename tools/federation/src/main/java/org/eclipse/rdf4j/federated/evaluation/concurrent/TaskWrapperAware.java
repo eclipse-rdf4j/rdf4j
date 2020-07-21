@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
+import java.util.Optional;
+
 /**
  * Classes implementing this interface can accept a custom {@link TaskWrapper}.
  * 
@@ -22,4 +24,15 @@ public interface TaskWrapperAware {
 	 * @return
 	 */
 	public void setTaskWrapper(TaskWrapper taskWrapper);
+
+	/**
+	 * Set the {@link TaskWrapper} if provided
+	 * 
+	 * @param taskWrapper an optional {@link TaskWrapper}
+	 */
+	default void setTaskWrapper(Optional<TaskWrapper> taskWrapper) {
+		if (taskWrapper.isPresent()) {
+			setTaskWrapper(taskWrapper.get());
+		}
+	}
 }
