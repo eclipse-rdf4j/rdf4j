@@ -21,7 +21,6 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -32,7 +31,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -52,10 +50,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -985,40 +981,6 @@ public abstract class AbstractLuceneSailTest {
 	public void testReindexing() throws Exception {
 		sail.reindex();
 		testComplexQueryTwo();
-	}
-
-	@Test
-	public void testReindexing_SingleResource() throws Exception {
-
-		// wipe the Lucene index to allow specific test data
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.clear();
-		}
-
-		String query = "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> \n" +
-				"SELECT ?subj ?text ?prop ?score WHERE { \n" +
-				"  ?subj search:matches [ search:query \"one\" ; search:property ?prop; search:snippet ?text ; search:score ?score] }";
-
-		List<BindingSet> res;
-
-		// expected empty result => no data in the index
-		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(Collections.emptyList(), res);
-
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("one"));
-		}
-
-		// expected single result
-		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(1, res.size());
-
-		// re-index
-		this.sail.reindex();
-
-		// expected single result
-		res = Repositories.tupleQuery(repository, query, t -> Iterations.asList(t));
-		Assert.assertEquals(1, res.size());
 	}
 
 	@Test
