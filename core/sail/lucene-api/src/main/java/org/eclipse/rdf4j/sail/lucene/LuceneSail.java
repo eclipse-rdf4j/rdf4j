@@ -553,7 +553,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 					}
 
 					// make sure to index statements for last resource
-					if (current != null) {
+					if (current != null && !statements.isEmpty()) {
 						if (logger.isDebugEnabled()) {
 							logger.debug("reindexing resource " + current);
 						}
