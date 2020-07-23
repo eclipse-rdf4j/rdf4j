@@ -551,6 +551,15 @@ public class LuceneSail extends NotifyingSailWrapper {
 						}
 						statements.add(vf.createStatement(r, p, o, c));
 					}
+
+					// make sure to index statements for last resource
+					if (current != null && !statements.isEmpty()) {
+						if (logger.isDebugEnabled()) {
+							logger.debug("reindexing resource " + current);
+						}
+						// commit
+						luceneIndex.addDocuments(current, statements);
+					}
 				}
 			} finally {
 				repo.shutDown();
