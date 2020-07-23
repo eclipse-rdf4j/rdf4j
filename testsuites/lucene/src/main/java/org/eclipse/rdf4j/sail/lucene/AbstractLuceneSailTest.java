@@ -121,7 +121,6 @@ public abstract class AbstractLuceneSailTest {
 
 		// create a Repository wrapping the LuceneSail
 		repository = new SailRepository(sail);
-		repository.initialize();
 
 		// add some statements to it
 		try (RepositoryConnection connection = repository.getConnection()) {
