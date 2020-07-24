@@ -1094,7 +1094,7 @@ public class QueryExplainExample {
 				"  BIND(<http://example.com/peter> as ?person)",
 				"	?person a foaf:Person .",
 				"	{",
-				"  		BIND(<http://example.com/peter> as ?person)",
+				"  	BIND(<http://example.com/peter> as ?person)",
 				"		?person	(foaf:knows | ^foaf:knows)* ?friend.",
 				"	} UNION {",
 				"		?friend foaf:age ?age",

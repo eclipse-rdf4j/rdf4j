@@ -113,6 +113,14 @@ As of writing this documentation the following features are supported.
 - `sh:maxInclusive`
 - `sh:in`
 - `sh:deactivated`
+- `sh:hasValue`
+- `dash:hasValueIn`
+- `sh:target` for use with DASH targets
+- `rsx:targetShape`
+
+DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and 
+`setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information 
+about the RSX features, see the RSX section of this document.
 
 Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes, 
 equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
@@ -303,6 +311,16 @@ sailRepository.shutDown();
 By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
 support for `sh:entailment`, however the entire reasoner can be disabled with `setRdfsSubClassReasoning(false)`.
 
+# RSX - Eclipse RDF4J SHACL Extensions
+RDF4J has seen a need to develop its own extension the W3C SHACL Recommendation in order to support new
+and innovative features. We always strive to collaborate with the community when developing these features.
+
+RSX currently contains `rsx:targetShape` which will allow a Shape to be the target for your constraints. This means 
+that it will be possible to model more complex use-cases like "all norwegian companies with 10 or more employees, 
+a revenue greater than or equal to 6 million NOK or valued at 23 million or above are required to have a registered 
+accountant". This also allows for considerably faster implementations than what is currently possible with SPARQL Targets.
+
+The RSX specification will be published soon together with the limited support for `rsx:targetShape` in 3.3.0 (`sh:or`, `sh:and`, `sh:hasValue`, `dash:hasValueIn`, `sh:path`, `sh:property`). 
 
 # Logging and debugging
 
