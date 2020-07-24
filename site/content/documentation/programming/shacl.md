@@ -147,8 +147,10 @@ The `validationReportModel` follows the report format specified by the W3C SHACL
 []
     a sh:ValidationReport ;
     sh:conforms false ;
+    rdf4j:truncated false;
     sh:result [
         a sh:ValidationResult ;
+        sh:value "eighteen";
         sh:focusNode <http://example.com/ns#pete> ;
         sh:resultPath <http://example.com/ns#age> ;
         sh:sourceConstraintComponent sh:DatatypeConstraintComponent ;
@@ -159,6 +161,22 @@ The `validationReportModel` follows the report format specified by the W3C SHACL
 The `ValidationReport` class provides the same information as the validationReportModel, but as a Java object with getters for accessing the report data.
 
 There is no support for `sh:severity`, all violations will trigger an exception.
+
+## Limiting the validation report
+
+Large validation reports take time to generate and can use large amounts of memory. 
+Limiting the size of the report can be useful to speed up validation and to reduce the number of similar violations. 
+
+Limitations can either be configured directly in the ShaclSail or through the configuration files.
+
+ - `setValidationResultsLimitTotal(1000)` limits the total number of validation results per report to 1000.
+     - `<http://rdf4j.org/config/sail/shacl#validationResultsLimitTotal>`
+ - `setValidationResultsLimitPerConstraint(10)` limits the number of validation results per constraint component to 10
+     - `<http://rdf4j.org/config/sail/shacl#validationResultsLimitPerConstraint>`
+
+ Use -1 to remove a limit and 0 to validate but return an empty validation report. -1 is the default.
+ 
+ A truncated validation report will have `isTruncated()` return true and the model will have `rdf4j:truncated true`.
 
 ## Retrieving violated shapes
 
@@ -239,50 +257,45 @@ Parallel validation further increases performance. This can be disabled with `se
 The initial commit to an empty ShaclSail is further optimized if the underlying sail is a MemoryStore.
 
 Some workloads will not fit in memory and need to be validated while stored on disk. This can be achieved by using a 
-NativeStore and temporarily disabling the SHACL validation while loading data. After loading data there is a special
-method to trigger a full validation against your shapes. The process is illustrated in the following example:
+NativeStore and using the new transaction settings introduced in 3.3.0. 
+
+ - `ShaclSail.TransactionSettings.ValidationApproach.Auto`: Let the ShaclSail choose the best approach.
+ - `ShaclSail.TransactionSettings.ValidationApproach.Bulk`: Optimized for large transactions, disables caching and parallel validation and runs a full validation step at the end of the transaction.
+ - `ShaclSail.TransactionSettings.ValidationApproach.Disabled`: Disable validation.
+ 
+Disabling validation for a transaction may leave your data in an invalid state. Running a transaction with bulk validation will force a full validation. 
+This is a useful approach if you need to use multiple transactions to bulk load your data.  
 
 {{< highlight java >}}
 ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,psoc"));
-
-// significantly reduce required memory
-shaclSail.setCacheSelectNodes(false);
-
-// further reduce required memory by not running validation in parallel
-shaclSail.setParallelValidation(false);
-
 SailRepository sailRepository = new SailRepository(shaclSail);
 
-shaclSail.disableValidation();
-
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-    // load shapes
-    connection.begin(IsolationLevels.NONE);
-    try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
-        connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-    }
-    connection.commit();
-
-    // load data
-    connection.begin(IsolationLevels.NONE);
-    try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
-        connection.add(inputStream, "", RDFFormat.TURTLE);
-    }
-    connection.commit();
+	
+	connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+	
+	// load shapes
+	try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
+		connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+	}
+	
+	// load data
+	try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
+		connection.add(inputStream, "", RDFFormat.TURTLE);
+	}
+	
+	// commit transaction and catch any exception
+	try {
+		connection.commit();
+	} catch (RepositoryException e){
+		if(e.getCause() instanceof ValidationException){
+			Model model = ((ValidationException) e.getCause()).validationReportAsModel();
+			Rio.write(model, System.out, RDFFormat.TURTLE);
+		}
+	}
+	
 }
-shaclSail.enableValidation();
-
-try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-    connection.begin(IsolationLevels.NONE);
-    ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-    connection.commit();
-
-    if (!revalidate.conforms()) {
-        Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
-    }
-
-}
-
+		
 sailRepository.shutDown();
 {{< / highlight >}}
 
@@ -458,5 +471,4 @@ Here are some useful links to learn more about SHACL:
 
 - [W3C SHACL specification](http://www.w3.org/TR/shacl/)
 - [Validating RDF Data](http://book.validatingrdf.com/) (various authors)
-
 
