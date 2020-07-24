@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
@@ -79,7 +79,7 @@ public abstract class AbstractParserHandlingTest {
 	 * <p>
 	 * This may be anything, but it must match with the given {@link DatatypeHandler}.
 	 */
-	private static final IRI KNOWN_DATATYPE_URI = XMLSchema.INTEGER;
+	private static final IRI KNOWN_DATATYPE_URI = XSD.INTEGER;
 
 	/**
 	 * Test value used for testing unknown language support.

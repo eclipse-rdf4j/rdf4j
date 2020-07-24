@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores a boolean value to avoid parsing.
@@ -34,7 +34,7 @@ public class BooleanMemLiteral extends MemLiteral {
 	}
 
 	public BooleanMemLiteral(Object creator, String label, boolean b) {
-		super(creator, label, XMLSchema.BOOLEAN);
+		super(creator, label, XSD.BOOLEAN);
 		this.b = b;
 	}
 

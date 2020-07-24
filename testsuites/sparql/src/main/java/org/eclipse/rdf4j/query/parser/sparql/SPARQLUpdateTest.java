@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -375,7 +375,7 @@ public abstract class SPARQLUpdateTest {
 			System.out.println(result.next().toString());
 		}
 
-		assertTrue(con.hasStatement(bob, age, f.createLiteral("43", XMLSchema.INTEGER), true));
+		assertTrue(con.hasStatement(bob, age, f.createLiteral("43", XSD.INTEGER), true));
 
 		result = con.getStatements(alice, age, null, true);
 
@@ -547,9 +547,9 @@ public abstract class SPARQLUpdateTest {
 		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());
 
 		IRI age = f.createIRI(EX_NS, "age");
-		Literal originalAgeValue = f.createLiteral("42", XMLSchema.INTEGER);
-		Literal correctAgeValue = f.createLiteral("43", XMLSchema.INTEGER);
-		Literal inCorrectAgeValue = f.createLiteral("46", XMLSchema.INTEGER);
+		Literal originalAgeValue = f.createLiteral("42", XSD.INTEGER);
+		Literal correctAgeValue = f.createLiteral("43", XSD.INTEGER);
+		Literal inCorrectAgeValue = f.createLiteral("46", XSD.INTEGER);
 
 		assertTrue(con.hasStatement(bob, age, originalAgeValue, true));
 
@@ -855,13 +855,13 @@ public abstract class SPARQLUpdateTest {
 
 		IRI book1 = f.createIRI(EX_NS, "book1");
 
-		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", XMLSchema.INTEGER), true));
+		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", XSD.INTEGER), true));
 
 		operation.execute();
 
 		String msg = "new statement about ex:book1 should have been inserted";
 
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", XMLSchema.INTEGER), true));
+		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", XSD.INTEGER), true));
 	}
 
 	@Test
@@ -1801,7 +1801,7 @@ public abstract class SPARQLUpdateTest {
 		declarations.append("PREFIX dc: <" + DC.NAMESPACE + "> \n");
 		declarations.append("PREFIX foaf: <" + FOAF.NAMESPACE + "> \n");
 		declarations.append("PREFIX ex: <" + EX_NS + "> \n");
-		declarations.append("PREFIX xsd: <" + XMLSchema.NAMESPACE + "> \n");
+		declarations.append("PREFIX xsd: <" + XSD.NAMESPACE + "> \n");
 		declarations.append("\n");
 
 		return declarations.toString();

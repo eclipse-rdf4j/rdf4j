@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.repository;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -91,6 +92,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	/**
 	 * the location of the fedx configuration
 	 */
+	@Deprecated
 	private String fedxConfig;
 
 	/**
@@ -110,20 +112,30 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	 */
 	private Model members;
 
+	/**
+	 * Initialized {@link FedXConfig}
+	 */
+	private FedXConfig config;
+
 	public FedXRepositoryConfig() {
 		super(FedXRepositoryFactory.REPOSITORY_TYPE);
 	}
 
 	/**
 	 * @return the location of the FedX configuration
+	 * @deprecated use {@link #getConfig()}, scheduled for removal in 4.0
 	 */
+	@Deprecated
 	public String getFedxConfig() {
 		return fedxConfig;
 	}
 
 	/**
 	 * Set the location of the FedX configuration
+	 * 
+	 * @deprecated use {@link #setConfig(FedXConfig)}, scheduled for removal in 4.0
 	 */
+	@Deprecated
 	public void setFedxConfig(String fedxConfig) {
 		this.fedxConfig = fedxConfig;
 	}
@@ -142,6 +154,14 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	public void setMembers(Model members) {
 		this.members = members;
+	}
+
+	public FedXConfig getConfig() {
+		return config;
+	}
+
+	public void setConfig(FedXConfig config) {
+		this.config = config;
 	}
 
 	@Override

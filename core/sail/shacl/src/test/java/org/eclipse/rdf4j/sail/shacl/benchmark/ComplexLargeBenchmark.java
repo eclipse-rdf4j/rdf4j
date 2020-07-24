@@ -91,7 +91,7 @@ public class ComplexLargeBenchmark {
 	private SailRepository repository;
 
 	@Setup(Level.Invocation)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
@@ -116,6 +116,7 @@ public class ComplexLargeBenchmark {
 		}
 
 		System.gc();
+		Thread.sleep(100);
 	}
 
 	@TearDown(Level.Invocation)

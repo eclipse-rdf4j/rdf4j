@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
@@ -26,7 +26,7 @@ public class NegativeIntegerCast extends IntegerCastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.NEGATIVE_INTEGER;
+		return XSD.NEGATIVE_INTEGER;
 	}
 
 	@Override

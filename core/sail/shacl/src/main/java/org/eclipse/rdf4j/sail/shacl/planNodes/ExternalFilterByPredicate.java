@@ -53,13 +53,13 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 			Tuple next = null;
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Value subject = temp.line.get(index);
+					Value subject = temp.getLine().get(index);
 
 					IRI matchedPredicate = matchesFilter(subject);
 

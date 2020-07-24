@@ -24,6 +24,7 @@ class ElasticsearchStatement extends ExtensibleStatementImpl implements Elastics
 		this.elasticsearchId = elasticsearchId;
 	}
 
+	@Override
 	public String getElasticsearchId() {
 		return elasticsearchId;
 	}

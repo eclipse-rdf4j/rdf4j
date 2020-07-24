@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -943,7 +943,7 @@ public abstract class ComplexSPARQLQueryTest {
 			Value y = bs.getValue("y");
 			assertNotNull(y);
 			assertTrue(y instanceof Literal);
-			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+			assertEquals(f.createLiteral("1", XSD.INTEGER), y);
 		}
 	}
 
@@ -979,7 +979,7 @@ public abstract class ComplexSPARQLQueryTest {
 			Value y = bs.getValue("y");
 			assertNotNull(y);
 			assertTrue(y instanceof Literal);
-			assertEquals(f.createLiteral("1", XMLSchema.INTEGER), y);
+			assertEquals(f.createLiteral("1", XSD.INTEGER), y);
 		}
 	}
 

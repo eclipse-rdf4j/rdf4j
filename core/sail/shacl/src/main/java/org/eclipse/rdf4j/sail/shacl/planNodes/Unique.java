@@ -34,11 +34,10 @@ public class Unique implements PlanNode {
 
 	@Override
 	public CloseableIteration<Tuple, SailException> iterator() {
-		Unique that = this;
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			Set<Tuple> multiCardinalityDedupeSet;
 
@@ -55,7 +54,7 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					if (temp.line.size() > 1) {
+					if (temp.getLine().size() > 1) {
 						useMultiCardinalityDedupeSet = true;
 					}
 
@@ -63,9 +62,10 @@ public class Unique implements PlanNode {
 						next = temp;
 					} else {
 						if (useMultiCardinalityDedupeSet) {
-							if (multiCardinalityDedupeSet == null || !previous.line.get(0).equals(temp.line.get(0))) {
+							if (multiCardinalityDedupeSet == null
+									|| !previous.getLine().get(0).equals(temp.getLine().get(0))) {
 								multiCardinalityDedupeSet = new HashSet<>();
-								if (previous.line.get(0).equals(temp.line.get(0))) {
+								if (previous.getLine().get(0).equals(temp.getLine().get(0))) {
 									multiCardinalityDedupeSet.add(previous);
 								}
 							}
@@ -88,7 +88,8 @@ public class Unique implements PlanNode {
 					} else {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
-									that.getClass().getSimpleName() + ":IgnoredNotUnique", temp, that, getId());
+									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique", temp, Unique.this,
+									getId());
 						}
 					}
 

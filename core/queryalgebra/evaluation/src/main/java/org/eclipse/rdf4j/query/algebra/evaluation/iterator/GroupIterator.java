@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
@@ -461,7 +461,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getValue() {
-			return vf.createLiteral(Long.toString(count), XMLSchema.INTEGER);
+			return vf.createLiteral(Long.toString(count), XSD.INTEGER);
 		}
 	}
 
@@ -536,7 +536,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class SumAggregate extends Aggregate {
 
-		private Literal sum = vf.createLiteral("0", XMLSchema.INTEGER);
+		private Literal sum = vf.createLiteral("0", XSD.INTEGER);
 
 		private ValueExprEvaluationException typeError = null;
 
@@ -581,7 +581,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private long count = 0;
 
-		private Literal sum = vf.createLiteral("0", XMLSchema.INTEGER);
+		private Literal sum = vf.createLiteral("0", XSD.INTEGER);
 
 		private ValueExprEvaluationException typeError = null;
 
@@ -627,7 +627,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			if (count == 0) {
-				return vf.createLiteral("0", XMLSchema.INTEGER);
+				return vf.createLiteral("0", XSD.INTEGER);
 			}
 
 			Literal sizeLit = vf.createLiteral(count);

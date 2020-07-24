@@ -31,14 +31,14 @@ public interface Repository {
 	 *
 	 * @param dataDir the directory where data for this repository is stored
 	 */
-	public void setDataDir(File dataDir);
+	void setDataDir(File dataDir);
 
 	/**
 	 * Get the directory where data and logging for this repository is stored.
 	 *
 	 * @return the directory where data for this repository is stored.
 	 */
-	public File getDataDir();
+	File getDataDir();
 
 	/**
 	 * Initializes this repository.
@@ -47,7 +47,7 @@ public interface Repository {
 	 * @deprecated Use {@link #init()} instead.
 	 */
 	@Deprecated
-	public void initialize() throws RepositoryException;
+	void initialize() throws RepositoryException;
 
 	/**
 	 * Initializes this repository. A repository needs to be initialized before it can be used, however explicitly
@@ -67,19 +67,19 @@ public interface Repository {
 	 *
 	 * @return true iff the repository has been initialized.
 	 */
-	public boolean isInitialized();
+	boolean isInitialized();
 
 	/**
 	 * Shuts the repository down, releasing any resources that it keeps hold of. Once shut down, the repository can no
 	 * longer be used until it is re-initialized.
 	 */
-	public void shutDown() throws RepositoryException;
+	void shutDown() throws RepositoryException;
 
 	/**
 	 * Checks whether this repository is writable, i.e. if the data contained in this repository can be changed. The
 	 * writability of the repository is determined by the writability of the Sail that this repository operates on.
 	 */
-	public boolean isWritable() throws RepositoryException;
+	boolean isWritable() throws RepositoryException;
 
 	/**
 	 * Opens a connection to this repository that can be used for querying and updating the contents of the repository.
@@ -99,12 +99,13 @@ public interface Repository {
 	 * @return A connection that allows operations on this repository.
 	 * @throws RepositoryException If something went wrong during the creation of the Connection.
 	 */
-	public RepositoryConnection getConnection() throws RepositoryException;
+	RepositoryConnection getConnection() throws RepositoryException;
 
 	/**
 	 * Gets a ValueFactory for this Repository.
 	 *
 	 * @return A repository-specific ValueFactory.
 	 */
-	public ValueFactory getValueFactory();
+	ValueFactory getValueFactory();
+
 }

@@ -11,8 +11,10 @@ package org.eclipse.rdf4j.sail.shacl.AST;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,6 +25,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -41,11 +45,12 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
  * The AST (Abstract Syntax Tree) node that represents a property nodeShape without any restrictions. This node should
  * be extended by other nodes.
  *
- * @author Heshan Jayasinghe, Håvard Mikkelsen Ottestad
+ * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public abstract class PropertyShape implements PlanGenerator, RequiresEvalutation {
 
-	final boolean deactivated;
+	boolean deactivated;
 	final Resource id;
 
 	NodeShape nodeShape;
@@ -143,6 +148,24 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 
 	}
 
+	static Set<Value> toSet(SailRepositoryConnection connection, Resource orList) {
+		Set<Value> ret = new HashSet<>();
+		while (!orList.equals(RDF.NIL)) {
+			try (Stream<Statement> stream = connection.getStatements(orList, RDF.FIRST, null).stream()) {
+				Value value = stream.map(Statement::getObject).findAny().get();
+				ret.add(value);
+			}
+
+			try (Stream<Statement> stream = connection.getStatements(orList, RDF.REST, null).stream()) {
+				orList = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
+			}
+
+		}
+
+		return ret;
+
+	}
+
 	public Resource getId() {
 		return id;
 	}
@@ -155,109 +178,141 @@ public abstract class PropertyShape implements PlanGenerator, RequiresEvalutatio
 		throw new IllegalStateException("Missing implementetion in extending class!");
 	}
 
-	static class Factory {
+	public String buildSparqlValidNodes(String targetVar) {
+		return "";
+	}
 
-		static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
-				NodeShape nodeShape) {
+	public Stream<StatementPattern> getStatementPatterns() {
+		return Stream.empty();
+	}
+
+	public static class Factory {
+
+		public static List<PathPropertyShape> getPropertyShapes(Resource ShapeId, SailRepositoryConnection connection,
+				NodeShape nodeShape, ShaclSail shaclSail) {
 
 			try (Stream<Statement> stream = connection.getStatements(ShapeId, SHACL.PROPERTY, null).stream()) {
 				return stream.map(Statement::getObject).map(v -> (Resource) v).flatMap(propertyShapeId -> {
 					List<PathPropertyShape> propertyShapes = getPropertyShapesInner(connection, nodeShape,
 							propertyShapeId,
-							null);
+							null, shaclSail);
 					return propertyShapes.stream();
 				}).collect(Collectors.toList());
 			}
 
 		}
 
-		static List<PathPropertyShape> getPropertyShapesInner(SailRepositoryConnection connection, NodeShape nodeShape,
-				Resource propertyShapeId, PathPropertyShape parent) {
+		public static List<PathPropertyShape> getPropertyShapesInner(SailRepositoryConnection connection,
+				NodeShape nodeShape,
+				Resource propertyShapeId, PathPropertyShape parent, ShaclSail shaclSail) {
 			List<PathPropertyShape> propertyShapes = new ArrayList<>(2);
 
 			ShaclProperties shaclProperties = new ShaclProperties(propertyShapeId, connection);
 
-			if (shaclProperties.minCount != null && shaclProperties.minCount > 0) {
+			if (shaclProperties.getMinCount() != null && shaclProperties.getMinCount() > 0) {
 				propertyShapes.add(new MinCountPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minCount));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinCount()));
 			}
-			if (shaclProperties.maxCount != null) {
+			if (shaclProperties.getMaxCount() != null) {
 				propertyShapes.add(new MaxCountPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxCount));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxCount()));
 			}
-			if (shaclProperties.datatype != null) {
+			if (shaclProperties.getDatatype() != null) {
 				propertyShapes.add(new DatatypePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.datatype));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getDatatype()));
 			}
-			if (!shaclProperties.or.isEmpty()) {
-				shaclProperties.or.forEach(or -> {
+			if (!shaclProperties.getOr().isEmpty()) {
+				shaclProperties.getOr().forEach(or -> {
 					propertyShapes.add(new OrPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, or));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), or, shaclSail));
 				});
 			}
-			if (shaclProperties.minLength != null) {
+			if (shaclProperties.getMinLength() != null) {
 				propertyShapes.add(new MinLengthPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minLength));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinLength()));
 			}
-			if (shaclProperties.maxLength != null) {
+			if (shaclProperties.getMaxLength() != null) {
 				propertyShapes.add(new MaxLengthPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxLength));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxLength()));
 			}
-			if (!shaclProperties.pattern.isEmpty()) {
-				shaclProperties.pattern.forEach(pattern -> {
+			if (!shaclProperties.getPattern().isEmpty()) {
+				shaclProperties.getPattern().forEach(pattern -> {
 					propertyShapes.add(new PatternPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, pattern, shaclProperties.flags));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), pattern,
+							shaclProperties.getFlags()));
 				});
 			}
-			if (shaclProperties.languageIn != null) {
+			if (shaclProperties.getLanguageIn() != null) {
 				propertyShapes.add(new LanguageInPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.languageIn));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getLanguageIn()));
 			}
-			if (shaclProperties.nodeKind != null) {
+			if (shaclProperties.getNodeKind() != null) {
 				propertyShapes.add(new NodeKindPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.nodeKind));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getNodeKind()));
 			}
-			if (shaclProperties.minExclusive != null) {
+			if (shaclProperties.getMinExclusive() != null) {
 				propertyShapes.add(new MinExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minExclusive));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinExclusive()));
 			}
-			if (shaclProperties.maxExclusive != null) {
+			if (shaclProperties.getMaxExclusive() != null) {
 				propertyShapes.add(new MaxExclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxExclusive));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxExclusive()));
 			}
-			if (shaclProperties.maxInclusive != null) {
+			if (shaclProperties.getMaxInclusive() != null) {
 				propertyShapes.add(new MaxInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.maxInclusive));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMaxInclusive()));
 			}
-			if (shaclProperties.minInclusive != null) {
+			if (shaclProperties.getMinInclusive() != null) {
 				propertyShapes.add(new MinInclusivePropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.minInclusive));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getMinInclusive()));
 			}
-			if (!shaclProperties.clazz.isEmpty()) {
-				shaclProperties.clazz.forEach(clazz -> {
+			if (!shaclProperties.getClazz().isEmpty()) {
+				shaclProperties.getClazz().forEach(clazz -> {
 					propertyShapes.add(new ClassPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, clazz));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), clazz));
 				});
 			}
-			if (!shaclProperties.and.isEmpty()) {
-				shaclProperties.and.forEach(and -> {
+			if (!shaclProperties.getAnd().isEmpty()) {
+				shaclProperties.getAnd().forEach(and -> {
 					propertyShapes.add(new AndPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, and));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), and, shaclSail));
 				});
 			}
-			if (!shaclProperties.not.isEmpty()) {
-				shaclProperties.not.forEach(not -> {
+			if (!shaclProperties.getNot().isEmpty()) {
+				shaclProperties.getNot().forEach(not -> {
 					propertyShapes.add(new NotPropertyShape(propertyShapeId, connection, nodeShape,
-							shaclProperties.deactivated, parent, shaclProperties.path, not));
+							shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), not, shaclSail));
 				});
 			}
-			if (shaclProperties.in != null) {
+			if (shaclProperties.getIn() != null) {
 				propertyShapes.add(new InPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.in));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(), shaclProperties.getIn()));
 			}
-			if (shaclProperties.uniqueLang) {
+			if (shaclProperties.isUniqueLang()) {
 				propertyShapes.add(new UniqueLangPropertyShape(propertyShapeId, connection, nodeShape,
-						shaclProperties.deactivated, parent, shaclProperties.path, shaclProperties.uniqueLang));
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.isUniqueLang()));
+			}
+			if (shaclProperties.getHasValue() != null) {
+				propertyShapes.add(new HasValuePropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getHasValue()));
+			}
+			if (shaclProperties.getHasValueIn() != null && shaclSail.isDashDataShapes()) {
+				propertyShapes.add(new HasValueInPropertyShape(propertyShapeId, connection, nodeShape,
+						shaclProperties.isDeactivated(), parent, shaclProperties.getPath(),
+						shaclProperties.getHasValueIn()));
 			}
 
 			return propertyShapes;

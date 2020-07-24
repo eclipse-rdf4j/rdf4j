@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
@@ -68,7 +68,7 @@ public class SimpleLiteral implements Literal {
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(XMLSchema.STRING);
+		setDatatype(XSD.STRING);
 	}
 
 	/**
@@ -93,7 +93,7 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XMLSchema.STRING;
+			datatype = XSD.STRING;
 		}
 		setDatatype(datatype);
 	}
@@ -188,7 +188,7 @@ public class SimpleLiteral implements Literal {
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
-		} else if (XMLSchema.STRING.equals(datatype) || datatype == null) {
+		} else if (XSD.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);
 			sb.append('"').append(label).append('"');
 			return sb.toString();

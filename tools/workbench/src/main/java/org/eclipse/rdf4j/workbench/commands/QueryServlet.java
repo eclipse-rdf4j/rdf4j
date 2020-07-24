@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -222,7 +222,7 @@ public class QueryServlet extends TransformationServlet {
 				final String query = getQueryText(req);
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
 				final Literal limit = SimpleValueFactory.getInstance()
-						.createLiteral(req.getParameter(EDIT_PARAMS[3]), XMLSchema.INTEGER);
+						.createLiteral(req.getParameter(EDIT_PARAMS[3]), XSD.INTEGER);
 				builder.result(queryLn, query, infer, limit);
 				builder.end();
 			} else {

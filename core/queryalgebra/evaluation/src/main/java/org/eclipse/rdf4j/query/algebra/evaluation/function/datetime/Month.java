@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -51,7 +51,7 @@ public class Month implements Function {
 
 					int month = calValue.getMonth();
 					if (DatatypeConstants.FIELD_UNDEFINED != month) {
-						return valueFactory.createLiteral(String.valueOf(month), XMLSchema.INTEGER);
+						return valueFactory.createLiteral(String.valueOf(month), XSD.INTEGER);
 					} else {
 						throw new ValueExprEvaluationException("can not determine month from value: " + argValue);
 					}

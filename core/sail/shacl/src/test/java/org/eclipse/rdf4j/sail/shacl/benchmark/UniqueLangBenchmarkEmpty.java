@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
+import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -56,7 +57,7 @@ public class UniqueLangBenchmarkEmpty {
 	private List<List<Statement>> allStatements;
 
 	@Setup(Level.Iteration)
-	public void setUp() {
+	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
 
@@ -72,7 +73,7 @@ public class UniqueLangBenchmarkEmpty {
 		}));
 
 		System.gc();
-
+		Thread.sleep(100);
 	}
 
 	@Benchmark
@@ -95,7 +96,7 @@ public class UniqueLangBenchmarkEmpty {
 	@Benchmark
 	public void noShacl() {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
+		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
 
 		repository.init();
 

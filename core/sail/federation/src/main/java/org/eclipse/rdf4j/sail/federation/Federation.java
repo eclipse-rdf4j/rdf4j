@@ -359,4 +359,5 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 	public IsolationLevel getDefaultIsolationLevel() {
 		return IsolationLevels.NONE;
 	}
+
 }

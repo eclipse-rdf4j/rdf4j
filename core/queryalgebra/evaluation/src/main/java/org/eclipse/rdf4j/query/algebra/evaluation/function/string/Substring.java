@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -115,8 +115,8 @@ public class Substring implements Function {
 		Optional<String> language = literal.getLanguage();
 		if (language.isPresent()) {
 			return valueFactory.createLiteral(lexicalValue, language.get());
-		} else if (XMLSchema.STRING.equals(literal.getDatatype())) {
-			return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);
+		} else if (XSD.STRING.equals(literal.getDatatype())) {
+			return valueFactory.createLiteral(lexicalValue, XSD.STRING);
 		} else {
 			return valueFactory.createLiteral(lexicalValue);
 		}

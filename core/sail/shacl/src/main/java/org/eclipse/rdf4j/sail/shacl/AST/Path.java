@@ -8,15 +8,20 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
  * support for complex paths.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
-abstract public class Path implements RequiresEvalutation, QueryGenerator {
+abstract public class Path implements RequiresEvalutation, QueryGenerator, PlanGenerator {
 
 	private Resource id;
 
@@ -28,4 +33,6 @@ abstract public class Path implements RequiresEvalutation, QueryGenerator {
 	public Resource getId() {
 		return id;
 	}
+
+	public abstract Stream<StatementPattern> getStatementsPatterns(Var start, Var end);
 }

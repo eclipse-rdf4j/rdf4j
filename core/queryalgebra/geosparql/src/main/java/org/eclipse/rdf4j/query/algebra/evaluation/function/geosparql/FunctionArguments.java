@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.locationtech.spatial4j.context.SpatialContext;
@@ -63,7 +63,7 @@ class FunctionArguments {
 	 * @throws ValueExprEvaluationException
 	 */
 	public static String getString(Function func, Value v) throws ValueExprEvaluationException {
-		Literal l = getLiteral(func, v, XMLSchema.STRING);
+		Literal l = getLiteral(func, v, XSD.STRING);
 		return l.stringValue();
 	}
 

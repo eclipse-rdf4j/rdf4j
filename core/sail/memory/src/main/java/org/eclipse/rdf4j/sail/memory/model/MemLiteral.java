@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A MemoryStore-specific extension of Literal giving it node properties.
@@ -45,7 +45,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	 * @param label   The label for this literal.
 	 */
 	public MemLiteral(Object creator, String label) {
-		super(label, XMLSchema.STRING);
+		super(label, XSD.STRING);
 		this.creator = creator;
 	}
 

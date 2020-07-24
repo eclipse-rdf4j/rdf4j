@@ -28,11 +28,11 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		if (!(t.line.get(1) instanceof Literal)) {
+		if (!(t.getLine().get(1) instanceof Literal)) {
 			return false;
 		}
 
-		Optional<String> language = ((Literal) t.line.get(1)).getLanguage();
+		Optional<String> language = ((Literal) t.getLine().get(1)).getLanguage();
 		return language.filter(languageIn::contains).isPresent();
 
 	}

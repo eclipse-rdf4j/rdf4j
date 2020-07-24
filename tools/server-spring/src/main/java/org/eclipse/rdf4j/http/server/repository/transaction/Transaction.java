@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -89,7 +90,7 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Counter of the active operations submitted to the executor
 	 */
-	private AtomicInteger activeOperations = new AtomicInteger();
+	private final AtomicInteger activeOperations = new AtomicInteger();
 
 	/**
 	 * Create a new Transaction for the given {@link Repository}.
@@ -116,13 +117,14 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Start the transaction.
 	 *
-	 * @param level the {@link IsolationLevel} to use for this transction.
+	 * @param settings the {@link TransactionSetting}s to use for this transaction (including {@link IsolationLevel}).
+	 *                 Optional vararg argument.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while starting the transaction.
 	 */
-	void begin(IsolationLevel level) throws InterruptedException, ExecutionException {
+	void begin(TransactionSetting... settings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
-			txnConnection.begin(level);
+			txnConnection.begin(settings);
 			return true;
 		});
 		getFromFuture(result);
@@ -157,17 +159,17 @@ class Transaction implements AutoCloseable {
 	/**
 	 * Prepares a query for evaluation on this transaction.
 	 *
-	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
-	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
-	 *                the query does not contain any relative URIs.
+	 * @param queryLanguage The {@link QueryLanguage query language} in which the query is formulated.
+	 * @param query         The query string.
+	 * @param baseURI       The base URI to resolve any relative URIs that are in the query against, can be
+	 *                      <tt>null</tt> if the query does not contain any relative URIs.
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
-	Query prepareQuery(QueryLanguage queryLn, String queryStr, String baseURI)
+	Query prepareQuery(QueryLanguage queryLanguage, String query, String baseURI)
 			throws InterruptedException, ExecutionException {
-		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLn, queryStr, baseURI));
+		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLanguage, query, baseURI));
 		return getFromFuture(result);
 	}
 

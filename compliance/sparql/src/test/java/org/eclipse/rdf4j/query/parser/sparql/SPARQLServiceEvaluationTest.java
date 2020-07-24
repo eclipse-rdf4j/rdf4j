@@ -98,6 +98,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@Before
+	@Override
 	public void setUp() throws Exception {
 		// set up the server: the maximal number of endpoints must be known
 		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
@@ -204,6 +205,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@After
+	@Override
 	public void tearDown() throws Exception {
 		try {
 			localRepository.shutDown();

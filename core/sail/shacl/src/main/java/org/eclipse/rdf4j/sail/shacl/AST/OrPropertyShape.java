@@ -12,11 +12,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
@@ -44,12 +47,20 @@ public class OrPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource or) {
+			PathPropertyShape parent, Resource path, Resource or, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
+				.map(v -> PropertyShape.Factory
+						.getPropertyShapesInner(connection, nodeShape, (Resource) v, this, shaclSail)
+						.stream()
+						.filter(s -> !s.deactivated)
+						.collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
@@ -58,12 +69,22 @@ public class OrPropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = or;
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
+
 	}
 
 	public OrPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
 			List<List<PathPropertyShape>> or) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.or = or;
+
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	@Override
@@ -110,7 +131,7 @@ public class OrPropertyShape extends PathPropertyShape {
 			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
-			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+			if (connectionsGroup.getTransactionSettings().isCacheSelectNodes()) {
 				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
 			} else {
 				targetNodesToValidate = overrideTargetNode;
@@ -269,5 +290,26 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		return new Unique(reduce.get());
 
+	}
+
+	public List<List<PathPropertyShape>> getOr() {
+		return or;
+	}
+
+	@Override
+	public String buildSparqlValidNodes(String targetVar) {
+
+		return or.stream()
+				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.collect(Collectors.joining("\n} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
+						"\n}"));
+
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns() {
+		return or.stream().flatMap(Collection::stream).flatMap(PropertyShape::getStatementPatterns);
 	}
 }

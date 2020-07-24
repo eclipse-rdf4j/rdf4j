@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 
@@ -97,7 +97,7 @@ public class TripleSources {
 				return ((Literal) v).booleanValue();
 			} catch (IllegalArgumentException e) {
 				throw new QueryEvaluationException(
-						"Value for " + pred + " must be of datatype " + XMLSchema.BOOLEAN + ": " + subj);
+						"Value for " + pred + " must be of datatype " + XSD.BOOLEAN + ": " + subj);
 			}
 		} else {
 			throw new QueryEvaluationException("Non-literal value for " + pred + ": " + subj);

@@ -14,8 +14,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -29,9 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
-import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,12 +47,11 @@ public abstract class PathPropertyShape extends PropertyShape {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
-	private final static Set<IRI> complexPathPredicates = new HashSet<>(
+	private final static Set<IRI> unsupportedComplexPathPredicates = new HashSet<>(
 			Arrays.asList(
 					RDF.FIRST,
 					RDF.REST,
 					SHACL.ALTERNATIVE_PATH,
-					SHACL.INVERSE_PATH,
 					SHACL.ZERO_OR_MORE_PATH,
 					SHACL.ONE_OR_MORE_PATH,
 					SHACL.ZERO_OR_ONE_PATH));
@@ -65,10 +64,33 @@ public abstract class PathPropertyShape extends PropertyShape {
 		// warning
 		if (path != null) {
 			if (validPath(path, connection)) {
-				this.path = new SimplePath((IRI) path);
+				if (path instanceof BNode) {
+					List<Statement> collect = connection.getStatements(path, null, null)
+							.stream()
+							.collect(Collectors.toList());
+					for (Statement statement : collect) {
+						IRI pathType = statement.getPredicate();
+
+						switch (pathType.toString()) {
+						case "http://www.w3.org/ns/shacl#inversePath":
+							if (this.path != null) {
+								throw new IllegalStateException("Uknown path for " + statement.toString());
+							}
+							this.path = new InversePath(path, (IRI) statement.getObject());
+							break;
+						default:
+							break;
+						}
+
+					}
+
+				} else {
+					this.path = new SimplePath((IRI) path);
+				}
+
 			} else {
 				logger.warn(
-						"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <{}> shape has been deactivated! \n{}",
+						"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <{}> shape has been deactivated! \n{}",
 						id,
 						describe(connection, path));
 			}
@@ -80,15 +102,18 @@ public abstract class PathPropertyShape extends PropertyShape {
 	private static boolean validPath(Resource path, SailRepositoryConnection connection) {
 
 		if (path != null) {
-			if (!(path instanceof IRI)) {
-				return false;
+			if (path instanceof IRI) {
+				// simple path
+				return true;
 			} else {
 
 				try (Stream<Statement> stream = connection.getStatements(path, null, null).stream()) {
 
 					boolean complexPath = stream
-							.map(Statement::getPredicate)
-							.anyMatch(complexPathPredicates::contains);
+							.anyMatch(statement -> {
+								return unsupportedComplexPathPredicates.contains(statement.getPredicate())
+										|| statement.getObject() instanceof BNode;
+							});
 
 					if (complexPath) {
 						return false;
@@ -109,32 +134,20 @@ public abstract class PathPropertyShape extends PropertyShape {
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
 			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
-		return connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
-						(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject)));
+		return getPath().getPlan(connectionsGroup, printPlans, overrideTargetNode, negateThisPlan, negateSubPlans);
 	}
 
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-
-		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
-		if (planeNodeWrapper != null) {
-			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
-		}
-		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+		return getPath().getPlanAddedStatements(connectionsGroup, planeNodeWrapper);
 	}
 
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
-		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
-				(IRI) getPath().getId(), null, UnorderedSelect.OutputPattern.SubjectObject);
-		if (planeNodeWrapper != null) {
-			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
-		}
-		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+		return getPath().getPlanRemovedStatements(connectionsGroup, planeNodeWrapper);
+
 	}
 
 	@Override
@@ -191,6 +204,6 @@ public abstract class PathPropertyShape extends PropertyShape {
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Select select = new Select(connectionsGroup.getBaseConnection(), "?a ?b ?c", "?a");
 		Unique unique = new Unique(select);
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), unique);
+		return nodeShape.getTargetFilter(connectionsGroup, unique);
 	}
 }

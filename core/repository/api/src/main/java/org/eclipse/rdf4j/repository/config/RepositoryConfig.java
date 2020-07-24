@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * @author Arjohn Kampman
@@ -130,7 +130,7 @@ public class RepositoryConfig {
 	public void export(Model model, Resource repositoryNode) {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		model.setNamespace(RDFS.NS);
-		model.setNamespace(XMLSchema.NS);
+		model.setNamespace(XSD.NS);
 		model.setNamespace("rep", NAMESPACE);
 		model.add(repositoryNode, RDF.TYPE, REPOSITORY);
 

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.serql.ast.ASTNamespaceDecl;
 import org.eclipse.rdf4j.query.parser.serql.ast.ASTQName;
@@ -70,7 +70,7 @@ class NamespaceDeclProcessor extends AbstractASTVisitor {
 			nsMap.put("rdfs", RDFS.NAMESPACE);
 		}
 		if (!nsMap.containsKey("xsd")) {
-			nsMap.put("xsd", XMLSchema.NAMESPACE);
+			nsMap.put("xsd", XSD.NAMESPACE);
 		}
 		if (!nsMap.containsKey("owl")) {
 			nsMap.put("owl", OWL.NAMESPACE);

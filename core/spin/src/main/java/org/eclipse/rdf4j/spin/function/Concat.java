@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -72,7 +72,7 @@ public class Concat implements Function {
 		Literal result = null;
 
 		if (useDatatype) {
-			result = valueFactory.createLiteral(concatBuilder.toString(), XMLSchema.STRING);
+			result = valueFactory.createLiteral(concatBuilder.toString(), XSD.STRING);
 		} else if (useLanguageTag) {
 			result = valueFactory.createLiteral(concatBuilder.toString(), languageTag);
 		} else {

@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -56,7 +58,9 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 
 		Set<IRI> predicatesInUseInTest = parse.predicates()
 				.stream()
-				.filter(p -> p.getNamespace().equals(SHACL.NAMESPACE))
+				.filter(p -> (p.getNamespace().equals(SHACL.NAMESPACE) ||
+						p.getNamespace().equals(RSX.NAMESPACE) ||
+						p.getNamespace().equals(DASH.NAMESPACE)))
 				.collect(Collectors.toSet());
 
 		for (IRI predicate : predicatesInUseInTest) {

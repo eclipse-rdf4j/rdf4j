@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -525,8 +525,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		IRI datatype = lit.getDatatype();
 
 		if (prettyPrint) {
-			if (XMLSchema.INTEGER.equals(datatype) || XMLSchema.DECIMAL.equals(datatype)
-					|| XMLSchema.DOUBLE.equals(datatype) || XMLSchema.BOOLEAN.equals(datatype)) {
+			if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)
+					|| XSD.DOUBLE.equals(datatype) || XSD.BOOLEAN.equals(datatype)) {
 				try {
 					String normalized = XMLDatatypeUtil.normalize(label, datatype);
 					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
@@ -559,7 +559,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			// Append the literal's language
 			writer.write("@");
 			writer.write(lit.getLanguage().get());
-		} else if (!xsdStringToPlainLiteral || !XMLSchema.STRING.equals(datatype)) {
+		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {
 			// Append the literal's datatype (possibly written as an abbreviated
 			// URI)
 			writer.write("^^");

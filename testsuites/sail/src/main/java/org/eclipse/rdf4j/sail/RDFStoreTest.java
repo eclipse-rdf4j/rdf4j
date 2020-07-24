@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -238,7 +238,7 @@ public abstract class RDFStoreTest {
 	public void testDecimalRoundTrip() throws Exception {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
-		Literal obj = vf.createLiteral("3", XMLSchema.DECIMAL);
+		Literal obj = vf.createLiteral("3", XSD.DECIMAL);
 
 		testValueRoundTrip(subj, pred, obj);
 	}
@@ -247,14 +247,14 @@ public abstract class RDFStoreTest {
 	public void testTimeZoneRoundTrip() throws Exception {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
-		Literal obj = vf.createLiteral("2006-08-23+00:00", XMLSchema.DATE);
+		Literal obj = vf.createLiteral("2006-08-23+00:00", XSD.DATE);
 		testValueRoundTrip(subj, pred, obj);
 
 		con.begin();
 		con.removeStatements(null, null, null);
 		con.commit();
 
-		obj = vf.createLiteral("2006-08-23", XMLSchema.DATE);
+		obj = vf.createLiteral("2006-08-23", XSD.DATE);
 		testValueRoundTrip(subj, pred, obj);
 	}
 
@@ -375,8 +375,8 @@ public abstract class RDFStoreTest {
 	@Test
 	public void testInvalidDateTime() throws Exception {
 		// SES-711
-		Literal date1 = vf.createLiteral("2004-12-20", XMLSchema.DATETIME);
-		Literal date2 = vf.createLiteral("2004-12-20", XMLSchema.DATETIME);
+		Literal date1 = vf.createLiteral("2004-12-20", XSD.DATETIME);
+		Literal date2 = vf.createLiteral("2004-12-20", XSD.DATETIME);
 		Assert.assertEquals(date1, date2);
 	}
 

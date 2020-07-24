@@ -19,7 +19,7 @@ import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -56,12 +56,12 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(true);
 		assertNotNull(l);
 		assertEquals("true", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.BOOLEAN);
+		assertEquals(l.getDatatype(), XSD.BOOLEAN);
 
 		l = f.createLiteral(false);
 		assertNotNull(l);
 		assertEquals("false", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.BOOLEAN);
+		assertEquals(l.getDatatype(), XSD.BOOLEAN);
 	}
 
 	/**
@@ -74,7 +74,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(b);
 		assertNotNull(l);
 		assertEquals("42", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.BYTE);
+		assertEquals(l.getDatatype(), XSD.BYTE);
 	}
 
 	/**
@@ -88,7 +88,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(s);
 		assertNotNull(l);
 		assertEquals("42", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.SHORT);
+		assertEquals(l.getDatatype(), XSD.SHORT);
 	}
 
 	/**
@@ -99,7 +99,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(42);
 		assertNotNull(l);
 		assertEquals("42", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.INT);
+		assertEquals(l.getDatatype(), XSD.INT);
 	}
 
 	/**
@@ -110,7 +110,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(42L);
 		assertNotNull(l);
 		assertEquals("42", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.LONG);
+		assertEquals(l.getDatatype(), XSD.LONG);
 	}
 
 	/**
@@ -122,7 +122,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(42.0f);
 		assertNotNull(l);
 		assertEquals("42.0", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.FLOAT);
+		assertEquals(l.getDatatype(), XSD.FLOAT);
 
 	}
 
@@ -134,7 +134,7 @@ public class ValueFactoryTest {
 		Literal l = f.createLiteral(42.0d);
 		assertNotNull(l);
 		assertEquals("42.0", l.getLabel());
-		assertEquals(l.getDatatype(), XMLSchema.DOUBLE);
+		assertEquals(l.getDatatype(), XSD.DOUBLE);
 	}
 
 	/**
@@ -150,7 +150,7 @@ public class ValueFactoryTest {
 			XMLGregorianCalendar xmlGregCalendar = DatatypeFactory.newInstance().newXMLGregorianCalendar(c);
 			Literal l = f.createLiteral(xmlGregCalendar);
 			assertNotNull(l);
-			assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+			assertEquals(l.getDatatype(), XSD.DATETIME);
 			// TODO check lexical value?
 		} catch (DatatypeConfigurationException e) {
 			e.printStackTrace();
@@ -165,7 +165,7 @@ public class ValueFactoryTest {
 	public void testCreateLiteralDate() {
 		Literal l = f.createLiteral(new Date());
 		assertNotNull(l);
-		assertEquals(l.getDatatype(), XMLSchema.DATETIME);
+		assertEquals(l.getDatatype(), XSD.DATETIME);
 
 	}
 

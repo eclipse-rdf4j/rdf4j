@@ -26,12 +26,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -159,9 +164,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private List<NodeShape> nodeShapes = Collections.emptyList();
 
-	private static String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-	private static String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
-	private static String PROPERTY_SHAPE_WITH_TARGET;
+	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
+	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
+	private static final String PROPERTY_SHAPE_WITH_TARGET;
+	private static final String DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -185,6 +191,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;
 	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;
 	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;
+	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
+	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
+
+	private long validationResultsLimitTotal = -1;
+	private long validationResultsLimitPerConstraint = -1;
 
 	static {
 		try {
@@ -194,6 +205,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
 			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
 					"shacl-sparql-inference/propertyShapeWithTarget.rq");
+			DASH_CONSTANTS = resourceAsString(
+					"shacl-sparql-inference/dashConstants.rq");
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
@@ -234,7 +247,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Lists the predicates that have been implemented in the ShaclSail. All of these, and all combinations,
-	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths are supported.
+	 * <i>should</i> work, please report any bugs. For sh:path, only single predicate paths, or single predicate inverse
+	 * paths are supported. DASH and RSX features may need to be enabled.
 	 *
 	 * @return List of IRIs (SHACL predicates)
 	 */
@@ -265,7 +279,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.IN,
 				SHACL.UNIQUE_LANG,
 				SHACL.NOT,
-				SHACL.TARGET_OBJECTS_OF);
+				SHACL.TARGET_OBJECTS_OF,
+				SHACL.HAS_VALUE,
+				SHACL.TARGET_PROP,
+				SHACL.INVERSE_PATH,
+				DASH.hasValueIn,
+				RSX.targetShape);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -322,7 +341,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 				shapesRepoCacheConnection.add(statements);
 			}
 
-			runInferencingSparqlQueries(shapesRepoCacheConnection);
+			runInferencingSparqlQueriesToFixPoint(shapesRepoCacheConnection);
 			shapesRepoCacheConnection.commit();
 
 			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
@@ -330,6 +349,24 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		shapesRepoCache.shutDown();
 		return shapes;
+	}
+
+	private void forceRefreshShapes() {
+		Lock writeLock = null;
+		try {
+			writeLock = acquireExclusiveWriteLock(null);
+			if (shapesRepo != null) {
+				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+					shapesRepoConnection.begin(IsolationLevels.NONE);
+					nodeShapes = refreshShapes(shapesRepoConnection);
+					shapesRepoConnection.commit();
+				}
+			}
+		} finally {
+			if (writeLock != null) {
+				releaseExclusiveWriteLock(writeLock);
+			}
+		}
 	}
 
 	@Override
@@ -399,7 +436,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return nodeShapes;
 	}
 
-	private void runInferencingSparqlQueries(SailRepositoryConnection shaclSailConnection) {
+	private void runInferencingSparqlQueriesToFixPoint(SailRepositoryConnection shaclSailConnection) {
 
 		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
 		if (shaclSailConnection.isEmpty()) {
@@ -413,6 +450,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
+			shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 
@@ -460,7 +498,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return null;
 	}
 
-	Lock acquireReadlock() {
+	Lock acquireReadLock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
 			throw new SailConflictException(
 					"Deadlock detected when a single thread uses multiple connections " +
@@ -475,7 +513,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	Lock releaseReadlock(Lock lock) {
+	Lock releaseReadLock(Lock lock) {
 		assert lock != null;
 
 		lock.release();
@@ -497,7 +535,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 //			}
 //		}
 //
-//		System.out.println("convertToReadLock");
 //		return readLock;
 //
 //
@@ -552,8 +589,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
 	 * or rdfs:Resource in an environment with a reasoner.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
+	@Deprecated
 	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
 		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
 	}
@@ -561,9 +601,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	/**
 	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
 	 *
+	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
 	 */
+	@Deprecated
 	public boolean isUndefinedTargetValidatesAllSubjects() {
 		return this.undefinedTargetValidatesAllSubjects;
 	}
@@ -628,6 +671,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * Enabled the SHACL validation on commit()
 	 */
 	public void enableValidation() {
+		forceRefreshShapes();
 		this.validationEnabled = true;
 	}
 
@@ -649,15 +693,25 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return this.logValidationPlans;
 	}
 
+	/**
+	 * Deprecated since 3.3.0 and planned removed!
+	 *
+	 * @return
+	 */
+	@Deprecated
 	public boolean isIgnoreNoShapesLoadedException() {
 		return this.ignoreNoShapesLoadedException;
 	}
 
 	/**
+	 *
+	 * Deprecated since 3.3.0 and planned removed!
+	 *
 	 * Check if shapes have been loaded into the shapes graph before other data is added
 	 *
 	 * @param ignoreNoShapesLoadedException
 	 */
+	@Deprecated
 	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
 		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
 	}
@@ -763,4 +817,162 @@ public class ShaclSail extends NotifyingSailWrapper {
 		// this is a soft operation, the thread pool will actually wait until the task above has completed
 		ex.shutdown();
 	}
+
+	/**
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @param eclipseRdf4jShaclExtensions true to enable (default: false)
+	 */
+	@Experimental
+	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;
+		forceRefreshShapes();
+	}
+
+	/**
+	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+	 * support for rsx:targetShape.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @return true if enabled
+	 */
+	@Experimental
+	public boolean isEclipseRdf4jShaclExtensions() {
+		return eclipseRdf4jShaclExtensions;
+	}
+
+	/**
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @param dashDataShapes true to enable (default: false)
+	 */
+	@Experimental
+	public void setDashDataShapes(boolean dashDataShapes) {
+		this.dashDataShapes = dashDataShapes;
+		forceRefreshShapes();
+	}
+
+	/**
+	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+	 * support for dash:hasValueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+	 *
+	 * EXPERIMENTAL!
+	 *
+	 * @return true if enabled
+	 */
+	@Experimental
+	public boolean isDashDataShapes() {
+		return dashDataShapes;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report per constraint, -1 for no limit
+	 */
+	public long getValidationResultsLimitPerConstraint() {
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 *
+	 * @return the effective limit per constraint with an upper bound of the total limit
+	 */
+	public long getEffectiveValidationResultsLimitPerConstraint() {
+		if (validationResultsLimitPerConstraint < 0) {
+			return validationResultsLimitTotal;
+		}
+		if (validationResultsLimitTotal >= 0) {
+			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);
+		}
+
+		return validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitPerConstraint the limit for the number of validation results per report per
+	 *                                            constraint, -1 for no limit
+	 */
+	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @return the limit for validation results per validation report in total, -1 for no limit
+	 */
+	public long getValidationResultsLimitTotal() {
+		return validationResultsLimitTotal;
+	}
+
+	/**
+	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+	 * and reduces memory usage.
+	 *
+	 * @param validationResultsLimitTotal the limit for the number of validation results per report in total, -1 for no
+	 *                                    limit
+	 */
+	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+		this.validationResultsLimitTotal = validationResultsLimitTotal;
+	}
+
+	@Override
+	public IsolationLevel getDefaultIsolationLevel() {
+		return super.getDefaultIsolationLevel();
+	}
+
+	public static class TransactionSettings {
+
+		public enum ValidationApproach implements TransactionSetting {
+
+			Disabled("Disabled"),
+			Auto("Auto"),
+			Bulk("Bulk");
+
+			private final String value;
+
+			ValidationApproach(String value) {
+				this.value = value;
+			}
+
+			@Override
+			public String getName() {
+				return ValidationApproach.class.getCanonicalName();
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
+		private final String value;
+
+		TransactionSettings(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return value;
+		}
+	}
+
 }

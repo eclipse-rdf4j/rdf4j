@@ -1101,7 +1101,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		throw new RepositoryException("Unsupported content-type for SHACL Validation Report: "
-				+ Arrays.toString(response.getHeaders("Content-Type")));
+				+ Arrays.toString(response.getHeaders("Content-Type"))
+				+ "! If the format seems correct, then you may need a maven dependency for that.");
 
 	}
 

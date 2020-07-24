@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.DatatypeHandler;
 import org.eclipse.rdf4j.rio.LanguageHandler;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
@@ -100,7 +100,7 @@ public class RDFParserHelperTest {
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertFalse(literal.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, literal.getDatatype());
+		assertEquals(XSD.STRING, literal.getDatatype());
 	}
 
 	/**
@@ -125,12 +125,12 @@ public class RDFParserHelperTest {
 	 */
 	@Test
 	public final void testCreateLiteralLabelAndDatatype() throws Exception {
-		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, XMLSchema.STRING, parserConfig, errListener,
+		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, XSD.STRING, parserConfig, errListener,
 				valueFactory);
 
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertFalse(literal.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, literal.getDatatype());
+		assertEquals(XSD.STRING, literal.getDatatype());
 	}
 
 	/**
@@ -178,7 +178,7 @@ public class RDFParserHelperTest {
 		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig, errListener,
 				valueFactory);
 		assertFalse(literal.getLanguage().isPresent());
-		assertEquals(XMLSchema.STRING, literal.getDatatype());
+		assertEquals(XSD.STRING, literal.getDatatype());
 	}
 
 	@Test

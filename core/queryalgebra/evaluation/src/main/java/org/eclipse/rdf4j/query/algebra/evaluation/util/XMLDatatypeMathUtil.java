@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -167,11 +167,11 @@ public class XMLDatatypeMathUtil {
 		boolean secondSet = duration.isSet(DatatypeConstants.SECONDS);
 
 		if (!yearSet && !monthSet) {
-			return XMLSchema.DAYTIMEDURATION;
+			return XSD.DAYTIMEDURATION;
 		}
 		if (!daySet && !hourSet && !minuteSet && !secondSet) {
-			return XMLSchema.YEARMONTHDURATION;
+			return XSD.YEARMONTHDURATION;
 		}
-		return XMLSchema.DURATION;
+		return XSD.DURATION;
 	}
 }

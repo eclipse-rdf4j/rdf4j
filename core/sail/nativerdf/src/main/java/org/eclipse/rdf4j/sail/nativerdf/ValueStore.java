@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeBNode;
@@ -475,7 +475,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private byte[] literal2legacy(Literal literal) throws IOException {
 		IRI dt = literal.getDatatype();
-		if (XMLSchema.STRING.equals(dt) || RDF.LANGSTRING.equals(dt)) {
+		if (XSD.STRING.equals(dt) || RDF.LANGSTRING.equals(dt)) {
 			return literal2data(literal.getLabel(), literal.getLanguage(), null, false);
 		}
 		return literal2data(literal.getLabel(), literal.getLanguage(), dt, false);
@@ -575,7 +575,7 @@ public class ValueStore extends AbstractValueFactory {
 		} else if (datatype != null) {
 			return new NativeLiteral(revision, label, datatype, id);
 		} else {
-			return new NativeLiteral(revision, label, XMLSchema.STRING, id);
+			return new NativeLiteral(revision, label, XSD.STRING, id);
 		}
 	}
 
@@ -640,7 +640,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	@Override
 	public NativeLiteral createLiteral(String value) {
-		return new NativeLiteral(revision, value, XMLSchema.STRING);
+		return new NativeLiteral(revision, value, XSD.STRING);
 	}
 
 	@Override

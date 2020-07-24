@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.BNode;
@@ -103,6 +104,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
+	private boolean silentMode;
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
@@ -112,11 +114,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
+		this.silentMode = false;
 	}
 
 	@Override
 	public String toString() {
 		return client.getQueryURL();
+	}
+
+	public void enableSilentMode(boolean flag) {
+		this.silentMode = flag;
 	}
 
 	@Override
@@ -604,16 +611,21 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		OpenRDFUtil.verifyContextNotNull(contexts);
 		boolean localTransaction = startLocalTransaction();
 
+		String clearMode = "CLEAR";
+		if (this.isSilentMode()) {
+			clearMode = "CLEAR SILENT";
+		}
+
 		if (contexts.length == 0) {
-			sparqlTransaction.append("CLEAR ALL ");
+			sparqlTransaction.append(clearMode + " ALL ");
 			sparqlTransaction.append("; ");
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					sparqlTransaction.append("CLEAR DEFAULT ");
+					sparqlTransaction.append(clearMode + " DEFAULT ");
 					sparqlTransaction.append("; ");
 				} else if (context instanceof IRI) {
-					sparqlTransaction.append("CLEAR GRAPH <" + context.stringValue() + "> ");
+					sparqlTransaction.append(clearMode + " GRAPH <" + context.stringValue() + "> ");
 					sparqlTransaction.append("; ");
 				} else {
 					throw new RepositoryException("SPARQL does not support named graphs identified by blank nodes.");
@@ -984,6 +996,10 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 */
 	protected boolean isQuadMode() {
 		return quadMode;
+	}
+
+	protected boolean isSilentMode() {
+		return silentMode;
 	}
 
 	/**
