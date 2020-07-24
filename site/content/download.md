@@ -87,7 +87,7 @@ To include nightly snapshot builds in your project, add this repository to your 
         </repository>
      </repositories>
 
-Then use RDF4J dependencies as normal, using 3.2.1-SNAPSHOT as the version number.
+Then use RDF4J dependencies as normal, using 3.3.1-SNAPSHOT or 3.4.0-SNAPSHOT as the version number.
 
 # Archives
 

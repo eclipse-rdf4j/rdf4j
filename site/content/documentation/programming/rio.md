@@ -1,6 +1,7 @@
 ---
 title: "Parsing and Writing RDF with Rio"
 weight: 4
+toc: true
 ---
 The RDF4J framework includes a set of parsers and writers for RDF called Rio. Rio (“RDF I/O”) is a toolkit that can be used independently from the rest of RDF4J. 
 <!--more-->
