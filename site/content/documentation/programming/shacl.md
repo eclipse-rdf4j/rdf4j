@@ -120,7 +120,7 @@ As of writing this documentation the following features are supported.
 
 DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and 
 `setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information 
-about the RSX features, see the RSX section of this document.
+about the RSX features, see the [RSX section](#rsx---eclipse-rdf4j-shacl-extensions) of this document.
 
 Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes, 
 equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
