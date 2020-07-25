@@ -1,0 +1,3 @@
+[submodule "site/themes/hugo-solstice-theme"]
+	path = site/themes/hugo-solstice-theme
+	url = https://github.com/EclipseFdn/hugo-solstice-theme.git
