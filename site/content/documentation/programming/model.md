@@ -158,12 +158,13 @@ Models.setProperty(person, FOAF.NAME, newName);
 
 This will remove any existing name-properties for the given person, and set it to the single new value "John".
 
+
 # RDF Collections
 
 To model closed lists of items, RDF provides a Collection vocabulary . RDF Collections are represented as a list of items using a Lisp-like structure. The list starts with a head resource (typically a blank node), which is connected to the first collection member via the rdf:first relation. The head resource is then connected to the rest of the list via an rdf:rest relation. The last resource in the list is marked using the rdf:nil node.
 
 As an example, a list containing three values, “A”, “B”, and “C” looks like this as an RDF Collection:
-![Image](images/rdf-collection.svg)
+![Image](../images/rdf-collection.svg)
 
 Here, the blank node `_:n1` is the head resource of the list. In this example it is declared an instance of `rdf:List`, however this is not required for the collection to be considered well-formed. For each collection member, a new node is added (linked to the previous node via the `rdf:rest` property), and the actual member value is linked to to this node via the `rdf:first` property. The last member member of the list is marked by the fact that the value of its `rdf:rest` property is set to `rdf:nil`.
 
@@ -240,3 +241,34 @@ RDFCollections.extract(aboutJohn, node, st -> aboutJohn.remove(st));
 aboutJohn.remove(john, favoriteLetters, node);
 ```
 
+# Working with rdf:Alt, rdf:Bag, rdf:Seq
+
+(new since 3.3.0)
+
+The RDF container classes `rdf:Alt`, `rdf:Bag`, and `rdf:Seq` can also be used to model sets or lists of items in RDF. RDF containers look like this:
+
+```
+   urn:myBag -rdf:type--> rdf:Bag
+     |
+     +---rdf:_1--> "A"
+     |
+     +---rdf:_2--> "B"
+     |
+     +---rdf:_3--> "C"
+```
+
+RDF4J offers utility conversion functions very similar to the utilities for RDF Collections: the  {{< javadoc "RDFContainers" "model/util/RDFContainers.html" >}} class.
+
+For example, to create the above RDF container, we can do this:
+
+```java
+List<Literal> letters = Arrays.asList(new Literal[] { vf.createLiteral("A"), vf.createLiteral("B"), vf.createLiteral("C") });
+IRI myBag = vf.createIRI("urn:myBag");
+Model letterBag = RDFContainers.toRDF(RDF.BAG, letters, myBag, new TreeModel());
+```
+
+and to convert back to a java collection:
+
+```java
+List<Value> newList = RDFContainers.toValues(RDF.BAG, letterBag, myBag, new ArrayList<>());
+```
