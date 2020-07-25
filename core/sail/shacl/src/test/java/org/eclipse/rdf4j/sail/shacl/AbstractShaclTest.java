@@ -210,7 +210,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/datatype/notTargetNode",
 
 
-		"test-cases/datatype/simple"
+		"test-cases/datatype/simple",
 //		"test-cases/datatype/simpleNode",
 //		"test-cases/datatype/simpleNodeNested",
 //		"test-cases/datatype/simpleNested"
@@ -240,7 +240,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/maxExclusiveMinLength/not",
 //		"test-cases/maxExclusiveMinLength/simple",
 //		"test-cases/maxInclusive/simple",
-//		"test-cases/maxLength/simple",
+		"test-cases/maxLength/simple"
 //		"test-cases/minCount/not",
 //		"test-cases/minCount/simple",
 //		"test-cases/minCount/targetNode",

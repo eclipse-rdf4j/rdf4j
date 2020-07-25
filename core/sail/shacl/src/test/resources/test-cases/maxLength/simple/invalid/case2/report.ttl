@@ -1,0 +1,21 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+_:node1ee2nou33x6489 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:30be49d6-547f-4848-9daf-58334c881e8d .
+
+_:30be49d6-547f-4848-9daf-58334c881e8d a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> ex:validPerson1;
+  <http://www.w3.org/ns/shacl#resultPath> ex:phoneNumber;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MaxLengthConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee2np6ccx1 .
+
+_:node1ee2np6ccx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#maxLength> 8;
+  <http://www.w3.org/ns/shacl#path> ex:phoneNumber .
+
+_:30be49d6-547f-4848-9daf-58334c881e8d <http://www.w3.org/ns/shacl#value> "123456789" .
