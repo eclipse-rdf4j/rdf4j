@@ -51,7 +51,9 @@ public class TargetChainPopper implements PlanNode {
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
+
 				ValidationTuple next = iterator.next();
+				next = new ValidationTuple(next);
 
 				Value value = next.getTargetChain().removeLast();
 				next.setValue(value);

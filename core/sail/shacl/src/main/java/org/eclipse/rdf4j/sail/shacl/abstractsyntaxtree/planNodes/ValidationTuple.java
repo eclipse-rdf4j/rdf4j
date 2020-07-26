@@ -135,6 +135,16 @@ public class ValidationTuple {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(targetChain, path, value);
+		return Objects.hash(Objects.hash(targetChain.toArray()), path, value);
+	}
+
+	@Override
+	public String toString() {
+		return "ValidationTuple{" +
+				"targetChain=" + Arrays.toString(targetChain.toArray()) +
+				", path=" + path +
+				", value=" + value +
+				", validationResults=" + validationResults +
+				'}';
 	}
 }

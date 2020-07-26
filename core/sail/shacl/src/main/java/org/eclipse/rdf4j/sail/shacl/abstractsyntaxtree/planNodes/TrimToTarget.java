@@ -21,8 +21,15 @@ public class TrimToTarget implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
+	boolean keepPath = false;
+
 	public TrimToTarget(PlanNode parent) {
 		this.parent = parent;
+	}
+
+	public TrimToTarget(PlanNode parent, boolean keepPath) {
+		this.parent = parent;
+		this.keepPath = keepPath;
 	}
 
 	@Override
@@ -45,8 +52,13 @@ public class TrimToTarget implements PlanNode {
 			ValidationTuple loggingNext() throws SailException {
 
 				ValidationTuple next = parentIterator.next();
+				ValidationTuple validationTuple;
 
-				ValidationTuple validationTuple = new ValidationTuple(next.getTargetChain(), null, null);
+				if (keepPath) {
+					validationTuple = new ValidationTuple(next.getTargetChain(), next.getPath(), null);
+				} else {
+					validationTuple = new ValidationTuple(next.getTargetChain(), null, null);
+				}
 
 				assert next.validationResults == null || next.validationResults.isEmpty();
 

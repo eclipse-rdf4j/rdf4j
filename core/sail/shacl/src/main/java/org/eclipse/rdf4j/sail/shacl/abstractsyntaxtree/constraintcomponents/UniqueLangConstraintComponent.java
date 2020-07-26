@@ -94,7 +94,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				"\n" + query +
 				"\n" + pathQuery1 +
 				"\n" + pathQuery2 +
-				"FILTER(?value1 != ?value2 && lang(?value1) = lang(?value2))" +
+				"FILTER(?value1 != ?value2 && lang(?value1) = lang(?value2) && lang(?value1) != \"\")" +
 				"} )";
 
 		return new ComplexQueryFragment(query, targetVarPrefix, targetVar, null);
@@ -124,7 +124,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
 			);
 
-			return new NonUniqueTargetLang(relevantTargetsWithPath);
+			return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -134,7 +134,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
-			return new NonUniqueTargetLang(innerJoin);
+			return new TrimToTarget(new NonUniqueTargetLang(innerJoin), true);
 
 		}
 
@@ -159,7 +159,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
 		);
 
-		return new NonUniqueTargetLang(relevantTargetsWithPath);
+		return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 
 	}
 }

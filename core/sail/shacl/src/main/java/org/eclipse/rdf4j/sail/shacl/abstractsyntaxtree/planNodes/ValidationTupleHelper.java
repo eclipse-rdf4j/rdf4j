@@ -8,15 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.ArrayDeque;
+
 /**
  * @author Håvard Ottestad
  */
 public class ValidationTupleHelper {
+
 	public static ValidationTuple join(ValidationTuple left, ValidationTuple right) {
 
-		ValidationTuple tuple = new ValidationTuple(left.getTargetChain(), right.getPath(), right.getValue());
-
-		return tuple;
+		return new ValidationTuple(new ArrayDeque<>(left.getTargetChain()), right.getPath(), right.getValue());
 
 	}
 }
