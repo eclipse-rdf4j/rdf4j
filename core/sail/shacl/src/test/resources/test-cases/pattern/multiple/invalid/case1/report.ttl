@@ -1,36 +1,35 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5uj818x19601 a sh:ValidationReport;
+_:node1ee6clvlrx19747 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:9f85c66d-a59b-4d97-ad63-4f161dbe0a9c .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:35a2f2bb-4426-4c32-9f0c-19c9e73da520 .
 
-_:9f85c66d-a59b-4d97-ad63-4f161dbe0a9c a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#test>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:PatternConstraintComponent;
-  sh:sourceShape _:node1ee5ujfupx2 .
+_:35a2f2bb-4426-4c32-9f0c-19c9e73da520 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#test>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6cm86rx2 .
 
-_:node1ee5ujfupx2 a sh:PropertyShape;
-  sh:flags "ims";
-  sh:path <http://example.com/ns#test>;
-  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" .
+_:node1ee6cm86rx2 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#flags> "ims";
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#test>;
+  <http://www.w3.org/ns/shacl#pattern> "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" .
 
-_:9f85c66d-a59b-4d97-ad63-4f161dbe0a9c sh:value "invalid" .
+_:35a2f2bb-4426-4c32-9f0c-19c9e73da520 <http://www.w3.org/ns/shacl#value> "invalid" .
 
-_:node1ee5uj818x19601 sh:result _:c8fea816-7346-430c-8f45-fc81de957516 .
+_:node1ee6clvlrx19747 <http://www.w3.org/ns/shacl#result> _:3623f7f0-ce03-4876-a932-df7ef7de8351 .
 
-_:c8fea816-7346-430c-8f45-fc81de957516 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#test>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:PatternConstraintComponent;
-  sh:sourceShape _:node1ee5ujfupx1 .
+_:3623f7f0-ce03-4876-a932-df7ef7de8351 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#test>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6cm86rx1 .
 
-_:node1ee5ujfupx1 a sh:PropertyShape;
-  sh:flags "ims";
-  sh:path <http://example.com/ns#test>;
-  sh:pattern ".*?(Q)" .
+_:node1ee6cm86rx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#flags> "ims";
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#test>;
+  <http://www.w3.org/ns/shacl#pattern> ".*?(Q)" .
 
-_:c8fea816-7346-430c-8f45-fc81de957516 sh:value "invalid" .
+_:3623f7f0-ce03-4876-a932-df7ef7de8351 <http://www.w3.org/ns/shacl#value> "invalid" .

@@ -1,18 +1,18 @@
 
-_:node1ee5uj818x15571 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1ee6clvlrx15640 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:e9a6a3cb-a67d-4082-b3bd-4b69e400ee8e .
+  <http://www.w3.org/ns/shacl#result> _:816103ae-0413-4ee2-a8c5-0f1674f374d6 .
 
-_:e9a6a3cb-a67d-4082-b3bd-4b69e400ee8e a <http://www.w3.org/ns/shacl#ValidationResult>;
+_:816103ae-0413-4ee2-a8c5-0f1674f374d6 a <http://www.w3.org/ns/shacl#ValidationResult>;
   <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
   <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#phoneNumber>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinExclusiveConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5ujephx1 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6cm70dx1 .
 
-_:node1ee5ujephx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+_:node1ee6cm70dx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
   <http://www.w3.org/ns/shacl#minExclusive> 6;
   <http://www.w3.org/ns/shacl#path> <http://example.com/ns#phoneNumber> .
 
-_:e9a6a3cb-a67d-4082-b3bd-4b69e400ee8e <http://www.w3.org/ns/shacl#value> 6 .
+_:816103ae-0413-4ee2-a8c5-0f1674f374d6 <http://www.w3.org/ns/shacl#value> 6 .

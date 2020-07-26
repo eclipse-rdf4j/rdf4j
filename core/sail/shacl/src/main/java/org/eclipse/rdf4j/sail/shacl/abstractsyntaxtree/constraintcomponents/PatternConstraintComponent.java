@@ -38,12 +38,16 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	@Override
 	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
-			return "!isBlank(?" + varName + ") && REGEX(STR(?" + varName + "), \"" + pattern + "\", \"" + flags
-					+ "\") ";
+			return "!isBlank(?" + varName + ") && REGEX(STR(?" + varName + "), \"" + escapeRegexForSparql(pattern)
+					+ "\", \"" + flags + "\") ";
 		} else {
-			return " isBlank(?" + varName + ") || !REGEX(STR(?" + varName + "), \"" + pattern + "\", \"" + flags
-					+ "\") ";
+			return " isBlank(?" + varName + ") || !REGEX(STR(?" + varName + "), \"" + escapeRegexForSparql(pattern)
+					+ "\", \"" + flags + "\") ";
 		}
+	}
+
+	private static String escapeRegexForSparql(String pattern) {
+		return pattern.replace("\\", "\\\\");
 	}
 
 	@Override
