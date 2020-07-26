@@ -23,7 +23,7 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 		this.flags = flags;
 
 		if (flags == null)
-			flags = "";
+			this.flags = "";
 	}
 
 	@Override
