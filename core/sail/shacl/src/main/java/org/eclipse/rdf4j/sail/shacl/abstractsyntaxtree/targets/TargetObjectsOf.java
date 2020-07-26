@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 
 public class TargetObjectsOf extends Target {
@@ -30,18 +31,18 @@ public class TargetObjectsOf extends Target {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 
 	@Override
@@ -54,11 +55,11 @@ public class TargetObjectsOf extends Target {
 	@Override
 	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
 		assert (subject == null);
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 
 	@Override
 	public String getQueryFragment(Var subject, Var object) {
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 }

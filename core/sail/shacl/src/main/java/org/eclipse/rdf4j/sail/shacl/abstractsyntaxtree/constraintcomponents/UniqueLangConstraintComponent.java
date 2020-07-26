@@ -7,6 +7,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
@@ -16,5 +17,10 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.UNIQUE_LANG, SimpleValueFactory.getInstance().createLiteral(true));
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.UniqueLangConstraintComponent;
 	}
 }

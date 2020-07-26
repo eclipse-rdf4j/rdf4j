@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -58,11 +59,6 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	@Override
 	public ValidationApproach getPreferedValidationApproach() {
 		return ValidationApproach.Transactional;
-	}
-
-	@Override
-	public SourceConstraintComponent getConstraintComponent() {
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 
 }

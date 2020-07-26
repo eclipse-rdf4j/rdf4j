@@ -40,7 +40,14 @@ public enum SourceConstraintComponent {
 	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical),
 	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical),
 	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical),
-	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.Other);
+	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ConstraintType.Logical),
+
+	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.Other),
+	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ConstraintType.Other),
+	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ConstraintType.Other),
+	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ConstraintType.Other),
+	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.Other),
+	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ConstraintType.Other);
 
 	private final IRI iri;
 	private final ConstraintType constraintType;

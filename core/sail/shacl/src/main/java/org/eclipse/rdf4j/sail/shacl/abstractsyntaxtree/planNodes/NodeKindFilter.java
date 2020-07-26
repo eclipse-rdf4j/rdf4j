@@ -12,16 +12,16 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sail.shacl.AST.NodeKindPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.NodeKindConstraintComponent;
 
 /**
  * @author Håvard Ottestad
  */
 public class NodeKindFilter extends FilterPlanNode {
 
-	private final NodeKindPropertyShape.NodeKind nodeKind;
+	private final NodeKindConstraintComponent.NodeKind nodeKind;
 
-	public NodeKindFilter(PlanNode parent, NodeKindPropertyShape.NodeKind nodeKind) {
+	public NodeKindFilter(PlanNode parent, NodeKindConstraintComponent.NodeKind nodeKind) {
 		super(parent);
 		this.nodeKind = nodeKind;
 	}

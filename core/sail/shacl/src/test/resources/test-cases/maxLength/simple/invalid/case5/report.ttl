@@ -1,21 +1,18 @@
-@prefix ex: <http://example.com/ns#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-_:node1ee2nrsicx8061 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1ee5au74jx78548 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:90d9c2dc-335d-4f99-bae2-c58e7ae162ab .
+  <http://www.w3.org/ns/shacl#result> _:4a7aaa56-9855-4e38-b2e0-4057e2b72b0e .
 
-_:90d9c2dc-335d-4f99-bae2-c58e7ae162ab a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> ex:validPerson1;
-  <http://www.w3.org/ns/shacl#resultPath> ex:phoneNumber;
+_:4a7aaa56-9855-4e38-b2e0-4057e2b72b0e a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#phoneNumber>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MaxLengthConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee2ns1hbx1 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5b00v9x1 .
 
-_:node1ee2ns1hbx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+_:node1ee5b00v9x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
   <http://www.w3.org/ns/shacl#maxLength> 8;
-  <http://www.w3.org/ns/shacl#path> ex:phoneNumber .
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#phoneNumber> .
 
-_:90d9c2dc-335d-4f99-bae2-c58e7ae162ab <http://www.w3.org/ns/shacl#value> "123456789" .
+_:4a7aaa56-9855-4e38-b2e0-4057e2b72b0e <http://www.w3.org/ns/shacl#value> "123456789" .

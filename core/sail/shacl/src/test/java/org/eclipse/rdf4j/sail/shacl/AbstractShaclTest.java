@@ -13,6 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
@@ -85,202 +86,112 @@ abstract public class AbstractShaclTest {
 //		"test-cases/class/complexTargetShape",
 //		"test-cases/class/complexTargetShape2",
 //		"test-cases/class/multipleClass",
-//		"test-cases/class/not",
-//		"test-cases/class/not2",
-//		"test-cases/class/notAnd",
-//		"test-cases/class/notNotSimple",
+////		"test-cases/class/not",
+////		"test-cases/class/not2",
+////		"test-cases/class/notAnd",
+////		"test-cases/class/notNotSimple",
 //		"test-cases/class/simple",
 //		"test-cases/class/simpleTargetShape",
-////		"test-cases/class/sparqlTarget", // NOT CURRENTLY SUPPORTED
-////		"test-cases/class/sparqlTargetNot", // NOT CURRENTLY SUPPORTED
+////		"test-cases/class/sparqlTarget",
+////		"test-cases/class/sparqlTargetNot",
 //		"test-cases/class/subclass",
-//		"test-cases/class/targetNode",
+////		"test-cases/class/targetNode",
 //		"test-cases/class/validateTarget",
 //		"test-cases/class/validateTargetNot",
 //		"test-cases/complex/dcat",
 //		"test-cases/complex/foaf",
-////		"test-cases/complex/sparqlTarget", // NOT CURRENTLY SUPPORTED
+////		"test-cases/complex/sparqlTarget",
 //		"test-cases/datatype/allObjects",
 //		"test-cases/datatype/not",
 //		"test-cases/datatype/notNodeShape",
-//		"test-cases/datatype/notNodeShapeTargetShape",
-//		"test-cases/datatype/notTargetShape",
 //		"test-cases/datatype/notNodeShapeAnd",
+//		"test-cases/datatype/notNodeShapeTargetShape",
 //		"test-cases/datatype/notNot",
 //		"test-cases/datatype/notTargetNode",
-//		"test-cases/datatype/simple",
-////		"test-cases/datatype/sparqlTarget", // NOT CURRENTLY SUPPORTED
+//		"test-cases/datatype/notTargetShape",
+		"test-cases/datatype/simple",
+		"test-cases/datatype/simpleNested",
+		"test-cases/datatype/simpleNode",
+		"test-cases/datatype/simpleNodeNested",
+//		"test-cases/datatype/sparqlTarget",
 //		"test-cases/datatype/targetNode",
 //		"test-cases/datatype/targetNode2",
 //		"test-cases/datatype/targetNodeLang",
 //		"test-cases/datatype/targetObjectsOf",
 //		"test-cases/datatype/targetSubjectsOf",
 //		"test-cases/datatype/targetSubjectsOfSingle",
-//		"test-cases/deactivated/nodeshape",
+		"test-cases/deactivated/nodeshape",
 //		"test-cases/deactivated/or",
-//		"test-cases/deactivated/propertyshape",
+		"test-cases/deactivated/propertyshape",
 //		"test-cases/functionalProperty/multipleFunctional",
 //		"test-cases/functionalProperty/multipleFunctionalOr",
 //		"test-cases/functionalProperty/singleFunctional",
-//		"test-cases/implicitTargetClass/simple",
-//		"test-cases/in/notAnd",
-//		"test-cases/in/notOr",
-//		"test-cases/in/simple",
-//		"test-cases/languageIn/simple",
-//		"test-cases/maxCount/not",
-//		"test-cases/maxCount/not2",
-//		"test-cases/maxCount/notNot",
-//		"test-cases/maxCount/simple",
-//		"test-cases/maxCount/simpleInversePath",
-////		"test-cases/maxCount/sparqlTarget", // NOT CURRENTLY SUPPORTED
-//		"test-cases/maxCount/targetNode",
-//		"test-cases/maxExclusive/simple",
-//		"test-cases/maxExclusiveMinLength/not",
-//		"test-cases/maxExclusiveMinLength/simple",
-//		"test-cases/maxInclusive/simple",
-//		"test-cases/maxLength/simple",
-//		"test-cases/minCount/not",
-//		"test-cases/minCount/simple",
-//		"test-cases/minCount/targetNode",
-//		"test-cases/minExclusive/dateVsTime",
-//		"test-cases/minExclusive/simple",
-//		"test-cases/minInclusive/simple",
-//		"test-cases/minLength/simple",
-//		"test-cases/nodeKind/not",
-//		"test-cases/nodeKind/simple",
-//		"test-cases/nodeKind/simpleInversePath",
-//		"test-cases/nodeKind/validateTarget",
-//		"test-cases/or/class",
-//		"test-cases/or/class2",
-//		"test-cases/or/class2InversePath",
-//		"test-cases/or/classValidateTarget",
-//		"test-cases/or/datatype",
-//		"test-cases/or/datatype2",
-//		"test-cases/or/datatypeDifferentPaths",
-//		"test-cases/or/datatypeNodeShape",
-//		"test-cases/or/datatypeTargetNode",
-//		"test-cases/or/implicitAnd",
-////		"test-cases/or/implicitAndSparqlTarget",
-//		"test-cases/or/inheritance",
-//		"test-cases/or/inheritance-deep",
-//		"test-cases/or/inheritanceNodeShape",
-//		"test-cases/or/maxCount",
-//		"test-cases/or/minCount",
-//		"test-cases/or/minCountDifferentPath",
-//		"test-cases/or/minCountMaxCount",
-//		"test-cases/or/multiple",
-//		"test-cases/or/nodeKindMinLength",
-//		"test-cases/or/nodeKindValidateTarget",
-//		"test-cases/pattern/multiple",
-//		"test-cases/pattern/simple",
-//		"test-cases/propertyShapeWithTarget/simple",
-//		"test-cases/uniqueLang/not",
-//		"test-cases/uniqueLang/simple",
-//		"test-cases/hasValue/simple",
-//		"test-cases/hasValue/and",
+		"test-cases/hasValue/and",
 //		"test-cases/hasValue/not",
 //		"test-cases/hasValue/not2",
-//		"test-cases/hasValue/not2",
+		"test-cases/hasValue/simple",
 //		"test-cases/hasValue/targetNode",
 //		"test-cases/hasValue/targetNode2",
-//		"test-cases/hasValueIn/simple",
-//		"test-cases/hasValueIn/and",
+		"test-cases/hasValueIn/and",
 //		"test-cases/hasValueIn/not",
 //		"test-cases/hasValueIn/not2",
+		"test-cases/hasValueIn/simple",
 //		"test-cases/hasValueIn/targetNode",
 //		"test-cases/hasValueIn/targetNode2",
-		//		"test-cases/and-or/datatypeNodeShape",
-//		"test-cases/class/and",
-//		"test-cases/class/and2",
-//		"test-cases/class/multipleClass",
-//		"test-cases/class/not",
-//		"test-cases/class/not2",
-//		"test-cases/class/notAnd",
-//		"test-cases/class/notNotSimple",
-//		"test-cases/class/simple",
-//		"test-cases/class/subclass",
-//		"test-cases/class/targetNode",
-//		"test-cases/class/validateTarget",
-//		"test-cases/class/validateTargetNot",
-//		"test-cases/complex/dcat",
-//		"test-cases/complex/foaf",
-//		"test-cases/datatype/not",
-//		"test-cases/datatype/notNodeShape",
-//		"test-cases/datatype/notNot",
-//		"test-cases/datatype/notTargetNode",
-
-
-		"test-cases/datatype/simple",
-//		"test-cases/datatype/simpleNode",
-//		"test-cases/datatype/simpleNodeNested",
-//		"test-cases/datatype/simpleNested"
-
-
-//		"test-cases/datatype/targetNode",
-//		"test-cases/datatype/targetNode2",
-//		"test-cases/datatype/targetNodeLang",
-//		"test-cases/datatype/targetObjectsOf",
-//		"test-cases/datatype/targetSubjectsOf",
-//		"test-cases/datatype/targetSubjectsOfSingle",
-//		"test-cases/deactivated/nodeshape",
-//		"test-cases/deactivated/or",
-//		"test-cases/deactivated/propertyshape",
-//		"test-cases/implicitTargetClass/simple",
+		"test-cases/implicitTargetClass/simple",
 //		"test-cases/in/notAnd",
 //		"test-cases/in/notOr",
-//		"test-cases/in/simple",
-//		"test-cases/languageIn/simple",
-//		"test-cases/maxCount/not",
-//		"test-cases/maxCount/not2",
-//		"test-cases/maxCount/notNot",
+		"test-cases/in/simple",
+		"test-cases/languageIn/simple",
+////		"test-cases/maxCount/not",
+////		"test-cases/maxCount/not2",
+////		"test-cases/maxCount/notNot",
 //		"test-cases/maxCount/simple",
 //		"test-cases/maxCount/simpleInversePath",
-//		"test-cases/maxCount/targetNode",
-//		"test-cases/maxExclusive/simple",
+////		"test-cases/maxCount/sparqlTarget",
+////		"test-cases/maxCount/targetNode",
+		"test-cases/maxExclusive/simple",
 //		"test-cases/maxExclusiveMinLength/not",
-//		"test-cases/maxExclusiveMinLength/simple",
-//		"test-cases/maxInclusive/simple",
-		"test-cases/maxLength/simple"
-//		"test-cases/minCount/not",
+		"test-cases/maxExclusiveMinLength/simple",
+		"test-cases/maxInclusive/simple",
+		"test-cases/maxLength/simple",
+////		"test-cases/minCount/not",
 //		"test-cases/minCount/simple",
-//		"test-cases/minCount/targetNode",
-//		"test-cases/minExclusive/dateVsTime",
-//		"test-cases/minExclusive/simple",
-//		"test-cases/minInclusive/simple",
-//		"test-cases/minLength/simple",
+////		"test-cases/minCount/targetNode",
+		"test-cases/minExclusive/dateVsTime",
+		"test-cases/minExclusive/simple",
+		"test-cases/minInclusive/simple",
+		"test-cases/minLength/simple",
 //		"test-cases/nodeKind/not",
-//		"test-cases/nodeKind/simple",
-//		"test-cases/nodeKind/simpleInversePath",
-//		"test-cases/nodeKind/validateTarget",
+		"test-cases/nodeKind/simple",
+		"test-cases/nodeKind/simpleInversePath",
+		"test-cases/nodeKind/validateTarget",
 //		"test-cases/or/class",
 //		"test-cases/or/class2",
 //		"test-cases/or/class2InversePath",
 //		"test-cases/or/classValidateTarget",
 //		"test-cases/or/datatype",
 //		"test-cases/or/datatype2",
-//		"test-cases/or/datatype2",
 //		"test-cases/or/datatypeDifferentPaths",
 //		"test-cases/or/datatypeNodeShape",
 //		"test-cases/or/datatypeTargetNode",
 //		"test-cases/or/implicitAnd",
+//		"test-cases/or/implicitAndSparqlTarget",
 //		"test-cases/or/inheritance",
 //		"test-cases/or/inheritance-deep",
 //		"test-cases/or/inheritanceNodeShape",
-//		"test-cases/or/maxCount",
-//		"test-cases/or/minCount",
-//		"test-cases/or/minCountDifferentPath",
-//		"test-cases/or/minCountMaxCount",
+////		"test-cases/or/maxCount",
+////		"test-cases/or/minCount",
+////		"test-cases/or/minCountDifferentPath",
+////		"test-cases/or/minCountMaxCount",
 //		"test-cases/or/multiple",
 //		"test-cases/or/nodeKindMinLength",
 //		"test-cases/or/nodeKindValidateTarget",
-//		"test-cases/pattern/multiple",
-//		"test-cases/pattern/simple",
-//		"test-cases/propertyShapeWithTarget/simple",
-//		"test-cases/uniqueLang/not",
-//		"test-cases/uniqueLang/simple",
-//		"test-cases/functionalProperty/singleFunctional",
-//		"test-cases/functionalProperty/multipleFunctional",
-//		"test-cases/functionalProperty/multipleFunctionalOr"
+		"test-cases/pattern/multiple",
+		"test-cases/pattern/simple",
+		"test-cases/propertyShapeWithTarget/simple"
+////		"test-cases/uniqueLang/not",
+//		"test-cases/uniqueLang/simple"
 	)
 		.distinct()
 		.sorted()
@@ -396,86 +307,87 @@ abstract public class AbstractShaclTest {
 		printFile(shaclFile);
 
 		SailRepository shaclRepository = getShaclSail();
-
 		try {
-			Utils.loadShapeData(shaclRepository, shaclFile);
-			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-
-		boolean exception = false;
-		boolean ran = false;
-
-		if (preloadWithDummyData) {
-			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-				connection.begin(isolationLevel);
-				ValueFactory vf = connection.getValueFactory();
-				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
-						vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
-				try {
-					connection.commit();
-				} catch (RepositoryException sailException) {
-					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
-						throw sailException;
-					}
-					exception = true;
-					logger.debug(sailException.getMessage());
-
-					printResults(sailException);
-				}
+			try {
+				Utils.loadShapeData(shaclRepository, shaclFile);
+				Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
+			} catch (IOException e) {
+				throw new RuntimeException(e);
 			}
 
-		}
+			boolean exception = false;
+			boolean ran = false;
 
-		URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
-		List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-				.stream()
-				.sorted()
-				.collect(Collectors.toList());
-
-		Model validationReportActual = new LinkedHashModel();
-
-		for (File queryFile : queries) {
-			try {
-				String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
-
-				printCurrentState(shaclRepository);
-
-				ran = true;
-				printFile(dataPath + queryFile.getName());
-
+			if (preloadWithDummyData) {
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 					connection.begin(isolationLevel);
-					connection.prepareUpdate(query).execute();
-					printCurrentState(shaclRepository);
-					connection.commit();
-				} catch (RepositoryException sailException) {
-					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
-						throw sailException;
+					ValueFactory vf = connection.getValueFactory();
+					connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
+							vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
+					try {
+						connection.commit();
+					} catch (RepositoryException sailException) {
+						if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
+							throw sailException;
+						}
+						exception = true;
+						logger.debug(sailException.getMessage());
+
+						printResults(sailException);
 					}
-
-					exception = true;
-					logger.debug(sailException.getMessage());
-					validationReportActual = ((ShaclSailValidationException) sailException.getCause())
-							.validationReportAsModel();
-					printResults(sailException);
 				}
-			} catch (IOException e) {
-				e.printStackTrace();
+
 			}
 
-		}
+			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+					.stream()
+					.sorted()
+					.collect(Collectors.toList());
 
-		shaclRepository.shutDown();
+			Model validationReportActual = new LinkedHashModel();
 
-		if (ran) {
+			for (File queryFile : queries) {
+				try {
+					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
 
-			if (expectedResult == ExpectedResult.valid) {
-				assertFalse("Expected transaction to succeed", exception);
-			} else {
-				assertTrue("Expected transaction to fail", exception);
+					printCurrentState(shaclRepository);
+
+					ran = true;
+					printFile(dataPath + queryFile.getName());
+
+					try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+						connection.begin(isolationLevel);
+						connection.prepareUpdate(query).execute();
+						printCurrentState(shaclRepository);
+						connection.commit();
+					} catch (RepositoryException sailException) {
+						if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
+							throw sailException;
+						}
+
+						exception = true;
+						logger.debug(sailException.getMessage());
+						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
+								.validationReportAsModel();
+						printResults(sailException);
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+
 			}
+
+			if (ran) {
+
+				if (expectedResult == ExpectedResult.valid) {
+					assertFalse("Expected transaction to succeed", exception);
+				} else {
+					assertTrue("Expected transaction to fail", exception);
+				}
+			}
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -498,6 +410,8 @@ abstract public class AbstractShaclTest {
 
 			Model validationReportExpected = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
+//			writeActualModelToExpectedModelForDevPurposes(dataPath, validationReportActual);
+
 			if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
 				String validationReportExpectedString = modelToString(validationReportExpected);
 				String validationReportActualString = modelToString(validationReportActual);
@@ -505,6 +419,18 @@ abstract public class AbstractShaclTest {
 			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
+		}
+	}
+
+	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model validationReportActual)
+			throws IOException {
+		String file = AbstractShaclTest.class.getClassLoader()
+				.getResource(dataPath)
+				.getFile()
+				.replace("/target/test-classes/", "/src/test/resources/");
+		File file1 = new File(file + "report.ttl");
+		try (FileOutputStream fileOutputStream = new FileOutputStream(file1)) {
+			Rio.write(validationReportActual, fileOutputStream, RDFFormat.TURTLE);
 		}
 	}
 
@@ -606,66 +532,69 @@ abstract public class AbstractShaclTest {
 		}
 
 		SailRepository shaclRepository = getShaclSail();
+
 		try {
-			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
-			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-
-		boolean exception = false;
-		boolean ran = false;
-		Model validationReportActual = new LinkedHashModel();
-
-		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			shaclSailConnection.begin(isolationLevel);
-
-			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
-			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-					.stream()
-					.sorted()
-					.collect(Collectors.toList());
-
-			for (File queryFile : queries) {
-				try {
-					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
-
-					ran = true;
-					logger.debug(queryFile.getName());
-
-					shaclSailConnection.prepareUpdate(query).execute();
-
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
-
 			try {
-				shaclSailConnection.commit();
+				Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+				Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 
-			} catch (RepositoryException sailException) {
-				if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
-					throw sailException;
+			boolean exception = false;
+			boolean ran = false;
+			Model validationReportActual = new LinkedHashModel();
+
+			try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
+				shaclSailConnection.begin(isolationLevel);
+
+				URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+				List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+						.stream()
+						.sorted()
+						.collect(Collectors.toList());
+
+				for (File queryFile : queries) {
+					try {
+						String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+
+						ran = true;
+						logger.debug(queryFile.getName());
+
+						shaclSailConnection.prepareUpdate(query).execute();
+
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
 				}
-				exception = true;
-				logger.debug(sailException.getMessage());
 
-				validationReportActual = ((ShaclSailValidationException) sailException.getCause())
-						.validationReportAsModel();
-				printResults(sailException);
+				try {
+					shaclSailConnection.commit();
+
+				} catch (RepositoryException sailException) {
+					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
+						throw sailException;
+					}
+					exception = true;
+					logger.debug(sailException.getMessage());
+
+					validationReportActual = ((ShaclSailValidationException) sailException.getCause())
+							.validationReportAsModel();
+					printResults(sailException);
+				}
 			}
-		}
 
-		shaclRepository.shutDown();
+			if (ran) {
+				testValidationReport(dataPath, validationReportActual);
 
-		if (ran) {
-			testValidationReport(dataPath, validationReportActual);
-
-			if (expectedResult == ExpectedResult.valid) {
-				assertFalse(exception);
-			} else {
-				assertTrue(exception);
+				if (expectedResult == ExpectedResult.valid) {
+					assertFalse(exception);
+				} else {
+					assertTrue(exception);
+				}
 			}
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -683,58 +612,60 @@ abstract public class AbstractShaclTest {
 
 		SailRepository shaclRepository = getShaclSail();
 		try {
-			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
-			Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-
-		ValidationReport report = new ValidationReport(true);
-
-		try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-			shaclSailConnection.begin(isolationLevel, ValidationApproach.Disabled);
-
-			URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
-			List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
-					.stream()
-					.sorted()
-					.collect(Collectors.toList());
-
-			for (File queryFile : queries) {
-				try {
-					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
-					shaclSailConnection.prepareUpdate(query).execute();
-
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
-
-			shaclSailConnection.commit();
-
-			shaclSailConnection.begin(ValidationApproach.Bulk);
-
 			try {
+				Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+				Utils.loadInitialData(shaclRepository, dataPath + "initialData.ttl");
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+
+			ValidationReport report = new ValidationReport(true);
+
+			try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
+				shaclSailConnection.begin(isolationLevel, ValidationApproach.Disabled);
+
+				URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+				List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+						.stream()
+						.sorted()
+						.collect(Collectors.toList());
+
+				for (File queryFile : queries) {
+					try {
+						String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+						shaclSailConnection.prepareUpdate(query).execute();
+
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+
 				shaclSailConnection.commit();
-			} catch (RepositoryException e) {
-				if (e.getCause() instanceof ShaclSailValidationException) {
-					report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+
+				shaclSailConnection.begin(ValidationApproach.Bulk);
+
+				try {
+					shaclSailConnection.commit();
+				} catch (RepositoryException e) {
+					if (e.getCause() instanceof ShaclSailValidationException) {
+						report = ((ShaclSailValidationException) e.getCause()).getValidationReport();
+					}
 				}
 			}
-		}
 
-		shaclRepository.shutDown();
+			printResults(report);
 
-		printResults(report);
+			if (!report.conforms()) {
+				testValidationReport(dataPath, report.asModel());
+			}
 
-		if (!report.conforms()) {
-			testValidationReport(dataPath, report.asModel());
-		}
-
-		if (expectedResult == ExpectedResult.valid) {
-			assertTrue(report.conforms());
-		} else {
-			assertFalse(report.conforms());
+			if (expectedResult == ExpectedResult.valid) {
+				assertTrue(report.conforms());
+			} else {
+				assertFalse(report.conforms());
+			}
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}

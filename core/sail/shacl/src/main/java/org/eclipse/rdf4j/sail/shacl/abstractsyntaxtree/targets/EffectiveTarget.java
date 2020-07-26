@@ -8,6 +8,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 
@@ -71,7 +72,7 @@ public class EffectiveTarget {
 			if (last.target instanceof Target) {
 				return ((Target) last.target).getAdded(connectionsGroup);
 			} else {
-				throw new UnsupportedOperationException(
+				throw new ShaclFeatureUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
 			}
 
@@ -102,13 +103,13 @@ public class EffectiveTarget {
 			if (last.target instanceof Target) {
 				return ((Target) last.target).getTargetFilter(connectionsGroup, parent);
 			} else {
-				throw new UnsupportedOperationException(
+				throw new ShaclFeatureUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
 			}
 
 		}
 
-		throw new UnsupportedOperationException();
+		throw new ShaclFeatureUnsupportedException();
 	}
 
 	public String getQuery() {

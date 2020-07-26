@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
@@ -224,7 +225,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
+		throw new ShaclFeatureUnsupportedException(this.getClass().getSimpleName());
 	}
 
 	abstract Function<PlanNode, FilterPlanNode> getFilterAttacher();

@@ -7,6 +7,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
@@ -19,5 +20,10 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.HAS_VALUE, hasValue);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.HasValueConstraintComponent;
 	}
 }

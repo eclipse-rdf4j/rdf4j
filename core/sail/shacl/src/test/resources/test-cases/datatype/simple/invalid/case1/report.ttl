@@ -1,20 +1,17 @@
-@prefix ex: <http://example.com/ns#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:PersonPropertyShape a sh:PropertyShape;
-  sh:datatype xsd:integer;
-  sh:path ex:age .
+<http://example.com/ns#PersonPropertyShape> a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer>;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
 
-[] a sh:ValidationReport;
-  sh:conforms false;
+_:node1ee5au74jx2159 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape ex:PersonPropertyShape;
-      sh:value "123"
-    ] .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:69ed1273-73a7-470f-9037-a1b83d1ddc3c .
+
+_:69ed1273-73a7-470f-9037-a1b83d1ddc3c a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> <http://example.com/ns#PersonPropertyShape>;
+  <http://www.w3.org/ns/shacl#value> "123" .

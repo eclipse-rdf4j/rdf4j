@@ -8,6 +8,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
@@ -21,5 +22,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MIN_COUNT,
 				SimpleValueFactory.getInstance().createLiteral(minCount + "", XMLSchema.INTEGER));
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.MinCountConstraintComponent;
 	}
 }

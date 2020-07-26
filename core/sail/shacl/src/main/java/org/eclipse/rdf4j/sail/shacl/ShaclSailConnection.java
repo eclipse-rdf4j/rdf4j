@@ -588,17 +588,39 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (isActive()) {
 				rollback();
 			}
-			shapesRepoConnection.close();
-			previousStateConnection.close();
-			serializableConnection.close();
-			previousStateSerializableConnection.close();
-			super.close();
 		} finally {
-			sail.closeConnection(this);
+			try {
+				shapesRepoConnection.close();
+
+			} finally {
+				try {
+					previousStateConnection.close();
+
+				} finally {
+					try {
+						serializableConnection.close();
+
+					} finally {
+						try {
+							previousStateSerializableConnection.close();
+
+						} finally {
+							try {
+								super.close();
+
+							} finally {
+								try {
+									sail.closeConnection(this);
+								} finally {
+									assert writeLock == null;
+
+								}
+							}
+						}
+					}
+				}
+			}
 		}
-
-		assert writeLock == null;
-
 	}
 
 	@Override
@@ -840,8 +862,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		public Settings(boolean cacheSelectNodes, boolean validationEnabled) {
 			this.cacheSelectedNodes = cacheSelectNodes;
-			if (!validationEnabled)
+			if (!validationEnabled) {
 				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+			}
 		}
 
 		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {

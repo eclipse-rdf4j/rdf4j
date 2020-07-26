@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -8,8 +9,13 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.MaxLengthFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.MinLengthFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 
-public class MinLengthConstraintComponent extends AbstractConstraintComponent {
+public class MinLengthConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	long minLength;
 
@@ -21,5 +27,24 @@ public class MinLengthConstraintComponent extends AbstractConstraintComponent {
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MIN_LENGTH,
 				SimpleValueFactory.getInstance().createLiteral(minLength + "", XMLSchema.INTEGER));
+	}
+
+	@Override
+	String getFilter(String varName, boolean negated) {
+		if (negated) {
+			return "STRLEN(STR(?" + varName + ")) >= " + minLength;
+		} else {
+			return "STRLEN(STR(?" + varName + ")) < " + minLength;
+		}
+	}
+
+	@Override
+	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
+		return (parent) -> new MinLengthFilter(parent, minLength);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.MinLengthConstraintComponent;
 	}
 }

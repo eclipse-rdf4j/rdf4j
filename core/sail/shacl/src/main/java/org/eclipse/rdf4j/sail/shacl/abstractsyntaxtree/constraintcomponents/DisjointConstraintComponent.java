@@ -6,6 +6,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class DisjointConstraintComponent extends AbstractConstraintComponent {
 
@@ -20,4 +21,8 @@ public class DisjointConstraintComponent extends AbstractConstraintComponent {
 		model.add(subject, SHACL.DISJOINT, this.predicate);
 	}
 
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.DisjointConstraintComponent;
+	}
 }

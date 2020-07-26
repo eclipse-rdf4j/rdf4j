@@ -1,0 +1,19 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5au74jx72906 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:4d2f807e-f1e1-4265-a5af-17317f894973 .
+
+_:4d2f807e-f1e1-4265-a5af-17317f894973 a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#a>;
+  sh:resultPath <http://example.com/ns#number>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:MinLengthConstraintComponent;
+  sh:sourceShape _:node1ee5avt27x1 .
+
+_:node1ee5avt27x1 a sh:PropertyShape;
+  sh:minLength 3;
+  sh:path <http://example.com/ns#number> .
+
+_:4d2f807e-f1e1-4265-a5af-17317f894973 sh:value 99 .

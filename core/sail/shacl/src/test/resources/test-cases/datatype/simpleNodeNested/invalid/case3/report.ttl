@@ -1,0 +1,35 @@
+
+<http://example.com/ns#node> a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#property> _:node1ee5aumhmx2 .
+
+_:node1ee5aumhmx2 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer>;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
+
+_:node1ee5au74jx16634 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:22d0e8aa-f122-405d-9088-d7a6444515f5 .
+
+_:22d0e8aa-f122-405d-9088-d7a6444515f5 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#detail> _:eed55d7e-8746-4c42-9729-2ac82fda73a4 .
+
+_:eed55d7e-8746-4c42-9729-2ac82fda73a4 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#pete>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5aumhmx2;
+  <http://www.w3.org/ns/shacl#value> "123" .
+
+_:22d0e8aa-f122-405d-9088-d7a6444515f5 <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NodeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5aumhmx1 .
+
+_:node1ee5aumhmx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#node> <http://example.com/ns#node>;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
+
+_:22d0e8aa-f122-405d-9088-d7a6444515f5 <http://www.w3.org/ns/shacl#value> <http://example.com/ns#pete> .

@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 
@@ -49,4 +50,8 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.ClosedConstraintComponent;
+	}
 }

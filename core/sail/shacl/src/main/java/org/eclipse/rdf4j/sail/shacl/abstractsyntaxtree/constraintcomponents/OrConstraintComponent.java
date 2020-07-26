@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
@@ -61,5 +62,10 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 	public List<Shape> getOr() {
 		return Collections.unmodifiableList(or);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.OrConstraintComponent;
 	}
 }

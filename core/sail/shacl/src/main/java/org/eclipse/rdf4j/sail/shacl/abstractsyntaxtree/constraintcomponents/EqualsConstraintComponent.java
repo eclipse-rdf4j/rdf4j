@@ -6,6 +6,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 
 public class EqualsConstraintComponent extends AbstractConstraintComponent {
 
@@ -18,5 +19,10 @@ public class EqualsConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.EQUALS, this.predicate);
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.EqualsConstraintComponent;
 	}
 }

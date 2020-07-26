@@ -1,0 +1,26 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5au74jx67733 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:8905743f-d6f2-418e-b14e-afc85208f3b2 .
+
+_:8905743f-d6f2-418e-b14e-afc85208f3b2 a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#validPerson1>;
+  sh:resultPath <http://example.com/ns#label>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
+  sh:sourceShape _:node1ee5avpaox1 .
+
+_:node1ee5avpaox1 a sh:PropertyShape;
+  sh:languageIn _:node1ee5avpaox2 .
+
+_:node1ee5avpaox2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "en";
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5au74jx67734 .
+
+_:node1ee5au74jx67734 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "no";
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
+
+_:node1ee5avpaox1 sh:path <http://example.com/ns#label> .
+
+_:8905743f-d6f2-418e-b14e-afc85208f3b2 sh:value "människa"@se .

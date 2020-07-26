@@ -1,0 +1,19 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5au74jx81858 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:002ad87a-d176-413c-abff-5cef0159869a .
+
+_:002ad87a-d176-413c-abff-5cef0159869a a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#validPerson1>;
+  sh:resultPath <http://example.com/ns#time>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
+  sh:sourceShape _:node1ee5b03bdx2 .
+
+_:node1ee5b03bdx2 a sh:PropertyShape;
+  sh:minExclusive "13:00:00"^^<http://www.w3.org/2001/XMLSchema#time>;
+  sh:path <http://example.com/ns#time> .
+
+_:002ad87a-d176-413c-abff-5cef0159869a sh:value "2018-01-01"^^<http://www.w3.org/2001/XMLSchema#date> .

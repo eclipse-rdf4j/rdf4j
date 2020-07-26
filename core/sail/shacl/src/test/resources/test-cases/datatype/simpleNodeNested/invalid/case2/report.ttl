@@ -1,37 +1,35 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<http://example.com/ns#node>
-  a <http://www.w3.org/ns/shacl#NodeShape> ;
-  sh:property _:genid1 .
+<http://example.com/ns#node> a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#property> _:node1ee5auludx2 .
 
-_:genid1
-  a sh:PropertyShape ;
-  sh:datatype xsd:integer ;
-  sh:path <http://example.com/ns#age> .
+_:node1ee5auludx2 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer>;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
 
-[]
-  a sh:ValidationReport ;
-  sh:conforms false ;
-  sh:result [
-    a sh:ValidationResult ;
-    sh:detail [
-      a sh:ValidationResult ;
-      sh:focusNode _:genid5 ;
-      sh:resultPath <http://example.com/ns#age> ;
-      sh:resultSeverity sh:Violation ;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent ;
-      sh:sourceShape _:genid1 ;
-      sh:value "123"
-    ] ;
-    sh:focusNode <http://example.com/ns#validPerson1> ;
-    sh:resultPath <http://example.com/ns#knows> ;
-    sh:resultSeverity sh:Violation ;
-    sh:sourceConstraintComponent sh:NodeConstraintComponent ;
-    sh:sourceShape [
-      a sh:PropertyShape ;
-      sh:node <http://example.com/ns#node> ;
-      sh:path <http://example.com/ns#knows>
-    ] ;
-    sh:value _:genid5
-  ] .
+_:node1ee5au74jx15743 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:5dfe4b23-a77e-4f4c-9e77-981be04f0696 .
+
+_:5dfe4b23-a77e-4f4c-9e77-981be04f0696 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#detail> _:1d34bcfe-6138-4e7d-b41d-1420254635d7 .
+
+_:1d34bcfe-6138-4e7d-b41d-1420254635d7 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> _:node1ee5auludx4;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5auludx2;
+  <http://www.w3.org/ns/shacl#value> "123" .
+
+_:5dfe4b23-a77e-4f4c-9e77-981be04f0696 <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NodeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5auludx1 .
+
+_:node1ee5auludx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#node> <http://example.com/ns#node>;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
+
+_:5dfe4b23-a77e-4f4c-9e77-981be04f0696 <http://www.w3.org/ns/shacl#value> _:node1ee5auludx4 .

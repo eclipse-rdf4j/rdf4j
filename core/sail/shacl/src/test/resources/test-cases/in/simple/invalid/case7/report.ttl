@@ -1,0 +1,26 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5au74jx65568 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:d538c13c-53cb-4bae-ad3d-513711b0c0a0 .
+
+_:d538c13c-53cb-4bae-ad3d-513711b0c0a0 a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#validPerson1>;
+  sh:resultPath <http://example.com/ns#knows>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:InConstraintComponent;
+  sh:sourceShape _:node1ee5avno8x23 .
+
+_:node1ee5avno8x23 a sh:PropertyShape;
+  sh:in _:node1ee5avno8x24 .
+
+_:node1ee5avno8x24 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#pete>;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5au74jx65569 .
+
+_:node1ee5au74jx65569 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#steve>;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
+
+_:node1ee5avno8x23 sh:path <http://example.com/ns#knows> .
+
+_:d538c13c-53cb-4bae-ad3d-513711b0c0a0 sh:value _:node1ee5avno8x26 .

@@ -8,6 +8,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
@@ -47,4 +48,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		not.setTargetChain(targetChain.setOptimizable(false));
 	}
 
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		return SourceConstraintComponent.NotConstraintComponent;
+	}
 }
