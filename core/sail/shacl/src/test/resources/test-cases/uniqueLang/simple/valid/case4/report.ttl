@@ -1,0 +1,16 @@
+
+_:node1ee5sjkilx23270 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:93b35cab-5145-455d-b2e1-7f7217696efa .
+
+_:93b35cab-5145-455d-b2e1-7f7217696efa a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#bigCo>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#UniqueLangConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5sk0nax1 .
+
+_:node1ee5sk0nax1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#uniqueLang> true .

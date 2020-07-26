@@ -1,19 +1,16 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5rdq68x23603 a sh:ValidationReport;
+_:node1ee5sjkilx23699 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:2b2d027e-90f7-45e4-9699-80bdf74324d4 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:c7c322c7-e185-4318-8caa-360f5b07aa8a .
 
-_:2b2d027e-90f7-45e4-9699-80bdf74324d4 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#bigCo>;
-  sh:resultPath <http://www.w3.org/2000/01/rdf-schema#label>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:UniqueLangConstraintComponent;
-  sh:sourceShape _:node1ee5re3gfx1 .
+_:c7c322c7-e185-4318-8caa-360f5b07aa8a a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#bigCo>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#UniqueLangConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5sk10nx1 .
 
-_:node1ee5re3gfx1 a sh:PropertyShape;
-  sh:path <http://www.w3.org/2000/01/rdf-schema#label>;
-  sh:uniqueLang true .
-
-_:2b2d027e-90f7-45e4-9699-80bdf74324d4 sh:value "Big Company"@en .
+_:node1ee5sk10nx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#uniqueLang> true .

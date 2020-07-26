@@ -1,7 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -11,13 +13,13 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NonUniqueTargetLang;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
@@ -45,7 +47,57 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			boolean negatePlan, boolean negateChildren) {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
-		throw new ShaclUnsupportedException();
+
+		if (!targetChain.getPath().isPresent()) {
+			throw new IllegalStateException("UniqueLang only operates on paths");
+		}
+
+		String targetVarPrefix = "target_";
+
+		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix);
+
+		String query = complexQueryFragment.getQuery();
+
+		return new Select(connectionsGroup.getBaseConnection(), query, b -> {
+
+			List<String> targetVars = b.getBindingNames()
+					.stream()
+					.filter(s -> s.startsWith(targetVarPrefix))
+					.sorted()
+					.collect(Collectors.toList());
+
+			ValidationTuple validationTuple = new ValidationTuple(b, targetVars);
+			validationTuple.setPath(targetChain.getPath().get());
+
+			return validationTuple;
+
+		}, null);
+
+	}
+
+	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix) {
+
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix);
+		String query = effectiveTarget.getQuery();
+
+		Var targetVar = effectiveTarget.getTargetVar();
+
+		String pathQuery1 = targetChain.getPath()
+				.map(p -> p.getQueryFragment(effectiveTarget.getTargetVar(), new Var("value1")))
+				.get();
+
+		String pathQuery2 = targetChain.getPath()
+				.map(p -> p.getQueryFragment(effectiveTarget.getTargetVar(), new Var("value2")))
+				.get();
+
+		query += "\n FILTER(EXISTS{" +
+				"\n" + query +
+				"\n" + pathQuery1 +
+				"\n" + pathQuery2 +
+				"FILTER(?value1 != ?value2 && lang(?value1) = lang(?value2))" +
+				"} )";
+
+		return new ComplexQueryFragment(query, targetVarPrefix, targetVar, null);
 
 	}
 

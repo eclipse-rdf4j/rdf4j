@@ -1,19 +1,16 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5rdq68x24104 a sh:ValidationReport;
+_:node1ee5sjkilx24048 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:bf6332b5-a30c-4854-b601-2ffaae95b9c6 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:b70cccbc-51db-4579-a6be-36a4f96af32a .
 
-_:bf6332b5-a30c-4854-b601-2ffaae95b9c6 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#bigCo0999>;
-  sh:resultPath <http://www.w3.org/2000/01/rdf-schema#label>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:UniqueLangConstraintComponent;
-  sh:sourceShape _:node1ee5re43px1 .
+_:b70cccbc-51db-4579-a6be-36a4f96af32a a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#bigCo0999>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#UniqueLangConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5sk2hsx1 .
 
-_:node1ee5re43px1 a sh:PropertyShape;
-  sh:path <http://www.w3.org/2000/01/rdf-schema#label>;
-  sh:uniqueLang true .
-
-_:bf6332b5-a30c-4854-b601-2ffaae95b9c6 sh:value "Stor bedrift INVALID"@no .
+_:node1ee5sk2hsx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label>;
+  <http://www.w3.org/ns/shacl#uniqueLang> true .
