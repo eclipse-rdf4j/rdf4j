@@ -151,6 +151,8 @@ public class PalindromeFunction implements Function {
 
 You are completely free to implement your function logic: in the above example, we have created a function that only returns `true` or `false`, but since the actual return type of an RDF4J function is {{< javadoc "Value" "model/Value.html" >}}, you can create functions that return string literals, numbers, dates, or even IRIs or blank nodes.
 
+In addition, since RDF4J release 3.3, the `evaluate` method also accepts a `TripleSource` as input parameter, which you can use to inspect the underlying database, and query it for further information (for a simple/silly example see the {{< example "Existing Palindrome function" "function/ExstingPalindromeFunction.java" >}}).
+
 There are two important things to keep in mind though: 
 
 - the `evaluate()` method is invoked for every single solution in the query result. So you should make sure that the implementation of your function is not overly complex and memory-intensive.  
