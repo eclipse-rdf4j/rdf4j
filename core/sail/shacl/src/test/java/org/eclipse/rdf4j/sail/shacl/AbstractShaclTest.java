@@ -411,7 +411,7 @@ abstract public class AbstractShaclTest {
 
 			Model validationReportExpected = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
-			writeActualModelToExpectedModelForDevPurposes(dataPath, validationReportActual);
+//			writeActualModelToExpectedModelForDevPurposes(dataPath, validationReportActual);
 
 			if (!isIsomorphic(validationReportActual, validationReportExpected)) {
 				String validationReportExpectedString = modelToString(validationReportExpected);

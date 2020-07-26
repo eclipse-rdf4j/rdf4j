@@ -15,6 +15,9 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
 /**
@@ -23,25 +26,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 public class LiteralComparatorFilter extends FilterPlanNode {
 
 	private final Literal compareTo;
-	private final Function<Integer, Boolean> function;
-	private final boolean numericDatatype;
-	private final boolean calendarDatatype;
-	private final boolean durationDatatype;
-	private final boolean booleanDatatype;
-	private final boolean timeDatatype;
-	private final boolean dateDatatype;
 
-	public LiteralComparatorFilter(PlanNode parent, Literal compareTo, Function<Integer, Boolean> function) {
+	private final Compare.CompareOp compareOp;
+
+	public LiteralComparatorFilter(PlanNode parent, Literal compareTo, Compare.CompareOp compareOp) {
 		super(parent);
-		this.function = function;
 		this.compareTo = compareTo;
-		IRI datatype = compareTo.getDatatype();
-		numericDatatype = XMLDatatypeUtil.isNumericDatatype(datatype);
-		calendarDatatype = XMLDatatypeUtil.isCalendarDatatype(datatype);
-		durationDatatype = XMLDatatypeUtil.isDurationDatatype(datatype);
-		booleanDatatype = XSD.BOOLEAN.equals(datatype);
-		timeDatatype = XSD.TIME.equals(datatype);
-		dateDatatype = XSD.DATE.equals(datatype);
+		this.compareOp = compareOp;
 
 	}
 
@@ -49,13 +40,19 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	boolean checkTuple(ValidationTuple t) {
 		Value literal = t.getValue();
 
-		int compare = new ValueComparator().compare(compareTo, literal);
-		return function.apply(compare);
+		try {
+			return QueryEvaluationUtil.compare(compareTo, literal, this.compareOp);
+		} catch (ValueExprEvaluationException e) {
+			return true;
+		}
 
 	}
 
 	@Override
 	public String toString() {
-		return "LiteralComparatorFilter{" + "function=" + function + '}';
+		return "LiteralComparatorFilter{" +
+				"compareTo=" + compareTo +
+				", compareOp=" + compareOp +
+				'}';
 	}
 }

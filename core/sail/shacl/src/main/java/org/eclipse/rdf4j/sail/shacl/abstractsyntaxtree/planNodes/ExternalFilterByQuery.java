@@ -8,12 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -30,27 +33,22 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	static private final Logger logger = LoggerFactory.getLogger(ExternalFilterByQuery.class);
 
 	private final SailConnection connection;
-	private final int index;
 	private final ParsedQuery query;
-	private final String queryVariable;
-	private final String bindingVariable;
+	private final Var queryVariable;
+	private final Function<ValidationTuple, Value> filterOn;
 
-	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, int index, String queryFragment,
-			String queryVariable) {
+	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment, Var queryVariable,
+			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;
-		this.index = index;
 		this.queryVariable = queryVariable;
-		this.bindingVariable = queryVariable.substring(1);
-
-		assert queryVariable.startsWith("?");
-		assert !bindingVariable.startsWith("?");
+		this.filterOn = filterOn;
 
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		queryFragment = "SELECT " + queryVariable + " WHERE {\n" + queryFragment + "\n}";
+		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
 		try {
 			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null);
 		} catch (MalformedQueryException e) {
@@ -63,11 +61,11 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	@Override
 	boolean checkTuple(ValidationTuple t) {
 
-		Value value = t.getValue();
+		Value value = filterOn.apply(t);
 
 		MapBindingSet bindings = new MapBindingSet();
 
-		bindings.addBinding(bindingVariable, value);
+		bindings.addBinding(queryVariable.getName(), value);
 
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(
 				query.getTupleExpr(), query.getDataset(),
@@ -80,7 +78,6 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterByQuery{" +
-				"index=" + index +
 				", query=" + query +
 				", queryVariable='" + queryVariable + '\'' +
 				'}';

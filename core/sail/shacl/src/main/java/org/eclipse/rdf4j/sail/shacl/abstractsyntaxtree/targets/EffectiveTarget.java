@@ -10,7 +10,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class EffectiveTarget {
 
@@ -98,20 +101,29 @@ public class EffectiveTarget {
 	}
 
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+
+		EffectiveTargetObject last = chain.getLast();
+
 		if (chain.size() == 1) {
 			// simple chain
 
-			EffectiveTargetObject last = chain.getLast();
 			if (last.target instanceof Target) {
 				return ((Target) last.target).getTargetFilter(connectionsGroup, parent);
 			} else {
 				throw new ShaclUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
 			}
-
 		}
 
-		throw new ShaclUnsupportedException();
+		String query = chain.stream()
+				.map(EffectiveTargetObject::getQueryFragment)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+
+		// TODO: this is a slow way to solve this problem! We should use bulk operations.
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query, last.var,
+				ValidationTuple::getActiveTarget)
+						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	public String getQuery() {

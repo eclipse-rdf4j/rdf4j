@@ -8,6 +8,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
@@ -43,6 +44,6 @@ public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 
 	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
-		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, value -> value < 0);
+		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, Compare.CompareOp.LT);
 	}
 }
