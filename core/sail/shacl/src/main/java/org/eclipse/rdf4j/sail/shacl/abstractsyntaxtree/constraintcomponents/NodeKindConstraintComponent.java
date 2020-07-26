@@ -22,8 +22,24 @@ public class NodeKindConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
-		throw new ShaclUnsupportedException();
+	String getSparqlFilterExpression(String varName, boolean negated) {
+		if (negated) {
+			return "(isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "IRI, <"
+					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "IRIOrLiteral> ) ) ||\n" +
+					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE
+					+ "Literal>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral>, <" + SHACL.NAMESPACE
+					+ "IRIOrLiteral> ) ) ||\n" +
+					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "BlankNode>, <"
+					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral> ) ))";
+		} else {
+			return "!((isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "IRI>, <"
+					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "IRIOrLiteral> ) ) ||\n" +
+					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE
+					+ "Literal>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral>, <" + SHACL.NAMESPACE
+					+ "IRIOrLiteral> ) ) ||\n" +
+					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "BlankNode>, <"
+					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral> ) )))";
+		}
 	}
 
 	@Override

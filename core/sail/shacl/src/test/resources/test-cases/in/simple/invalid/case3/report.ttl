@@ -1,83 +1,82 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5ka5j4x26696 a sh:ValidationReport;
+_:node1ee5rdq68x9117 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:051c7cb4-b40b-48bb-af6c-bccf79bbd9e2 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:23308661-bca4-47a9-abbd-6a3f0f7f78d6 .
 
-_:051c7cb4-b40b-48bb-af6c-bccf79bbd9e2 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#age>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:InConstraintComponent;
-  sh:sourceShape _:node1ee5kahj3x1 .
+_:23308661-bca4-47a9-abbd-6a3f0f7f78d6 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#InConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5rdv04x1 .
 
-_:node1ee5kahj3x1 a sh:PropertyShape;
-  sh:in _:node1ee5kahj3x2 .
+_:node1ee5rdv04x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#in> _:node1ee5rdv04x2 .
 
-_:node1ee5kahj3x2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 0;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26697 .
+_:node1ee5rdv04x2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 0;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9118 .
 
-_:node1ee5ka5j4x26697 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26698 .
+_:node1ee5rdq68x9118 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9119 .
 
-_:node1ee5ka5j4x26698 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 2;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26699 .
+_:node1ee5rdq68x9119 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 2;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9120 .
 
-_:node1ee5ka5j4x26699 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 3;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26700 .
+_:node1ee5rdq68x9120 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 3;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9121 .
 
-_:node1ee5ka5j4x26700 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 4;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26701 .
+_:node1ee5rdq68x9121 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 4;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9122 .
 
-_:node1ee5ka5j4x26701 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 5;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26702 .
+_:node1ee5rdq68x9122 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 5;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9123 .
 
-_:node1ee5ka5j4x26702 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 6;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26703 .
+_:node1ee5rdq68x9123 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 6;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9124 .
 
-_:node1ee5ka5j4x26703 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 7;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26704 .
+_:node1ee5rdq68x9124 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 7;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9125 .
 
-_:node1ee5ka5j4x26704 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 8;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26705 .
+_:node1ee5rdq68x9125 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 8;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9126 .
 
-_:node1ee5ka5j4x26705 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 9;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26706 .
+_:node1ee5rdq68x9126 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 9;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9127 .
 
-_:node1ee5ka5j4x26706 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 10;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26707 .
+_:node1ee5rdq68x9127 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 10;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9128 .
 
-_:node1ee5ka5j4x26707 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 11;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26708 .
+_:node1ee5rdq68x9128 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 11;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9129 .
 
-_:node1ee5ka5j4x26708 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 12;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26709 .
+_:node1ee5rdq68x9129 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 12;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9130 .
 
-_:node1ee5ka5j4x26709 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 13;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26710 .
+_:node1ee5rdq68x9130 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 13;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9131 .
 
-_:node1ee5ka5j4x26710 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 14;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26711 .
+_:node1ee5rdq68x9131 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 14;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9132 .
 
-_:node1ee5ka5j4x26711 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 15;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26712 .
+_:node1ee5rdq68x9132 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 15;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9133 .
 
-_:node1ee5ka5j4x26712 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 16;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26713 .
+_:node1ee5rdq68x9133 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 16;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9134 .
 
-_:node1ee5ka5j4x26713 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 17;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26714 .
+_:node1ee5rdq68x9134 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 17;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9135 .
 
-_:node1ee5ka5j4x26714 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 18;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26715 .
+_:node1ee5rdq68x9135 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 18;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9136 .
 
-_:node1ee5ka5j4x26715 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 19;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x26716 .
+_:node1ee5rdq68x9136 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 19;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9137 .
 
-_:node1ee5ka5j4x26716 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 20;
+_:node1ee5rdq68x9137 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 20;
   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
 
-_:node1ee5kahj3x1 sh:path <http://example.com/ns#age> .
+_:node1ee5rdv04x1 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
 
-_:051c7cb4-b40b-48bb-af6c-bccf79bbd9e2 sh:value 123 .
+_:23308661-bca4-47a9-abbd-6a3f0f7f78d6 <http://www.w3.org/ns/shacl#value> 123 .

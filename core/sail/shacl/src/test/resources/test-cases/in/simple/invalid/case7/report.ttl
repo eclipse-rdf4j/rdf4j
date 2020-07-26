@@ -1,26 +1,25 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5ka5j4x30386 a sh:ValidationReport;
+_:node1ee5rdq68x9808 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:a98e32da-26d4-44d4-85d4-8cf9b1f8b287 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:95171804-b52f-4b16-8d71-0ff247990fb1 .
 
-_:a98e32da-26d4-44d4-85d4-8cf9b1f8b287 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#knows>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:InConstraintComponent;
-  sh:sourceShape _:node1ee5kaim2x23 .
+_:95171804-b52f-4b16-8d71-0ff247990fb1 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#InConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5rdv7cx23 .
 
-_:node1ee5kaim2x23 a sh:PropertyShape;
-  sh:in _:node1ee5kaim2x24 .
+_:node1ee5rdv7cx23 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#in> _:node1ee5rdv7cx24 .
 
-_:node1ee5kaim2x24 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#pete>;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5ka5j4x30387 .
+_:node1ee5rdv7cx24 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#pete>;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5rdq68x9809 .
 
-_:node1ee5ka5j4x30387 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#steve>;
+_:node1ee5rdq68x9809 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#steve>;
   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
 
-_:node1ee5kaim2x23 sh:path <http://example.com/ns#knows> .
+_:node1ee5rdv7cx23 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
 
-_:a98e32da-26d4-44d4-85d4-8cf9b1f8b287 sh:value _:node1ee5kaim2x26 .
+_:95171804-b52f-4b16-8d71-0ff247990fb1 <http://www.w3.org/ns/shacl#value> _:node1ee5rdv7cx26 .

@@ -54,7 +54,7 @@ public class Select implements PlanNode {
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 
-		this.query = "select * where { " + query + "} " + (orderBy != null ? "order by " + orderBy : "");
+		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
 	}
 
 	@Override

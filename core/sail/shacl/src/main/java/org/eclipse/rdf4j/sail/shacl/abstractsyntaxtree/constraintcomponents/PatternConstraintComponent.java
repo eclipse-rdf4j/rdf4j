@@ -36,7 +36,7 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
+	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
 			return "!isBlank(?" + varName + ") && REGEX(STR(?" + varName + "), \"" + pattern + "\", \"" + flags
 					+ "\") ";

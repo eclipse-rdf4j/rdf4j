@@ -40,7 +40,7 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
+	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
 			return "lang(?" + varName + ") IN (" + getLangSetAsList() + ")";
 		} else {

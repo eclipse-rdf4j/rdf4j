@@ -1,19 +1,18 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5ka5j4x51747 a sh:ValidationReport;
+_:node1ee5rdq68x15650 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:38cc5156-8cac-445d-88f2-14bf7b99fb29 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:bbe8f237-7217-41bc-9ad8-5dc4575cbda4 .
 
-_:38cc5156-8cac-445d-88f2-14bf7b99fb29 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#phoneNumber>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
-  sh:sourceShape _:node1ee5kapilx1 .
+_:bbe8f237-7217-41bc-9ad8-5dc4575cbda4 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#phoneNumber>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinExclusiveConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5re12ox1 .
 
-_:node1ee5kapilx1 a sh:PropertyShape;
-  sh:minExclusive 6;
-  sh:path <http://example.com/ns#phoneNumber> .
+_:node1ee5re12ox1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#minExclusive> 6;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#phoneNumber> .
 
-_:38cc5156-8cac-445d-88f2-14bf7b99fb29 sh:value 5.9999999999999999999999999999999 .
+_:bbe8f237-7217-41bc-9ad8-5dc4575cbda4 <http://www.w3.org/ns/shacl#value> 5.9999999999999999999999999999999 .

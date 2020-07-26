@@ -36,7 +36,7 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
+	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
 			return "isLiteral(?\"+varName+\") && datatype(?" + varName + ") == <" + datatype.stringValue() + ">";
 		} else {

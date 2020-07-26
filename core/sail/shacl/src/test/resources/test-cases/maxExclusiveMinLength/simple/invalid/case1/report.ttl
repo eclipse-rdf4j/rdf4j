@@ -1,19 +1,18 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5ka5j4x36156 a sh:ValidationReport;
+_:node1ee5rdq68x11683 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:10c6fa48-866c-4626-b968-7fc4402cc949 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:edcc8618-c8af-4a52-954e-c02656d63b15 .
 
-_:10c6fa48-866c-4626-b968-7fc4402cc949 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#a>;
-  sh:resultPath <http://example.com/ns#number>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:MinLengthConstraintComponent;
-  sh:sourceShape _:node1ee5kaki7x1 .
+_:edcc8618-c8af-4a52-954e-c02656d63b15 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#a>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#number>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinLengthConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5rdvr6x1 .
 
-_:node1ee5kaki7x1 a sh:PropertyShape;
-  sh:minLength 3;
-  sh:path <http://example.com/ns#number> .
+_:node1ee5rdvr6x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#minLength> 3;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#number> .
 
-_:10c6fa48-866c-4626-b968-7fc4402cc949 sh:value 99 .
+_:edcc8618-c8af-4a52-954e-c02656d63b15 <http://www.w3.org/ns/shacl#value> 99 .

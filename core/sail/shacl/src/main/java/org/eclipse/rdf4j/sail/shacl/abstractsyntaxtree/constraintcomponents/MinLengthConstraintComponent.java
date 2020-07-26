@@ -29,7 +29,7 @@ public class MinLengthConstraintComponent extends SimpleAbstractConstraintCompon
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
+	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
 			return "STRLEN(STR(?" + varName + ")) >= " + minLength;
 		} else {

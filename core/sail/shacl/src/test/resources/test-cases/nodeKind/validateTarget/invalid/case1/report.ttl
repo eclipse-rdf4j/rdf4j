@@ -1,17 +1,16 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-<http://example.com/ns#PersonShape> a sh:NodeShape;
-  sh:nodeKind sh:IRI;
-  sh:targetClass <http://example.com/ns#Person> .
+<http://example.com/ns#PersonShape> a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#nodeKind> <http://www.w3.org/ns/shacl#IRI>;
+  <http://www.w3.org/ns/shacl#targetClass> <http://example.com/ns#Person> .
 
-_:node1ee5ka5j4x64414 a sh:ValidationReport;
+_:node1ee5rdq68x19493 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:193349f3-7d8e-4ffa-af7c-bf769f31b2d4 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:88701196-0d92-4d54-8681-3bb34bfa0d55 .
 
-_:193349f3-7d8e-4ffa-af7c-bf769f31b2d4 a sh:ValidationResult;
-  sh:focusNode _:node1ee5katlmx1;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
-  sh:sourceShape <http://example.com/ns#PersonShape>;
-  sh:value _:node1ee5katlmx1 .
+_:88701196-0d92-4d54-8681-3bb34bfa0d55 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> _:node1ee5re2a2x1;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NodeKindConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> <http://example.com/ns#PersonShape>;
+  <http://www.w3.org/ns/shacl#value> _:node1ee5re2a2x1 .

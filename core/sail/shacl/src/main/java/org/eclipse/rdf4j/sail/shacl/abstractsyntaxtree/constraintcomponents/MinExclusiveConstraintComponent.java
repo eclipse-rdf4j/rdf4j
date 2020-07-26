@@ -28,8 +28,12 @@ public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
-		throw new ShaclUnsupportedException();
+	String getSparqlFilterExpression(String varName, boolean negated) {
+		if (negated) {
+			return literalToString(minExclusive) + " < ?" + varName;
+		} else {
+			return literalToString(minExclusive) + " >= ?" + varName + "";
+		}
 	}
 
 	@Override

@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
@@ -50,33 +49,8 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	boolean checkTuple(ValidationTuple t) {
 		Value literal = t.getValue();
 
-		if (literal instanceof Literal) {
-
-			IRI datatype = ((Literal) literal).getDatatype();
-
-			if (datatypesMatch(datatype)) {
-
-				if (dateDatatype && XSD.DATETIME.equals(datatype)) {
-					literal = SimpleValueFactory.getInstance()
-							.createLiteral(literal.stringValue().split("T")[0], XSD.DATE);
-				}
-
-				int compare = new ValueComparator().compare(compareTo, literal);
-
-				return function.apply(compare);
-			}
-
-		}
-
-		return false;
-	}
-
-	private boolean datatypesMatch(IRI datatype) {
-		return (numericDatatype && XMLDatatypeUtil.isNumericDatatype(datatype))
-				|| (calendarDatatype && XMLDatatypeUtil.isCalendarDatatype(datatype)
-						&& (timeDatatype || !XSD.TIME.equals(datatype)))
-				|| (durationDatatype && XMLDatatypeUtil.isDurationDatatype(datatype))
-				|| (booleanDatatype && XSD.BOOLEAN.equals(datatype));
+		int compare = new ValueComparator().compare(compareTo, literal);
+		return function.apply(compare);
 
 	}
 

@@ -6,6 +6,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -42,8 +43,36 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
-		throw new ShaclUnsupportedException();
+	String getSparqlFilterExpression(String varName, boolean negated) {
+		if (negated) {
+			return "?" + varName + " IN (" + getInSetAsString() + ")";
+		} else {
+			return "?" + varName + " NOT IN (" + getInSetAsString() + ")";
+		}
+	}
+
+	private String getInSetAsString() {
+		return in.stream()
+				.map(targetNode -> {
+					if (targetNode instanceof Resource) {
+						return "<" + targetNode + ">";
+					}
+					if (targetNode instanceof Literal) {
+						IRI datatype = ((Literal) targetNode).getDatatype();
+						if (datatype == null) {
+							return "\"" + targetNode.stringValue() + "\"";
+						}
+						if (((Literal) targetNode).getLanguage().isPresent()) {
+							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+						}
+						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
+
+					throw new IllegalStateException(targetNode.getClass().getSimpleName());
+
+				})
+				.reduce((a, b) -> a + ", " + b)
+				.orElse("");
 	}
 
 	@Override

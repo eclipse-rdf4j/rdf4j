@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -118,16 +120,16 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		if (pathQuery.isPresent()) {
 			query += "\n" + pathQuery.get();
-			query += "\n FILTER(" + getFilter(value.getName(), negated) + ")";
+			query += "\n FILTER(" + getSparqlFilterExpression(value.getName(), negated) + ")";
 		} else {
-			query += "\n FILTER(" + getFilter(targetVar.getName(), negated) + ")";
+			query += "\n FILTER(" + getSparqlFilterExpression(targetVar.getName(), negated) + ")";
 		}
 
 		return new ComplexQueryFragment(query, targetVarPrefix, targetVar, value);
 
 	}
 
-	abstract String getFilter(String varName, boolean negated);
+	abstract String getSparqlFilterExpression(String varName, boolean negated);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
 			boolean negatePlan, boolean negateChildren, Function<PlanNode, FilterPlanNode> filterAttacher) {
@@ -229,5 +231,17 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	}
 
 	abstract Function<PlanNode, FilterPlanNode> getFilterAttacher();
+
+	String literalToString(Literal literal) {
+		IRI datatype = (literal).getDatatype();
+		if (datatype == null) {
+			return "\"" + literal.stringValue() + "\"";
+		}
+		if ((literal).getLanguage().isPresent()) {
+			return "\"" + literal.stringValue() + "\"@" + (literal).getLanguage().get();
+		}
+		return "\"" + literal.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+
+	}
 
 }

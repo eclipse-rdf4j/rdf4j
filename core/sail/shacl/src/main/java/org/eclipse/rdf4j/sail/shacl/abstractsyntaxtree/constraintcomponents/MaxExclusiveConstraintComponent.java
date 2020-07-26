@@ -28,8 +28,12 @@ public class MaxExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
-	String getFilter(String varName, boolean negated) {
-		throw new ShaclUnsupportedException();
+	String getSparqlFilterExpression(String varName, boolean negated) {
+		if (negated) {
+			return literalToString(maxExclusive) + " > ?" + varName;
+		} else {
+			return literalToString(maxExclusive) + " <= ?" + varName + "";
+		}
 	}
 
 	@Override
