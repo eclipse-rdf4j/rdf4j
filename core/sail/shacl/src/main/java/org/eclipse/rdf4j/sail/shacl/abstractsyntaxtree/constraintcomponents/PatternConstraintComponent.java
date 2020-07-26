@@ -22,6 +22,9 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	public PatternConstraintComponent(String pattern, String flags) {
 		this.pattern = pattern;
 		this.flags = flags;
+
+		if (flags == null)
+			flags = "";
 	}
 
 	@Override
@@ -35,7 +38,13 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 
 	@Override
 	String getFilter(String varName, boolean negated) {
-		throw new ShaclFeatureUnsupportedException();
+		if (negated) {
+			return "!isBlank(?" + varName + ") && REGEX(STR(?" + varName + "), \"" + pattern + "\", \"" + flags
+					+ "\") ";
+		} else {
+			return " isBlank(?" + varName + ") || !REGEX(STR(?" + varName + "), \"" + pattern + "\", \"" + flags
+					+ "\") ";
+		}
 	}
 
 	@Override

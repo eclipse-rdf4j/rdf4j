@@ -1,0 +1,36 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5et4bmx68761 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:0d253d92-496b-4808-a718-0867b3a12027 .
+
+_:0d253d92-496b-4808-a718-0867b3a12027 a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#validPerson1>;
+  sh:resultPath <http://example.com/ns#test>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:sourceShape _:node1ee5ettbdx1 .
+
+_:node1ee5ettbdx1 a sh:PropertyShape;
+  sh:flags "ims";
+  sh:path <http://example.com/ns#test>;
+  sh:pattern ".*?(Q)" .
+
+_:0d253d92-496b-4808-a718-0867b3a12027 sh:value "invalid" .
+
+_:node1ee5et4bmx68761 sh:result _:7a6dfd0c-10ae-4626-b90e-fb66bf107e1b .
+
+_:7a6dfd0c-10ae-4626-b90e-fb66bf107e1b a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#validPerson1>;
+  sh:resultPath <http://example.com/ns#test>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:sourceShape _:node1ee5ettbdx2 .
+
+_:node1ee5ettbdx2 a sh:PropertyShape;
+  sh:flags "ims";
+  sh:path <http://example.com/ns#test>;
+  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" .
+
+_:7a6dfd0c-10ae-4626-b90e-fb66bf107e1b sh:value "invalid" .

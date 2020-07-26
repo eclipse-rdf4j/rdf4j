@@ -1,26 +1,25 @@
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5au74jx69645 a sh:ValidationReport;
+_:node1ee5et4bmx34215 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false;
-  sh:result _:e3aeba54-a267-487d-8abe-f0fece5271e5 .
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:9765ab93-d48d-4147-9c04-1ef9c1de6e57 .
 
-_:e3aeba54-a267-487d-8abe-f0fece5271e5 a sh:ValidationResult;
-  sh:focusNode <http://example.com/ns#validPerson1>;
-  sh:resultPath <http://example.com/ns#label>;
-  sh:resultSeverity sh:Violation;
-  sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
-  sh:sourceShape _:node1ee5avqlpx1 .
+_:9765ab93-d48d-4147-9c04-1ef9c1de6e57 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#label>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#LanguageInConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee5etig8x1 .
 
-_:node1ee5avqlpx1 a sh:PropertyShape;
-  sh:languageIn _:node1ee5avqlpx2 .
+_:node1ee5etig8x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#languageIn> _:node1ee5etig8x2 .
 
-_:node1ee5avqlpx2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "en";
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5au74jx69646 .
+_:node1ee5etig8x2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "en";
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee5et4bmx34216 .
 
-_:node1ee5au74jx69646 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "no";
+_:node1ee5et4bmx34216 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "no";
   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
 
-_:node1ee5avqlpx1 sh:path <http://example.com/ns#label> .
+_:node1ee5etig8x1 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#label> .
 
-_:e3aeba54-a267-487d-8abe-f0fece5271e5 sh:value "människa"@se .
+_:9765ab93-d48d-4147-9c04-1ef9c1de6e57 <http://www.w3.org/ns/shacl#value> "människa"@se .

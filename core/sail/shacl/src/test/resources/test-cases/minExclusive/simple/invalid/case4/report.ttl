@@ -1,19 +1,19 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5au74jx87770 a sh:ValidationReport;
+_:node1ee5et4bmx51353 a sh:ValidationReport;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
-  sh:result _:3f63e7ff-c82b-4058-82fe-b1a9b734eb80 .
+  sh:result _:43b8a262-bce9-430b-86f9-ddced6175fe0 .
 
-_:3f63e7ff-c82b-4058-82fe-b1a9b734eb80 a sh:ValidationResult;
+_:43b8a262-bce9-430b-86f9-ddced6175fe0 a sh:ValidationResult;
   sh:focusNode <http://example.com/ns#validPerson1>;
   sh:resultPath <http://example.com/ns#phoneNumber>;
   sh:resultSeverity sh:Violation;
   sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
-  sh:sourceShape _:node1ee5b07hax1 .
+  sh:sourceShape _:node1ee5etnuex1 .
 
-_:node1ee5b07hax1 a sh:PropertyShape;
+_:node1ee5etnuex1 a sh:PropertyShape;
   sh:minExclusive 6;
   sh:path <http://example.com/ns#phoneNumber> .
 
-_:3f63e7ff-c82b-4058-82fe-b1a9b734eb80 sh:value 6 .
+_:43b8a262-bce9-430b-86f9-ddced6175fe0 sh:value 6 .

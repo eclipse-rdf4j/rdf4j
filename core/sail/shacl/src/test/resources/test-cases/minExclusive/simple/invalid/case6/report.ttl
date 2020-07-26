@@ -1,19 +1,19 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5au74jx88949 a sh:ValidationReport;
+_:node1ee5et4bmx52357 a sh:ValidationReport;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
-  sh:result _:f6cb856b-8cec-45b9-a558-8ef584df9a64 .
+  sh:result _:e62acfe0-c3ac-4269-abd1-700a5c0e025e .
 
-_:f6cb856b-8cec-45b9-a558-8ef584df9a64 a sh:ValidationResult;
+_:e62acfe0-c3ac-4269-abd1-700a5c0e025e a sh:ValidationResult;
   sh:focusNode <http://example.com/ns#validPerson1>;
   sh:resultPath <http://example.com/ns#phoneNumber>;
   sh:resultSeverity sh:Violation;
   sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
-  sh:sourceShape _:node1ee5b08box1 .
+  sh:sourceShape _:node1ee5eto7qx1 .
 
-_:node1ee5b08box1 a sh:PropertyShape;
+_:node1ee5eto7qx1 a sh:PropertyShape;
   sh:minExclusive 6;
   sh:path <http://example.com/ns#phoneNumber> .
 
-_:f6cb856b-8cec-45b9-a558-8ef584df9a64 sh:value "8"@en .
+_:e62acfe0-c3ac-4269-abd1-700a5c0e025e sh:value "8"@en .
