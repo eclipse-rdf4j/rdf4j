@@ -401,4 +401,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	public Severity getSeverity() {
 		return severity;
 	}
+
+	public boolean isDeactivated() {
+		return deactivated;
+	}
 }

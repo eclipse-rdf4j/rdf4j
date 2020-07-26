@@ -16,8 +16,8 @@ public class ShaclFeatureUnsupportedException extends UnsupportedOperationExcept
 		super(cause);
 	}
 
-	@Override
-	public synchronized Throwable fillInStackTrace() {
-		return this;
-	}
+//	@Override
+//	public synchronized Throwable fillInStackTrace() {
+//		return this;
+//	}
 }

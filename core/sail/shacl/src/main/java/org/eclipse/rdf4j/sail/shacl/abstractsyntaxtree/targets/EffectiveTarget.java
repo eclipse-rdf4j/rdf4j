@@ -114,12 +114,10 @@ public class EffectiveTarget {
 
 	public String getQuery() {
 
-		String query = chain.stream()
+		return chain.stream()
 				.map(EffectiveTargetObject::getQueryFragment)
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
-
-		return query;
 
 	}
 

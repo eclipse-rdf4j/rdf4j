@@ -11,7 +11,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.MinLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 

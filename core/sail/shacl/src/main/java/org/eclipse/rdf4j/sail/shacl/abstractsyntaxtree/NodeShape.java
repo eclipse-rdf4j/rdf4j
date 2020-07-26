@@ -94,6 +94,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+		if (isDeactivated()) {
+			return new EmptyNode();
+		}
+
 		PlanNode union = new EmptyNode();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
@@ -117,6 +121,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
 			boolean negateChildren) {
+
+		if (isDeactivated()) {
+			return new EmptyNode();
+		}
 
 		PlanNode union = new EmptyNode();
 
@@ -148,4 +156,5 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.NodeConstraintComponent;
 	}
+
 }

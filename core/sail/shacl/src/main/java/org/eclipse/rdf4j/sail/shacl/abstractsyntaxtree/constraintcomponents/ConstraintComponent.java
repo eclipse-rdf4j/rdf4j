@@ -20,4 +20,5 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	ValidationApproach getPreferedValidationApproach();
 
 	SourceConstraintComponent getConstraintComponent();
+
 }

@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -42,7 +41,15 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 
 	@Override
 	String getFilter(String varName, boolean negated) {
-		throw new ShaclFeatureUnsupportedException();
+		if (negated) {
+			return "lang(?" + varName + ") IN (" + getLangSetAsList() + ")";
+		} else {
+			return "lang(?" + varName + ") NOT IN (" + getLangSetAsList() + ")";
+		}
+	}
+
+	private String getLangSetAsList() {
+		return languageIn.stream().map(lang -> "\"" + lang + "\"").reduce((a, b) -> a + ", " + b).orElse("");
 	}
 
 	@Override

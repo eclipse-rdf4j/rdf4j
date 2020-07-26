@@ -61,7 +61,7 @@ public class ShaclProperties {
 	private Literal maxInclusive;
 
 	private final List<String> pattern = new ArrayList<>();
-	private String flags = "";
+	private String flags = null;
 
 	private final Set<Resource> targetClass = new HashSet<>();
 	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
