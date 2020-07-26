@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
 
@@ -47,17 +47,17 @@ public class SequencePath extends Path {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
-		throw new ShaclFeatureUnsupportedException();
+		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
-		throw new ShaclFeatureUnsupportedException();
+		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public String getQueryFragment(Var subject, Var object) {
-		throw new ShaclFeatureUnsupportedException();
+		throw new ShaclUnsupportedException();
 	}
 
 }

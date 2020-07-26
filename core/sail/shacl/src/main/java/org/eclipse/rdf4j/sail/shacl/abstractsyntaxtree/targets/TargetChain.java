@@ -62,7 +62,10 @@ public class TargetChain {
 	public EffectiveTarget getEffectiveTarget(String targetVarPrefix) {
 
 		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
-		newChain.removeLast();
+
+		if (getPath().isPresent()) {
+			newChain.removeLast();
+		}
 
 		return new EffectiveTarget(newChain, targetVarPrefix);
 	}

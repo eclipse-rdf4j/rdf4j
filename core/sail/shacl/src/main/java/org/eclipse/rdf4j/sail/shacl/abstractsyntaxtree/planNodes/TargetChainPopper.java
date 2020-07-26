@@ -14,6 +14,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
+ * Pops the last target off of the target chain and into the value.
+ *
+ * This is useful when a plan node operates on the values, but tuple with only targets is supplied and we want to
+ * validate the last target.
+ *
+ *
  * @author Håvard Ottestad
  */
 public class TargetChainPopper implements PlanNode {
@@ -81,7 +87,7 @@ public class TargetChainPopper implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "UnionNode";
+		return "TargetChainPopper";
 	}
 
 	@Override

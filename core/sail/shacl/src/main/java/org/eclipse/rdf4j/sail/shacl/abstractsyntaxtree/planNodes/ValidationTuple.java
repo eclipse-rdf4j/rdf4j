@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -111,5 +112,29 @@ public class ValidationTuple {
 		if (this.path != null)
 			throw new IllegalStateException();
 		this.path = path;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		ValidationTuple that = (ValidationTuple) o;
+		boolean targetChainEquals = targetChain.size() == that.targetChain.size()
+				&& targetChain.containsAll(that.targetChain);
+		boolean pathEquals = Objects.equals(path, that.path);
+		boolean valueEquals = Objects.equals(value, that.value);
+
+		return targetChainEquals &&
+				pathEquals &&
+				valueEquals;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(targetChain, path, value);
 	}
 }

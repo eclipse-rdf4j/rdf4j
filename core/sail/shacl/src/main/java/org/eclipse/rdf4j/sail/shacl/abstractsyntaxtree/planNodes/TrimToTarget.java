@@ -46,8 +46,11 @@ public class TrimToTarget implements PlanNode {
 
 				ValidationTuple next = parentIterator.next();
 
-				next.setValue(null);
-				return next;
+				ValidationTuple validationTuple = new ValidationTuple(next.getTargetChain(), null, null);
+
+				assert next.validationResults == null || next.validationResults.isEmpty();
+
+				return validationTuple;
 			}
 
 			@Override

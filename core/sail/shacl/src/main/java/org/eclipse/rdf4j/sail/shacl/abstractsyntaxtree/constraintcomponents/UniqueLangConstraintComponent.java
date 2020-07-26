@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -7,7 +8,22 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NonUniqueTargetLang;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 
 public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
@@ -22,5 +38,76 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.UniqueLangConstraintComponent;
+	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren) {
+		assert !negateChildren : "There are no subplans!";
+		assert !negatePlan;
+		throw new ShaclUnsupportedException();
+
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
+		assert !negateChildren : "There are no subplans!";
+		assert !negatePlan;
+
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_");
+		Optional<Path> path = targetChain.getPath();
+
+		if (!path.isPresent()) {
+			throw new IllegalStateException("UniqueLang only operates on paths");
+		}
+
+		if (overrideTargetNode != null) {
+			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
+					overrideTargetNode.getPlanNode(),
+					connectionsGroup.getBaseConnection(),
+					path.get().getQueryFragment(new Var("a"), new Var("c")),
+					false,
+					null,
+					(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
+			);
+
+			return new NonUniqueTargetLang(relevantTargetsWithPath);
+		}
+
+		if (connectionsGroup.getStats().isBaseSailEmpty()) {
+			PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
+
+			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
+
+			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
+
+			return new NonUniqueTargetLang(innerJoin);
+
+		}
+
+		PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
+
+		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
+
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, addedByPath);
+
+		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
+
+		PlanNode trimmed = new TrimToTarget(mergeNode);
+
+		PlanNode allRelevantTargets = new Unique(trimmed);
+
+		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
+				allRelevantTargets,
+				connectionsGroup.getBaseConnection(),
+				path.get().getQueryFragment(new Var("a"), new Var("c")),
+				false,
+				null,
+				(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
+		);
+
+		return new NonUniqueTargetLang(relevantTargetsWithPath);
+
 	}
 }

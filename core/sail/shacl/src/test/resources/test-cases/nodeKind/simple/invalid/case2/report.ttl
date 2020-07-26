@@ -1,19 +1,19 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 
-_:node1ee5et4bmx62582 a sh:ValidationReport;
+_:node1ee5ka5j4x61261 a sh:ValidationReport;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
-  sh:result _:fc96f95a-f529-4d2d-9a40-f75b9081840f .
+  sh:result _:4e975314-f943-412b-9770-106e1dc89210 .
 
-_:fc96f95a-f529-4d2d-9a40-f75b9081840f a sh:ValidationResult;
+_:4e975314-f943-412b-9770-106e1dc89210 a sh:ValidationResult;
   sh:focusNode <http://example.com/ns#validPerson1>;
   sh:resultPath <http://example.com/ns#knows>;
   sh:resultSeverity sh:Violation;
   sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
-  sh:sourceShape _:node1ee5etr95x1 .
+  sh:sourceShape _:node1ee5kasljx1 .
 
-_:node1ee5etr95x1 a sh:PropertyShape;
+_:node1ee5kasljx1 a sh:PropertyShape;
   sh:nodeKind sh:BlankNodeOrIRI;
   sh:path <http://example.com/ns#knows> .
 
-_:fc96f95a-f529-4d2d-9a40-f75b9081840f sh:value "1234567" .
+_:4e975314-f943-412b-9770-106e1dc89210 sh:value "1234567" .

@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Identifiable;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclFeatureUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
@@ -61,7 +61,7 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 
 			}
 
-			throw new ShaclFeatureUnsupportedException();
+			throw new ShaclUnsupportedException();
 
 		} else {
 			return new SimplePath((IRI) id);

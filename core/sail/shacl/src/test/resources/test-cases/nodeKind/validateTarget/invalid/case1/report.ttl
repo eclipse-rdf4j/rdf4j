@@ -1,0 +1,17 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+<http://example.com/ns#PersonShape> a sh:NodeShape;
+  sh:nodeKind sh:IRI;
+  sh:targetClass <http://example.com/ns#Person> .
+
+_:node1ee5ka5j4x64414 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:193349f3-7d8e-4ffa-af7c-bf769f31b2d4 .
+
+_:193349f3-7d8e-4ffa-af7c-bf769f31b2d4 a sh:ValidationResult;
+  sh:focusNode _:node1ee5katlmx1;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+  sh:sourceShape <http://example.com/ns#PersonShape>;
+  sh:value _:node1ee5katlmx1 .

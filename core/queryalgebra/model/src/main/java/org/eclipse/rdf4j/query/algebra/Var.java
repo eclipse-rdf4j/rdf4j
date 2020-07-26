@@ -36,6 +36,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	public Var(String name) {
+		assert !name.contains("?");
 		setName(name);
 	}
 

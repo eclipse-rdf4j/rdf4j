@@ -287,7 +287,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, false,
 					false);
 		} else {
-			throw new ShaclFeatureUnsupportedException("Unkown validation approach: " + validationApproach);
+			throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
 		}
 
 	}
@@ -395,7 +395,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
-		throw new ShaclFeatureUnsupportedException();
+		throw new ShaclUnsupportedException();
 	}
 
 	public Severity getSeverity() {

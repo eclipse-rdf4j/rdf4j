@@ -1,0 +1,19 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+_:node1ee5ka5j4x79636 a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result _:389f738e-a82f-45e5-ae38-e500f8aeb021 .
+
+_:389f738e-a82f-45e5-ae38-e500f8aeb021 a sh:ValidationResult;
+  sh:focusNode <http://example.com/ns#bigCo0999>;
+  sh:resultPath <http://www.w3.org/2000/01/rdf-schema#label>;
+  sh:resultSeverity sh:Violation;
+  sh:sourceConstraintComponent sh:UniqueLangConstraintComponent;
+  sh:sourceShape _:node1ee5kb3bjx1 .
+
+_:node1ee5kb3bjx1 a sh:PropertyShape;
+  sh:path <http://www.w3.org/2000/01/rdf-schema#label>;
+  sh:uniqueLang true .
+
+_:389f738e-a82f-45e5-ae38-e500f8aeb021 sh:value "Stor bedrift INVALID"@no .

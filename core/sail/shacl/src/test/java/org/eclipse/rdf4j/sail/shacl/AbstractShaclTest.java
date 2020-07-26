@@ -189,9 +189,9 @@ abstract public class AbstractShaclTest {
 //		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/pattern/multiple",
 		"test-cases/pattern/simple",
-		"test-cases/propertyShapeWithTarget/simple"
+		"test-cases/propertyShapeWithTarget/simple",
 ////		"test-cases/uniqueLang/not",
-//		"test-cases/uniqueLang/simple"
+		"test-cases/uniqueLang/simple"
 	)
 		.distinct()
 		.sorted()
@@ -320,7 +320,7 @@ abstract public class AbstractShaclTest {
 
 			if (preloadWithDummyData) {
 				try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-					connection.begin(isolationLevel);
+					connection.begin(isolationLevel, ValidationApproach.Disabled);
 					ValueFactory vf = connection.getValueFactory();
 					connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
 							vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
@@ -404,7 +404,6 @@ abstract public class AbstractShaclTest {
 						.getFile()
 						.replace("/target/test-classes/", "/src/test/resources/");
 				boolean newFile = new File(file + "report.ttl").createNewFile();
-				assertTrue(newFile);
 
 			}
 
