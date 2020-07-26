@@ -1,0 +1,10 @@
+{{ $title := .Get 0 }}
+
+<figure>
+  <img
+    src='https://g.gravizo.com/svg?{{ .Inner }}'
+    alt='{{ $title  }}'
+    />
+    <figcaption>{{ $title  }}</figcaption>
+</figure>
+<p>
