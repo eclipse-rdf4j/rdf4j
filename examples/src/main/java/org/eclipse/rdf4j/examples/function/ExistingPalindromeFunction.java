@@ -10,36 +10,40 @@ package org.eclipse.rdf4j.examples.function;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * An example custom SPARQL function that detects palindromes
+ * An example custom SPARQL function that detects palindromes that already exist in the database.
  *
  * @author Jeen Broekstra
  */
-public class PalindromeFunction implements Function {
+public class ExistingPalindromeFunction implements Function {
 
 	// define a constant for the namespace of our custom function
 	public static final String NAMESPACE = "http://example.org/custom-function/";
 
 	/**
-	 * return the URI 'http://example.org/custom-function/palindrome' as a String
+	 * return the URI 'http://example.org/custom-function/existingPalindrome' as a String
 	 */
 	@Override
 	public String getURI() {
-		return NAMESPACE + "palindrome";
+		return NAMESPACE + "existingPalindrome";
 	}
 
 	/**
-	 * Executes the palindrome function.
+	 * Executes the existingPalindrome function.
 	 *
-	 * @return A boolean literal representing true if the input argument is a palindrome, false otherwise.
+	 * @return A boolean literal representing true if the input argument is a palindrome and exists in the database,
+	 *         false otherwise.
 	 * @throws ValueExprEvaluationException if more than one argument is supplied or if the supplied argument is not a
 	 *                                      literal.
 	 */
 	@Override
-	public Value evaluate(ValueFactory valueFactory, Value... args)
+	public Value evaluate(TripleSource tripleSource, Value... args)
 			throws ValueExprEvaluationException {
 		// our palindrome function expects only a single argument, so throw an error
 		// if there's more than one
@@ -65,8 +69,15 @@ public class PalindromeFunction implements Function {
 		// a string is a palindrome if it is equal to its own inverse
 		boolean palindrome = inverted.equalsIgnoreCase(label);
 
-		// a function is always expected to return a Value object, so we
-		// return our boolean result as a Literal
-		return valueFactory.createLiteral(palindrome);
+		// check if a triple with the rdfs:label predicate and this palindrome as its value exists in the database
+		boolean existing = !QueryResults.asList(tripleSource.getStatements(null, RDFS.LABEL, (Literal) arg)).isEmpty();
+
+		// return a new boolean literal that is true if the input argument is a palindrome and exists as a label
+		return tripleSource.getValueFactory().createLiteral(palindrome && existing);
+	}
+
+	@Override
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+		throw new UnsupportedOperationException("this function needs a TripleSource");
 	}
 }
