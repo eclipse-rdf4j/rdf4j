@@ -133,7 +133,9 @@ public class ArrangedWriterTest {
 						String.join("\n", "",
 								"_:b1 <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>, _:b3;",
 								"		<http://www.w3.org/ns/shacl#value> _:b3;",
-								"  	<http://www.w3.org/ns/shacl#sourceShape> [ a <http://www.w3.org/ns/shacl#PropertyShape> ] ."
+								"  	<http://www.w3.org/ns/shacl#sourceShape> [ a <http://www.w3.org/ns/shacl#PropertyShape>; a [ a [] ] ] .",
+								"[] a [a []]."
+
 						)
 				), "", RDFFormat.TURTLE);
 
@@ -141,8 +143,6 @@ public class ArrangedWriterTest {
 		WriterConfig config = new WriterConfig();
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
-
-		System.out.println(stringWriter.toString());
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 
