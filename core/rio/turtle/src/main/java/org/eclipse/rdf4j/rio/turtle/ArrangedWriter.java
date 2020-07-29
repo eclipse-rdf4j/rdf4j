@@ -68,6 +68,9 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	private final Model blankReferences = new LinkedHashModel();
 
+	// nodes that have not been inlined, so should never be inlined
+	private final Set<Value> noneInlinedNodes = new HashSet<>();
+
 	private final Comparator<Statement> comparator = (Statement s1, Statement s2) -> {
 		IRI p1 = s1.getPredicate();
 		IRI p2 = s2.getPredicate();
@@ -338,6 +341,24 @@ public class ArrangedWriter extends AbstractRDFWriter {
 				if (INLINE_BLANK_NODES) {
 					Value obj = st.getObject();
 					Resource subj = st.getSubject();
+
+					if (noneInlinedNodes.contains(obj) || noneInlinedNodes.contains(subj)) {
+						getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+					}
+
+					// don't inline this node at all if any of it's objects is used as an object multiple times
+					boolean dontInline = statements.stream()
+							.filter(s -> s.getObject() instanceof BNode)
+							.filter(s -> s.getSubject().equals(subj))
+							.map(Statement::getObject)
+							.anyMatch(bNode -> bNodeOccurence.get((BNode) bNode) > 1);
+
+					if (dontInline) {
+						noneInlinedNodes.add(subj);
+						noneInlinedNodes.add(obj);
+						getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+					}
+
 					if (obj instanceof BNode) {
 						BNode bNode = (BNode) obj;
 						if (bNodeOccurence.get(bNode) > 1) {
@@ -345,6 +366,8 @@ public class ArrangedWriter extends AbstractRDFWriter {
 							 * if INLINE_BLANK_NODES is true and the blank node is repeated, we will set
 							 * INLINE_BLANK_NODES as false so as to make sure that the blank node object is not inlined.
 							 */
+							noneInlinedNodes.add(subj);
+							noneInlinedNodes.add(obj);
 							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
 						}
 
@@ -355,6 +378,8 @@ public class ArrangedWriter extends AbstractRDFWriter {
 						 */
 						BNode bNode = (BNode) subj;
 						if (bNodeOccurence.containsKey(bNode) && bNodeOccurence.get(bNode) > 1) {
+							noneInlinedNodes.add(subj);
+							noneInlinedNodes.add(obj);
 							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
 						}
 					}
@@ -412,9 +437,9 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	private class SubjectInContext {
 
-		private Resource subject;
+		private final Resource subject;
 
-		private Resource context;
+		private final Resource context;
 
 		private SubjectInContext(Statement st) {
 			this(st.getSubject(), st.getContext());

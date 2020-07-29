@@ -8,10 +8,13 @@
 package org.eclipse.rdf4j.rio.turtle;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.io.StringWriter;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -21,6 +24,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -34,19 +38,19 @@ import org.junit.Test;
  * @author TriangularIT
  */
 public class ArrangedWriterTest {
-	private ValueFactory vf;
+	private final ValueFactory vf;
 
-	private IRI uri1;
+	private final IRI uri1;
 
-	private IRI uri2;
+	private final IRI uri2;
 
-	private String exNs;
+	private final String exNs;
 
-	private RDFWriterFactory writerFactory;
+	private final RDFWriterFactory writerFactory;
 
-	private BNode bnode1;
+	private final BNode bnode1;
 
-	private BNode bnode2;
+	private final BNode bnode2;
 
 	public ArrangedWriterTest() {
 		vf = SimpleValueFactory.getInstance();
@@ -108,15 +112,42 @@ public class ArrangedWriterTest {
 		String sep = System.lineSeparator();
 		String expectedResult = "@prefix ex: <http://example.org/> ." + sep +
 				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> ." + sep +
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> ." + sep + sep +
-				"ex:subject ex:rel1 _:bnode1 ." + sep + sep +
-				"_:bnode1 rdfs:label \"the bnode1\" ." + sep + sep +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> ." + sep +
+				sep +
+				"ex:subject ex:rel1 _:bnode1 ." + sep +
+				sep +
+				"_:bnode1 rdfs:label \"the bnode1\" ." + sep +
+				sep +
 				"ex:subject ex:rel2 _:bnode1;" + sep +
-				"  ex:rel3 [" + sep +
-				"      rdfs:label \"the bnode2\"" + sep +
-				"    ] ." + sep;
+				"  ex:rel3 _:bnode2 ." + sep +
+				sep +
+				"_:bnode2 rdfs:label \"the bnode2\" ." + sep;
 
 		assertEquals(expectedResult, stringWriter.toString());
+	}
+
+	@Test
+	public void testBlankNodesNotInlinedCorrectly() throws IOException {
+		Model expected = Rio.parse(
+				new StringReader(
+						String.join("\n", "",
+								"_:b1 <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>, _:b3;",
+								"		<http://www.w3.org/ns/shacl#value> _:b3;",
+								"  	<http://www.w3.org/ns/shacl#sourceShape> [ a <http://www.w3.org/ns/shacl#PropertyShape> ] ."
+						)
+				), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		System.out.println(stringWriter.toString());
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+
+		assertTrue(Models.isomorphic(expected, actual));
+
 	}
 
 	private void write(Model model, OutputStream writer) {
