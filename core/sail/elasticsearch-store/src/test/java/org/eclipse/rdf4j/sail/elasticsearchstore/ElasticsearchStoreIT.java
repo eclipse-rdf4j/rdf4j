@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.time.StopWatch;
 import org.assertj.core.util.Files;
+import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
@@ -30,10 +31,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.elasticsearch.action.ActionFuture;
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Requests;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -43,34 +49,28 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-
 public class ElasticsearchStoreIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static EmbeddedElastic embeddedElastic;
-
+	private static ElasticsearchClusterRunner runner;
 	private static File installLocation = Files.newTemporaryFolder();
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
-
-		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
+		runner = TestHelpers.startElasticsearch(installLocation);
 	}
 
 	@AfterClass
 	public static void afterClass() throws IOException {
-
-		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@After
 	public void after() throws UnknownHostException {
-
+		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
 		printAllDocs();
-		embeddedElastic.refreshIndices();
 
 		deleteAllIndexes();
 
@@ -86,38 +86,29 @@ public class ElasticsearchStoreIT {
 
 	private void printAllDocs() {
 		for (String index : getIndexes()) {
-			System.out.println();
-			System.out.println("INDEX: " + index);
-			try {
-				List<String> strings = embeddedElastic.fetchAllDocuments(index);
-
-				for (String string : strings) {
-					System.out.println(string);
-					System.out.println();
-				}
-
-			} catch (UnknownHostException e) {
-				throw new RuntimeException(e);
+			logger.info("INDEX: " + index);
+			ActionFuture<SearchResponse> res = runner.client().search(Requests.searchRequest(index));
+			SearchHits hits = res.actionGet().getHits();
+			for (SearchHit hit : hits) {
+				logger.info(" doc " + hit.getSourceAsString());
 			}
-
-			System.out.println();
 		}
 	}
 
 	private void deleteAllIndexes() {
 		for (String index : getIndexes()) {
-			System.out.println("deleting: " + index);
-			embeddedElastic.deleteIndex(index);
+			logger.info("deleting index: " + index);
+			runner.admin().indices().delete(Requests.deleteIndexRequest(index)).actionGet();
 
 		}
 	}
 
 	private String[] getIndexes() {
 
-		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
+		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+					new TransportAddress(InetAddress.getByName("localhost"), TestHelpers.getPort(runner)));
 
 			return client.admin()
 					.indices()
@@ -133,14 +124,14 @@ public class ElasticsearchStoreIT {
 	@Test
 	public void testInstantiate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetConneciton() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -150,14 +141,14 @@ public class ElasticsearchStoreIT {
 	@Test
 	public void testSailRepository() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex"));
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetSailRepositoryConneciton() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -166,14 +157,14 @@ public class ElasticsearchStoreIT {
 	@Test
 	public void testShutdownAndRecreate() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
 		elasticsearchStore.shutDown();
-		elasticsearchStore = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
+		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER,
 				"testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -187,7 +178,7 @@ public class ElasticsearchStoreIT {
 	@Test(expected = SailException.class)
 	public void testShutdownAndReinit() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -207,7 +198,7 @@ public class ElasticsearchStoreIT {
 	@Test
 	public void testAddRemoveData() {
 		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1", "testindex");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -228,7 +219,7 @@ public class ElasticsearchStoreIT {
 	public void testAddLargeDataset() {
 		StopWatch stopWatch = StopWatch.createStarted();
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			stopWatch.stop();
@@ -273,7 +264,7 @@ public class ElasticsearchStoreIT {
 	}
 
 	private ClientProvider initElasticsearchStoreForGcTest() {
-		ElasticsearchStore sail = new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1",
+		ElasticsearchStore sail = new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER,
 				"testindex");
 
 		ClientProvider clientProvider = sail.clientProvider;
@@ -289,7 +280,7 @@ public class ElasticsearchStoreIT {
 	public void testNamespacePersistenc() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
@@ -299,7 +290,7 @@ public class ElasticsearchStoreIT {
 
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex"));
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			String namespace = connection.getNamespace(SHACL.PREFIX);
