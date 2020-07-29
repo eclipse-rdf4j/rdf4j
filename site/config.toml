@@ -1,0 +1,87 @@
+baseurl = "https://rdf4j.org/" 
+DefaultContentLanguage = "en"
+title = "Eclipse RDF4J"
+theme = "hugo-solstice-theme"
+metaDataFormat = "yaml"
+googleAnalytics = ""
+themesDir = "themes/"
+# disableKinds = ["taxonomy", "taxonomyTerm"]
+pygmentsStyle = "github"
+
+[Params]
+  google_tag_manager = ""
+  description = "Eclipse RDF4J: Scalable RDF for Java developers."
+  subtitle = "Eclipse Foundation"
+  seo_title_suffix = " | The Eclipse Foundation"
+  keywords = ["hugo", "solstice", "eclipse foundatiou"]
+  logo = "images/rdf4j-logo-orange-114.png"
+  favicon = "images/favicon.png"
+  hide_sidebar = "false"
+#  styles = "css/styles.css"
+#  js = "js/solstice.js"
+  gcse = ""
+#header_wrapper_class = "header-default-bg-img"
+#  call_for_action_text = "Download"
+#  call_for_action_url = "https://www.eclipse.org/downloads"
+#  call_for_action_icon = "fa-download"
+  
+[Author]
+  name = "Eclipse RDF4J developers"
+  website = "https://rdf4j.org/"
+
+[taxonomies]
+  category = "categories"
+  author = "authors"
+
+[permalinks]
+  news = "/:sections/:year/:month/:day/:slug/"
+
+[[menu.main]]
+    name = "News"
+    url = "/news/"
+    weight = 1
+
+[[menu.main]]
+    name = "About RDF4J"
+    url = "/about/"
+    weight = 2
+
+[[menu.main]]
+    name = "Documentation"
+    identifier = "documentation"
+    url = "/documentation/"
+    weight = 3
+
+[[menu.main]]
+    name = "Download"
+    url = "/download/"
+    weight = 4
+
+[[menu.main]]
+    name = "Support"
+    identifier = "support"
+    url = "/support/"
+    weight = 5
+
+[markup]
+  [markup.tableOfContents]
+    endLevel = 3
+    ordered = false
+    startLevel = 1   
+  [markup.goldmark]
+    [markup.goldmark.extensions]
+      definitionList = true
+      footnote = true
+      linkify = true
+      strikethrough = true
+      table = true
+      taskList = true
+      typographer = true
+    [markup.goldmark.parser]
+      attribute = true
+      autoHeadingID = true
+      autoHeadingIDType = "github"
+    [markup.goldmark.renderer]
+      hardWraps = false
+      unsafe = true
+      xhtml = false

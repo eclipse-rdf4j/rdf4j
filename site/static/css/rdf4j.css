@@ -1,0 +1,72 @@
+#header-wrapper {
+  background: #707070;
+  background-image: url(../images/header-bg.jpg);
+  background-size: cover;
+}
+
+#header-row {
+  padding-top: 20px;
+}
+
+.jumbotron h1 {
+  font-family: "DIN Condensed", "Arial Narrow OS", sans-serif;
+  color: black;
+}
+
+.shadowed {
+   padding: 6px;
+   border: 1px solid grey;
+   box-shadow: 5px 5px 2px grey;
+}
+
+.logo-vendor {
+  float: right;
+  padding-left: 6px;
+  padding-bottom: 6px;
+}
+
+td,th {
+  border: 1px solid #ccc;
+  padding: 0.6rem;
+}
+
+.featured-jumbotron h1:after {
+  /* divider */
+  border-bottom: 3px solid white;
+}
+
+
+div.doc-section {
+  float: none;
+  width: 100%;
+  margin-left: 0px;
+}
+
+h4.doc-section-header {
+  margin-top: 20px;
+  margin-bottom: 0px;
+}
+
+.big-emoji {
+  float: left;
+  font-size: 9em;
+  line-height: 1em;
+  margin-right: 4px;
+}
+
+.doc-section-header a:link, .doc-section-header a:visited {
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  font-weight: medium;
+  background: #DA5800;
+  padding-top: 2px;
+  padding-left: 20px;
+  padding-right: 20px;
+  color: black;
+}
+
+.doc-section-content {
+  background: white;
+  padding: 6px;
+  box-shadow: 3px 3px 2px #888888;
+}
