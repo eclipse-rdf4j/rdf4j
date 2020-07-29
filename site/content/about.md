@@ -93,6 +93,8 @@ The metaphactory platform is developed by [metaphacts GmbH](https://www.metaphac
   a library that transforms structured sources to RDF based and declared in an RML mapping.
 - [KOMMA](http://komma.enilink.net/)<br>
   a framework for the management and editing of RDF, RDFS and OWL. It provides Object-Triple-Mapping (comparable to JPA), an Editing framework, Eclipse RCP and RAP integration, on top of Eclipse RDF4J.
+- [LinkedPipes](https://linkedpipes.com)<br>
+  a standards compliant ETL and visualization suite for linked data.
 - [RDF4J Schema Generator](https://github.com/ansell/rdf4j-schema-generator)<br>
   a command line tool and maven plugin to generate vocabulary java classes from RDFS or OWL.
 - [RML-Mapper](https://github.com/RMLio/RML-Mapper)<br>
