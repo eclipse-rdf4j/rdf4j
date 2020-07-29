@@ -1,0 +1,31 @@
+
+_:node1eedlrok5x774 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:0614e094-ec1a-4b42-8ea6-97e2cbf941fb .
+
+_:0614e094-ec1a-4b42-8ea6-97e2cbf941fb a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#detail> _:e9b6e0d9-b4cb-42af-bb0a-0286bf0b6dde .
+
+_:e9b6e0d9-b4cb-42af-bb0a-0286bf0b6dde a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> "123";
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedlrq9vx3 .
+
+_:node1eedlrq9vx3 a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#string> .
+
+_:e9b6e0d9-b4cb-42af-bb0a-0286bf0b6dde <http://www.w3.org/ns/shacl#value> "123" .
+
+_:0614e094-ec1a-4b42-8ea6-97e2cbf941fb <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NotConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedlrq9vx1 .
+
+_:node1eedlrq9vx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#not> _:node1eedlrq9vx3;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
+
+_:0614e094-ec1a-4b42-8ea6-97e2cbf941fb <http://www.w3.org/ns/shacl#value> "123" .

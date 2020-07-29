@@ -8,11 +8,14 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class NotConstraintComponent extends AbstractConstraintComponent {
@@ -51,5 +54,18 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.NotConstraintComponent;
+	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren) {
+		return not.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, !negatePlan, false);
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
+		return not.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
+				!negatePlan, false);
 	}
 }

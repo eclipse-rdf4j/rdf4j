@@ -1,0 +1,44 @@
+
+_:node1eedlrok5x6835 a <http://www.w3.org/ns/shacl#ValidationReport>;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  <http://www.w3.org/ns/shacl#conforms> false;
+  <http://www.w3.org/ns/shacl#result> _:a128585d-7b76-4d0b-9888-16fdc63ac67c .
+
+_:a128585d-7b76-4d0b-9888-16fdc63ac67c a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#detail> _:e3559f1f-276a-48ba-b2aa-0ff73dbdc073 .
+
+_:e3559f1f-276a-48ba-b2aa-0ff73dbdc073 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#detail> _:557c741b-1b19-45f3-b485-136c4049e024 .
+
+_:557c741b-1b19-45f3-b485-136c4049e024 a <http://www.w3.org/ns/shacl#ValidationResult>;
+  <http://www.w3.org/ns/shacl#focusNode> "123";
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedlrt3cx3 .
+
+_:node1eedlrt3cx3 a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer> .
+
+_:557c741b-1b19-45f3-b485-136c4049e024 <http://www.w3.org/ns/shacl#value> "123" .
+
+_:e3559f1f-276a-48ba-b2aa-0ff73dbdc073 <http://www.w3.org/ns/shacl#focusNode> "123";
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NotConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedlrt3cx2 .
+
+_:node1eedlrt3cx2 a <http://www.w3.org/ns/shacl#NodeShape>;
+  <http://www.w3.org/ns/shacl#not> _:node1eedlrt3cx3 .
+
+_:e3559f1f-276a-48ba-b2aa-0ff73dbdc073 <http://www.w3.org/ns/shacl#value> "123" .
+
+_:a128585d-7b76-4d0b-9888-16fdc63ac67c <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
+  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
+  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
+  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NotConstraintComponent>;
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedlrt3cx1 .
+
+_:node1eedlrt3cx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#not> _:node1eedlrt3cx2;
+  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
+
+_:a128585d-7b76-4d0b-9888-16fdc63ac67c <http://www.w3.org/ns/shacl#value> "123" .

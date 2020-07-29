@@ -1,25 +1,25 @@
 
-_:node1ee6g130rx8959 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eedlrok5x16523 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:51562718-00df-4e39-966e-35aca83910df .
+  <http://www.w3.org/ns/shacl#result> _:50d65aae-7063-424a-bcca-55cd7ac50ff3 .
 
-_:51562718-00df-4e39-966e-35aca83910df a <http://www.w3.org/ns/shacl#ValidationResult>;
+_:50d65aae-7063-424a-bcca-55cd7ac50ff3 a <http://www.w3.org/ns/shacl#ValidationResult>;
   <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
   <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#InConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6g18hax23 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedls079x23 .
 
-_:node1ee6g18hax23 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#in> _:node1ee6g18hax24 .
+_:node1eedls079x23 a <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/ns/shacl#in> _:node1eedls079x24 .
 
-_:node1ee6g18hax24 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#pete>;
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1ee6g130rx8961 .
+_:node1eedls079x24 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#pete>;
+  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1eedlrok5x16524 .
 
-_:node1ee6g130rx8961 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#steve>;
+_:node1eedlrok5x16524 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> <http://example.com/ns#steve>;
   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
 
-_:node1ee6g18hax23 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
+_:node1eedls079x23 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
 
-_:51562718-00df-4e39-966e-35aca83910df <http://www.w3.org/ns/shacl#value> _:node1ee6g18hax26 .
+_:50d65aae-7063-424a-bcca-55cd7ac50ff3 <http://www.w3.org/ns/shacl#value> _:node1eedls079x26 .

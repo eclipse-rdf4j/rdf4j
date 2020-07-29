@@ -1,19 +1,19 @@
 
-_:node1ee6g130rx21030 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eedlrok5x28259 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:d2e6a0bf-6d5c-4db8-b621-f64a7ac4a231 .
+  <http://www.w3.org/ns/shacl#result> _:128916ee-bce8-4861-b143-e7db845c6224 .
 
-_:d2e6a0bf-6d5c-4db8-b621-f64a7ac4a231 a <http://www.w3.org/ns/shacl#ValidationResult>;
+_:128916ee-bce8-4861-b143-e7db845c6224 a <http://www.w3.org/ns/shacl#ValidationResult>;
   <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
   <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#uuid>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6g1cgcx1 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedls47qx1 .
 
-_:node1ee6g1cgcx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+_:node1eedls47qx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
   <http://www.w3.org/ns/shacl#flags> "i";
   <http://www.w3.org/ns/shacl#path> <http://example.com/ns#uuid>;
   <http://www.w3.org/ns/shacl#pattern> "([0-9a-f]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})" .
 
-_:d2e6a0bf-6d5c-4db8-b621-f64a7ac4a231 <http://www.w3.org/ns/shacl#value> "invalid" .
+_:128916ee-bce8-4861-b143-e7db845c6224 <http://www.w3.org/ns/shacl#value> "invalid" .

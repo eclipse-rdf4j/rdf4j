@@ -1,17 +1,17 @@
 
-_:node1ee6g130rx21883 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eedlrok5x29242 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:f11424df-47ae-427e-8c46-3ac6643e456a .
+  <http://www.w3.org/ns/shacl#result> _:b152c584-83d4-422c-81e1-953e3b0d3fcc .
 
-_:f11424df-47ae-427e-8c46-3ac6643e456a a <http://www.w3.org/ns/shacl#ValidationResult>;
+_:b152c584-83d4-422c-81e1-953e3b0d3fcc a <http://www.w3.org/ns/shacl#ValidationResult>;
   <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#bigCo>;
   <http://www.w3.org/ns/shacl#resultPath> <http://www.w3.org/2000/01/rdf-schema#label>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#UniqueLangConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6g1cojx1 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedls4i7x1 .
 
-_:node1ee6g1cojx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+_:node1eedls4i7x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
   <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label>;
   <http://www.w3.org/ns/shacl#targetClass> <http://example.com/ns#Company>;
   <http://www.w3.org/ns/shacl#uniqueLang> true .

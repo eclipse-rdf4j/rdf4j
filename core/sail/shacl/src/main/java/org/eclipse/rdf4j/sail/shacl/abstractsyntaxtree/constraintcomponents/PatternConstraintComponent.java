@@ -29,7 +29,7 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.PATTERN, SimpleValueFactory.getInstance().createLiteral(pattern));
-		if (flags != null) {
+		if (flags != null && !flags.isEmpty()) {
 			model.add(subject, SHACL.FLAGS, SimpleValueFactory.getInstance().createLiteral(flags));
 		}
 

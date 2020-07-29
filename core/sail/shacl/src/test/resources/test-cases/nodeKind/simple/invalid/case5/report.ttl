@@ -1,18 +1,18 @@
 
-_:node1ee6g130rx18886 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eedlrok5x26181 a <http://www.w3.org/ns/shacl#ValidationReport>;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:f9309934-30da-4662-802c-b276feddd471 .
+  <http://www.w3.org/ns/shacl#result> _:a4ac3339-4245-422e-b377-5c30d79a4a26 .
 
-_:f9309934-30da-4662-802c-b276feddd471 a <http://www.w3.org/ns/shacl#ValidationResult>;
+_:a4ac3339-4245-422e-b377-5c30d79a4a26 a <http://www.w3.org/ns/shacl#ValidationResult>;
   <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
   <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
   <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
   <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NodeKindConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1ee6g1bq3x1 .
+  <http://www.w3.org/ns/shacl#sourceShape> _:node1eedls3inx1 .
 
-_:node1ee6g1bq3x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
+_:node1eedls3inx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
   <http://www.w3.org/ns/shacl#nodeKind> <http://www.w3.org/ns/shacl#BlankNodeOrIRI>;
   <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
 
-_:f9309934-30da-4662-802c-b276feddd471 <http://www.w3.org/ns/shacl#value> "1234567" .
+_:a4ac3339-4245-422e-b377-5c30d79a4a26 <http://www.w3.org/ns/shacl#value> "1234567" .
