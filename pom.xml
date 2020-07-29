@@ -913,44 +913,6 @@
 				</configuration>
 			</plugin>
 			<plugin>
-				<!-- verify all bytecode (including third party libs) is Java 8 max -->
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-enforcer-plugin</artifactId>
-				<version>1.4.1</version>
-				<executions>
-					<execution>
-						<id>enforce-bytecode-version</id>
-						<goals>
-							<goal>enforce</goal>
-						</goals>
-						<configuration>
-							<rules>
-								<enforceBytecodeVersion>
-									<maxJdkVersion>1.8</maxJdkVersion>
-									<ignoreClasses>
-										<ignoreClass>META-INF/**/module-info</ignoreClass>
-									</ignoreClasses>
-									<excludes>
-										<exclude>org.apache.logging.log4j:log4j-api</exclude>
-										<exclude>org.elasticsearch:elasticsearch</exclude>
-										<exclude>javax.xml.bind:jaxb-api</exclude>
-										<exclude>org.elasticsearch:elasticsearch-core</exclude>
-									</excludes>
-								</enforceBytecodeVersion>
-							</rules>
-							<fail>true</fail>
-						</configuration>
-					</execution>
-				</executions>
-				<dependencies>
-					<dependency>
-						<groupId>org.codehaus.mojo</groupId>
-						<artifactId>extra-enforcer-rules</artifactId>
-						<version>1.0</version>
-					</dependency>
-				</dependencies>
-			</plugin>
-			<plugin>
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>
 				<configuration>
