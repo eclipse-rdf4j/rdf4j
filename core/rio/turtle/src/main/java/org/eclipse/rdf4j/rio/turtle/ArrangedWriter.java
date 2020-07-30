@@ -7,15 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -58,18 +56,15 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	private int queueSize = 0;
 
-	private final Deque<SubjectInContext> stack = new ArrayDeque<>();
+	private final Deque<SubjectInContext> stack = new LinkedList<>();
 
 	private final Map<String, String> prefixes = new TreeMap<>();
 
-	private final Map<SubjectInContext, Set<Statement>> statementBySubject = new LinkedHashMap<>();
+	private final Map<SubjectInContext, Set<Statement>> stmtBySubject = new LinkedHashMap<>();
 
 	private final Model blanks = new LinkedHashModel();
 
 	private final Model blankReferences = new LinkedHashModel();
-
-	// nodes that have not been inlined, so should never be inlined
-	private final Set<Value> nonInlinedNodes = new HashSet<>();
 
 	private final Comparator<Statement> comparator = (Statement s1, Statement s2) -> {
 		IRI p1 = s1.getPredicate();
@@ -205,29 +200,27 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	private synchronized Statement nextStatement() {
-
-		if (statementBySubject.isEmpty() && blanks.isEmpty()) {
+		if (stmtBySubject.isEmpty() && blanks.isEmpty()) {
 			assert queueSize == 0;
 			return null;
 		}
-		Set<Statement> statements = null;
-		while (statements == null) {
+		Set<Statement> stmts = null;
+		while (stmts == null) {
 			SubjectInContext last = stack.peekLast();
-			statements = statementBySubject.get(last);
-			if (statements == null && last != null
-					&& blanks.contains(last.getSubject(), null, null, last.getContext())) {
-				statements = queueBlankStatements(last);
-			} else if (statements == null) {
+			stmts = stmtBySubject.get(last);
+			if (stmts == null && last != null && blanks.contains(last.getSubject(), null, null, last.getContext())) {
+				stmts = queueBlankStatements(last);
+			} else if (stmts == null) {
 				stack.pollLast();
 			}
-			if (stack.isEmpty() && statementBySubject.isEmpty()) {
+			if (stack.isEmpty() && stmtBySubject.isEmpty()) {
 				Statement st = blanks.iterator().next();
-				statements = queueBlankStatements(new SubjectInContext(st));
+				stmts = queueBlankStatements(new SubjectInContext(st));
 			} else if (stack.isEmpty()) {
-				statements = statementBySubject.values().iterator().next();
+				stmts = stmtBySubject.values().iterator().next();
 			}
 		}
-		Iterator<Statement> iter = statements.iterator();
+		Iterator<Statement> iter = stmts.iterator();
 		Statement next = iter.next();
 		queueSize--;
 		iter.remove();
@@ -236,7 +229,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 			stack.addLast(key);
 		}
 		if (!iter.hasNext()) {
-			statementBySubject.remove(key);
+			stmtBySubject.remove(key);
 		}
 		Value obj = next.getObject();
 		if (obj instanceof BNode) {
@@ -262,9 +255,9 @@ public class ArrangedWriter extends AbstractRDFWriter {
 		if (matches.isEmpty()) {
 			return null;
 		}
-		Set<Statement> set = statementBySubject.get(key);
+		Set<Statement> set = stmtBySubject.get(key);
 		if (set == null) {
-			statementBySubject.put(key, set = new TreeSet<>(comparator));
+			stmtBySubject.put(key, set = new TreeSet<>(comparator));
 		}
 		set.addAll(matches);
 		if (firstMatch.isEmpty()) {
@@ -284,7 +277,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 			return true;
 		}
 		for (SubjectInContext subj : stack) {
-			Set<Statement> stmts = statementBySubject.get(subj);
+			Set<Statement> stmts = stmtBySubject.get(subj);
 			if (stmts != null) {
 				for (Statement st : stmts) {
 					if (st.getObject().equals(key.getSubject()) || Objects.equals(st.getContext(), key.getContext())) {
@@ -298,12 +291,12 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	private synchronized void queueStatement(Statement st) {
 		SubjectInContext key = new SubjectInContext(st);
-		Set<Statement> stmts = statementBySubject.get(key);
+		Set<Statement> stmts = stmtBySubject.get(key);
 		if (stmts == null && st.getSubject() instanceof BNode && !stack.contains(key)) {
 			blanks.add(st);
 		} else {
 			if (stmts == null) {
-				statementBySubject.put(key, stmts = new TreeSet<>(comparator));
+				stmtBySubject.put(key, stmts = new TreeSet<>(comparator));
 			}
 			stmts.add(st);
 		}
@@ -311,92 +304,12 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	private synchronized void flushStatements() throws RDFHandlerException {
-		if (!statementBySubject.isEmpty() || !blanks.isEmpty()) {
+		if (!stmtBySubject.isEmpty() || !blanks.isEmpty()) {
 			flushNamespaces();
-
-			// used to store all the statements
-			ArrayList<Statement> statements = new ArrayList<>();
-
-			// used to store blank nodes along with the number of times they are used as an object in a statement.
-			Map<BNode, Integer> bNodeOccurrences = new HashMap<>();
-
 			Statement st;
 			while ((st = nextStatement()) != null) {
-				statements.add(st);
-
-				Value obj = st.getObject();
-
-				// if the object in the statement is a blank node, we will update its number of occurrences
-				if (obj instanceof BNode) {
-					bNodeOccurrences.compute(
-							(BNode) obj,
-							(key, i) -> i == null ? 1 : i + 1
-					);
-
-					if (bNodeOccurrences.get(obj) > 1) {
-						if (st.getSubject() instanceof BNode) {
-							nonInlinedNodes.add(st.getSubject());
-						}
-						nonInlinedNodes.add(obj);
-					}
-				}
+				delegate.handleStatement(st);
 			}
-
-			boolean inlineBlankNodesInitialValue = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
-
-			for (Statement statement : statements) {
-				if (inlineBlankNodesInitialValue) {
-					Value obj = statement.getObject();
-					Resource subj = statement.getSubject();
-
-					if (nonInlinedNodes.contains(obj) || nonInlinedNodes.contains(subj)) {
-						getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
-
-						// since we are not inlining anything in this statement we must make sure to not inline
-						// other uses of the subject as an object later
-						if (obj instanceof BNode) {
-							nonInlinedNodes.add(obj);
-						}
-						if (subj instanceof BNode) {
-							nonInlinedNodes.add(subj);
-						}
-					}
-
-					if (obj instanceof BNode) {
-						BNode bNode = (BNode) obj;
-						if (bNodeOccurrences.get(bNode) > 1) {
-							/*
-							 * if INLINE_BLANK_NODES is true and the blank node is repeated, we will set
-							 * INLINE_BLANK_NODES as false so as to make sure that the blank node object is not inlined.
-							 */
-							if (subj instanceof BNode) {
-								nonInlinedNodes.add(subj);
-							}
-							nonInlinedNodes.add(obj);
-							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
-						}
-
-					} else if (subj instanceof BNode) {
-						/*
-						 * if the subject of a statement is a blank node that has been repeated, it should not be
-						 * inlined.
-						 */
-						BNode bNode = (BNode) subj;
-						if (bNodeOccurrences.containsKey(bNode) && bNodeOccurrences.get(bNode) > 1) {
-							nonInlinedNodes.add(subj);
-							if (obj instanceof BNode) {
-								nonInlinedNodes.add(obj);
-							}
-							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
-						}
-					}
-				}
-				delegate.handleStatement(statement);
-
-				// resetting the value of INLINE_BLANK_NODES
-				getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, inlineBlankNodesInitialValue);
-			}
-
 			assert queueSize == 0;
 		}
 	}
@@ -415,7 +328,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	private synchronized void trimNamespaces() {
 		if (!prefixes.isEmpty()) {
 			Set<String> used = new HashSet<>(prefixes.size());
-			for (Set<Statement> stmts : statementBySubject.values()) {
+			for (Set<Statement> stmts : stmtBySubject.values()) {
 				getUsedNamespaces(stmts, used);
 			}
 			getUsedNamespaces(blanks, used);
@@ -442,11 +355,11 @@ public class ArrangedWriter extends AbstractRDFWriter {
 		}
 	}
 
-	private static class SubjectInContext {
+	private class SubjectInContext {
 
-		private final Resource subject;
+		private Resource subject;
 
-		private final Resource context;
+		private Resource context;
 
 		private SubjectInContext(Statement st) {
 			this(st.getSubject(), st.getContext());
@@ -500,10 +413,13 @@ public class ArrangedWriter extends AbstractRDFWriter {
 				return false;
 			}
 			if (context == null) {
-				return other.context == null;
-			} else {
-				return context.equals(other.context);
+				if (other.context != null) {
+					return false;
+				}
+			} else if (!context.equals(other.context)) {
+				return false;
 			}
+			return true;
 		}
 	}
 
