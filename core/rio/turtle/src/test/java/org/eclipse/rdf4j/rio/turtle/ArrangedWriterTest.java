@@ -119,9 +119,9 @@ public class ArrangedWriterTest {
 				"_:bnode1 rdfs:label \"the bnode1\" ." + sep +
 				sep +
 				"ex:subject ex:rel2 _:bnode1;" + sep +
-				"  ex:rel3 _:bnode2 ." + sep +
-				sep +
-				"_:bnode2 rdfs:label \"the bnode2\" ." + sep;
+				"  ex:rel3 [" + sep +
+				"      rdfs:label \"the bnode2\"" + sep +
+				"    ] ." + sep;
 
 		assertEquals(expectedResult, stringWriter.toString());
 	}

@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -70,7 +69,7 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	private final Model blankReferences = new LinkedHashModel();
 
 	// nodes that have not been inlined, so should never be inlined
-	private final Set<Value> noneInlinedNodes = new HashSet<>();
+	private final Set<Value> nonInlinedNodes = new HashSet<>();
 
 	private final Comparator<Statement> comparator = (Statement s1, Statement s2) -> {
 		IRI p1 = s1.getPredicate();
@@ -335,8 +334,10 @@ public class ArrangedWriter extends AbstractRDFWriter {
 					);
 
 					if (bNodeOccurrences.get(obj) > 1) {
-						noneInlinedNodes.add(st.getSubject());
-						noneInlinedNodes.add(obj);
+						if (st.getSubject() instanceof BNode) {
+							nonInlinedNodes.add(st.getSubject());
+						}
+						nonInlinedNodes.add(obj);
 					}
 				}
 			}
@@ -348,13 +349,16 @@ public class ArrangedWriter extends AbstractRDFWriter {
 					Value obj = statement.getObject();
 					Resource subj = statement.getSubject();
 
-					if (noneInlinedNodes.contains(obj) || noneInlinedNodes.contains(subj)) {
+					if (nonInlinedNodes.contains(obj) || nonInlinedNodes.contains(subj)) {
 						getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
 
+						// since we are not inlining anything in this statement we must make sure to not inline
+						// other uses of the subject as an object later
 						if (obj instanceof BNode) {
-							// since we are not inlining anything in this statement we must make sure to not inline
-							// other uses of the subject as an object later
-							noneInlinedNodes.add(obj);
+							nonInlinedNodes.add(obj);
+						}
+						if (subj instanceof BNode) {
+							nonInlinedNodes.add(subj);
 						}
 					}
 
@@ -365,8 +369,10 @@ public class ArrangedWriter extends AbstractRDFWriter {
 							 * if INLINE_BLANK_NODES is true and the blank node is repeated, we will set
 							 * INLINE_BLANK_NODES as false so as to make sure that the blank node object is not inlined.
 							 */
-							noneInlinedNodes.add(subj);
-							noneInlinedNodes.add(obj);
+							if (subj instanceof BNode) {
+								nonInlinedNodes.add(subj);
+							}
+							nonInlinedNodes.add(obj);
 							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
 						}
 
@@ -377,8 +383,10 @@ public class ArrangedWriter extends AbstractRDFWriter {
 						 */
 						BNode bNode = (BNode) subj;
 						if (bNodeOccurrences.containsKey(bNode) && bNodeOccurrences.get(bNode) > 1) {
-							noneInlinedNodes.add(subj);
-							noneInlinedNodes.add(obj);
+							nonInlinedNodes.add(subj);
+							if (obj instanceof BNode) {
+								nonInlinedNodes.add(obj);
+							}
 							getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, false);
 						}
 					}
