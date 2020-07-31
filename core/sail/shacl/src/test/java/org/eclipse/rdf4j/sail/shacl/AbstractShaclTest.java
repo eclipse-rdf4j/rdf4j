@@ -42,7 +42,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -440,7 +439,7 @@ abstract public class AbstractShaclTest {
 		}
 	}
 
-	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model validationReportActual)
+	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model report)
 			throws IOException {
 		String file = AbstractShaclTest.class.getClassLoader()
 				.getResource(dataPath)
@@ -448,8 +447,9 @@ abstract public class AbstractShaclTest {
 				.replace("/target/test-classes/", "/src/test/resources/");
 		File file1 = new File(file + "report.ttl");
 		try (FileOutputStream fileOutputStream = new FileOutputStream(file1)) {
-			Rio.write(validationReportActual, fileOutputStream, RDFFormat.TURTLE);
+			IOUtils.write(modelToString(report), fileOutputStream, StandardCharsets.UTF_8);
 		}
+
 	}
 
 	private static void printCurrentState(SailRepository shaclRepository) {
@@ -480,17 +480,24 @@ abstract public class AbstractShaclTest {
 		}
 	}
 
-	private static String modelToString(Model model) {
-		StringWriter stringWriter = new StringWriter();
+	static String modelToString(Model model) {
+
 		model.setNamespace("ex", "http://example.com/ns#");
 		model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
 		model.setNamespace(XSD.PREFIX, XSD.NAMESPACE);
 		model.setNamespace(RDF.PREFIX, RDF.NAMESPACE);
 		model.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
+		model.setNamespace(SHACL.NS);
+		model.setNamespace(RDF.NS);
+		model.setNamespace(RDFS.NS);
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 //		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		writerConfig.set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true);
+
+		StringWriter stringWriter = new StringWriter();
+
 		Rio.write(model, stringWriter, RDFFormat.TURTLE, writerConfig);
 
 		return stringWriter.toString();
@@ -733,7 +740,7 @@ abstract public class AbstractShaclTest {
 				actual.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
 				if (!isIsomorphic(parse, actual)) {
-					assertEquals(toTurleString(parse), toTurleString(actual));
+					assertEquals(modelToString(parse), modelToString(actual));
 				}
 
 			} catch (IOException e) {
@@ -743,25 +750,6 @@ abstract public class AbstractShaclTest {
 			shaclRepository.shutDown();
 		}
 
-	}
-
-	static String toTurleString(Model parse) {
-		parse = new TreeModel(new ArrayList<>(parse));
-
-		parse.setNamespace(SHACL.NS);
-		parse.setNamespace(RDF.NS);
-		parse.setNamespace(RDFS.NS);
-
-		WriterConfig writerConfig = new WriterConfig();
-		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-		writerConfig.set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true);
-		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-
-		StringWriter stringWriter = new StringWriter();
-
-		Rio.write(parse, stringWriter, RDFFormat.TURTLE, writerConfig);
-
-		return stringWriter.toString();
 	}
 
 	private static void printResults(ValidationReport report) {

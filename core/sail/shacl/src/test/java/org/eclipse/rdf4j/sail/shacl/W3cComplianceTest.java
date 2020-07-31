@@ -81,7 +81,7 @@ public class W3cComplianceTest {
 
 		assert statements != null;
 
-		System.out.println(AbstractShaclTest.toTurleString(statements));
+		System.out.println(AbstractShaclTest.modelToString(statements));
 
 	}
 
