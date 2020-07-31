@@ -714,43 +714,43 @@ Our test data also contains other people, so the query has to evaluate a lot mor
 Explaining the query at the `Timed` level gives us the following plan:
 
 ```
-01 Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
-02    ProjectionElemList
-03       ProjectionElem "friend"
-04       ProjectionElem "name"
-05    LeftJoin (LeftJoinIterator) (resultSizeActual=2, totalTimeActual=27.2ms, selfTimeActual=0.425ms)
-06       Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.4ms, selfTimeActual=0.355ms)
-07          Extension (resultSizeActual=1, totalTimeActual=0.115ms, selfTimeActual=0.09ms)
-08             ExtensionElem (person)
-09                ValueConstant (value=http://example.com/peter)
-10             SingletonSet (resultSizeActual=1, totalTimeActual=0.026ms, selfTimeActual=0.026ms)
-11          Join (JoinIterator) (resultSizeActual=2, totalTimeActual=26.0ms, selfTimeActual=0.72ms)
-12             Filter (resultSizeActual=4, totalTimeActual=3.76ms, selfTimeActual=2.42ms)
-13                Compare (>=)
-14                   Var (name=age)
-15                   ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
-16                StatementPattern (costEstimate=4, resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=1.34ms, selfTimeActual=1.34ms)
-17                   Var (name=friend)
-18                   Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
-19                   Var (name=age)
-20             Join (JoinIterator) (resultSizeActual=2, totalTimeActual=21.5ms, selfTimeActual=0.697ms)
-31                ArbitraryLengthPath (costEstimate=24, resultSizeEstimate=2.2K, resultSizeActual=2, totalTimeActual=20.3ms, selfTimeActual=20.3ms)
-32                   Var (name=person)
-33                   Union
-34                      StatementPattern (resultSizeEstimate=1.0K)
-35                         Var (name=person)
-36                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-37                         Var (name=friend)
-38                      StatementPattern (resultSizeEstimate=1.0K)
-39                         Var (name=friend)
-40                         Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-41                         Var (name=person)
-42                   Var (name=friend)
-43                StatementPattern (costEstimate=1, resultSizeEstimate=101, resultSizeActual=2, totalTimeActual=0.461ms, selfTimeActual=0.461ms)
-44                   Var (name=person)
-45                   Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-46                   Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
-47       StatementPattern (resultSizeEstimate=5, resultSizeActual=1, totalTimeActual=0.295ms, selfTimeActual=0.295ms)
+01 Projection (resultSizeActual=2, totalTimeActual=0.247ms, selfTimeActual=0.002ms)
+02 ╠══ProjectionElemList
+03 ║     ProjectionElem "friend"
+04 ║     ProjectionElem "name"
+05 ╚══LeftJoin (LeftJoinIterator) (resultSizeActual=2, totalTimeActual=0.245ms, selfTimeActual=0.005ms)
+06    ├──Join (JoinIterator) (resultSizeActual=2, totalTimeActual=0.238ms, selfTimeActual=0.004ms)
+07    │  ╠══Extension (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.001ms)
+08    │  ║  ├──ExtensionElem (person)
+09    │  ║  │     ValueConstant (value=http://example.com/peter)
+10    │  ║  └──SingletonSet (resultSizeActual=1, totalTimeActual=0.0ms, selfTimeActual=0.0ms)
+11    │  ╚══Join (JoinIterator) (resultSizeActual=2, totalTimeActual=0.231ms, selfTimeActual=0.009ms)
+12    │     ├──Filter (resultSizeActual=4, totalTimeActual=0.023ms, selfTimeActual=0.014ms)
+13    │     │  ╠══Compare (>=)
+14    │     │  ║     Var (name=age)
+15    │     │  ║     ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+16    │     │  ╚══StatementPattern (costEstimate=4, resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.009ms, selfTimeActual=0.009ms)
+17    │     │        Var (name=friend)
+18    │     │        Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+19    │     │        Var (name=age)
+20    │     └──Join (JoinIterator) (resultSizeActual=2, totalTimeActual=0.199ms, selfTimeActual=0.007ms)
+31    │        ╠══ArbitraryLengthPath (costEstimate=24, resultSizeEstimate=2.2K, resultSizeActual=2, totalTimeActual=0.189ms, selfTimeActual=0.189ms)
+32    │        ║     Var (name=person)
+33    │        ║     Union
+34    │        ║     ╠══StatementPattern (resultSizeEstimate=1.0K)
+35    │        ║     ║     Var (name=person)
+36    │        ║     ║     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+37    │        ║     ║     Var (name=friend)
+38    │        ║     ╚══StatementPattern (resultSizeEstimate=1.0K)
+39    │        ║           Var (name=friend)
+40    │        ║           Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+41    │        ║           Var (name=person)
+42    │        ║     Var (name=friend)
+43    │        ╚══StatementPattern (costEstimate=1, resultSizeEstimate=101, resultSizeActual=2, totalTimeActual=0.004ms, selfTimeActual=0.004ms)
+44    │              Var (name=person)
+45    │              Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+46    │              Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+47    └──StatementPattern (resultSizeEstimate=5, resultSizeActual=1, totalTimeActual=0.003ms, selfTimeActual=0.003ms)
 48          Var (name=friend)
 49          Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
 50          Var (name=name)
@@ -759,7 +759,7 @@ Explaining the query at the `Timed` level gives us the following plan:
 We start by reading the query top to bottom. The first node we encounter is:
 
 ```
-Projection (resultSizeActual=2, totalTimeActual=27.3ms, selfTimeActual=0.118ms)
+Projection (resultSizeActual=2, totalTimeActual=0.247ms, selfTimeActual=0.002ms)
 ``` 
 
 The node name is "Projection", which represents the `SELECT` keyword. The values in parentheses 
@@ -771,16 +771,16 @@ are cost-estimates and actual measured output and timing. You may encounter:
  - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
  - **selfTimeActual**: the time this node took all on its own to produce its results
  
- In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 20.3ms (75% of the overall time). 
+ In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 0.189ms (~75% of the overall time). 
  This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.
  
- Joins in RDF4J have a left, and a right node. The join algorithms will first retrieve a result from the left node before it gets a result 
- from the right node. The left node is the first node displayed under the join node. For the `Join` on line 06 we have the left node 
- being line 07 and the right being line 11.`Executed` and `Timed` plans will typically show the algorithm for all join and left join nodes. 
-Our fastest algorithm is usually `JoinIterator`, it will retrieve a result from the left node and use the results to "query" the right node 
-for the next relevant result. 
+ Joins in RDF4J have a left, and a right node (the pipes in the query plan make it simpler to see which node is the left and which is the right). 
+The join algorithms will first retrieve a result from the left node before it gets a result from the right node. The left node is the first 
+node displayed under the join node. For the `Join` on line 06 we have the left node being line 07 and the right being line 11.`Executed` 
+and `Timed` plans will typically show the algorithm for all join and left join nodes. Our fastest algorithm is usually `JoinIterator`, it will 
+retrieve a result from the left node and use the results to "query" the right node for the next relevant result. 
  
-In our plan above we can see how `Extension` node and the `Filter` node can "tell" the `ArbitraryLengthPath` which values for 
+In our plan above we can see how `Extension` node and the `Filter` node can "inform" the `ArbitraryLengthPath` which values for 
 `person` and `friend` are relevant because the `Extension` node binds exactly one value for `person` and `Filter` node binds exactly 
 four values for`friend`. This is why `ArbitraryLengthPath` has a `resultSizeActual` of two, meaning that it only produced two results.
 
@@ -813,44 +813,44 @@ outer sections. This precisely so as to make scoping issues unambiguous.
 The query plan for the query gives us a lot of hints about how this becomes problematic.
 
 ```
-Projection (resultSizeActual=9, totalTimeActual=1.1s, selfTimeActual=0.134ms)
-   ProjectionElemList
-      ProjectionElem "person"
-      ProjectionElem "friend"
-      ProjectionElem "age"
-   Join (HashJoinIteration) (resultSizeActual=9, totalTimeActual=1.1s, selfTimeActual=4.67ms)
-      Extension (resultSizeActual=1, totalTimeActual=0.046ms, selfTimeActual=0.036ms)
-         ExtensionElem (person)
-            ValueConstant (value=http://example.com/peter)
-         SingletonSet (resultSizeActual=1, totalTimeActual=0.011ms, selfTimeActual=0.011ms)
-      Union (new scope) (resultSizeActual=10.5K, totalTimeActual=1.1s, selfTimeActual=4.68ms)
-         Join (HashJoinIteration) (resultSizeActual=10.1K, totalTimeActual=1.1s, selfTimeActual=41.5ms)
-            StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=101, totalTimeActual=1.14ms, selfTimeActual=1.14ms)
-               Var (name=person)
-               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
-            ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.0s, selfTimeActual=1.0s)
-               Var (name=person)
-               Union
-                  StatementPattern (resultSizeEstimate=1.0K)
-                     Var (name=person)
-                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                     Var (name=friend)
-                  StatementPattern (resultSizeEstimate=1.0K)
-                     Var (name=friend)
-                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                     Var (name=person)
-               Var (name=friend)
-         Join (JoinIterator) (resultSizeActual=404, totalTimeActual=1.26ms, selfTimeActual=0.275ms)
-            Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.555ms, selfTimeActual=0.463ms)
-               Compare (>=)
-                  Var (name=age)
-                  ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
-               StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.092ms, selfTimeActual=0.092ms)
-                  Var (name=friend)
-                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
-                  Var (name=age)
-            StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=404, totalTimeActual=0.428ms, selfTimeActual=0.428ms)
+Projection (resultSizeActual=9, totalTimeActual=1.6s, selfTimeActual=0.074ms)
+╠══ProjectionElemList
+║     ProjectionElem "person"
+║     ProjectionElem "friend"
+║     ProjectionElem "age"
+╚══Join (HashJoinIteration) (resultSizeActual=9, totalTimeActual=1.6s, selfTimeActual=5.45ms)
+   ├──Extension (resultSizeActual=1, totalTimeActual=0.018ms, selfTimeActual=0.016ms)
+   │  ╠══ExtensionElem (person)
+   │  ║     ValueConstant (value=http://example.com/peter)
+   │  ╚══SingletonSet (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.002ms)
+   └──Union (new scope) (resultSizeActual=10.5K, totalTimeActual=1.6s, selfTimeActual=4.42ms)
+      ╠══Join (HashJoinIteration) (resultSizeActual=10.1K, totalTimeActual=1.6s, selfTimeActual=50.0ms)
+      ║  ├──StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=101, totalTimeActual=0.524ms, selfTimeActual=0.524ms)
+      ║  │     Var (name=person)
+      ║  │     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+      ║  │     Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+      ║  └──ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.5s, selfTimeActual=1.5s)
+      ║        Var (name=person)
+      ║        Union
+      ║        ├──StatementPattern (resultSizeEstimate=1.0K)
+      ║        │     Var (name=person)
+      ║        │     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+      ║        │     Var (name=friend)
+      ║        └──StatementPattern (resultSizeEstimate=1.0K)
+      ║              Var (name=friend)
+      ║              Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+      ║              Var (name=person)
+      ║        Var (name=friend)
+      ╚══Join (JoinIterator) (resultSizeActual=404, totalTimeActual=0.533ms, selfTimeActual=0.145ms)
+         ├──Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.087ms, selfTimeActual=0.073ms)
+         │  ╠══Compare (>=)
+         │  ║     Var (name=age)
+         │  ║     ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+         │  ╚══StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.014ms, selfTimeActual=0.014ms)
+         │        Var (name=friend)
+         │        Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+         │        Var (name=age)
+         └──StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=404, totalTimeActual=0.301ms, selfTimeActual=0.301ms)
                Var (name=person)
                Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
                Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
@@ -859,7 +859,7 @@ Projection (resultSizeActual=9, totalTimeActual=1.1s, selfTimeActual=0.134ms)
 The biggest time use and largest result size is produced at line:
 
 ```
-ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.0s, selfTimeActual=1.0s)
+ArbitraryLengthPath (new scope) (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=102.0K, totalTimeActual=1.5s, selfTimeActual=1.5s)
 ```
 
 This tells us that the query is probably producing all possible results for `?person (foaf:knows | ^foaf:knows)* ?friend.`. In fact running this fragment in a new query
@@ -869,38 +869,38 @@ Taking a look at the unoptimized plan we can see where the issue lies:
 
 ```
 01 Projection
-02    ProjectionElemList
-03       ProjectionElem "person"
-04       ProjectionElem "friend"
-05       ProjectionElem "age"
-06    Join
-07       Join
-08          Extension
-09             ExtensionElem (person)
-10                ValueConstant (value=http://example.com/peter)
-11             SingletonSet
-12          StatementPattern
-13             Var (name=person)
-14             Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-15             Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
-16       Union (new scope)
-17          ArbitraryLengthPath (new scope)
-18             Var (name=person)
-19             Union
-20                StatementPattern
-31                   Var (name=person)
-32                   Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-33                   Var (name=friend)
-34                StatementPattern
-35                   Var (name=friend)
-36                   Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-37                   Var (name=person)
-38             Var (name=friend)
-39          Filter (new scope)
-40             Compare (>=)
-41                Var (name=age)
-42                ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
-43             StatementPattern
+02 ╠══ProjectionElemList
+03 ║     ProjectionElem "person"
+04 ║     ProjectionElem "friend"
+05 ║     ProjectionElem "age"
+06 ╚══Join
+07    ├──Join
+08    │  ╠══Extension
+09    │  ║  ├──ExtensionElem (person)
+10    │  ║  │     ValueConstant (value=http://example.com/peter)
+11    │  ║  └──SingletonSet
+12    │  ╚══StatementPattern
+13    │        Var (name=person)
+14    │        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+15    │        Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+16    └──Union (new scope)
+17       ╠══ArbitraryLengthPath (new scope)
+18       ║     Var (name=person)
+19       ║     Union
+20       ║     ╠══StatementPattern
+31       ║     ║     Var (name=person)
+32       ║     ║     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+33       ║     ║     Var (name=friend)
+34       ║     ╚══StatementPattern
+35       ║           Var (name=friend)
+36       ║           Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+37       ║           Var (name=person)
+38       ║     Var (name=friend)
+39       ╚══Filter (new scope)
+40          ├──Compare (>=)
+41          │     Var (name=age)
+42          │     ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+43          └──StatementPattern
 44                Var (name=friend)
 45                Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
 46                Var (name=age)
@@ -931,60 +931,60 @@ This forces the inner union to only consider ex:peter as `?person` meaning we on
 The query plan also agrees that this is better.
 
 ```
-Projection (resultSizeActual=9, totalTimeActual=1.16ms, selfTimeActual=0.029ms)
-   ProjectionElemList
-      ProjectionElem "person"
-      ProjectionElem "friend"
-      ProjectionElem "age"
-   Union (new scope) (resultSizeActual=9, totalTimeActual=1.13ms, selfTimeActual=0.041ms)
-      Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.411ms, selfTimeActual=0.039ms)
-         Join (JoinIterator) (resultSizeActual=1, totalTimeActual=0.056ms, selfTimeActual=0.039ms)
-            Extension (resultSizeActual=1, totalTimeActual=0.012ms, selfTimeActual=0.009ms)
-               ExtensionElem (person)
-                  ValueConstant (value=http://example.com/peter)
-               SingletonSet (resultSizeActual=1, totalTimeActual=0.003ms, selfTimeActual=0.003ms)
-            Extension (resultSizeActual=1, totalTimeActual=0.005ms, selfTimeActual=0.003ms)
-               ExtensionElem (person)
-                  ValueConstant (value=http://example.com/peter)
-               SingletonSet (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.002ms)
-         Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.316ms, selfTimeActual=0.058ms)
-            StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=1, totalTimeActual=0.007ms, selfTimeActual=0.007ms)
-               Var (name=person)
-               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
-               Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
-            ArbitraryLengthPath (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=5, totalTimeActual=0.251ms, selfTimeActual=0.251ms)
-               Var (name=person)
-               Union
-                  StatementPattern (resultSizeEstimate=1.0K)
-                     Var (name=person)
-                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                     Var (name=friend)
-                  StatementPattern (resultSizeEstimate=1.0K)
-                     Var (name=friend)
-                     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
-                     Var (name=person)
-               Var (name=friend)
-      Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.68ms, selfTimeActual=0.015ms)
-         Extension (resultSizeActual=1, totalTimeActual=0.005ms, selfTimeActual=0.003ms)
-            ExtensionElem (person)
-               ValueConstant (value=http://example.com/peter)
-            SingletonSet (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.002ms)
-         Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.659ms, selfTimeActual=0.062ms)
-            Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.581ms, selfTimeActual=0.566ms)
-               Compare (>=)
-                  Var (name=age)
-                  ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
-               StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.014ms, selfTimeActual=0.014ms)
-                  Var (name=friend)
-                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
-                  Var (name=age)
-            StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=4, totalTimeActual=0.017ms, selfTimeActual=0.017ms)
+Projection (resultSizeActual=9, totalTimeActual=0.448ms, selfTimeActual=0.007ms)
+╠══ProjectionElemList
+║     ProjectionElem "person"
+║     ProjectionElem "friend"
+║     ProjectionElem "age"
+╚══Union (new scope) (resultSizeActual=9, totalTimeActual=0.441ms, selfTimeActual=0.03ms)
+   ├──Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.354ms, selfTimeActual=0.024ms)
+   │  ╠══Join (JoinIterator) (resultSizeActual=1, totalTimeActual=0.042ms, selfTimeActual=0.002ms)
+   │  ║  ├──Extension (resultSizeActual=1, totalTimeActual=0.037ms, selfTimeActual=0.03ms)
+   │  ║  │  ╠══ExtensionElem (person)
+   │  ║  │  ║     ValueConstant (value=http://example.com/peter)
+   │  ║  │  ╚══SingletonSet (resultSizeActual=1, totalTimeActual=0.007ms, selfTimeActual=0.007ms)
+   │  ║  └──Extension (resultSizeActual=1, totalTimeActual=0.003ms, selfTimeActual=0.002ms)
+   │  ║     ╠══ExtensionElem (person)
+   │  ║     ║     ValueConstant (value=http://example.com/peter)
+   │  ║     ╚══SingletonSet (resultSizeActual=1, totalTimeActual=0.001ms, selfTimeActual=0.001ms)
+   │  ╚══Join (JoinIterator) (resultSizeActual=5, totalTimeActual=0.289ms, selfTimeActual=0.112ms)
+   │     ├──StatementPattern (costEstimate=34, resultSizeEstimate=101, resultSizeActual=1, totalTimeActual=0.013ms, selfTimeActual=0.013ms)
+   │     │     Var (name=person)
+   │     │     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+   │     │     Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
+   │     └──ArbitraryLengthPath (costEstimate=47, resultSizeEstimate=2.2K, resultSizeActual=5, totalTimeActual=0.164ms, selfTimeActual=0.164ms)
+   │           Var (name=person)
+   │           Union
+   │           ├──StatementPattern (resultSizeEstimate=1.0K)
+   │           │     Var (name=person)
+   │           │     Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+   │           │     Var (name=friend)
+   │           └──StatementPattern (resultSizeEstimate=1.0K)
+   │                 Var (name=friend)
+   │                 Var (name=_const_531c5f7d_uri, value=http://xmlns.com/foaf/0.1/knows, anonymous)
+   │                 Var (name=person)
+   │           Var (name=friend)
+   └──Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.057ms, selfTimeActual=0.005ms)
+      ╠══Extension (resultSizeActual=1, totalTimeActual=0.002ms, selfTimeActual=0.001ms)
+      ║  ├──ExtensionElem (person)
+      ║  │     ValueConstant (value=http://example.com/peter)
+      ║  └──SingletonSet (resultSizeActual=1, totalTimeActual=0.001ms, selfTimeActual=0.001ms)
+      ╚══Join (JoinIterator) (resultSizeActual=4, totalTimeActual=0.05ms, selfTimeActual=0.011ms)
+         ├──Filter (new scope) (costEstimate=12, resultSizeEstimate=12, resultSizeActual=4, totalTimeActual=0.031ms, selfTimeActual=0.021ms)
+         │  ╠══Compare (>=)
+         │  ║     Var (name=age)
+         │  ║     ValueConstant (value="18"^^<http://www.w3.org/2001/XMLSchema#integer>)
+         │  ╚══StatementPattern (resultSizeEstimate=12, resultSizeActual=12, totalTimeActual=0.009ms, selfTimeActual=0.009ms)
+         │        Var (name=friend)
+         │        Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+         │        Var (name=age)
+         └──StatementPattern (costEstimate=101, resultSizeEstimate=101, resultSizeActual=4, totalTimeActual=0.008ms, selfTimeActual=0.008ms)
                Var (name=person)
                Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
                Var (name=_const_e1df31e0_uri, value=http://xmlns.com/foaf/0.1/Person, anonymous)
 ```
 
-Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 1.16ms instead of 1.1s.
+Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 0.164ms instead of 1.5s.
 
 If you want to practice with these examples, the code below produces these three plans.
 
