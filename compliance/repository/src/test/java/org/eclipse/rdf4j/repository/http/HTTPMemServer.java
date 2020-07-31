@@ -13,12 +13,16 @@ import java.io.IOException;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
  * @author Herko ter Horst
@@ -62,27 +66,38 @@ public class HTTPMemServer {
 
 		jetty.start();
 
+		// give the webapp some time to get started - necessary when running multiple test suites in quick succession
+		Thread.sleep(1500);
+
 		createTestRepositories();
 	}
 
 	public void stop() throws Exception {
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-		try (RepositoryConnection con = systemRepo.getConnection()) {
-			con.clear();
-		}
+		RepositoryManager repositoryManager = RepositoryProvider.getRepositoryManager(SERVER_URL);
+		repositoryManager.removeRepository(TEST_REPO_ID);
+		repositoryManager.removeRepository(TEST_INFERENCE_REPO_ID);
 
 		jetty.stop();
 		System.clearProperty("org.mortbay.log.class");
 	}
 
-	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+	private void createTestRepositories() throws RepositoryException, RepositoryConfigException, RDFParseException,
+			UnsupportedRDFormatException, IOException {
+		RepositoryManager repositoryManager = RepositoryProvider.getRepositoryManager(SERVER_URL);
 
-		try (RepositoryConnection conn = systemRep.getConnection()) {
-			conn.add(getClass().getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE);
-			conn.add(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE);
-		} catch (IOException e) {
-			throw new RepositoryConfigException(e);
+		if (!repositoryManager.hasRepositoryConfig(TEST_REPO_ID)) {
+			Model testRepoConfig = Rio.parse(getClass().getResourceAsStream("/fixtures/memory.ttl"), "",
+					RDFFormat.TURTLE);
+			repositoryManager
+					.addRepositoryConfig(RepositoryConfigUtil.getRepositoryConfig(testRepoConfig, TEST_REPO_ID));
+		}
+
+		if (!repositoryManager.hasRepositoryConfig(INFERENCE_REPOSITORY_URL)) {
+			Model testRdfsRepoConfig = Rio.parse(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "",
+					RDFFormat.TURTLE);
+			repositoryManager
+					.addRepositoryConfig(
+							RepositoryConfigUtil.getRepositoryConfig(testRdfsRepoConfig, TEST_INFERENCE_REPO_ID));
 		}
 	}
 }

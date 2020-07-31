@@ -97,10 +97,11 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	@Override
 	protected void setRequestAttributes(HttpServletRequest request) throws ClientHTTPException, ServerHTTPException {
 		String nextRepositoryID = repositoryID;
-		if (RepositoryConfigRepository.ID.equals(nextRepositoryID)) {
-			request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
-			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager));
-		} else if (nextRepositoryID != null) {
+//		if (RepositoryConfigRepository.ID.equals(nextRepositoryID)) {
+//			request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
+//			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager));
+//		} else
+		if (nextRepositoryID != null) {
 			try {
 				Repository repository = repositoryManager.getRepository(nextRepositoryID);
 				if (repository == null && !"PUT".equals(request.getMethod())) {

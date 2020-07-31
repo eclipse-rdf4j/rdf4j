@@ -18,7 +18,9 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.Rio;
@@ -79,6 +81,13 @@ public class ConfigView implements View {
 
 				if (!headersOnly) {
 					Model configuration = (Model) model.get(CONFIG_DATA_KEY);
+					// obfuscate the password, if present
+					configuration.getStatements(null, HTTPRepositorySchema.PASSWORD, null).forEach(st -> {
+						configuration.add(st.getSubject(), HTTPRepositorySchema.PASSWORD,
+								SimpleValueFactory.getInstance().createLiteral("****"));
+						configuration.remove(st);
+					});
+
 					Rio.write(configuration, out, rdfFormat);
 				}
 			}

@@ -66,7 +66,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
@@ -133,10 +132,10 @@ public class RepositoryController extends AbstractController {
 						"Repository delete error: query supplied with request");
 			}
 
-			if (SystemRepository.ID.equals(repId)) {
-				logger.warn("attempted delete of SYSTEM repository, aborting");
-				throw new HTTPException(HttpStatus.SC_FORBIDDEN, "SYSTEM Repository can not be deleted");
-			}
+//			if (SystemRepository.ID.equals(repId)) {
+//				logger.warn("attempted delete of SYSTEM repository, aborting");
+//				throw new HTTPException(HttpStatus.SC_FORBIDDEN, "SYSTEM Repository can not be deleted");
+//			}
 
 			try {
 				boolean success = repositoryManager.removeRepository(repId);

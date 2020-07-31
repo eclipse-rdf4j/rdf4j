@@ -80,14 +80,12 @@ public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
 			graph.setNamespace("http", NAMESPACE);
 			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));
 		}
-		// if (username != null) {
-		// graph.add(implNode, USERNAME,
-		// graph.getValueFactory().createLiteral(username));
-		// }
-		// if (password != null) {
-		// graph.add(implNode, PASSWORD,
-		// graph.getValueFactory().createLiteral(password));
-		// }
+		if (username != null) {
+			graph.add(implNode, USERNAME, SimpleValueFactory.getInstance().createLiteral(username));
+		}
+		if (password != null) {
+			graph.add(implNode, PASSWORD, SimpleValueFactory.getInstance().createLiteral(password));
+		}
 
 		return implNode;
 	}

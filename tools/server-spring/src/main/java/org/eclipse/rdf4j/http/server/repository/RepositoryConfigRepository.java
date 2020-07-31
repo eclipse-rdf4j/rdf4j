@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  *
  * @author James Leigh
  */
+@Deprecated
 public class RepositoryConfigRepository extends AbstractRepository {
 
 	/**
