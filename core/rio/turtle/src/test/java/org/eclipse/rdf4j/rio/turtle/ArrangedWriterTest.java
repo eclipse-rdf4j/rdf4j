@@ -150,6 +150,63 @@ public class ArrangedWriterTest {
 
 	}
 
+	@Test
+	public void testBlankNodesNotInlinedCorrectly2() throws IOException {
+		Model expected = Rio.parse(
+				new StringReader(
+						String.join("\n", "",
+								"@prefix ex: <http://example.com/ns#> .",
+								"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .",
+								"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+								"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+								"",
+								"_:node1eejbgi57x35 a sh:ValidationReport;",
+								"  <http://rdf4j.org/schema/rdf4j#truncated> false;",
+								"  sh:conforms false;",
+								"  sh:result _:cfe969d8-afdd-4405-bbf7-f5a9666897de .",
+								"",
+								"_:cfe969d8-afdd-4405-bbf7-f5a9666897de a sh:ValidationResult;",
+								"  sh:detail _:f8076a46-7ff9-498a-8f02-909a0d6233f0 .",
+								"",
+								"_:f8076a46-7ff9-498a-8f02-909a0d6233f0 a sh:ValidationResult;",
+								"  sh:focusNode \"123\";",
+								"  sh:resultSeverity sh:Violation;",
+								"  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;",
+								"  sh:sourceShape _:node1eejbgitlx3 .",
+								"",
+								"_:node1eejbgitlx3 a sh:NodeShape;",
+								"  sh:datatype xsd:string .",
+								"",
+								"_:f8076a46-7ff9-498a-8f02-909a0d6233f0 sh:value \"123\" .",
+								"",
+								"_:cfe969d8-afdd-4405-bbf7-f5a9666897de sh:focusNode ex:validPerson1;",
+								"  sh:resultPath ex:age;",
+								"  sh:resultSeverity sh:Violation;",
+								"  sh:sourceConstraintComponent sh:NotConstraintComponent;",
+								"  sh:sourceShape _:node1eejbgitlx1 .",
+								"",
+								"_:node1eejbgitlx1 a sh:PropertyShape;",
+								"  sh:not _:node1eejbgitlx3;",
+								"  sh:path ex:age .",
+								"",
+								"_:cfe969d8-afdd-4405-bbf7-f5a9666897de sh:value \"123\" ."
+
+						)
+				), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		System.out.println(stringWriter.toString());
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+
+		assertTrue(Models.isomorphic(expected, actual));
+
+	}
+
 	private void write(Model model, OutputStream writer) {
 		RDFWriter rdfWriter = writerFactory.getWriter(writer);
 		// "pretty print" forces ArrangedWriter to handle namespaces
