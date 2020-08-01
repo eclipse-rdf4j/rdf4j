@@ -13,8 +13,10 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.common.io.IndentingWriter;
@@ -24,11 +26,13 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -59,6 +63,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
+
+	private final int bufferSize;
+	private final Model bufferedStatements;
+	private final Set<Resource> contexts;
+	private final Object bufferLock = new Object();
 
 	protected ParsedIRI baseIRI;
 	protected IndentingWriter writer;
@@ -106,6 +115,14 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		super(out);
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		this.bufferSize = 100_000;
+		this.bufferedStatements = getModelFactory().createEmptyModel();
+		this.contexts = new HashSet<>();
+	}
+
+	// TODO make injectable
+	private ModelFactory getModelFactory() {
+		return new LinkedHashModelFactory();
 	}
 
 	/**
@@ -126,6 +143,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
+		this.bufferSize = 100_000;
+		this.bufferedStatements = getModelFactory().createEmptyModel();
+		this.contexts = new HashSet<>();
 	}
 
 	/*---------*
@@ -173,6 +193,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public void endRDF() throws RDFHandlerException {
 		checkWritingStarted();
+
+		synchronized (bufferLock) {
+			processBuffer(false);
+		}
 		try {
 			closePreviousStatement();
 			writer.flush();
@@ -222,19 +246,17 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	@Override
 	protected void consumeStatement(Statement st) throws RDFHandlerException {
-		try {
-			Resource subj = st.getSubject();
-			IRI pred = st.getPredicate();
-			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
-				handleList(st);
-			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
-				handleInlineNode(st);
-			} else {
-				closeHangingResource();
-				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+		if (prettyPrint || inlineBNodes) {
+			synchronized (bufferLock) {
+				bufferedStatements.add(st);
+				contexts.add(st.getContext());
+
+				if (bufferedStatements.size() >= this.bufferSize) {
+					processBuffer(false);
+				}
 			}
-		} catch (IOException e) {
-			throw new RDFHandlerException(e);
+		} else {
+			handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
 		}
 	}
 
@@ -257,56 +279,69 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		Value obj = st.getObject();
 
 		try {
-			if (subj.equals(lastWrittenSubject)) {
-				if (pred.equals(lastWrittenPredicate)) {
-					// Identical subject and predicate
-					writer.write(",");
-					wrapLine(prettyPrint);
-				} else {
-					// Identical subject, new predicate
-					writer.write(";");
-					writer.writeEOL();
-
-					// Write new predicate
-					writer.decreaseIndentation();
-					writePredicate(pred);
-					writer.increaseIndentation();
-					wrapLine(true);
-					path.removeLast();
-					path.addLast(pred);
-					lastWrittenPredicate = pred;
-				}
+			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
+				handleList(st);
+			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+				handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);
 			} else {
-				// New subject
-				closePreviousStatement();
-				stack.addLast(subj);
-
-				// Write new subject:
-				if (prettyPrint) {
-					writer.writeEOL();
-				}
-				writeResource(subj, canShortenSubjectBNode);
-				wrapLine(true);
-				writer.increaseIndentation();
-				lastWrittenSubject = subj;
-
-				// Write new predicate
-				writePredicate(pred);
-				wrapLine(true);
-				path.addLast(pred);
-				lastWrittenPredicate = pred;
-
-				statementClosed = false;
-				writer.increaseIndentation();
+				writeStatement(subj, pred, obj, canShortenSubjectBNode, canShortenObjectBNode);
 			}
-
-			writeValue(obj, canShortenObjectBNode);
-
-			// Don't close the line just yet. Maybe the next
-			// statement has the same subject and/or predicate.
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
+	}
+
+	private void writeStatement(Resource subj, IRI pred, Value obj, boolean canShortenSubjectBNode,
+			boolean canShortenObjectBNode) throws IOException {
+		closeHangingResource();
+		if (subj.equals(lastWrittenSubject)) {
+			if (pred.equals(lastWrittenPredicate)) {
+				// Identical subject and predicate
+				writer.write(",");
+				wrapLine(prettyPrint);
+			} else {
+				// Identical subject, new predicate
+				writer.write(";");
+				writer.writeEOL();
+
+				// Write new predicate
+				writer.decreaseIndentation();
+				writePredicate(pred);
+				writer.increaseIndentation();
+				wrapLine(true);
+				path.removeLast();
+				path.addLast(pred);
+				lastWrittenPredicate = pred;
+			}
+		} else {
+			// New subject
+			closePreviousStatement();
+			stack.addLast(subj);
+
+			// Write new subject:
+			if (prettyPrint) {
+				writer.writeEOL();
+			}
+			writeResource(subj, canShortenSubjectBNode);
+			wrapLine(true);
+			writer.increaseIndentation();
+			lastWrittenSubject = subj;
+
+			// Write new predicate
+			writePredicate(pred);
+			wrapLine(true);
+			path.addLast(pred);
+			lastWrittenPredicate = pred;
+
+			statementClosed = false;
+			writer.increaseIndentation();
+		}
+
+		writeValue(obj, canShortenObjectBNode);
+
+		// Don't close the line just yet. Maybe the next
+		// statement has the same subject and/or predicate.
+
 	}
 
 	@Override
@@ -619,7 +654,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	private void handleInlineNode(Statement st) throws IOException {
+	private void handleInlineNode(Statement st, boolean inlineSubject, boolean inlineObject) throws IOException {
 		Resource subj = st.getSubject();
 		IRI pred = st.getPredicate();
 		if (isHanging() && subj.equals(stack.peekLast())) {
@@ -639,10 +674,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			wrapLine(true);
 			path.addLast(pred);
 			lastWrittenPredicate = pred;
-			writeValue(st.getObject(), inlineBNodes);
+			writeValue(st.getObject(), inlineObject);
 		} else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 			closeNestedResources(subj);
-			handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+			writeStatement(subj, pred, st.getObject(), inlineSubject, inlineObject);
 		} else {
 			assert false;
 		}
@@ -689,7 +724,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					lastWrittenPredicate = path.peekLast();
 				}
 			} else {
-				handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+				writeStatement(subj, st.getPredicate(), st.getObject(), inlineBNodes, inlineBNodes);
 			}
 		}
 	}
@@ -701,4 +736,71 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writer.write(" ");
 		}
 	}
+
+	/*
+	 * not synchronized, assumes calling method has obtained a lock on bufferLock
+	 */
+	private void processBuffer(boolean endCalled) throws RDFHandlerException {
+		// primary grouping per context.
+		for (Resource context : contexts) {
+			Model contextData = bufferedStatements.filter(null, null, null, context);
+			Set<Resource> subjects = contextData.subjects();
+			Set<Resource> processedSubjects = new HashSet<>();
+			for (Resource subject : subjects) {
+				processSubject(contextData, subject, processedSubjects);
+			}
+		}
+		bufferedStatements.clear();
+		contexts.clear();
+	}
+
+	private void processSubject(Model contextData, Resource subject, Set<Resource> processedSubjects) {
+		if (processedSubjects.contains(subject)) {
+			return;
+		}
+
+		Set<IRI> processedPredicates = new HashSet<>();
+
+		// give rdf:type preference over other predicates.
+		for (Statement typeStatement : contextData.getStatements(subject, RDF.TYPE, null)) {
+			boolean canInlineObject = inlineValue(contextData, typeStatement.getObject());
+			handleStatementInternal(typeStatement, false,
+					inlineValue(contextData, typeStatement.getSubject()),
+					canInlineObject);
+
+			if (canInlineObject && typeStatement.getObject() instanceof BNode) {
+				processSubject(contextData, (BNode) typeStatement.getObject(), processedSubjects);
+			}
+		}
+
+		processedPredicates.add(RDF.TYPE);
+
+		// retrieve other statement from this context with the same
+		// subject, and output them grouped by predicate
+		for (Statement subjectStatement : contextData.getStatements(subject, null, null)) {
+			IRI predicate = subjectStatement.getPredicate();
+			if (!processedPredicates.contains(predicate)) {
+				for (Statement toWrite : contextData.getStatements(subject, predicate, null)) {
+					boolean canInlineObject = inlineValue(contextData, toWrite.getObject());
+					handleStatementInternal(toWrite, false, inlineValue(contextData, toWrite.getSubject()),
+							canInlineObject);
+					if (canInlineObject && toWrite.getObject() instanceof BNode) {
+						processSubject(contextData, (BNode) toWrite.getObject(), processedSubjects);
+					}
+				}
+				processedPredicates.add(predicate);
+			}
+
+		}
+
+		processedSubjects.add(subject);
+	}
+
+	private boolean inlineValue(Model contextData, Value v) {
+		if (v instanceof BNode) {
+			return (contextData.filter(null, null, v).size() <= 1);
+		}
+		return true;
+	}
+
 }
