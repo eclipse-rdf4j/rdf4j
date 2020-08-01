@@ -102,5 +102,4 @@ public class TurtlePrettyWriterTest extends RDFWriterTest {
 			inlineBlankNodes = true;
 		}
 	}
-
 }

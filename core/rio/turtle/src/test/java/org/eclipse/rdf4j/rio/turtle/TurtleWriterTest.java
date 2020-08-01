@@ -9,13 +9,14 @@ package org.eclipse.rdf4j.rio.turtle;
 
 import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
@@ -27,8 +28,18 @@ import org.junit.Test;
  */
 public class TurtleWriterTest extends RDFWriterTest {
 
+	private IRI uri1;
+
+	private IRI uri2;
+
+	private String exNs;
+
 	public TurtleWriterTest() {
 		super(new TurtleWriterFactory(), new TurtleParserFactory());
+
+		exNs = "http://example.org/";
+		uri1 = vf.createIRI(exNs, "uri1");
+		uri2 = vf.createIRI(exNs, "uri2");
 	}
 
 	@Override
@@ -37,8 +48,7 @@ public class TurtleWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testInlining() throws Exception {
-
+	public void testBlankNodeInlining1() throws Exception {
 		Model expected = Rio.parse(
 				new StringReader(
 						String.join("\n", "",
@@ -74,23 +84,43 @@ public class TurtleWriterTest extends RDFWriterTest {
 				), "", RDFFormat.TURTLE);
 
 		StringWriter stringWriter = new StringWriter();
+
 		WriterConfig config = new WriterConfig();
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
-		RDFWriter rdfWriter = rdfWriterFactory.getWriter(stringWriter);
-		rdfWriter.getWriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true);
-		rdfWriter.getWriterConfig().set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-
-		rdfWriter.startRDF();
-		expected.getNamespaces().forEach(ns -> rdfWriter.handleNamespace(ns.getPrefix(), ns.getName()));
-		expected.forEach(rdfWriter::handleStatement);
-		rdfWriter.endRDF();
-
-		System.out.println(stringWriter.toString());
+//		System.out.println(stringWriter.toString());
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 
 		assertTrue(Models.isomorphic(expected, actual));
 
 	}
+
+	@Test
+	public void testBlankNodeInlining2() throws IOException {
+		Model expected = Rio.parse(
+				new StringReader(
+						String.join("\n", "",
+								"_:b1 <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>, _:b3;",
+								"		<http://www.w3.org/ns/shacl#value> _:b3;",
+								"  	<http://www.w3.org/ns/shacl#sourceShape> [ a <http://www.w3.org/ns/shacl#PropertyShape>; a [ a [] ] ] .",
+								"[] a [a []]."
+
+						)
+				), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println(stringWriter.toString());
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+
+		assertTrue(Models.isomorphic(expected, actual));
+
+	}
+
 }

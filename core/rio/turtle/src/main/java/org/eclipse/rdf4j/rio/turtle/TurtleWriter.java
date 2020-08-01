@@ -64,9 +64,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Variables *
 	 *-----------*/
 
-	private final int bufferSize;
-	private final Model bufferedStatements;
-	private final Set<Resource> contexts;
+	private int bufferSize;
+	private Model bufferedStatements;
+	private Set<Resource> contexts;
 	private final Object bufferLock = new Object();
 
 	protected ParsedIRI baseIRI;
@@ -115,9 +115,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		super(out);
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-		this.bufferSize = 100_000;
-		this.bufferedStatements = getModelFactory().createEmptyModel();
-		this.contexts = new HashSet<>();
 	}
 
 	// TODO make injectable
@@ -143,9 +140,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(writer);
-		this.bufferSize = 100_000;
-		this.bufferedStatements = getModelFactory().createEmptyModel();
-		this.contexts = new HashSet<>();
 	}
 
 	/*---------*
@@ -165,6 +159,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);
 			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
+
+			if (inlineBNodes || prettyPrint) {
+				this.bufferedStatements = getModelFactory().createEmptyModel();
+				this.bufferSize = inlineBNodes ? -1 : 100_000;
+				this.contexts = new HashSet<>();
+			}
+
 			if (prettyPrint) {
 				writer.setIndentationString("  ");
 			} else {
@@ -195,7 +196,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		checkWritingStarted();
 
 		synchronized (bufferLock) {
-			processBuffer(false);
+			processBuffer();
 		}
 		try {
 			closePreviousStatement();
@@ -251,12 +252,12 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 				bufferedStatements.add(st);
 				contexts.add(st.getContext());
 
-				if (bufferedStatements.size() >= this.bufferSize) {
-					processBuffer(false);
+				if (this.bufferSize > -1 && bufferedStatements.size() >= this.bufferSize) {
+					processBuffer();
 				}
 			}
 		} else {
-			handleStatementInternal(st, false, inlineBNodes, inlineBNodes);
+			handleStatementInternal(st, false, false, false);
 		}
 	}
 
@@ -740,14 +741,27 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	/*
 	 * not synchronized, assumes calling method has obtained a lock on bufferLock
 	 */
-	private void processBuffer(boolean endCalled) throws RDFHandlerException {
-		// primary grouping per context.
-		for (Resource context : contexts) {
-			Model contextData = bufferedStatements.filter(null, null, null, context);
-			Set<Resource> subjects = contextData.subjects();
+	private void processBuffer() throws RDFHandlerException {
+		if (bufferedStatements == null) {
+			return;
+		}
+
+		if (this.getRDFFormat().supportsContexts()) { // to allow use in Turtle extensions such a TriG
+			// primary grouping per context.
+			for (Resource context : contexts) {
+				Model contextData = bufferedStatements.filter(null, null, null, context);
+				Set<Resource> subjects = contextData.subjects();
+				Set<Resource> processedSubjects = new HashSet<>();
+				for (Resource subject : subjects) {
+					processSubject(contextData, subject, processedSubjects);
+				}
+			}
+		} else {
+			// group by subject
+			Set<Resource> subjects = bufferedStatements.subjects();
 			Set<Resource> processedSubjects = new HashSet<>();
 			for (Resource subject : subjects) {
-				processSubject(contextData, subject, processedSubjects);
+				processSubject(bufferedStatements, subject, processedSubjects);
 			}
 		}
 		bufferedStatements.clear();
@@ -797,6 +811,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	private boolean inlineValue(Model contextData, Value v) {
+		if (!inlineBNodes) {
+			return false;
+		}
 		if (v instanceof BNode) {
 			return (contextData.filter(null, null, v).size() <= 1);
 		}
