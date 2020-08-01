@@ -1696,6 +1696,8 @@ public abstract class RDFWriterTest {
 			rdfWriter.handleStatement(st);
 		}
 		rdfWriter.endRDF();
+
+		logger.debug(new String(outputWriter.toByteArray()));
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());
