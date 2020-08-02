@@ -72,7 +72,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * the end (necessary when blank node inlining).
 	 */
 	private int bufferSize;
-	private Model bufferedStatements;
+	protected Model bufferedStatements;
 	private final Object bufferLock = new Object();
 
 	protected ParsedIRI baseIRI;
@@ -84,12 +84,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected boolean statementClosed = true;
 	protected Resource lastWrittenSubject;
 	protected IRI lastWrittenPredicate;
-
-	/**
-	 * Always null
-	 */
-	@Deprecated
-	protected Model prettyPrintModel;
 
 	private final Deque<Resource> stack = new LinkedList<>();
 	private final Deque<IRI> path = new LinkedList<>();
@@ -289,14 +283,14 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 				handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);
 			} else {
-				writeStatement(subj, pred, obj, canShortenSubjectBNode, canShortenObjectBNode);
+				writeStatement(subj, pred, obj, st.getContext(), canShortenSubjectBNode, canShortenObjectBNode);
 			}
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
 		}
 	}
 
-	private void writeStatement(Resource subj, IRI pred, Value obj, boolean canShortenSubjectBNode,
+	protected void writeStatement(Resource subj, IRI pred, Value obj, Resource context, boolean canShortenSubjectBNode,
 			boolean canShortenObjectBNode) throws IOException {
 		closeHangingResource();
 		if (subj.equals(lastWrittenSubject)) {
@@ -682,7 +676,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			writeValue(st.getObject(), inlineObject);
 		} else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 			closeNestedResources(subj);
-			writeStatement(subj, pred, st.getObject(), inlineSubject, inlineObject);
+			writeStatement(subj, pred, st.getObject(), st.getContext(), inlineSubject, inlineObject);
 		} else {
 			assert false;
 		}
@@ -729,7 +723,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					lastWrittenPredicate = path.peekLast();
 				}
 			} else {
-				writeStatement(subj, st.getPredicate(), st.getObject(), inlineBNodes, inlineBNodes);
+				writeStatement(subj, st.getPredicate(), st.getObject(), st.getContext(), inlineBNodes, inlineBNodes);
 			}
 		}
 	}
