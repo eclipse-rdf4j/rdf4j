@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.rio.turtle;
 
 import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 
@@ -98,7 +97,7 @@ public class TurtleWriterTest extends RDFWriterTest {
 	}
 
 	@Test
-	public void testBlankNodeInlining2() throws IOException {
+	public void testBlankNodeInlining2() throws Exception {
 		Model expected = Rio.parse(
 				new StringReader(
 						String.join("\n", "",
@@ -123,4 +122,76 @@ public class TurtleWriterTest extends RDFWriterTest {
 
 	}
 
+	/**
+	 * Test that blank node subjects are processed in correct order even when not supplied in order.
+	 *
+	 */
+	@Test
+	public void testBlanknodeInlining_SubjectOrder() throws Exception {
+
+		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"@prefix rep: <http://www.openrdf.org/config/repository#> .\n" +
+				"@prefix sr: <http://www.openrdf.org/config/repository/sail#> .\n" +
+				"@prefix sail: <http://www.openrdf.org/config/sail#> .\n" +
+				"@prefix sb: <http://www.openrdf.org/config/sail/base#> .\n" +
+				"@prefix ms: <http://www.openrdf.org/config/sail/memory#> .\n" +
+				"\n" +
+				"_:node1eemcmeprx2 rep:repositoryType \"openrdf:SailRepository\";\n" +
+				"  sr:sailImpl _:node1eemcmeprx3 .\n" +
+				"\n" +
+				"_:node1eemcmeprx1 a rep:Repository;\n" +
+				"  rep:repositoryID \"test-strict\";\n" +
+				"  rep:repositoryImpl _:node1eemcmeprx2 .\n" +
+				"\n" +
+				"_:node1eemcmeprx3 sail:sailType \"openrdf:MemoryStore\";\n" +
+				"  sb:evaluationStrategyFactory \"org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory\" .\n";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println(stringWriter.toString());
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+
+	}
+
+	@Test
+	public void testNoBuffering() throws Exception {
+		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"@prefix rep: <http://www.openrdf.org/config/repository#> .\n" +
+				"@prefix sr: <http://www.openrdf.org/config/repository/sail#> .\n" +
+				"@prefix sail: <http://www.openrdf.org/config/sail#> .\n" +
+				"@prefix sb: <http://www.openrdf.org/config/sail/base#> .\n" +
+				"@prefix ms: <http://www.openrdf.org/config/sail/memory#> .\n" +
+				"\n" +
+				"_:node1eemcmeprx2 rep:repositoryType \"openrdf:SailRepository\";\n" +
+				"  sr:sailImpl _:node1eemcmeprx3 .\n" +
+				"\n" +
+				"_:node1eemcmeprx1 a rep:Repository;\n" +
+				"  rep:repositoryID \"test-strict\";\n" +
+				"  rep:repositoryImpl _:node1eemcmeprx2 .\n" +
+				"\n" +
+				"_:node1eemcmeprx3 sail:sailType \"openrdf:MemoryStore\";\n" +
+				"  sb:evaluationStrategyFactory \"org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory\" .\n";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, false);
+		config.set(BasicWriterSettings.PRETTY_PRINT, false);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println(stringWriter.toString());
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
 }
