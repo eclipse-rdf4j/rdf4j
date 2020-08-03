@@ -12,10 +12,11 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
@@ -53,7 +54,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private static final int LINE_WRAP = 80;
 
-	private static final int DEFAULT_BUFFER_SIZE = 1000;
+	private static final long DEFAULT_BUFFER_SIZE = 1000l;
 
 	private static final IRI FIRST = new SimpleIRI(RDF.FIRST.stringValue()) {
 		private static final long serialVersionUID = -7951518099940758898L;
@@ -68,10 +69,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 *-----------*/
 
 	/**
-	 * Size of statement buffer used for pretty printing and blank node inlining. Set to -1 to buffer everything until
-	 * the end (necessary when blank node inlining).
+	 * Size of statement buffer used for pretty printing and blank node inlining. Set to Long.MAX_VALUE to buffer
+	 * everything until the end (necessary when blank node inlining).
 	 */
-	private int bufferSize;
+	private long bufferSize = DEFAULT_BUFFER_SIZE;
 	protected Model bufferedStatements;
 	private final Object bufferLock = new Object();
 
@@ -85,12 +86,14 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	protected Resource lastWrittenSubject;
 	protected IRI lastWrittenPredicate;
 
-	private final Deque<Resource> stack = new LinkedList<>();
-	private final Deque<IRI> path = new LinkedList<>();
+	private final Deque<Resource> stack = new ArrayDeque<>();
+	private final Deque<IRI> path = new ArrayDeque<>();
 
 	private Boolean xsdStringToPlainLiteral;
 	private Boolean prettyPrint;
 	private boolean inlineBNodes;
+
+	private ModelFactory modelFactory = new LinkedHashModelFactory();
 
 	/*--------------*
 	 * Constructors *
@@ -115,11 +118,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		super(out);
 		this.baseIRI = baseIRI;
 		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-	}
-
-	// TODO make injectable
-	private ModelFactory getModelFactory() {
-		return new LinkedHashModelFactory();
 	}
 
 	/**
@@ -162,7 +160,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 			if (isBuffering()) {
 				this.bufferedStatements = getModelFactory().createEmptyModel();
-				this.bufferSize = inlineBNodes ? -1 : DEFAULT_BUFFER_SIZE;
+				this.bufferSize = inlineBNodes ? Long.MAX_VALUE : DEFAULT_BUFFER_SIZE;
 			}
 
 			if (prettyPrint) {
@@ -244,13 +242,27 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
+	/**
+	 * Set a {@link ModelFactory} to use for creating internal Models for statement processing/buffering purposes.
+	 *
+	 * @param modelFactory a {@link ModelFactory} to use for internal buffering / statement processing purposes. May not
+	 *                     be null.
+	 */
+	public void setModelFactory(ModelFactory modelFactory) {
+		this.modelFactory = Objects.requireNonNull(modelFactory);
+	}
+
+	protected ModelFactory getModelFactory() {
+		return modelFactory;
+	}
+
 	@Override
 	protected void consumeStatement(Statement st) throws RDFHandlerException {
 		if (isBuffering()) {
 			synchronized (bufferLock) {
 				bufferedStatements.add(st);
 
-				if (this.bufferSize > -1 && bufferedStatements.size() >= this.bufferSize) {
+				if (bufferedStatements.size() >= this.bufferSize) {
 					processBuffer();
 				}
 			}
@@ -736,8 +748,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	/*
-	 * not synchronized, assumes calling method has obtained a lock on bufferLock
+	/**
+	 * not synchronized, assumes calling method has obtained a lock on {@link #bufferLock}.
 	 */
 	private void processBuffer() throws RDFHandlerException {
 		if (!isBuffering()) {
@@ -757,7 +769,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			}
 		} else {
 			// group by subject
-
 			Set<Resource> processedSubjects = new HashSet<>();
 			Optional<Resource> nextSubject = nextSubject(bufferedStatements, processedSubjects);
 			while (nextSubject.isPresent()) {
@@ -792,41 +803,33 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		Set<IRI> processedPredicates = new HashSet<>();
 
 		// give rdf:type preference over other predicates.
-		for (Statement typeStatement : contextData.getStatements(subject, RDF.TYPE, null)) {
-			boolean canInlineObject = inlineValue(contextData, typeStatement.getObject());
-			handleStatementInternal(typeStatement, false,
-					inlineValue(contextData, typeStatement.getSubject()),
-					canInlineObject);
-
-			if (canInlineObject && typeStatement.getObject() instanceof BNode) {
-				processSubject(contextData, (BNode) typeStatement.getObject(), processedSubjects);
-			}
-		}
-
-		processedPredicates.add(RDF.TYPE);
+		processPredicate(contextData, subject, RDF.TYPE, processedSubjects, processedPredicates);
 
 		// retrieve other statement from this context with the same
 		// subject, and output them grouped by predicate
-		for (Statement subjectStatement : contextData.getStatements(subject, null, null)) {
-			IRI predicate = subjectStatement.getPredicate();
+		contextData.filter(subject, null, null).predicates().forEach(predicate -> {
 			if (!processedPredicates.contains(predicate)) {
-				for (Statement toWrite : contextData.getStatements(subject, predicate, null)) {
-					boolean canInlineObject = inlineValue(contextData, toWrite.getObject());
-					handleStatementInternal(toWrite, false, inlineValue(contextData, toWrite.getSubject()),
-							canInlineObject);
-					if (canInlineObject && toWrite.getObject() instanceof BNode) {
-						processSubject(contextData, (BNode) toWrite.getObject(), processedSubjects);
-					}
-				}
-				processedPredicates.add(predicate);
+				processPredicate(contextData, subject, predicate, processedSubjects, processedPredicates);
 			}
-
-		}
+		});
 
 		processedSubjects.add(subject);
 	}
 
-	private boolean inlineValue(Model contextData, Value v) {
+	private void processPredicate(Model contextData, Resource subject, IRI predicate, Set<Resource> processedSubjects,
+			Set<IRI> processedPredicates) {
+		for (Statement st : contextData.getStatements(subject, predicate, null)) {
+			boolean canInlineObject = canInlineValue(contextData, st.getObject());
+			handleStatementInternal(st, false, canInlineValue(contextData, st.getSubject()), canInlineObject);
+
+			if (canInlineObject && st.getObject() instanceof BNode) {
+				processSubject(contextData, (BNode) st.getObject(), processedSubjects);
+			}
+		}
+		processedPredicates.add(predicate);
+	}
+
+	private boolean canInlineValue(Model contextData, Value v) {
 		if (!inlineBNodes) {
 			return false;
 		}
@@ -836,6 +839,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		return true;
 	}
 
+	/**
+	 * Checks if the writer is configured such that it needs statement buffering.
+	 *
+	 * @return true if the writer is buffering, false otherwise.
+	 */
 	private boolean isBuffering() {
 		return inlineBNodes || prettyPrint;
 	}
