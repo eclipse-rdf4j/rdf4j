@@ -1,0 +1,15 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+
+rsx:targetShape
+	a rdf:Property ;
+	rdfs:label "target shape"@en ;
+	rdfs:comment "Links a shape to a target shape (also a shape), indicating that all subjects and objects in the data graph(s) that conform to the target shape must conform to the shape."@en ;
+	rdfs:domain sh:Shape ;
+	rdfs:range sh:Shape ;
+	rdfs:isDefinedBy rsx: .
