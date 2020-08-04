@@ -13,8 +13,9 @@ import java.io.Writer;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
@@ -106,28 +107,9 @@ public class TriGWriter extends TurtleWriter {
 	}
 
 	@Override
-	protected void consumeStatement(Statement st) {
-		// If we are pretty-printing, all writing is buffered until endRDF is called
-		if (prettyPrintModel != null) {
-			prettyPrintModel.add(st);
-		} else {
-			handleStatementInternal(st, false, false, false);
-		}
-	}
-
-	@Override
-	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubject,
-			boolean canShortenObject) {
-		// Avoid accidentally writing statements early, but don't lose track of
-		// them if they are sent here
-		if (prettyPrintModel != null && !endRDFCalled) {
-			prettyPrintModel.add(st);
-			return;
-		}
-
+	protected void writeStatement(Resource subj, IRI pred, Value obj, Resource context, boolean canShortenSubject,
+			boolean canShortenObject) throws IOException {
 		try {
-			Resource context = st.getContext();
-
 			if (inActiveContext && !contextsEquals(context, currentContext)) {
 				closePreviousStatement();
 				closeActiveContext();
@@ -139,8 +121,8 @@ public class TriGWriter extends TurtleWriter {
 				if (context != null) {
 					boolean canShortenContext = false;
 					if (context instanceof BNode) {
-						if (prettyPrintModel != null && !prettyPrintModel.contains(context, null, null)
-								&& !prettyPrintModel.contains(null, null, context)) {
+						if (bufferedStatements != null && !bufferedStatements.contains(context, null, null)
+								&& !bufferedStatements.contains(null, null, context)) {
 							canShortenContext = true;
 						}
 					}
@@ -158,15 +140,7 @@ public class TriGWriter extends TurtleWriter {
 			throw new RDFHandlerException(e);
 		}
 
-		// If we get to this point, switch endRDFCalled to true so writing occurs
-		super.handleStatementInternal(st, true, canShortenSubject, canShortenObject);
-	}
-
-	@Override
-	protected void writeCommentLine(String line) throws IOException {
-		// Comments can be written anywhere, so disabling this
-		// closeActiveContext();
-		super.writeCommentLine(line);
+		super.writeStatement(subj, pred, obj, context, canShortenSubject, canShortenObject);
 	}
 
 	@Override
