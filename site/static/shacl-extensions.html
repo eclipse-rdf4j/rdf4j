@@ -15,12 +15,44 @@
             xref: "web-platform",
             noHighlightCSS: true,
         };
+
+
     </script>
-    <style>
+    <style >
 
         html {
             background: white !important;
         }
+
+        pre.example-shapes{
+            margin-left: 0;
+            padding: 0 2em;
+            margin-top: 1.5em;
+            padding: 1em;
+            background: #deb;
+            border: 1px solid #bbb;
+        }
+
+
+
+pre.shapes, pre.example-shapes, pre.example-shapes:before {
+    border: 1px solid #bbb;
+}
+
+pre.example-shapes:before {
+color: #888;
+content: "Example shapes graph";
+width: 13em;
+}
+
+pre.example-shapes:before, pre.example-data:before, pre.example-results:before, pre.example-other:before {
+background: white;
+display: block;
+font-family: sans-serif;
+margin: -1em 0 0.4em -1em;
+padding: 0.2em 1em;
+}
+
 
     </style>
 </head>
@@ -30,32 +62,105 @@
 </section>
 <section id="sotd">
 </section>
-<section >
+<section>
     <h2>Targets</h2>
 
-    <section id="targetShape">
-        <h3>rsx:targetShape</h3>
+
+    <section id="shape-based-targets">
+        <h3>Shape-based Targets</h3>
+
+        <div class="syntax" data-syntax-rule="target-shape" id="syntax-target-shape">
+            A <dfn data-lt="Shape-based target">shape-based target</dfn> is a <a href="https://www.w3.org/TR/shacl/#dfn-shape">shape</a>
+            that is the object of a triple that has <code>rsx:targetShape</code> as its predicate.
+            Conversely, the values of <code>rsx:targetShape</code> are shapes.
+        </div>
 
 
         <div class="def def-text">
             <div class="def-header">TEXTUAL DEFINITION</div>
             <div class="def-text-body">
-                ...
+                If triple <code>S rsx:targetShape TS</code> is in the <a href="https://www.w3.org/TR/shacl/#dfn-shapes-graph">shapes graph</a>
+                then the <a href="https://www.w3.org/TR/shacl/#dfn-target">target</a> nodes of <code>S</code> are all
+                <a href="http://www.w3.org/TR/rdf11-concepts/#dfn-node">nodes</a> in the <a href="https://www.w3.org/TR/shacl/#dfn-data-graph">data graph</a>
+                that <a href="https://www.w3.org/TR/shacl/#dfn-conformance-checking">conform</a> to <code>TS</code>.
             </div>
         </div>
-        <p>The <dfn>Foo</dfn> interface represents a {{Foo}}.</p>
-        <p>
-            The <dfn>doTheFoo()</dfn> method does the foo. Call it by running
-            {{Foo/doTheFoo()}}.
-        </p>
     </section>
 
 
+    <p><em>The remainder of this section is informative.</em></p>
+
+
+    <p>
+        Shape-based Targets is a powerful way of selecting targets. The use of a shape to select the
+        targets for another shape is a natural extension where the familiar SHACL language that describes
+        constraints can also be used to describe a the targets for those constraints.
+    </p>
+
+
+    <p>
+        <a href="https://www.w3.org/TR/shacl-af/#SPARQLTarget">SPARQL-based Targets</a>
+        are more expressive compared to Shape-based Targets but require using the SPARQL language and semantics
+        for expressing the target selection, rather than SHACL. This also makes them harder to optimize.
+    </p>
+
+    <p>Some examples:</p>
+    <ol>
+        <li>Target by property and object (<a>property shape</a>)</li>
+        <li>Target by namespace (<a>node shape</a>)</li>
+        <li>Target by datatype (<a>node shape</a>)</li>
+        <li>Target by cardinality (<a>property shape</a>)</li>
+        <li>Target by conjunction of properties (<a>node shape</a>)</li>
+    </ol>
+
+    <pre class="example-shapes" title="Norwegians must have exactly one norwegianID">
+ex:NorwegianShape a sh:NodeShape;
+  rsx:targetShape [sh:path ex:nationality; sh:hasValue ex:Norwegian];
+  sh:property [sh:path ex:norwegianID; sh:minCount 1; sh:maxCount 1];
+.
+    </pre>
+
+    <pre class="example-shapes">
+# 1. Norwegians must have exactly one norwegianID
+ex:NorwegianShape a sh:NodeShape;
+  rsx:targetShape [sh:path ex:nationality; sh:hasValue ex:Norwegian];
+  sh:property [sh:path ex:norwegianID; sh:minCount 1; sh:maxCount 1];
+.
+
+# 2. Instances in namespace "company" must have appropriate class and dc:type
+ex:CompanyShape a sh:NodeShape;
+  rsx:targetShape [
+    sh:nodeKind sh:IRI;
+    sh:pattern "^https://company-graph.example.com/resource/company/";
+  ];
+  sh:class ex:Company;
+  sh:property [sh:path dc:type; sh:in ("conglomerate" "collective" "enterprise")];
+.
+
+# 3. All langStrings must have one of a predefind set of languages
+ex:langStringShape a sh:NodeShape;
+  rsx:targetShape [sh:datatype rdf:langString];
+  sh:languageIn ("en" "bg");
+.
+
+# 4. Steve is very popular, so everyone who knows at least three people must know Steve
+ex:Personshape a sh:NodeShape;
+  rsx:targetShape [sh:path foaf:knows; sh:minCount 3; sh:class foaf:Person];
+  sh:property [sh:path foaf:knows; sh:hasValue ex:Steve];
+.
+
+# 5. Parties (defined as foaf:Organization with appropriate dc:type) must stick to one of two politics
+ex:PartyShape a sh:NodeShape;
+  rsx:targetShape [a sh:NodeShape;
+    sh:property [sh:path rdf:type; sh:hasValue foaf:Organization];
+    sh:property [sh:path dc:type;  sh:hasValue "political-party"];
+  ];
+  sh:property [sh:path ex:politics; sh:in ("Democrat" "Republican"); sh:minCount 1; sh:maxCount 1];
+.</pre>
 
 </section>
-<section id="conformance">
-    <p>This is required for specifications that contain normative material.</p>
-</section>
+
+
 </body>
 
 <!--<script src="https://www.w3.org/scripts/TR/2016/fixup.js" defer></script>-->
