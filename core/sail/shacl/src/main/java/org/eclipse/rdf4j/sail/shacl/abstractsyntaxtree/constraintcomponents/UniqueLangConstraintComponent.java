@@ -83,11 +83,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		Var targetVar = effectiveTarget.getTargetVar();
 
 		String pathQuery1 = targetChain.getPath()
-				.map(p -> p.getQueryFragment(effectiveTarget.getTargetVar(), new Var("value1")))
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value1")))
 				.get();
 
 		String pathQuery2 = targetChain.getPath()
-				.map(p -> p.getQueryFragment(effectiveTarget.getTargetVar(), new Var("value2")))
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value2")))
 				.get();
 
 		query += "\n FILTER(EXISTS{" +
@@ -118,7 +118,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					overrideTargetNode.getPlanNode(),
 					connectionsGroup.getBaseConnection(),
-					path.get().getQueryFragment(new Var("a"), new Var("c")),
+					path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
@@ -153,7 +153,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
 				connectionsGroup.getBaseConnection(),
-				path.get().getQueryFragment(new Var("a"), new Var("c")),
+				path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))

@@ -99,7 +99,7 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public String getQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object) {
 		assert (subject == null);
 
 		return targetClass.stream()

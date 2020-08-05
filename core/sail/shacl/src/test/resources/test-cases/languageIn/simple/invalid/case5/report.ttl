@@ -5,25 +5,25 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eeveqmipx17494 a sh:ValidationReport;
+_:node1eevg8llqx18578 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:a11520ba-2ad1-4df9-ae29-e4af319e8a84 .
+  sh:result _:e7243f4e-f9e5-4da9-a1ce-630e0b393101 .
 
-_:a11520ba-2ad1-4df9-ae29-e4af319e8a84 a sh:ValidationResult;
+_:e7243f4e-f9e5-4da9-a1ce-630e0b393101 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "människa"@se;
   sh:resultPath ex:label;
   sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eever7qux1 .
+  sh:sourceShape _:node1eevg995bx1 .
 
-_:node1eever7qux1 a sh:PropertyShape;
+_:node1eevg995bx1 a sh:PropertyShape;
   sh:path ex:label;
-  sh:languageIn _:node1eever7qux2 .
+  sh:languageIn _:node1eevg995bx2 .
 
-_:node1eever7qux2 rdf:first "en";
-  rdf:rest _:node1eeveqmipx17495 .
+_:node1eevg995bx2 rdf:first "en";
+  rdf:rest _:node1eevg8llqx18579 .
 
-_:node1eeveqmipx17495 rdf:first "no";
+_:node1eevg8llqx18579 rdf:first "no";
   rdf:rest rdf:nil .

@@ -9,6 +9,6 @@ public interface Targetable {
 
 	Stream<StatementPattern> getStatementPatterns(Var subject, Var object);
 
-	String getQueryFragment(Var subject, Var object);
+	String getTargetQueryFragment(Var subject, Var object);
 
 }

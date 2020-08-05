@@ -1,0 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1eevg8llqx10439 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:27dd85a4-3eab-4efd-b4d4-8123e77ed3de .
+
+_:27dd85a4-3eab-4efd-b4d4-8123e77ed3de a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eevg92q4x1 .
+
+_:node1eevg92q4x1 a sh:PropertyShape;
+  sh:path ex:age;
+  sh:datatype xsd:integer .

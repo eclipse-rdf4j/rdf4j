@@ -43,9 +43,9 @@ public class EffectiveTarget {
 
 		public String getQueryFragment() {
 			if (prev == null) {
-				return target.getQueryFragment(null, var);
+				return target.getTargetQueryFragment(null, var);
 			} else {
-				return target.getQueryFragment(prev.var, var);
+				return target.getTargetQueryFragment(prev.var, var);
 			}
 		}
 	}

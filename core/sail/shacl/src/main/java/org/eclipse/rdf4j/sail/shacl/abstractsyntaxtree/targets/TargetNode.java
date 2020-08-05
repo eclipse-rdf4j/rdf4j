@@ -5,6 +5,7 @@ import java.util.TreeSet;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -15,13 +16,15 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.SetFilterNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValuesBackedNode;
 
 public class TargetNode extends Target {
-	private final TreeSet<Value> targetNode;
+	private final TreeSet<Value> targetNodes;
 
-	public TargetNode(TreeSet<Value> targetNode) {
-		this.targetNode = targetNode;
-		assert !this.targetNode.isEmpty();
+	public TargetNode(TreeSet<Value> targetNodes) {
+		this.targetNodes = targetNodes;
+		assert !this.targetNodes.isEmpty();
 
 	}
 
@@ -32,23 +35,50 @@ public class TargetNode extends Target {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
-		throw new ShaclUnsupportedException();
+
+		return new ValuesBackedNode(targetNodes);
 	}
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		throw new ShaclUnsupportedException();
+		StringBuilder sb = new StringBuilder();
+		sb.append("VALUES ( ").append(subjectVariable).append(" ) {\n");
+
+		targetNodes.stream()
+				.map(targetNode -> {
+					if (targetNode instanceof Resource) {
+						return "<" + targetNode + ">";
+					}
+					if (targetNode instanceof Literal) {
+						IRI datatype = ((Literal) targetNode).getDatatype();
+						if (datatype == null) {
+							return "\"" + targetNode.stringValue() + "\"";
+						}
+						if (((Literal) targetNode).getLanguage().isPresent()) {
+							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+						}
+						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
+
+					throw new IllegalStateException(targetNode.getClass().getSimpleName());
+
+				})
+				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
+
+		sb.append("}\n");
+
+		return sb.toString();
 	}
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		throw new ShaclUnsupportedException();
+		return new SetFilterNode(targetNodes, parent, 0, true);
 	}
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		targetNode.forEach(t -> {
+		targetNodes.forEach(t -> {
 			model.add(subject, getPredicate(), t);
 		});
 	}
@@ -60,7 +90,35 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public String getQueryFragment(Var subject, Var object) {
-		throw new ShaclUnsupportedException();
+	public String getTargetQueryFragment(Var subject, Var object) {
+		assert subject == null;
+
+		StringBuilder sb = new StringBuilder();
+		sb.append("VALUES ( ?").append(object.getName()).append(" ) {\n");
+
+		targetNodes.stream()
+				.map(targetNode -> {
+					if (targetNode instanceof Resource) {
+						return "<" + targetNode + ">";
+					}
+					if (targetNode instanceof Literal) {
+						IRI datatype = ((Literal) targetNode).getDatatype();
+						if (datatype == null) {
+							return "\"" + targetNode.stringValue() + "\"";
+						}
+						if (((Literal) targetNode).getLanguage().isPresent()) {
+							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+						}
+						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+					}
+
+					throw new IllegalStateException(targetNode.getClass().getSimpleName());
+
+				})
+				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
+
+		sb.append("}\n");
+
+		return sb.toString();
 	}
 }

@@ -116,7 +116,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		Var targetVar = effectiveTarget.getTargetVar();
 
 		Optional<String> pathQuery = targetChain.getPath()
-				.map(p -> p.getQueryFragment(effectiveTarget.getTargetVar(), value));
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value));
 
 		if (pathQuery.isPresent()) {
 			query += "\n" + pathQuery.get();
@@ -149,7 +149,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			} else {
 				planNode = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
 						connectionsGroup.getBaseConnection(),
-						path.get().getQueryFragment(new Var("a"), new Var("c")), false, null,
+						path.get().getTargetQueryFragment(new Var("a"), new Var("c")), false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c")));
 			}
 
@@ -205,7 +205,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 					effectiveTarget.getAdded(connectionsGroup),
-					connectionsGroup.getBaseConnection(), path.get().getQueryFragment(new Var("a"), new Var("c")), true,
+					connectionsGroup.getBaseConnection(), path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
+					true,
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c")));
 

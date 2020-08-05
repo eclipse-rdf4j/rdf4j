@@ -47,7 +47,7 @@ public class AlternativePath extends Path {
 	}
 
 	@Override
-	public String getQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object) {
 		throw new ShaclUnsupportedException();
 	}
 }

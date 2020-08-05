@@ -1,0 +1,34 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1eevg8llqx26381 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:8dafd99d-d324-4fa9-bb39-1d32bd800b4d .
+
+_:8dafd99d-d324-4fa9-bb39-1d32bd800b4d a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "1234567";
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:detail _:db58a9cb-bc1a-4f21-bf54-2d9c7ddf01f5;
+  sh:sourceShape _:node1eevg9fg0x1 .
+
+_:db58a9cb-bc1a-4f21-bf54-2d9c7ddf01f5 a sh:ValidationResult;
+  sh:focusNode "1234567";
+  sh:value "1234567";
+  sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eevg9fg0x2 .
+
+_:node1eevg9fg0x2 a sh:NodeShape;
+  sh:nodeKind sh:Literal .
+
+_:node1eevg9fg0x1 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:not _:node1eevg9fg0x2 .
