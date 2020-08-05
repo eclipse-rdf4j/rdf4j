@@ -1,18 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x22208 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx22208 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:a220b2eb-d1f7-451e-8459-b24f70de3fd3 .
+  sh:result _:c438410b-4e4c-428f-91ed-2bc5b683e3c7 .
 
-_:a220b2eb-d1f7-451e-8459-b24f70de3fd3 a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#phoneNumber>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinExclusiveConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb33scx1 .
+_:c438410b-4e4c-428f-91ed-2bc5b683e3c7 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value 6;
+  sh:resultPath ex:phoneNumber;
+  sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eeverbekx1 .
 
-_:node1eejb33scx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#minExclusive> 6;
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#phoneNumber> .
-
-_:a220b2eb-d1f7-451e-8459-b24f70de3fd3 <http://www.w3.org/ns/shacl#value> 6 .
+_:node1eeverbekx1 a sh:PropertyShape;
+  sh:path ex:phoneNumber;
+  sh:minExclusive 6 .

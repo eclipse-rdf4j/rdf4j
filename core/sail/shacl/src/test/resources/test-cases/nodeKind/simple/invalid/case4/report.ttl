@@ -1,18 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x25610 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx25610 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:5be17bac-6ee1-456b-8b78-855d9cbf71cd .
+  sh:result _:1d1e5dcf-e06d-406f-bcf2-1eec981e714d .
 
-_:5be17bac-6ee1-456b-8b78-855d9cbf71cd a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#knows>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#NodeKindConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb36avx1 .
+_:1d1e5dcf-e06d-406f-bcf2-1eec981e714d a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "1234567";
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eeverdv1x1 .
 
-_:node1eejb36avx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#nodeKind> <http://www.w3.org/ns/shacl#BlankNodeOrIRI>;
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#knows> .
-
-_:5be17bac-6ee1-456b-8b78-855d9cbf71cd <http://www.w3.org/ns/shacl#value> "1234567" .
+_:node1eeverdv1x1 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:nodeKind sh:BlankNodeOrIRI .

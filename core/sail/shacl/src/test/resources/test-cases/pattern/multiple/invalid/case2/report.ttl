@@ -1,19 +1,24 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x26711 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx26711 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:577cf82f-2768-4f46-973c-f3f639a63c59 .
+  sh:result _:ca202d76-4f54-4c4e-8f85-96f3ede0b228 .
 
-_:577cf82f-2768-4f46-973c-f3f639a63c59 a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb3765x2 .
+_:ca202d76-4f54-4c4e-8f85-96f3ede0b228 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "fjkefkefkejfjfkelfj Q";
+  sh:resultPath ex:test;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eevereqmx2 .
 
-_:node1eejb3765x2 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#flags> "ims";
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#pattern> "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" .
-
-_:577cf82f-2768-4f46-973c-f3f639a63c59 <http://www.w3.org/ns/shacl#value> "fjkefkefkejfjfkelfj Q" .
+_:node1eevereqmx2 a sh:PropertyShape;
+  sh:path ex:test;
+  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
+  sh:flags "ims" .

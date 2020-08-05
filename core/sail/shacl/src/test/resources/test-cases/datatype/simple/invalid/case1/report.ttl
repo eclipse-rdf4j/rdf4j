@@ -1,17 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-<http://example.com/ns#PersonPropertyShape> a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#integer>;
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#age> .
-
-_:node1eejb2dr5x7866 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx7866 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:7b75da9d-a0bc-4f20-ac3c-e7f2a7687104 .
+  sh:result _:3270defe-0c86-483b-a51a-7b49c3befa46 .
 
-_:7b75da9d-a0bc-4f20-ac3c-e7f2a7687104 a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#age>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#DatatypeConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> <http://example.com/ns#PersonPropertyShape>;
-  <http://www.w3.org/ns/shacl#value> "123" .
+_:3270defe-0c86-483b-a51a-7b49c3befa46 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonPropertyShape .
+
+ex:PersonPropertyShape a sh:PropertyShape;
+  sh:path ex:age;
+  sh:datatype xsd:integer .

@@ -1,35 +1,37 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x26574 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx26574 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:422357cb-43ad-487e-8841-04d5ea48eb6d .
+  sh:result _:b56cd1d5-eafc-4f73-b89d-da129a687cc2, _:b5da61d6-e747-47ad-8d7a-f9b91d3c3d8d .
 
-_:422357cb-43ad-487e-8841-04d5ea48eb6d a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb372dx2 .
+_:b56cd1d5-eafc-4f73-b89d-da129a687cc2 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "invalid";
+  sh:resultPath ex:test;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eeveremsx1 .
 
-_:node1eejb372dx2 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#flags> "ims";
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#pattern> "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" .
+_:node1eeveremsx1 a sh:PropertyShape;
+  sh:path ex:test;
+  sh:pattern ".*?(Q)";
+  sh:flags "ims" .
 
-_:422357cb-43ad-487e-8841-04d5ea48eb6d <http://www.w3.org/ns/shacl#value> "invalid" .
+_:b5da61d6-e747-47ad-8d7a-f9b91d3c3d8d a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "invalid";
+  sh:resultPath ex:test;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eeveremsx2 .
 
-_:node1eejb2dr5x26574 <http://www.w3.org/ns/shacl#result> _:737e405b-87ef-4ef0-89d3-d41b2f70cbef .
-
-_:737e405b-87ef-4ef0-89d3-d41b2f70cbef a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#PatternConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb372dx1 .
-
-_:node1eejb372dx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#flags> "ims";
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#test>;
-  <http://www.w3.org/ns/shacl#pattern> ".*?(Q)" .
-
-_:737e405b-87ef-4ef0-89d3-d41b2f70cbef <http://www.w3.org/ns/shacl#value> "invalid" .
+_:node1eeveremsx2 a sh:PropertyShape;
+  sh:path ex:test;
+  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
+  sh:flags "ims" .

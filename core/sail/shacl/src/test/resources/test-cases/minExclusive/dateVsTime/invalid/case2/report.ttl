@@ -1,18 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x20542 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx20542 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:833ae3c1-9c52-46f1-accf-7b856910ca21 .
+  sh:result _:505f4195-2e8c-4153-ae66-66e8b90e4f6d .
 
-_:833ae3c1-9c52-46f1-accf-7b856910ca21 a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#date>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MinExclusiveConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb32jvx1 .
+_:505f4195-2e8c-4153-ae66-66e8b90e4f6d a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "2017-12-31"^^xsd:date;
+  sh:resultPath ex:date;
+  sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eevera5cx1 .
 
-_:node1eejb32jvx1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#minExclusive> "2018-01-01"^^<http://www.w3.org/2001/XMLSchema#date>;
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#date> .
-
-_:833ae3c1-9c52-46f1-accf-7b856910ca21 <http://www.w3.org/ns/shacl#value> "2017-12-31"^^<http://www.w3.org/2001/XMLSchema#date> .
+_:node1eevera5cx1 a sh:PropertyShape;
+  sh:path ex:date;
+  sh:minExclusive "2018-01-01"^^xsd:date .

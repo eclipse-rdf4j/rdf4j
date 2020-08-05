@@ -1,25 +1,29 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x17494 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx17494 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:064c3218-137e-410e-9ac3-22a8f92394c1 .
+  sh:result _:a11520ba-2ad1-4df9-ae29-e4af319e8a84 .
 
-_:064c3218-137e-410e-9ac3-22a8f92394c1 a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#validPerson1>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#label>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#LanguageInConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb30a1x1 .
+_:a11520ba-2ad1-4df9-ae29-e4af319e8a84 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "människa"@se;
+  sh:resultPath ex:label;
+  sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eever7qux1 .
 
-_:node1eejb30a1x1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#languageIn> _:node1eejb30a1x2 .
+_:node1eever7qux1 a sh:PropertyShape;
+  sh:path ex:label;
+  sh:languageIn _:node1eever7qux2 .
 
-_:node1eejb30a1x2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "en";
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:node1eejb2dr5x17495 .
+_:node1eever7qux2 rdf:first "en";
+  rdf:rest _:node1eeveqmipx17495 .
 
-_:node1eejb2dr5x17495 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> "no";
-  <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .
-
-_:node1eejb30a1x1 <http://www.w3.org/ns/shacl#path> <http://example.com/ns#label> .
-
-_:064c3218-137e-410e-9ac3-22a8f92394c1 <http://www.w3.org/ns/shacl#value> "människa"@se .
+_:node1eeveqmipx17495 rdf:first "no";
+  rdf:rest rdf:nil .

@@ -1,18 +1,23 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eejb2dr5x18306 a <http://www.w3.org/ns/shacl#ValidationReport>;
+_:node1eeveqmipx18306 a sh:ValidationReport;
+  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  <http://www.w3.org/ns/shacl#conforms> false;
-  <http://www.w3.org/ns/shacl#result> _:27774174-4d97-4d0f-9126-bcd179094caa .
+  sh:result _:05236264-dcfe-413f-91c5-338f2b7da154 .
 
-_:27774174-4d97-4d0f-9126-bcd179094caa a <http://www.w3.org/ns/shacl#ValidationResult>;
-  <http://www.w3.org/ns/shacl#focusNode> <http://example.com/ns#a>;
-  <http://www.w3.org/ns/shacl#resultPath> <http://example.com/ns#number>;
-  <http://www.w3.org/ns/shacl#resultSeverity> <http://www.w3.org/ns/shacl#Violation>;
-  <http://www.w3.org/ns/shacl#sourceConstraintComponent> <http://www.w3.org/ns/shacl#MaxExclusiveConstraintComponent>;
-  <http://www.w3.org/ns/shacl#sourceShape> _:node1eejb30uix1 .
+_:05236264-dcfe-413f-91c5-338f2b7da154 a sh:ValidationResult;
+  sh:focusNode ex:a;
+  sh:value 1000;
+  sh:resultPath ex:number;
+  sh:sourceConstraintComponent sh:MaxExclusiveConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1eever8ftx1 .
 
-_:node1eejb30uix1 a <http://www.w3.org/ns/shacl#PropertyShape>;
-  <http://www.w3.org/ns/shacl#maxExclusive> 1000;
-  <http://www.w3.org/ns/shacl#path> <http://example.com/ns#number> .
-
-_:27774174-4d97-4d0f-9126-bcd179094caa <http://www.w3.org/ns/shacl#value> 1000 .
+_:node1eever8ftx1 a sh:PropertyShape;
+  sh:path ex:number;
+  sh:maxExclusive 1000 .
