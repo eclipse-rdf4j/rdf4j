@@ -70,3 +70,12 @@ h4.doc-section-header {
   padding: 6px;
   box-shadow: 3px 3px 2px #888888;
 }
+
+/* This fixes the wrapping in pre+code blocks */
+pre code {
+  white-space: pre !important;
+}
+
+pre {
+  word-wrap: unset !important;
+}
