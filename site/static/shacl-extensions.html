@@ -17,26 +17,33 @@
         };
 
 
+
+
     </script>
-    <style >
+    <style>
 
         html {
             background: white !important;
         }
 
-        pre.example-shapes{
-            margin-left: 0;
-            padding: 0 2em;
-            margin-top: 1.5em;
-            padding: 1em;
-            background: #deb;
-            border: 1px solid #bbb;
-        }
 
+pre.shapes, pre.example-shapes, pre.example-data, pre.example-results, pre.example-other {
+margin-left: 0;
+padding: 0 2em;
+margin-top: 1.5em;
+padding: 1em;
+}
 
+pre.shapes, pre.example-shapes {
+background: #deb;
+}
 
 pre.shapes, pre.example-shapes, pre.example-shapes:before {
     border: 1px solid #bbb;
+}
+
+.focus-node-error {
+color: red;
 }
 
 pre.example-shapes:before {
@@ -54,14 +61,67 @@ padding: 0.2em 1em;
 }
 
 
+pre.example-data, pre.example-data:before {
+border: 1px solid #cc9;
+}
+
+pre.example-data {
+background: #eeb;
+}
+
+pre.example-data:before {
+color: #996;
+content: "Example data graph";
+width: 13em;
+}
+
+pre.example-data, pre.example-data:before {
+border: 1px solid #cc9;
+}
+
+pre.example-shapes:before, pre.example-data:before, pre.example-results:before, pre.example-other:before {
+background: white;
+display: block;
+font-family: sans-serif;
+margin: -1em 0 0.4em -1em;
+padding: 0.2em 1em;
+}
+
+
+
+
+
     </style>
 </head>
 <body>
 <section id="abstract">
-    <p>Extensions to SHACL [[!shacl]].</p>
+    <p>Eclipse RDF4J SHACL Extensions (RSX) extends SHACL [[shacl]] with useful features implemented by Eclipse RDF4J.</p>
 </section>
+
 <section id="sotd">
 </section>
+
+<div class="introductory">
+    <p>
+        This document uses the prefix <code>rsx</code> which represents the namespace <code>http://rdf4j.org/shacl-extensions#</code>
+        which is accessible via its URL <code>http://rdf4j.org/shacl-extensions</code>.
+        The vocabulary is available in <a href="shacl-extensions.ttl">Turtle</a>.
+    </p>
+</div>
+
+<section id="overview">
+    <h2>Motivation and Design Goals</h2>
+    <p>
+        RSX aims to extend SHACL [[shacl]] to provide missing features that are useful for the Eclipse RDF4J user base. Eclipse RDF4J aims to implement
+        all these features as a reference implementation.
+    </p>
+
+    <p>
+        Eclipse RDF4J promotes RSX as a general extension to SHACL and welcomes other implementers to use the RSX features. Eclipse RDF4J strives to
+        work with the SHACL community to design features that could eventually make it into the next version of SHACL.
+    </p>
+</section>
+
 <section>
     <h2>Targets</h2>
 
@@ -94,7 +154,7 @@ padding: 0.2em 1em;
     <p>
         Shape-based Targets is a powerful way of selecting targets. The use of a shape to select the
         targets for another shape is a natural extension where the familiar SHACL language that describes
-        constraints can also be used to describe a the targets for those constraints.
+        constraints can also be used to describe the targets for those constraints.
     </p>
 
 
@@ -104,15 +164,9 @@ padding: 0.2em 1em;
         for expressing the target selection, rather than SHACL. This also makes them harder to optimize.
     </p>
 
-    <p>Some examples:</p>
-    <ol>
-        <li>Target by property and object (<a>property shape</a>)</li>
-        <li>Target by namespace (<a>node shape</a>)</li>
-        <li>Target by datatype (<a>node shape</a>)</li>
-        <li>Target by cardinality (<a>property shape</a>)</li>
-        <li>Target by conjunction of properties (<a>node shape</a>)</li>
-    </ol>
 
+    <h4>Examples</h4>
+    <h5>Norwegians must have exactly one norwegianID</h5>
     <pre class="example-shapes" title="Norwegians must have exactly one norwegianID">
 ex:NorwegianShape a sh:NodeShape;
   rsx:targetShape [sh:path ex:nationality; sh:hasValue ex:Norwegian];
@@ -120,14 +174,19 @@ ex:NorwegianShape a sh:NodeShape;
 .
     </pre>
 
-    <pre class="example-shapes">
-# 1. Norwegians must have exactly one norwegianID
-ex:NorwegianShape a sh:NodeShape;
-  rsx:targetShape [sh:path ex:nationality; sh:hasValue ex:Norwegian];
-  sh:property [sh:path ex:norwegianID; sh:minCount 1; sh:maxCount 1];
-.
+    <pre class="example-data" title="Norwegians must have exactly one norwegianID">
+<span class="focus-node-error">ex:OlaNordmann</span> ex:nationality ex:Norwegian;
+  ex:norwegianID "12345010150", "54321010150".
 
-# 2. Instances in namespace "company" must have appropriate class and dc:type
+ex:KariNordmann ex:nationality ex:Norwegian;
+  ex:norwegianID "23413051243".
+
+ex:NoraNordmann ex:norwegianID "12413051143", "57294051143".
+    </pre>
+
+
+    <h5>Instances in namespace "company" must have appropriate class and dc:type</h5>
+    <pre class="example-shapes" title="Instances in namespace 'company' must have appropriate class and dc:type">
 ex:CompanyShape a sh:NodeShape;
   rsx:targetShape [
     sh:nodeKind sh:IRI;
@@ -136,33 +195,69 @@ ex:CompanyShape a sh:NodeShape;
   sh:class ex:Company;
   sh:property [sh:path dc:type; sh:in ("conglomerate" "collective" "enterprise")];
 .
+    </pre>
 
-# 3. All langStrings must have one of a predefind set of languages
+    <pre class="example-data" title="Instances in namespace 'company' must have appropriate class and dc:type">
+<span class="focus-node-error">&lt;https://company-graph.example.com/resource/company/BigCo&gt;</span> a ex:Organisation.
+
+&lt;https://company-graph.example.com/resource/company/SmallCo&gt; a ex:Company;
+  dc:type "enterprise".
+    </pre>
+
+
+    <h5> All langStrings must have one of a predefind set of languages</h5>
+    <pre class="example-shapes" title="All langStrings must have one of a predefind set of languages">
 ex:langStringShape a sh:NodeShape;
   rsx:targetShape [sh:datatype rdf:langString];
   sh:languageIn ("en" "bg");
 .
+    </pre>
 
-# 4. Steve is very popular, so everyone who knows at least three people must know Steve
+    <pre class="example-data" title="All langStrings must have one of a predefind set of languages">
+ex:EiffelTower rdfs:label <span class="focus-node-error">"Eiffeltårnet"@no-nb</span>, "Eiffel Tower", "Айфелова кула"@bg.
+    </pre>
+
+    <h5> Steve is very popular, so everyone who knows at least three people must know Steve</h5>
+    <pre class="example-shapes" title="Steve is very popular, so everyone who knows at least three people must know Steve">
 ex:Personshape a sh:NodeShape;
   rsx:targetShape [sh:path foaf:knows; sh:minCount 3; sh:class foaf:Person];
   sh:property [sh:path foaf:knows; sh:hasValue ex:Steve];
 .
+    </pre>
 
-# 5. Parties (defined as foaf:Organization with appropriate dc:type) must stick to one of two politics
+    <pre class="example-data" title="Steve is very popular, so everyone who knows at least three people must know Steve">
+ex:Mary a foaf:Person;
+  foaf:knows [], [], [].
+
+ex:Katie a foaf:Person.
+
+<span class="focus-node-error">ex:Steve</span> a foaf:Person.
+  foaf:knows ex:Mary, ex:Katie, ex:Peter.
+
+ex:Peter foaf:knows ex:Mary, ex:Katie, ex:Peter, ex:Steve.
+    </pre>
+
+
+    <h5> Parties (defined as foaf:Organization with appropriate dc:type) must stick to one of two politics</h5>
+    <pre class="example-shapes" title="Parties (defined as foaf:Organization with appropriate dc:type) must stick to one of two politics">
 ex:PartyShape a sh:NodeShape;
   rsx:targetShape [a sh:NodeShape;
     sh:property [sh:path rdf:type; sh:hasValue foaf:Organization];
     sh:property [sh:path dc:type;  sh:hasValue "political-party"];
   ];
   sh:property [sh:path ex:politics; sh:in ("Democrat" "Republican"); sh:minCount 1; sh:maxCount 1];
-.</pre>
+    </pre>
+
+    <pre class="example-data" title="Parties (defined as foaf:Organization with appropriate dc:type) must stick to one of two politics">
+<span class="focus-node-error">ex:Independent</span> a foaf:Organization;
+  dc:type "political-party";
+  ex:politics "Socialism".
+    </pre>
 
 </section>
 
 
 </body>
 
-<!--<script src="https://www.w3.org/scripts/TR/2016/fixup.js" defer></script>-->
 
 </html>

@@ -5,7 +5,12 @@
     <title>Eclipse RDF4J SHACL Extensions</title>
 </head>
 <body>
-
+<ul>
+<li>
 <a href="shacl-extensions.html">Specification</a>
+</li>
+<li>
 <a href="shacl-extensions.ttl">Namespace (turtle)</a>
+</li>
+</ul>
 </html>
