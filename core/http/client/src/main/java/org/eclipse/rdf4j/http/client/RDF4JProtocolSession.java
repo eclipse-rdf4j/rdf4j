@@ -121,11 +121,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		super(client, executor);
 		this.executor = executor;
 
-		// we want to preserve bnode ids to allow Sesame API methods to match
+		// we want to preserve bnode ids to allow RDF4J API methods to match
 		// blank nodes.
 		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 
-		// Sesame client has preference for binary response formats, as these are
+		// RDF4J Protocol has a preference for binary response formats, as these are
 		// most performant
 		setPreferredTupleQueryResultFormat(TupleQueryResultFormat.BINARY);
 		setPreferredRDFFormat(RDFFormat.BINARY);
