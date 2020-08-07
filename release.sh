@@ -17,7 +17,7 @@ echo ""
 echo "The release script requires several external command line tools:"
 echo " - git"
 echo " - mvn"
-echo " - hub (https://hub.github.com/)"
+echo " - gh (the GitHub CLI, see https://github.com/cli/cli)"
 echo " - xmlllint (http://xmlsoft.org/xmllint.html)"
 
 echo ""
@@ -155,7 +155,7 @@ read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n"
 echo "";
 
 echo "Creating pull request to merge release branch back into master"
-hub pull-request -f --message="next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}" --message="Merge using merge commit rather than rebase"
+gh pr create --title "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}" --body "Merge using merge commit rather than rebase"
 
 echo "";
 echo "Preparing a merge-branch to merge into develop"
@@ -177,7 +177,7 @@ git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
 echo "Creating pull request to merge the merge-branch into develop"
-hub pull-request -f -b develop --message="sync develop branch after release ${MVN_VERSION_RELEASE}" --message="Merge using merge commit rather than rebase"
+gh pr create -B develop --title "sync develop branch after release ${MVN_VERSION_RELEASE}" --body "Merge using merge commit rather than rebase"
 echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -s -r -p "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -192,17 +192,18 @@ NEWS_FILE_NAME=${NEWS_FILE_NAME/./}
 
 echo ""
 echo "You will now want to inform the community about the new release!"
-echo " - Check if all recently closed issues have the correct milestone: https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+is%3Aclosed+"
-echo " - Create a new milestone for ${MVN_NEXT_SNAPSHOT_VERSION/-SNAPSHOT/} : https://github.com/eclipse/rdf4j/milestones/new"
+echo " - Check if all recently completed issues have the correct milestone: https://github.com/eclipse/rdf4j/projects/19"
 echo " - Close the ${MVN_VERSION_RELEASE} milestone: https://github.com/eclipse/rdf4j/milestones"
 echo "     - Make sure that all issues in the milestone are closed, or move them to the next milestone"
+echo " - Create a new milestone for ${MVN_NEXT_SNAPSHOT_VERSION/-SNAPSHOT/} : https://github.com/eclipse/rdf4j/milestones/new"
 echo "     - Go to the milestone, click the 'closed' tab and copy the link for later"
-echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/release-notes/index.md"
-echo " - Edit the following file https://github.com/eclipse/rdf4j-doc/blob/master/site/content/download/_index.md"
-echo " - Go to https://github.com/eclipse/rdf4j-doc/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
+echo " - Go to https://github.com/eclipse/rdf4j/tree/master/site/content/release-notes and create ${MVN_VERSION_RELEASE}.md"
+echo " - Edit the following file https://github.com/eclipse/rdf4j/blob/master/site/content/download.md"
+echo " - Go to https://github.com/eclipse/rdf4j/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
+echo " - Go to https://github.com/eclipse/rdf4j/releases/new and create a release for the ${MVN_VERSION_RELEASE} tag. Add a link to the release notes in the description.
 echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
 echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
-echo " - Upload the javadocs by adding them to rdf4j-doc project: site/static/javadoc/${MVN_VERSION_RELEASE}"
+echo " - Upload the javadocs by adding them to site/static/javadoc/${MVN_VERSION_RELEASE}"
 echo "     - Aggregated javadoc can be found in target/site/apidocs or in the SDK zip file"
 echo "     - Make sure to also replace the site/static/javadoc/latest directory with a copy (don't use a symlink)"
 
