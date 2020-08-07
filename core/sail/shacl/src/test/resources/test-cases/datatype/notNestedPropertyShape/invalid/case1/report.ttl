@@ -1,0 +1,43 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1ef4nudhix719 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:731878f0-bcdb-4146-bf76-3de5fd3daa10 .
+
+_:731878f0-bcdb-4146-bf76-3de5fd3daa10 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:validPerson1;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:detail _:eeaa45e3-add3-4dd2-9bb4-81d7c3b5d3ae;
+  sh:sourceShape ex:PersonShape .
+
+_:eeaa45e3-add3-4dd2-9bb4-81d7c3b5d3ae a sh:ValidationResult;
+  sh:focusNode _:node1ef4nug4gx5;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ef4nug4gx3 .
+
+_:node1ef4nug4gx3 a sh:PropertyShape;
+  sh:path ex:age;
+  sh:datatype xsd:string .
+
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Person;
+  sh:not _:node1ef4nug4gx1 .
+
+_:node1ef4nug4gx1 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:property _:node1ef4nug4gx2 .
+
+_:node1ef4nug4gx2 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:property _:node1ef4nug4gx3 .
