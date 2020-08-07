@@ -409,10 +409,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							ValidationResultIterator validationResults = new ValidationResultIterator(iterator,
-									sail.getEffectiveValidationResultsLimitPerConstraint());
-
-							validationExecutionLogger.flush();
+							ValidationResultIterator validationResults;
+							try {
+								validationResults = new ValidationResultIterator(iterator,
+										sail.getEffectiveValidationResultsLimitPerConstraint());
+							} finally {
+								validationExecutionLogger.flush();
+							}
 
 //							if (sail.isPerformanceLogging()) {
 //								long after = System.currentTimeMillis();

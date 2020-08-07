@@ -16,12 +16,15 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainExtender;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPusher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -147,7 +150,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				planNode = new TargetChainPopper(planNode);
 
 			} else {
-				planNode = new BulkedExternalInnerJoin(overrideTargetNode.getPlanNode(),
+				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
+						"SimpleAbstractConstraintComponent");
+
+				temp = new TargetChainExtender(temp, effectiveTarget);
+
+				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
 						path.get().getTargetQueryFragment(new Var("a"), new Var("c")), false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c")));
@@ -248,7 +256,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_");
-
 		return target.getAdded(connectionsGroup);
 
 	}

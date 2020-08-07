@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -153,16 +154,17 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		PlanNode union = new EmptyNode();
 
 		if (negatePlan) {
+			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
 
 			assert constraintComponents
 					.size() == 1 : "We currently only support negation with a single constraint component";
 
 			for (ConstraintComponent constraintComponent : constraintComponents) {
 				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
-						logValidationPlans, () -> getAllTargetsPlan(connectionsGroup, negatePlan), negateChildren,
+						logValidationPlans, () -> getAllLocalTargetsPlan(connectionsGroup, negatePlan), negateChildren,
 						false);
 
-				PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, negatePlan);
+				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
 
 				Unique invalid = new Unique(planNode);
 
@@ -177,7 +179,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negateChildren,
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
+							negateChildren,
 							false);
 
 			if (!(constraintComponent instanceof PropertyShape)) {
@@ -212,7 +215,34 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan");
+		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
+
+		planNode = new TargetChainPopper(planNode);
+		planNode = new TrimToTarget(planNode);
+		planNode = new Unique(planNode);
+
+		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
+
+		return planNode;
+	}
+
+	/**
+	 * Used for retreiving all the targets from the constraint components but without popping the target chain
+	 * 
+	 * @param connectionsGroup
+	 * @param negated
+	 * @return
+	 */
+	private PlanNode getAllLocalTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		PlanNode planNode = constraintComponents.stream()
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
+
+		planNode = new TrimToTarget(planNode);
+		planNode = new Unique(planNode);
+
+		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllLocalTargetsPlan");
 
 		return planNode;
 	}

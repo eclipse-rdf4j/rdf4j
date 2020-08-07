@@ -11,8 +11,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ValidationTuple {
+
+	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);
 
 	static ValueComparator valueComparator = new ValueComparator();
 	private final Deque<Value> targetChain;
@@ -55,10 +59,12 @@ public class ValidationTuple {
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
+
 		Value current = targetChain.getLast();
 		Value currentRight = nextRight.targetChain.getLast();
 
 		return current.equals(currentRight);
+
 	}
 
 	public Deque<Value> getTargetChain() {
@@ -109,8 +115,9 @@ public class ValidationTuple {
 	}
 
 	public void setPath(Path path) {
-		if (this.path != null)
+		if (this.path != null) {
 			throw new IllegalStateException();
+		}
 		this.path = path;
 	}
 
