@@ -59,4 +59,8 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		return ValidationApproach.Transactional;
 	}
 
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		throw new UnsupportedOperationException();
+	}
 }

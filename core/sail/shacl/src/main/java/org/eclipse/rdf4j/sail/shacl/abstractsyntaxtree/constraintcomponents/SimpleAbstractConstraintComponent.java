@@ -245,4 +245,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	}
 
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_");
+
+		return target.getAdded(connectionsGroup);
+
+	}
+
 }

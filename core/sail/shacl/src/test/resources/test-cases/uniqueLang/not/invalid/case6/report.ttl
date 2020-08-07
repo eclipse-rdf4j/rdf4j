@@ -1,0 +1,48 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1ef4n1pgqx40868 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:340c4047-27b9-411d-86d6-c2d8e7204849, _:88023540-f354-43fa-9535-9fd6a9972a02,
+    _:e34355e3-efc5-4b37-abc1-d3c6234f4580, _:d44e49c9-35a0-4198-9c37-c369cbf1ded8 .
+
+_:340c4047-27b9-411d-86d6-c2d8e7204849 a sh:ValidationResult;
+  sh:focusNode ex:bigCo1;
+  sh:value ex:bigCo1;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Company;
+  sh:not _:node1ef4n4lnvx1 .
+
+_:node1ef4n4lnvx1 a sh:PropertyShape;
+  sh:path rdfs:label;
+  sh:uniqueLang true .
+
+_:88023540-f354-43fa-9535-9fd6a9972a02 a sh:ValidationResult;
+  sh:focusNode ex:bigCo2;
+  sh:value ex:bigCo2;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+_:e34355e3-efc5-4b37-abc1-d3c6234f4580 a sh:ValidationResult;
+  sh:focusNode ex:bigCo3;
+  sh:value ex:bigCo3;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+_:d44e49c9-35a0-4198-9c37-c369cbf1ded8 a sh:ValidationResult;
+  sh:focusNode ex:bigCo4;
+  sh:value ex:bigCo4;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .

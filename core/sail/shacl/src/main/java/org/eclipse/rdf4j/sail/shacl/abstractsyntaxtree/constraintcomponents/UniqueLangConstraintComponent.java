@@ -162,4 +162,12 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 
 	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_");
+
+		return target.getAdded(connectionsGroup);
+
+	}
 }

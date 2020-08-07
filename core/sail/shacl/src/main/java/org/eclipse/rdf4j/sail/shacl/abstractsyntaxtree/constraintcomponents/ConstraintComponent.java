@@ -21,4 +21,6 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	SourceConstraintComponent getConstraintComponent();
 
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated);
+
 }

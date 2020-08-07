@@ -1,0 +1,33 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1ef4n1pgqx41033 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:0089d014-68f7-4d59-8e18-a8ea300b486e, _:0595db56-1a51-463f-aee1-660dc5ec618e .
+
+_:0089d014-68f7-4d59-8e18-a8ea300b486e a sh:ValidationResult;
+  sh:focusNode ex:bigCo;
+  sh:value ex:bigCo;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Company;
+  sh:not _:node1ef4n4m0bx1 .
+
+_:node1ef4n4m0bx1 a sh:PropertyShape;
+  sh:path rdfs:label;
+  sh:uniqueLang true .
+
+_:0595db56-1a51-463f-aee1-660dc5ec618e a sh:ValidationResult;
+  sh:focusNode ex:smallCo;
+  sh:value ex:smallCo;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .

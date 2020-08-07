@@ -13,11 +13,15 @@ import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
@@ -148,9 +152,33 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 		PlanNode union = new EmptyNode();
 
+		if (negatePlan) {
+
+			assert constraintComponents
+					.size() == 1 : "We currently only support negation with a single constraint component";
+
+			for (ConstraintComponent constraintComponent : constraintComponents) {
+				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
+						logValidationPlans, () -> getAllTargetsPlan(connectionsGroup, negatePlan), negateChildren,
+						false);
+
+				PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, negatePlan);
+
+				Unique invalid = new Unique(planNode);
+
+				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
+						.getDiscardedLeft(BufferedPlanNode.class);
+
+				return new TargetChainPopper(discardedLeft);
+
+			}
+
+		}
+
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false);
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negateChildren,
+							false);
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
@@ -165,6 +193,28 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		}
 
 		return union;
+	}
+
+	public PlanNode getTargetsPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
+			boolean negated) {
+		PlanNode targetsPlan = getAllTargetsPlan(connectionsGroup, negated);
+		if (overrideTargetNode != null) {
+			targetsPlan = new Unique(new UnionNode(targetsPlan, overrideTargetNode.getPlanNode()));
+		}
+
+		return targetsPlan;
+
+	}
+
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		PlanNode planNode = constraintComponents.stream()
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
+
+		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan");
+
+		return planNode;
 	}
 
 	@Override

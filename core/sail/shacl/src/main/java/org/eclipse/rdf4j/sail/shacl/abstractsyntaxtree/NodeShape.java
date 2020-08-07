@@ -157,4 +157,9 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		return SourceConstraintComponent.NodeConstraintComponent;
 	}
 
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		throw new UnsupportedOperationException();
+	}
+
 }
