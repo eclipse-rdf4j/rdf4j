@@ -33,7 +33,39 @@ case "${choice}" in
   * ) echo "unknown response, exiting"; exit;;
 esac
 
+# verify required tools are installed
+if ! command -v git &> /dev/null; then
+    echo "";
+    echo "git command not found!";
+    echo "";
+    exit 1;
+fi
 
+if ! command -v mvn &> /dev/null; then
+    echo "";
+    echo "mvn command not found!";
+    echo  "See https://maven.apache.org/";
+    echo "";
+    exit 1;
+fi
+
+if ! command -v gh &> /dev/null; then
+    echo "";
+    echo "gh command not found!";
+    echo  "See https://github.com/cli/cli";
+    echo "";
+    exit 1;
+fi
+
+if ! command -v xmllint &> /dev/null; then
+    echo "";
+    echo "xmllint command not found!";
+    echo "See http://xmlsoft.org/xmllint.html"
+    echo "";
+    exit 1;
+fi
+
+# check Java version
 if  !  mvn -v | grep -q "Java version: 1.8."; then
   echo "";
   echo "You need to use Java 8!";
@@ -54,7 +86,6 @@ fi
 
 echo "Running git pull to make sure we are up to date"
 git pull
-
 
 # check that we are not ahead or behind
 if  ! [[ $(git status --porcelain -u no  --branch) == "## master...origin/master" ]]; then
