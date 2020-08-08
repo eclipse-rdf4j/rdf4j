@@ -101,6 +101,14 @@ if  ! [[ `git status --porcelain` == "" ]]; then
     exit 1;
 fi
 
+# check that we have push access
+if ! git push --dry-run > /dev/null 2>&1; then
+    echo "";
+    echo "Could not push to the repository! Check that you have sufficient access rights.";
+    echo "";
+    exit 1;
+fi
+
 echo "Running mvn clean";
 mvn clean;
 
