@@ -79,4 +79,11 @@
 			</build>
 		</profile>
 	</profiles>
+	<build>
+		<plugins>
+			<plugin>
+				<artifactId>maven-assembly-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</build>
 </project>

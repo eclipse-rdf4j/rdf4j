@@ -33,6 +33,10 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -56,6 +60,16 @@ public class DataFileBenchmark {
 
 	final static private byte[] BYTES = "fewjf3u28hq98fhref8j2908rhfuhfjnjvfbv2u9r82ufh4908fhuheui2hjdfh9284ru9h34unfre892hf08r48nu2frfh9034"
 			.getBytes(StandardCharsets.UTF_8);
+
+	public static void main(String[] args) throws RunnerException {
+		Options opt = new OptionsBuilder()
+				.include("DataFileBenchmark.read") // adapt to run other benchmark tests
+				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.forks(1)
+				.build();
+
+		new Runner(opt).run();
+	}
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
