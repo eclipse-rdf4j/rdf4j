@@ -7,29 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
-
 /**
- * {@link TupleQueryResultParserFactory} for creating instances of {@link SPARQLStarResultsTSVParser}.
  *
- * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - moved to
+ *             {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParserFactory}.
  */
-public class SPARQLStarResultsTSVParserFactory implements TupleQueryResultParserFactory {
-	/**
-	 * Returns {@link TupleQueryResultFormat#TSV_STAR}.
-	 */
-	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.TSV_STAR;
-	}
-
-	/**
-	 * Returns a new instance of {@link SPARQLStarResultsTSVParser}.
-	 */
-	@Override
-	public TupleQueryResultParser getParser() {
-		return new SPARQLStarResultsTSVParser();
-	}
+@Deprecated
+public class SPARQLStarResultsTSVParserFactory
+		extends org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParserFactory {
 }

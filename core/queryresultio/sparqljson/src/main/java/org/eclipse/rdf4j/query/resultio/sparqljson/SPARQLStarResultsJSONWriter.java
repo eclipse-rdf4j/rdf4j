@@ -7,12 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import java.io.IOException;
 import java.io.OutputStream;
 
-import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
@@ -21,6 +17,9 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * triples. See {@link SPARQLStarResultsJSONConstants} for a description of the RDF* extension.
  *
  * @author Pavel Mihaylov
+ * @implNote the actual {@link SPARQLResultsJSONWriter} itself already supports writing RDF* triples according to the
+ *           extension. This subclass functions as an anchor point for the custom
+ *           {@link TupleQueryResultFormat#JSON_STAR} content type.
  */
 public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter implements TupleQueryResultWriter {
 	public SPARQLStarResultsJSONWriter(OutputStream out) {
@@ -35,31 +34,5 @@ public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter impleme
 	@Override
 	public TupleQueryResultFormat getQueryResultFormat() {
 		return getTupleQueryResultFormat();
-	}
-
-	@Override
-	protected void writeValue(Value value) throws IOException, QueryResultHandlerException {
-		if (value instanceof Triple) {
-			jg.writeStartObject();
-
-			jg.writeStringField(AbstractSPARQLJSONParser.TYPE, SPARQLStarResultsJSONConstants.TRIPLE);
-
-			jg.writeObjectFieldStart(AbstractSPARQLJSONParser.VALUE);
-
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.SUBJECT);
-			writeValue(((Triple) value).getSubject());
-
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.PREDICATE);
-			writeValue(((Triple) value).getPredicate());
-
-			jg.writeFieldName(SPARQLStarResultsJSONConstants.OBJECT);
-			writeValue(((Triple) value).getObject());
-
-			jg.writeEndObject();
-
-			jg.writeEndObject();
-		} else {
-			super.writeValue(value);
-		}
 	}
 }
