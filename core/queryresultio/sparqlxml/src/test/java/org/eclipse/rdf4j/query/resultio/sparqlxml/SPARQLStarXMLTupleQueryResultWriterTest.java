@@ -15,16 +15,16 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
  * @author Jeen Broekstra
  *
  */
-public class SPARQLXMLTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
+public class SPARQLStarXMLTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
 
 	@Override
 	protected TupleQueryResultParserFactory getParserFactory() {
-		return new SPARQLResultsXMLParserFactory();
+		return new SPARQLStarResultsXMLParserFactory();
 	}
 
 	@Override
 	protected TupleQueryResultWriterFactory getWriterFactory() {
-		return new SPARQLResultsXMLWriterFactory();
+		return new SPARQLStarResultsXMLWriterFactory();
 	}
 
 }
