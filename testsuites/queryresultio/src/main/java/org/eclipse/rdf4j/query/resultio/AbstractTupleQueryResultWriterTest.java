@@ -98,7 +98,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	}
 
 	@Test
-	public void testRDFStartHandling_DeepNesting() throws Exception {
+	public void testRDFStarHandling_DeepNesting() throws Exception {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
