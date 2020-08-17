@@ -516,9 +516,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					// Search zero contexts
 					return new EmptyIteration<>();
 				} else if (graphs == null || graphs.isEmpty()) {
-					// store default behaivour
+					// store default behaviour
 					if (contextValue != null) {
-						contexts = new Resource[] { (Resource) contextValue };
+						if (SESAME.NIL.equals(contextValue)) {
+							contexts = new Resource[] { (Resource) null };
+						} else {
+							contexts = new Resource[] { (Resource) contextValue };
+						}
 					}
 					/*
 					 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default
