@@ -130,7 +130,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getTargetChain().getLast(), t.getAnyValue(), this,
+					return new ValidationResult(t.getTargetChain().getLast(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
@@ -185,7 +185,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getTargetChain().getLast(), t.getAnyValue(), this,
+					return new ValidationResult(t.getTargetChain().getLast(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
@@ -228,7 +228,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	/**
 	 * Used for retreiving all the targets from the constraint components but without popping the target chain
-	 * 
+	 *
 	 * @param connectionsGroup
 	 * @param negated
 	 * @return

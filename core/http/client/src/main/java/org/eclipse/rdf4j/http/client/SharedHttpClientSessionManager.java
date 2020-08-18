@@ -66,7 +66,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		final int corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
 		this.executor = Executors.newScheduledThreadPool(corePoolSize, (Runnable runnable) -> {
 			Thread thread = backingThreadFactory.newThread(runnable);
-			thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
+			thread.setName(String.format("rdf4j-SharedHttpClientSessionManager-%d", threadCount.getAndIncrement()));
 			thread.setDaemon(true);
 			return thread;
 		});
@@ -120,18 +120,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		this.httpClientBuilder = httpClientBuilder;
 	}
 
-	private CloseableHttpClient createHttpClient() {
-		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
-		if (nextHttpClientBuilder != null) {
-			return nextHttpClientBuilder.build();
-		}
-		return HttpClientBuilder.create()
-				.useSystemProperties()
-				.disableAutomaticRetries()
-				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-				.build();
-	}
-
 	@Override
 	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
 		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
@@ -168,10 +156,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		openSessions.put(session, true);
 		return session;
 	}
-
-	/*-----------------*
-	 * Get/set methods *
-	 *-----------------*/
 
 	@Override
 	public void shutDown() {
@@ -212,4 +196,25 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	public void initialize() {
 	}
 
+	/**
+	 * Get the {@link ScheduledExecutorService} used by this session manager.
+	 *
+	 * @return a {@link ScheduledExecutorService} used by all {@link SPARQLProtocolSession} and
+	 *         {@link RDF4JProtocolSession} instances created by this session manager.
+	 */
+	protected final ScheduledExecutorService getExecutorService() {
+		return this.executor;
+	}
+
+	private CloseableHttpClient createHttpClient() {
+		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
+		if (nextHttpClientBuilder != null) {
+			return nextHttpClientBuilder.build();
+		}
+		return HttpClientBuilder.create()
+				.useSystemProperties()
+				.disableAutomaticRetries()
+				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+				.build();
+	}
 }

@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.results;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Model;
@@ -35,7 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 public class ValidationResult {
 
 	private final Resource id = SimpleValueFactory.getInstance().createBNode(UUID.randomUUID() + "");
-	private final Value value;
+	private final Optional<Value> value;
 	private final Shape shape;
 
 	private final SourceConstraintComponent sourceConstraintComponent;
@@ -44,12 +45,20 @@ public class ValidationResult {
 	private Path path;
 	private ValidationResult detail;
 
-	public ValidationResult(Value focusNode, Value anyValue, Shape shape,
+	public ValidationResult(Value focusNode, Value value, Shape shape,
 			SourceConstraintComponent sourceConstraintComponent, Severity severity) {
 		this.focusNode = focusNode;
 		this.sourceConstraintComponent = sourceConstraintComponent;
-		this.value = anyValue;
 		this.shape = shape;
+
+		if (sourceConstraintComponent.producesValidationResultValue()) {
+			assert value != null;
+			this.value = Optional.of(value);
+		} else {
+			assert value == null;
+			this.value = Optional.empty();
+		}
+
 		if (shape instanceof PropertyShape) {
 			this.path = ((PropertyShape) shape).getPath();
 		}
@@ -90,9 +99,7 @@ public class ValidationResult {
 
 		model.add(getId(), SHACL.FOCUS_NODE, focusNode);
 
-		if (value != null) {
-			model.add(getId(), SHACL.VALUE, value);
-		}
+		value.ifPresent(v -> model.add(getId(), SHACL.VALUE, v));
 
 		if (this.path != null) {
 			path.toModel(path.getId(), null, model, new HashSet<>());

@@ -23,8 +23,4 @@ public class AggregatedValidationTuple extends ValidationTuple {
 		aggregatedFrom.add(value);
 	}
 
-	@Override
-	public Value getAnyValue() {
-		return aggregatedFrom.get(0);
-	}
 }

@@ -98,10 +98,6 @@ public class ValidationTuple {
 		this.validationResults.addFirst(validationResult);
 	}
 
-	public Value getAnyValue() {
-		return value;
-	}
-
 	public void setValue(Value value) {
 		this.value = value;
 	}

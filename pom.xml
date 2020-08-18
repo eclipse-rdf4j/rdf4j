@@ -38,6 +38,7 @@
 		</license>
 	</licenses>
 	<modules>
+		<module>assembly-descriptors</module>
 		<module>core</module>
 		<module>tools</module>
 		<module>testsuites</module>
@@ -619,6 +620,11 @@
 	<build>
 		<pluginManagement>
 			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-assembly-plugin</artifactId>
+					<version>3.3.0</version>
+				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-antrun-plugin</artifactId>

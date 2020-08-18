@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -19,6 +20,7 @@ import java.io.InputStream;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -281,5 +283,59 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 			assertTrue(b.getValue("title") instanceof Literal);
 		}
 
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatRDF4J() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j.srj");
+		assertNotNull("Could not find test resource", stream);
+		parser.parseQueryResult(stream);
+
+		assertThat(handler.getBindingNames().size()).isEqualTo(3);
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
+		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
+		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
+		assertThat(a.getObject().stringValue()).isEqualTo("23");
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatStardog() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-stardog.srj");
+		assertNotNull("Could not find test resource", stream);
+		parser.parseQueryResult(stream);
+
+		assertThat(handler.getBindingNames().size()).isEqualTo(3);
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
+		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
+		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
+		assertThat(a.getObject().stringValue()).isEqualTo("23");
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatJena() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-jena.srj");
+		assertNotNull("Could not find test resource", stream);
+		parser.parseQueryResult(stream);
+
+		assertThat(handler.getBindingNames().size()).isEqualTo(3);
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
+		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
+		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
+		assertThat(a.getObject().stringValue()).isEqualTo("23");
 	}
 }

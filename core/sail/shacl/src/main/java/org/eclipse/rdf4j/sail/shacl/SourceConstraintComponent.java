@@ -13,48 +13,51 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public enum SourceConstraintComponent {
-	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality),
-	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality),
+	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),
+	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),
 
-	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ConstraintType.ValueType),
-	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
+	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
 
-	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ConstraintType.ValueType),
-	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
+	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased, false),
+	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
 
-	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ConstraintType.ValueType),
+	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other, true),
+	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other, false),
+	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other, false),
+	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ConstraintType.Other, true),
 
-	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other),
-	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
+	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
 
-	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange),
-	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange),
-	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange),
-	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange),
+	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
 
-	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
-	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased),
+	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair,
+			true),
 
-	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical),
-	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical),
-	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical),
-	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ConstraintType.Logical),
-
-	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.Other),
-	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ConstraintType.Other);
+	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, true),
+	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, false);
 
 	private final IRI iri;
 	private final ConstraintType constraintType;
+	private final boolean producesValidationResultValue;
 
-	SourceConstraintComponent(IRI iri, ConstraintType constraintType) {
+	SourceConstraintComponent(IRI iri, ConstraintType constraintType, boolean producesValidationResultValue) {
 		this.iri = iri;
 		this.constraintType = constraintType;
+		this.producesValidationResultValue = producesValidationResultValue;
 	}
 
 	public IRI getIri() {
@@ -73,7 +76,11 @@ public enum SourceConstraintComponent {
 		PropertyPair,
 		Logical,
 		ShapeBased,
-		Other
+		Other;
 
+	}
+
+	public boolean producesValidationResultValue() {
+		return producesValidationResultValue;
 	}
 }
