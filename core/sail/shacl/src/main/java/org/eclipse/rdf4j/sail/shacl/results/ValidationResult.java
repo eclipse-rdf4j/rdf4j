@@ -46,12 +46,6 @@ public class ValidationResult {
 	private final Value focusNode;
 	private final Optional<Value> value;
 
-	static Set<SourceConstraintComponent.ConstraintType> constraintTypesThatSupportValue = Arrays
-			.stream(SourceConstraintComponent.ConstraintType.values())
-			.filter(t -> t != SourceConstraintComponent.ConstraintType.Cardinality)
-			.filter(t -> t != SourceConstraintComponent.ConstraintType.Logical)
-			.collect(Collectors.toSet());
-
 	public ValidationResult(PropertyShape sourceShape, Value focusNode, Value value) {
 		this.sourceShape = sourceShape;
 		this.focusNode = focusNode;
@@ -60,7 +54,9 @@ public class ValidationResult {
 			this.path = ((PathPropertyShape) sourceShape).getPath();
 		}
 
-		if (constraintTypesThatSupportValue.contains(sourceConstraintComponent.getConstraintType())) {
+		if (sourceConstraintComponent.producesValidationResultValue() &&
+		// WE DON'T SUPPORT sh:value FOR LOGICAL OPERATORS YET
+				sourceConstraintComponent.getConstraintType() != SourceConstraintComponent.ConstraintType.Logical) {
 			this.value = Optional.of(value);
 		} else {
 			this.value = Optional.empty();
