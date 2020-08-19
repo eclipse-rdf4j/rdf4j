@@ -7,24 +7,27 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
-import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
  * @author Jeen Broekstra
- *
  */
-public class SPARQLXMLTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
+public class SPARQLStarXMLTupleTest extends AbstractQueryResultIOTupleTest {
 
 	@Override
-	protected TupleQueryResultParserFactory getParserFactory() {
-		return new SPARQLResultsXMLParserFactory();
+	protected String getFileName() {
+		return "test.srxs";
 	}
 
 	@Override
-	protected TupleQueryResultWriterFactory getWriterFactory() {
-		return new SPARQLResultsXMLWriterFactory();
+	protected TupleQueryResultFormat getTupleFormat() {
+		return TupleQueryResultFormat.SPARQL_STAR;
 	}
 
+	@Override
+	protected BooleanQueryResultFormat getMatchingBooleanFormatOrNull() {
+		return BooleanQueryResultFormat.SPARQL;
+	}
 }

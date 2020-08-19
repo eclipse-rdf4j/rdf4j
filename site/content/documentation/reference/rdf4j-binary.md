@@ -71,6 +71,8 @@ Each RDF value type has its own specific 1-byte record type marker:
     marks a language-tagged literal value
 - `DATATYPE_LITERAL_VALUE` (byte value: 5)
     marks a datatyped literal value
+- `TRIPLE_VALUE` (byte value: 7)
+   marks an [RDF\* triple](/documentation/programming/rdfstar) value
 
 ### URIs
 
@@ -83,6 +85,10 @@ Blank nodes are recorded by the `BNODE_VALUE` marker followed by the id of the b
 ### Literals
 
 Depending on the specific literal type (plain, language-tagged, datatyped), a literal is recorded by one of the markers `PLAIN_LITERAL_VALUE`, `LANG_LITERAL_VALUE` or `DATATYPE_LITERAL_VALUE`. This is followed by the lexical label of the literal as a string, optionally followed by either a language tag encoded as a string value or a datatype encoded as a string.
+
+### RDF\* triples
+
+RDF\* triples are recorded by the `TRIPLE_VALUE` marker, followed by value markers and values for the triple's subject, predicate, and object, in order. 
 
 ## Value reference declaration records
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -9,40 +9,32 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 import java.io.OutputStream;
 
-import org.eclipse.rdf4j.common.xml.XMLWriter;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
- * A {@link TupleQueryResultWriter} that writes tuple query results in the
+ * A {@link TupleQueryResultWriter} that writes tuple query results in the extended form
  * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a>.
+ *
+ * @author Jeen Broekstra
+ * @implNote the base class {@link SPARQLResultsXMLWriter} already has full support for writing extended RDF* syntax.
+ *           This class purely exists as a hook for the custom content type for
+ *           {@link TupleQueryResultFormat#SPARQL_STAR}.
  */
-public class SPARQLResultsXMLWriter extends AbstractSPARQLXMLWriter implements TupleQueryResultWriter {
+@Experimental
+public class SPARQLStarResultsXMLWriter extends SPARQLResultsXMLWriter {
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	public SPARQLResultsXMLWriter(OutputStream out) {
+	/**
+	 * @param out
+	 */
+	public SPARQLStarResultsXMLWriter(OutputStream out) {
 		super(out);
 	}
 
-	public SPARQLResultsXMLWriter(XMLWriter xmlWriter) {
-		super(xmlWriter);
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.SPARQL;
-	}
-
-	@Override
-	public final TupleQueryResultFormat getQueryResultFormat() {
-		return getTupleQueryResultFormat();
+	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+		return TupleQueryResultFormat.SPARQL_STAR;
 	}
 
 }

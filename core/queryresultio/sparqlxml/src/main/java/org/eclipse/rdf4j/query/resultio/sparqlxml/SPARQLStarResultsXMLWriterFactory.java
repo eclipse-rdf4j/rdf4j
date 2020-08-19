@@ -9,40 +9,33 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 import java.io.OutputStream;
 
-import org.eclipse.rdf4j.common.xml.XMLWriter;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 
 /**
- * A {@link TupleQueryResultWriter} that writes tuple query results in the
- * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a>.
+ * A {@link TupleQueryResultWriterFactory} for writers of extended SPARQL/XML tuple query results:
+ * {@link TupleQueryResultFormat#SPARQL_STAR}
+ *
+ * @author Jeen Broekstra
  */
-public class SPARQLResultsXMLWriter extends AbstractSPARQLXMLWriter implements TupleQueryResultWriter {
+@Experimental
+public class SPARQLStarResultsXMLWriterFactory implements TupleQueryResultWriterFactory {
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	public SPARQLResultsXMLWriter(OutputStream out) {
-		super(out);
-	}
-
-	public SPARQLResultsXMLWriter(XMLWriter xmlWriter) {
-		super(xmlWriter);
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
-
+	/**
+	 * Returns {@link TupleQueryResultFormat#SPARQL_STAR}.
+	 */
 	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.SPARQL;
+		return TupleQueryResultFormat.SPARQL_STAR;
 	}
 
+	/**
+	 * Returns a new instance of {@link SPARQLResultsXMLWriter}.
+	 */
 	@Override
-	public final TupleQueryResultFormat getQueryResultFormat() {
-		return getTupleQueryResultFormat();
+	public TupleQueryResultWriter getWriter(OutputStream out) {
+		return new SPARQLResultsXMLWriter(out);
 	}
-
 }

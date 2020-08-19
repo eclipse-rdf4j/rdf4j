@@ -30,37 +30,39 @@ To support RDF\* annotations, the core RDF model in RDF4J has been extended with
 
 You can create `Triple` objects using a `ValueFactory`, and then use them as the subject (or object) of another statement, for example:
 
-{{< highlight java >}}
+```java
 IRI bob = valueFactory.createIRI("http://example.org/bob");
 Triple bobsAge = valueFactory.createTriple(bob, FOAF.AGE, valueFactory.createLiteral(23));
 
 IRI certainty = valueFactory.createIRI("http://example.org/certainty");
 Statement aboutBobsAge = valueFactory.createStatement(bobsAge, certainty, valueFactory.createLiteral(0.9));
-{{< / highlight >}}
+```
 
 # Reading and writing RDF\* data
 
-RDF4J currently provides several Rio parser/writers for RDF\*-enabled syntax formats: the Turtle\* format, the TriG* format. As the names suggest, both are extended versions of existing RDF format (Turtle and TriG, respectively). In addition, RDF4J's binary RDF format parser has also been extended to be able to read and write RDF\* data.
+RDF4J currently provides several Rio parser/writers for RDF\*-enabled syntax formats: the Turtle\* format, and the TriG\* format. As the names suggest, both are extended versions of existing RDF format (Turtle and TriG, respectively). In addition, RDF4J's [binary RDF format](/documentation/reference/rdf4j-binary/) parser has also been extended to be able to read and write RDF\* data.
 
 ## Reading / writing a Turtle\* file
 
 A Turtle\* file that contains an annotation with a certainty score, on a statement saying "Bob's age is 23", would look like this:
 
-     @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-     @prefix ex: <http://example.org/> .
+```turtle
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix ex: <http://example.org/> .
 
-     <<ex:bob foaf:age 23>> ex:certainty 0.9 .
+<<ex:bob foaf:age 23>> ex:certainty 0.9 .
+```
 
 If we wish to read this data into an RDF4J Model object, we can do so using the Rio Turtle\* parser:
 
-{{< highlight java >}}
+```java
 Model model = Rio.parse(new FileInputStream("/path/to/file.ttls"), "", RDFFORMAT.TURTLESTAR);
-{{< / highlight >}}
+```
 
 Similarly, Rio can be used to write RDF\* models to file:
-{{< highlight java >}}
+```java
 Rio.write(model, new FileOuputStream("/path/to/file.ttls"), "", RDFFORMAT.TURTLESTAR);
-{{< / highlight >}}
+```
 
 # Storing and retrieving RDF\* in a Repository 
 
@@ -68,79 +70,173 @@ Note: not every store can handle RDF\* data. Attempting to upload an RDF\* model
 
 The RDF4J MemoryStore accepts RDF\* data. You can add the RDF\* model we created above directly to an in-memory Repository:
 
-{{< highlight java >}}
+```java
 try(RepositoryConnection conn = repo.getConnection()) {
     conn.add(model);
 }
-{{< / highlight >}}
+```
 
 You can query this data via the Repository API, like any "normal" RDF data. For example:
 
-{{< highlight java >}}
+```java
 try(RepositoryConnection conn = repo.getConnection()) {
    RepositoryResult<Statement> result = conn.getStatements(null, null, null); 
    result.forEach(System.out::println);
 }
-{{< / highlight >}}
-
+```
 will output:
 
-    <<<http://example.org/bob> <http://xmlns.com/foaf/0.1/name> 23>> <http://example.org/certainty> 0.9 
+```turtle
+<<<http://example.org/bob> <http://xmlns.com/foaf/0.1/age> 23>> <http://example.org/certainty> 0.9 
+```
 
 and of course the subject triple can be inspected in code as well:
 
-{{< highlight java >}}
+```java
 try(RepositoryConnection conn = repo.getConnection()) {
    RepositoryResult<Statement> result = conn.getStatements(null, null, null); 
    Statement st = result.next(); 
    Triple rdfStarTriple = (Triple)st.getSubject();
    System.out.println(rdfStarTriple.getSubject()); // will output http://example.org/bob 
 }
-{{< / highlight >}}
+```
 
-Likewise, regular SPARQL queries may include the triple as a result. The SPARQL/JSON and TSV query result formats have been extended to handle RDF\* triples as possible value bindings (support in other query result formats is under development). For example, if you run a simple SPARQL like `SELECT * where { ?a ?b ?c }` and serialize the result as SPARQL/JSON, it would look like this:
+## SPARQL query results containing RDF\*
 
-    {
-      "head" : {
-        "vars" : [
-          "a",
-          "b",
-          "c"
-        ]
-      },
-      "results" : {
-        "bindings": [
-          { "a" : {
-              "type" : "triple",
-              "value" : {
-                "s" : {
-                  "type" : "uri",
-                  "value" : "http://example.org/bob"
-                },
-                "p" : {
-                  "type" : "uri",
-                  "value" : "http://xmlns.com/foaf/0.1/name"
-                },
-                "o" : {
-                  "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
-                  "type" : "literal",
-                  "value" : "23"
-                }
-              }
+When querying a store that contains RDF\* data, even regular SPARQL queries may include RDF\* triples as a result. To make it possible to serialize such query results (e.g. for network transfer), the SPARQL/JSON, SPARQL/XML, Binary and TSV query result formats have all been extended to handle RDF\* triples as possible value bindings.
+
+### Extended SPARQL JSON format
+
+The default [SPARQL 1.1 Query Results JSON format](https://www.w3.org/TR/sparql11-results-json/) has been extended as in the following example:
+
+```json
+{
+  "head" : {
+    "vars" : [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  "results" : {
+    "bindings": [
+      { "a" : {
+          "type" : "triple",
+          "value" : {
+            "s" : {
+              "type" : "uri",
+              "value" : "http://example.org/bob"
             },
-            "b": { 
-              "type": "uri",
-              "value": "http://example.org/certainty"
+            "p" : {
+              "type" : "uri",
+              "value" : "http://xmlns.com/foaf/0.1/age"
             },
-            "c" : {
-              "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+            "o" : {
+              "datatype" : "http://www.w3.org/2001/XMLSchema#integer",
               "type" : "literal",
-              "value" : "0.9"
+              "value" : "23"
             }
           }
-        ]
+        },
+        "b": { 
+          "type": "uri",
+          "value": "http://example.org/certainty"
+        },
+        "c" : {
+          "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+          "type" : "literal",
+          "value" : "0.9"
+        }
       }
-    }
+    ]
+  }
+}
+```
+
+RDF4J introduces a new, custom content type `application/x-sparqlstar-results+json` to specifically request this extended content. By default, if a client requests the standard content type (`application/sparql-results+json` or `application/json`), the response serializer will instead "compress" the RDF\* triple into a single IRI, using Base64 encoding:
+
+```json
+{
+  "head" : {
+    "vars" : [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  "results" : {
+    "bindings": [
+      { "a" : {
+          "type" : "uri",
+          "value" : "urn:rdf4j:triple:PDw8aHR0cDovL2V4YW1wbGUub3JnL2JvYj4gPGh0dHA6Ly94bWxucy5jb20vZm9hZi8wLjEvYWdlPiAiMjMiXl48aHR0cDovL3d3dy53My5vcmcvMjAwMS9YTUxTY2hlbWEjaW50ZWdlcj4-Pg=="
+        },
+        "b": { 
+          "type": "uri",
+          "value": "http://example.org/certainty"
+        },
+        "c" : {
+          "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+          "type" : "literal",
+          "value" : "0.9"
+        }
+      }
+    ]
+  }
+}
+```
+
+This ensures that by default, an RDF4J-based endpoint will always use standards-compliant serialization to avoid breaking clients that have not yet been updated.
+
+It is possible to override this behavior by explicitly configuring the writer to _not_ encode RDF\* triples. Setting the {{< javadoc "BasicWriterSetting ENCODE_RDF_STAR" "rio/helpers/BasicWriterSettings.html" >}} to `false` will ensure that even when requesting the standard content type, the serializer will use the extended syntax.
+
+### Extended SPARQL XML format
+
+The default [SPARQL Query Results XML format](https://www.w3.org/TR/rdf-sparql-XMLres/) has been extended as in the following example:
+
+```xml
+<?xml version='1.0' encoding='UTF-8'?>
+<sparql xmlns='http://www.w3.org/2005/sparql-results#'>
+	<head>
+		<variable name='a'/>
+		<variable name='b'/>
+		<variable name='c'/>
+	</head>
+	<results>
+		<result>
+			<binding name='a'>
+				<triple>
+					<subject>
+						<uri>http://example.org/bob</uri>
+					</subject>
+					<predicate>
+						<uri>http://xmlns.com/foaf/0.1/age</uri>
+					</predicate>
+					<object>
+						<literal datatype='http://www.w3.org/2001/XMLSchema#integer'>23</literal>
+					</object>
+				</triple>
+			</binding>
+			<binding name='b'>
+				<uri>http://example.org/certainty</uri>
+			</binding>
+			<binding name='c'>
+				<literal datatype='http://www.w3.org/2001/XMLSchema#decimal'>0.9</literal>
+			</binding>
+		</result>
+	</results>
+</sparql>
+```
+
+As with the extended SPARQL Results JSON format, this format is sent by default only when specifically requesting a custom content type: `application/x-sparqlstar-results+xml`. And as with the JSON format, the XML writer can be reconfigured to also send the extended format on requesting the regular SPARQL/XML content type, by setting the {{< javadoc "BasicWriterSetting ENCODE_RDF_STAR" "rio/helpers/BasicWriterSettings.html" >}} to `false`.
+
+### Extended TSV format
+
+The [SPARQL 1.1 Query Results TSV format](https://www.w3.org/TR/sparql11-results-csv-tsv/) has been extended as follows:
+
+```
+?a	?b	?c
+<<<http://example.org/bob> <http://xmlns.com/foaf/0.1/age> 23>>	<http://example.org/certainty>	0.9
+```
 
 ## SPARQL\* queries
 
@@ -148,11 +244,13 @@ The SPARQL engine in RDF4J has been extended to allow for SPARQL\* queries. Exec
 
 SPARQL\* allows accessing the RDF\* triple patterns directly in the query. For example, after you have uploaded the above simple RDF\* model to a MemoryStore, you can execute a query like this:
 
-    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-    PREFIX ex: <http://example.org/>
-    SELECT ?p ?a ?c WHERE {
-       <<?p foaf:age ?a>> ex:certainty ?c .
-    }
+```sparql
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX ex: <http://example.org/>
+SELECT ?p ?a ?c WHERE {
+   <<?p foaf:age ?a>> ex:certainty ?c .
+}
+```
 
 The result will be:
 
@@ -164,29 +262,42 @@ The result will be:
 RDF4J offers functions to convert between RDF\* data and regular RDF. In the converted regular RDF, the RDF\* triple is replaced with a reified statement using the [RDF Reification vocabulary](https://www.w3.org/wiki/RdfReification). For example:
 
 
-     <<ex:bob foaf:age 23>> ex:certainty 0.9 .
+```turtle
+<<ex:bob foaf:age 23>> ex:certainty 0.9 .
+```
 
 becomes:
 
-    _:node1 a rdf:Statement; 
-            rdf:subject ex:bob ;
-            rdf:predicate foaf:age ;
-            rdf:object 23 ;
-            ex:certainty 0.9 .
+```turtle
+_:node1 a rdf:Statement; 
+        rdf:subject ex:bob ;
+        rdf:predicate foaf:age ;
+        rdf:object 23 ;
+        ex:certainty 0.9 .
+```
 
 You can find the the conversion functions in the {{< javadoc "Models" "model/util/Models.html" >}} utility class. There are several variants, but the simplest form just takes a `Model` containing RDF\* data and creates a new `Model` containing the same data, but with all RDF\* annotation converted to reified statements:
 
-{{< highlight java >}}
+```java
 Model rdfStarModel; // model containing RDF\* annotations
 Model convertedModel = Models.convertRDFStarToReification(rdfStarModel);
-{{< / highlight >}}
+```
 
 Likewise, you can convert back:
 
-{{< highlight java >}}
+```java
 Model reificiationModel; // model containing RDF reification statements
 Model rdfStarModel = Models.convertReificiationtoRDFStar(reificiationModel);
-{{< / highlight >}}
+```
 
 Note: since the RDF\* functionality is currently in experimental stage, it is possible that the names or precise signatures of these functions will be changed in a future release.
+
+# Property Graphs (PG) vs Separate Assertions (SA)
+
+In the [current discussions around RDF\*](https://lists.w3.org/Archives/Public/public-rdf-star/), two "modes" for working with RDF\* have been identified. Simply put, these two modes are:
+
+1. Property Graph (PG) mode - in this mode, when an RDF\* triple is annotated and added, the associated "ground" statement is automatically assumed to also exist. In this mode, asserting `<<ex:bob foaf:age 23>> ex:certainty 0.9 .` implicitly also asserts the statement `ex:bob foaf:age 23.`. 
+2. Separate Assertions (SA) mode - in this mode, RDF\* annotation are seen as separate from the statements which they annotate. In this mode, asserting `<<ex:bob foaf:age 23>> ex:certainty 0.9` does not automatically imply that the statement `ex:bob foaf:age 23` is present - the ground fact and the annotation are seen as independent entities, and either one can exist without the other. 
+
+Although RDF4J makes no assumptions about the mode used at the level of its core interfaces, the default implementations in RDF4J's own triplestore implementations currently work only in SA mode.
 
