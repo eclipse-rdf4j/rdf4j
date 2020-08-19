@@ -57,4 +57,9 @@ interface SPARQLResultsXMLConstants {
 	public static final String UNBOUND_TAG = "unbound";
 
 	public static final String QNAME = "q:qname";
+
+	public static final String TRIPLE_TAG = "triple";
+	public static final String SUBJECT_TAG = "subject";
+	public static final String PREDICATE_TAG = "predicate";
+	public static final String OBJECT_TAG = "object";
 }

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -45,6 +46,14 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI, NO_RDF_STAR);
 
 	/**
+	 * SPARQL* Query Results XML Format (like SPARQL/XML but with native RDF* support).
+	 */
+	@Experimental
+	public static final TupleQueryResultFormat SPARQL_STAR = new TupleQueryResultFormat("SPARQL*/XML",
+			Arrays.asList("application/x-sparqlstar-results+xml"), StandardCharsets.UTF_8,
+			Arrays.asList("srxs"), null, SUPPORTS_RDF_STAR);
+
+	/**
 	 * Binary RDF results table format.
 	 */
 	public static final TupleQueryResultFormat BINARY = new TupleQueryResultFormat("BINARY",
@@ -60,7 +69,8 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	/**
 	 * SPARQL* Query Results JSON Format (like SPARQL JSON but with RDF* support).
 	 */
-	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL/JSON*",
+	@Experimental
+	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL*/JSON",
 			Arrays.asList("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
 			Arrays.asList("srjs"), null, SUPPORTS_RDF_STAR);
 

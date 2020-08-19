@@ -97,6 +97,44 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
 	}
 
+	@Test
+	public void testRDFStarHandling_DeepNesting() throws Exception {
+
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
+
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);
+
+		Triple t2 = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+		Triple t = vf.createTriple(RDF.BAG, RDFS.COMMENT, t2);
+		MapBindingSet bs = new MapBindingSet();
+		bs.addBinding("t", t);
+
+		writer.startQueryResult(new ArrayList<>(bs.getBindingNames()));
+		writer.handleSolution(bs);
+		writer.endQueryResult();
+
+		QueryResultCollector collector = new QueryResultCollector();
+		TupleQueryResultParser parser = getParserFactory().getParser();
+
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.setQueryResultHandler(collector);
+		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
+
+		BindingSet actual = collector.getBindingSets().get(0);
+		assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
+
+		Triple actualT = (Triple) actual.getValue("t");
+		assertThat(actualT.getSubject()).isEqualTo(RDF.BAG);
+		assertThat(actualT.getPredicate()).isEqualTo(RDFS.COMMENT);
+		assertThat(actualT.getObject()).isInstanceOf(Triple.class);
+
+		Triple actualT2 = (Triple) actualT.getObject();
+		assertThat(actualT2.getSubject()).isEqualTo(RDF.ALT);
+		assertThat(actualT2.getPredicate()).isEqualTo(RDF.TYPE);
+		assertThat(actualT2.getObject()).isEqualTo(RDFS.CLASS);
+	}
+
 	protected abstract TupleQueryResultParserFactory getParserFactory();
 
 	protected abstract TupleQueryResultWriterFactory getWriterFactory();
