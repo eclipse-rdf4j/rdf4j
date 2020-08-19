@@ -1,12 +1,10 @@
-/**
- * ****************************************************************************
- *  Copyright (c) 2020 Eclipse RDF4J contributors.
- *  All rights reserved. This program and the accompanying materials
- *  are made available under the terms of the Eclipse Distribution License v1.0
- *  which accompanies this distribution, and is available at
- *  http://www.eclipse.org/org/documents/edl-v10.php.
- * *****************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util.benchmark;
 
 import java.io.IOException;
@@ -38,6 +36,10 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -104,6 +106,13 @@ public class ValueComparatorBenchmark {
 
 		System.gc();
 		Thread.sleep(100);
+	}
+
+	public static void main(String[] args) throws RunnerException {
+		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.*")
+				.build();
+
+		new Runner(opt).run();
 	}
 
 	@Benchmark
