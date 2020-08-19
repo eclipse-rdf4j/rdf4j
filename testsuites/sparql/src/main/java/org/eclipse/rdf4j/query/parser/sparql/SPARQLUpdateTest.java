@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -128,7 +128,7 @@ public abstract class SPARQLUpdateTest {
 
 		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));
 		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));
-		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, SESAME.NIL));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF4J.NIL));
 		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource) null));
 	}
 
@@ -148,7 +148,7 @@ public abstract class SPARQLUpdateTest {
 
 		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));
 		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));
-		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, SESAME.NIL));
+		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF4J.NIL));
 		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource) null));
 	}
 
