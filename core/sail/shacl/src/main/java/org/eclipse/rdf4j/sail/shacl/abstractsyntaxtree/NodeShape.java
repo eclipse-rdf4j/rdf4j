@@ -12,10 +12,14 @@ import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
@@ -159,7 +163,16 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		throw new UnsupportedOperationException();
+		PlanNode planNode = constraintComponents.stream()
+			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
+			.reduce(UnionNode::new)
+			.orElse(new EmptyNode());
+
+		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
+
+		planNode = new Unique(planNode);
+
+		return planNode;
 	}
 
 }

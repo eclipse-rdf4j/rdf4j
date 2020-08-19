@@ -5,44 +5,25 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax8157 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:b544b3ce-e4a3-4981-968f-901bc5becfcb, _:bff7ad40-82b7-48cf-baa2-c786d021e886 .
-
-_:b544b3ce-e4a3-4981-968f-901bc5becfcb a sh:ValidationResult;
-  sh:focusNode 2;
-  sh:value 2;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:detail _:73126687-4ef0-4fd7-81d9-b7f19e8d78a9;
-  sh:sourceShape ex:PersonShape .
-
-_:73126687-4ef0-4fd7-81d9-b7f19e8d78a9 a sh:ValidationResult;
-  sh:focusNode 2;
-  sh:value 2;
-  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eg30ilr5x1 .
-
-_:node1eg30ilr5x1 a sh:NodeShape;
-  sh:datatype xsd:integer .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 3;
+      sh:value 3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetNode 2, 3, "hello";
-  sh:not _:node1eg30ilr5x1 .
-
-_:bff7ad40-82b7-48cf-baa2-c786d021e886 a sh:ValidationResult;
-  sh:focusNode 3;
-  sh:value 3;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:detail _:0564ccfc-ac32-4ebf-909a-90395aff8337;
-  sh:sourceShape ex:PersonShape .
-
-_:0564ccfc-ac32-4ebf-909a-90395aff8337 a sh:ValidationResult;
-  sh:focusNode 3;
-  sh:value 3;
-  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eg30ilr5x1 .
+  sh:not [ a sh:NodeShape;
+      sh:datatype xsd:integer
+    ] .

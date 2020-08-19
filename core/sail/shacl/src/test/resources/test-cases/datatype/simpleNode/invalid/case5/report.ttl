@@ -5,30 +5,20 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax11504 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:b97546ce-4c85-4a35-8d5e-fd5df694627e .
-
-_:b97546ce-4c85-4a35-8d5e-fd5df694627e a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "123";
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:NodeConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:detail _:60fdb390-995a-4c58-aeac-a7c4a8ee9f68;
-  sh:sourceShape _:node1eg30iqdlx1 .
-
-_:60fdb390-995a-4c58-aeac-a7c4a8ee9f68 a sh:ValidationResult;
-  sh:focusNode "123";
-  sh:value "123";
-  sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:node .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:age;
+          sh:node ex:node
+        ]
+    ] .
 
 ex:node a sh:NodeShape;
   sh:datatype xsd:integer .
-
-_:node1eg30iqdlx1 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:node ex:node .

@@ -5,25 +5,17 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax20740 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:3edb904e-f473-4da4-abfa-0dd1648aaefb .
-
-_:3edb904e-f473-4da4-abfa-0dd1648aaefb a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "människa"@se;
-  sh:resultPath ex:label;
-  sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eg30j2nix1 .
-
-_:node1eg30j2nix1 a sh:PropertyShape;
-  sh:path ex:label;
-  sh:languageIn _:node1eg30j2nix2 .
-
-_:node1eg30j2nix2 rdf:first "en";
-  rdf:rest _:node1eg30i7fax20741 .
-
-_:node1eg30i7fax20741 rdf:first "no";
-  rdf:rest rdf:nil .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "människa"@se;
+      sh:resultPath ex:label;
+      sh:sourceConstraintComponent sh:LanguageInConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:label;
+          sh:languageIn ("en" "no")
+        ]
+    ] .

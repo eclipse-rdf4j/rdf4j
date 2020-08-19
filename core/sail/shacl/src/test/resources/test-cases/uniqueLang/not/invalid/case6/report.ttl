@@ -5,44 +5,38 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax41529 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:f19113b0-8dc1-4d81-9112-54afd9135c07, _:ba8b74d2-b31f-432b-a28f-be66cf903173,
-    _:78a10a28-965f-44c5-980a-658abfff2f2c, _:572a8d3b-79ae-4f5c-8082-aaf3b58f6742 .
-
-_:f19113b0-8dc1-4d81-9112-54afd9135c07 a sh:ValidationResult;
-  sh:focusNode ex:bigCo1;
-  sh:value ex:bigCo1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:bigCo1;
+      sh:value ex:bigCo1;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:bigCo2;
+      sh:value ex:bigCo2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:bigCo3;
+      sh:value ex:bigCo3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:bigCo4;
+      sh:value ex:bigCo4;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Company;
-  sh:not _:node1eg30jnunx1 .
-
-_:node1eg30jnunx1 a sh:PropertyShape;
-  sh:path rdfs:label;
-  sh:uniqueLang true .
-
-_:ba8b74d2-b31f-432b-a28f-be66cf903173 a sh:ValidationResult;
-  sh:focusNode ex:bigCo2;
-  sh:value ex:bigCo2;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
-
-_:78a10a28-965f-44c5-980a-658abfff2f2c a sh:ValidationResult;
-  sh:focusNode ex:bigCo3;
-  sh:value ex:bigCo3;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
-
-_:572a8d3b-79ae-4f5c-8082-aaf3b58f6742 a sh:ValidationResult;
-  sh:focusNode ex:bigCo4;
-  sh:value ex:bigCo4;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:not [ a sh:PropertyShape;
+      sh:path rdfs:label;
+      sh:uniqueLang true
+    ] .

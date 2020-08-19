@@ -5,20 +5,18 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax37878 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:46d0a6aa-2917-4ac8-98ad-d2e9669e4850 .
-
-_:46d0a6aa-2917-4ac8-98ad-d2e9669e4850 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "fjkefkefkejfjfkelfj Q";
-  sh:resultPath ex:test;
-  sh:sourceConstraintComponent sh:PatternConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eg30jkd2x2 .
-
-_:node1eg30jkd2x2 a sh:PropertyShape;
-  sh:path ex:test;
-  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
-  sh:flags "ims" .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "fjkefkefkejfjfkelfj Q";
+      sh:resultPath ex:test;
+      sh:sourceConstraintComponent sh:PatternConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:test;
+          sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
+          sh:flags "ims"
+        ]
+    ] .

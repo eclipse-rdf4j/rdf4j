@@ -5,82 +5,17 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax19764 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:3961b9bf-78a4-49ac-bdac-eb98396c9190 .
-
-_:3961b9bf-78a4-49ac-bdac-eb98396c9190 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value _:node1eg30j1crx26;
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:InConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1eg30j1crx1 .
-
-_:node1eg30j1crx1 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:in _:node1eg30j1crx2 .
-
-_:node1eg30j1crx2 rdf:first 0;
-  rdf:rest _:node1eg30i7fax19765 .
-
-_:node1eg30i7fax19765 rdf:first 1;
-  rdf:rest _:node1eg30i7fax19766 .
-
-_:node1eg30i7fax19766 rdf:first 2;
-  rdf:rest _:node1eg30i7fax19767 .
-
-_:node1eg30i7fax19767 rdf:first 3;
-  rdf:rest _:node1eg30i7fax19768 .
-
-_:node1eg30i7fax19768 rdf:first 4;
-  rdf:rest _:node1eg30i7fax19769 .
-
-_:node1eg30i7fax19769 rdf:first 5;
-  rdf:rest _:node1eg30i7fax19770 .
-
-_:node1eg30i7fax19770 rdf:first 6;
-  rdf:rest _:node1eg30i7fax19771 .
-
-_:node1eg30i7fax19771 rdf:first 7;
-  rdf:rest _:node1eg30i7fax19772 .
-
-_:node1eg30i7fax19772 rdf:first 8;
-  rdf:rest _:node1eg30i7fax19773 .
-
-_:node1eg30i7fax19773 rdf:first 9;
-  rdf:rest _:node1eg30i7fax19774 .
-
-_:node1eg30i7fax19774 rdf:first 10;
-  rdf:rest _:node1eg30i7fax19775 .
-
-_:node1eg30i7fax19775 rdf:first 11;
-  rdf:rest _:node1eg30i7fax19776 .
-
-_:node1eg30i7fax19776 rdf:first 12;
-  rdf:rest _:node1eg30i7fax19777 .
-
-_:node1eg30i7fax19777 rdf:first 13;
-  rdf:rest _:node1eg30i7fax19778 .
-
-_:node1eg30i7fax19778 rdf:first 14;
-  rdf:rest _:node1eg30i7fax19779 .
-
-_:node1eg30i7fax19779 rdf:first 15;
-  rdf:rest _:node1eg30i7fax19780 .
-
-_:node1eg30i7fax19780 rdf:first 16;
-  rdf:rest _:node1eg30i7fax19781 .
-
-_:node1eg30i7fax19781 rdf:first 17;
-  rdf:rest _:node1eg30i7fax19782 .
-
-_:node1eg30i7fax19782 rdf:first 18;
-  rdf:rest _:node1eg30i7fax19783 .
-
-_:node1eg30i7fax19783 rdf:first 19;
-  rdf:rest _:node1eg30i7fax19784 .
-
-_:node1eg30i7fax19784 rdf:first 20;
-  rdf:rest rdf:nil .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value [];
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:InConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:age;
+          sh:in (0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
+        ]
+    ] .

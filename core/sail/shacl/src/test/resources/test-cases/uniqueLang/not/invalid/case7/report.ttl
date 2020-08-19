@@ -5,29 +5,26 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1eg30i7fax41694 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:2f3f6997-1adc-4c21-8d04-25632212bac1, _:ecd5a140-fec7-4f20-88b0-70d128e09992 .
-
-_:2f3f6997-1adc-4c21-8d04-25632212bac1 a sh:ValidationResult;
-  sh:focusNode ex:bigCo;
-  sh:value ex:bigCo;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:bigCo;
+      sh:value ex:bigCo;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:smallCo;
+      sh:value ex:smallCo;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Company;
-  sh:not _:node1eg30jo4vx1 .
-
-_:node1eg30jo4vx1 a sh:PropertyShape;
-  sh:path rdfs:label;
-  sh:uniqueLang true .
-
-_:ecd5a140-fec7-4f20-88b0-70d128e09992 a sh:ValidationResult;
-  sh:focusNode ex:smallCo;
-  sh:value ex:smallCo;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:not [ a sh:PropertyShape;
+      sh:path rdfs:label;
+      sh:uniqueLang true
+    ] .
