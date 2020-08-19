@@ -150,5 +150,18 @@ public abstract class RDFStarSupportTest {
 
 	}
 
+	@Test
+	public void testSparqlStarUpdate() {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String update = "PREFIX foaf: <" + FOAF.NAMESPACE
+				+ ">\n INSERT { ?s foaf:age 23 } WHERE { <<?s foaf:name ?o>> ?b ?c .}";
+
+		testCon.prepareUpdate(update).execute();
+
+		assertThat(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(23), false));
+	}
+
 	protected abstract Repository createRepository();
 }

@@ -397,8 +397,9 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 	@Override
 	public TupleExpr visit(ASTTripleRef node, Object data) throws VisitorException {
-		if (where == null)
+		if (where == null) {
 			return super.visit(node, data);
+		}
 		TripleRef ret = new TripleRef();
 		ret.setSubjectVar(mapValueExprToVar(node.getSubj().jjtAccept(this, ret)));
 		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));
