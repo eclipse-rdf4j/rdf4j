@@ -5,12 +5,12 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ef4n1pgqx41369 a sh:ValidationReport;
+_:node1eg30i7fax42030 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:17dfd971-911b-4f0f-ac14-6771dac68131 .
+  sh:result _:37938cf3-2ac1-4e7e-9799-ff6afa7d03ce .
 
-_:17dfd971-911b-4f0f-ac14-6771dac68131 a sh:ValidationResult;
+_:37938cf3-2ac1-4e7e-9799-ff6afa7d03ce a sh:ValidationResult;
   sh:focusNode ex:bigCo;
   sh:value ex:bigCo;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
@@ -19,8 +19,8 @@ _:17dfd971-911b-4f0f-ac14-6771dac68131 a sh:ValidationResult;
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Company;
-  sh:not _:node1ef4n53dqx1 .
+  sh:not _:node1eg30k41hx1 .
 
-_:node1ef4n53dqx1 a sh:PropertyShape;
+_:node1eg30k41hx1 a sh:PropertyShape;
   sh:path rdfs:label;
   sh:uniqueLang true .

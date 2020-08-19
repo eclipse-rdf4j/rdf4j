@@ -153,7 +153,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
 						"SimpleAbstractConstraintComponent");
 
-				temp = new TargetChainExtender(temp, effectiveTarget);
+				temp = effectiveTarget.extend(temp, connectionsGroup);
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),

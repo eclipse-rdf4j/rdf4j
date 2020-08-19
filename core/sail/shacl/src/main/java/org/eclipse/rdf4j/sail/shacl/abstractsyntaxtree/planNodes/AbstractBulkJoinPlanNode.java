@@ -83,7 +83,6 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 							if (bindingNames.size() == 1 && bindingNames.contains("a")) {
 								node.setBindingSets(newBindindingset);
 							}
-
 							super.meet(node);
 						}
 

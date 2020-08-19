@@ -5,19 +5,19 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ef4n1pgqx29940 a sh:ValidationReport;
+_:node1eg30i7fax30601 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:7b397b92-6e7a-4e68-be35-72dc8376f876 .
+  sh:result _:5dabab3b-5bf2-439f-994a-92bd655e8887 .
 
-_:7b397b92-6e7a-4e68-be35-72dc8376f876 a sh:ValidationResult;
+_:5dabab3b-5bf2-439f-994a-92bd655e8887 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "1234567";
   sh:resultPath ex:knows;
   sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ef4n4349x1 .
+  sh:sourceShape _:node1eg30jdrvx1 .
 
-_:node1ef4n4349x1 a sh:PropertyShape;
+_:node1eg30jdrvx1 a sh:PropertyShape;
   sh:path ex:knows;
   sh:nodeKind sh:BlankNodeOrIRI .

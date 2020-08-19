@@ -29,6 +29,10 @@ public class DebugPlanNode implements PlanNode {
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
+		if (validationExecutionLogger == null) {
+			throw new IllegalStateException("Did not receive validationExecutionLogger before .iterator() was called!");
+		}
+
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
