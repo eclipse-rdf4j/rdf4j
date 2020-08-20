@@ -130,6 +130,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			return new EmptyNode();
 		}
 
+		if(negatePlan){
+			System.out.println();
+		}
+
 		PlanNode union = new EmptyNode();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {

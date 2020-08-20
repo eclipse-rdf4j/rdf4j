@@ -78,7 +78,7 @@ abstract public class AbstractShaclTest {
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
-
+/*
 //		"test-cases/and-or/datatypeNodeShape",
 //		"test-cases/class/allObjects",
 //		"test-cases/class/allSubjects",
@@ -193,7 +193,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/pattern/simple",
 		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
-		"test-cases/uniqueLang/simple" ,
+		"test-cases/uniqueLang/simple" ,*/
 		"test-cases/datatype/notNestedPropertyShape"
 
 
@@ -377,6 +377,8 @@ abstract public class AbstractShaclTest {
 						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
 								.validationReportAsModel();
 						printResults(sailException);
+					}catch (Exception e){
+						throw e;
 					}
 				} catch (IOException e) {
 					e.printStackTrace();

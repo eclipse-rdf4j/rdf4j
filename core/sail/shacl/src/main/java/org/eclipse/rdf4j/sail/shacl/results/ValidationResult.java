@@ -48,6 +48,7 @@ public class ValidationResult {
 	public ValidationResult(Value focusNode, Value value, Shape shape,
 			SourceConstraintComponent sourceConstraintComponent, Severity severity) {
 		this.focusNode = focusNode;
+		assert this.focusNode != null;
 		this.sourceConstraintComponent = sourceConstraintComponent;
 		this.shape = shape;
 

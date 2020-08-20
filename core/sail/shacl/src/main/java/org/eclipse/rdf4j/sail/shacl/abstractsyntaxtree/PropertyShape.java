@@ -156,8 +156,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		if (negatePlan) {
 			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
 
-			assert constraintComponents
-					.size() == 1 : "We currently only support negation with a single constraint component";
+			PlanNode ret = new EmptyNode();
 
 			for (ConstraintComponent constraintComponent : constraintComponents) {
 				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
@@ -171,9 +170,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
 						.getDiscardedLeft(BufferedPlanNode.class);
 
-				return new TargetChainPopper(discardedLeft);
+
+				ret = new UnionNode(ret, discardedLeft);
 
 			}
+
+			return ret;
 
 		}
 

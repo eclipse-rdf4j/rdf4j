@@ -11,15 +11,24 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
+import java.util.function.Consumer;
+
 /**
  * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
  */
 public class DebugPlanNode implements PlanNode {
 
+	private Consumer<ValidationTuple> debugPoint;
 	private final String message;
 	PlanNode parent;
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
+
+	public DebugPlanNode(PlanNode parent, String message, Consumer<ValidationTuple> debugPoint) {
+		this(parent, message);
+		this.debugPoint = debugPoint;
+	}
+
 
 	public DebugPlanNode(PlanNode parent, String message) {
 		this.parent = parent;
@@ -45,6 +54,10 @@ public class DebugPlanNode implements PlanNode {
 			@Override
 			public ValidationTuple next() throws SailException {
 				ValidationTuple next = iterator.next();
+				if (debugPoint != null) {
+					debugPoint.accept(next);
+				}
+
 				validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
 				return next;
 			}
@@ -74,7 +87,7 @@ public class DebugPlanNode implements PlanNode {
 		}
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+			.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
