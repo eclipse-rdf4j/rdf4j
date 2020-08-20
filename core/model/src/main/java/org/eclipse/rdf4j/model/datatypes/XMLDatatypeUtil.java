@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.model.datatypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URISyntaxException;
+import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
 
@@ -25,6 +26,8 @@ import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+
+import com.google.common.collect.Sets;
 
 /**
  * Provides methods for handling the standard XML Schema datatypes.
@@ -63,9 +66,30 @@ public class XMLDatatypeUtil {
 	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?");
 	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
 
-	/*-------------------*
-	 * Datatype checking *
-	 *-------------------*/
+	private static final Set<IRI> primitiveDatatypes = Sets.newHashSet(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
+			XSD.GYEARMONTH, XSD.GYEAR, XSD.GMONTHDAY, XSD.GDAY, XSD.GMONTH, XSD.STRING, XSD.BOOLEAN, XSD.BASE64BINARY,
+			XSD.HEXBINARY, XSD.FLOAT, XSD.DECIMAL, XSD.DOUBLE, XSD.ANYURI, XSD.QNAME, XSD.NOTATION
+	);
+
+	private static final Set<IRI> derivedDatatypes = Sets.newHashSet(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE,
+			XSD.NMTOKEN, XSD.NMTOKENS, XSD.NAME, XSD.NCNAME, XSD.ID, XSD.IDREF, XSD.IDREFS, XSD.ENTITY, XSD.ENTITIES,
+			XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER,
+			XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER, XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT,
+			XSD.UNSIGNED_BYTE, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION, XSD.DATETIMESTAMP
+	);
+
+	private static final Set<IRI> integerDatatypes = Sets.newHashSet(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT,
+			XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER, XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER,
+			XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT, XSD.UNSIGNED_BYTE
+	);
+
+	private static final Set<IRI> calendarDatatypes = Sets.newHashSet(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
+			XSD.GMONTHDAY, XSD.GYEAR, XSD.GMONTH, XSD.GDAY, XSD.DATETIMESTAMP
+	);
+
+	private static final Set<IRI> durationDatatypes = Sets.newHashSet(XSD.DURATION, XSD.DAYTIMEDURATION,
+			XSD.YEARMONTHDURATION
+	);
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
@@ -74,16 +98,7 @@ public class XMLDatatypeUtil {
 	 * @return true if the datatype is a primitive type
 	 */
 	public static boolean isPrimitiveDatatype(IRI datatype) {
-		return datatype.equals(XSD.DURATION) || datatype.equals(XSD.DATETIME)
-				|| datatype.equals(XSD.TIME) || datatype.equals(XSD.DATE)
-				|| datatype.equals(XSD.GYEARMONTH) || datatype.equals(XSD.GYEAR)
-				|| datatype.equals(XSD.GMONTHDAY) || datatype.equals(XSD.GDAY)
-				|| datatype.equals(XSD.GMONTH) || datatype.equals(XSD.STRING)
-				|| datatype.equals(XSD.BOOLEAN) || datatype.equals(XSD.BASE64BINARY)
-				|| datatype.equals(XSD.HEXBINARY) || datatype.equals(XSD.FLOAT)
-				|| datatype.equals(XSD.DECIMAL) || datatype.equals(XSD.DOUBLE)
-				|| datatype.equals(XSD.ANYURI) || datatype.equals(XSD.QNAME)
-				|| datatype.equals(XSD.NOTATION);
+		return primitiveDatatypes.contains(datatype);
 	}
 
 	/**
@@ -93,20 +108,7 @@ public class XMLDatatypeUtil {
 	 * @return true if the datatype is a derived type
 	 */
 	public static boolean isDerivedDatatype(IRI datatype) {
-		return datatype.equals(XSD.NORMALIZEDSTRING) || datatype.equals(XSD.TOKEN)
-				|| datatype.equals(XSD.LANGUAGE) || datatype.equals(XSD.NMTOKEN)
-				|| datatype.equals(XSD.NMTOKENS) || datatype.equals(XSD.NAME)
-				|| datatype.equals(XSD.NCNAME) || datatype.equals(XSD.ID)
-				|| datatype.equals(XSD.IDREF) || datatype.equals(XSD.IDREFS)
-				|| datatype.equals(XSD.ENTITY) || datatype.equals(XSD.ENTITIES)
-				|| datatype.equals(XSD.INTEGER) || datatype.equals(XSD.LONG)
-				|| datatype.equals(XSD.INT) || datatype.equals(XSD.SHORT) || datatype.equals(XSD.BYTE)
-				|| datatype.equals(XSD.NON_POSITIVE_INTEGER) || datatype.equals(XSD.NEGATIVE_INTEGER)
-				|| datatype.equals(XSD.NON_NEGATIVE_INTEGER) || datatype.equals(XSD.POSITIVE_INTEGER)
-				|| datatype.equals(XSD.UNSIGNED_LONG) || datatype.equals(XSD.UNSIGNED_INT)
-				|| datatype.equals(XSD.UNSIGNED_SHORT) || datatype.equals(XSD.UNSIGNED_BYTE)
-				|| datatype.equals(XSD.DAYTIMEDURATION) || datatype.equals(XSD.YEARMONTHDURATION)
-				|| datatype.equals(XSD.DATETIMESTAMP);
+		return derivedDatatypes.contains(datatype);
 	}
 
 	/**
@@ -149,12 +151,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is an integer type
 	 */
 	public static boolean isIntegerDatatype(IRI datatype) {
-		return datatype.equals(XSD.INTEGER) || datatype.equals(XSD.LONG) || datatype.equals(XSD.INT)
-				|| datatype.equals(XSD.SHORT) || datatype.equals(XSD.BYTE)
-				|| datatype.equals(XSD.NON_POSITIVE_INTEGER) || datatype.equals(XSD.NEGATIVE_INTEGER)
-				|| datatype.equals(XSD.NON_NEGATIVE_INTEGER) || datatype.equals(XSD.POSITIVE_INTEGER)
-				|| datatype.equals(XSD.UNSIGNED_LONG) || datatype.equals(XSD.UNSIGNED_INT)
-				|| datatype.equals(XSD.UNSIGNED_SHORT) || datatype.equals(XSD.UNSIGNED_BYTE);
+		return integerDatatypes.contains(datatype);
 	}
 
 	/**
@@ -176,11 +173,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a calendar type
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
-		return datatype.equals(XSD.DATETIME) || datatype.equals(XSD.DATE) || datatype.equals(XSD.TIME)
-				|| datatype.equals(XSD.GYEARMONTH) || datatype.equals(XSD.GMONTHDAY)
-				|| datatype.equals(XSD.GYEAR) || datatype.equals(XSD.GMONTH)
-				|| datatype.equals(XSD.GDAY) || datatype.equals(XSD.DATETIMESTAMP);
-
+		return calendarDatatypes.contains(datatype);
 	}
 
 	/**
@@ -192,8 +185,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a duration type
 	 */
 	public static boolean isDurationDatatype(IRI datatype) {
-		return datatype.equals(XSD.DURATION) || datatype.equals(XSD.DAYTIMEDURATION)
-				|| datatype.equals(XSD.YEARMONTHDURATION);
+		return durationDatatypes.contains(datatype);
 	}
 
 	/**
