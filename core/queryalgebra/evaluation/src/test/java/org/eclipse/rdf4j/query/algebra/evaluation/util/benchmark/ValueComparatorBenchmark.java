@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -63,7 +62,7 @@ public class ValueComparatorBenchmark {
 	public void setUp() throws InterruptedException, IOException {
 
 		try (InputStream resourceAsStream = ValueComparatorBenchmark.class.getClassLoader()
-				.getResourceAsStream("bsbm-100.ttl")) {
+				.getResourceAsStream("benchmarkFiles/bsbm-100.ttl")) {
 
 			Model parse = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
