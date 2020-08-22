@@ -1,0 +1,23 @@
+PREFIX  : <http://example.com/data/>
+PREFIX  ont: <http://example.com/ontology#>
+PREFIX  so: <http://www.ontotext.com/semantic-object/>
+PREFIX  affected: <http://www.ontotext.com/semantic-object/affected>
+PREFIX  res: <http://www.ontotext.com/semantic-object/result/>
+PREFIX  dct: <http://purl.org/dc/terms/>
+PREFIX  gn: <http://www.geonames.org/ontology#>
+PREFIX  owl: <http://www.w3.org/2002/07/owl#>
+PREFIX  puml: <http://plantuml.com/ontology#>
+PREFIX  rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX  rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX  skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX  void: <http://rdfs.org/ns/void#>
+PREFIX  wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+PREFIX  xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX  sh: <http://www.w3.org/ns/shacl#>
+PREFIX  dash: <http://datashapes.org/dash#>
+PREFIX  rsx: <http://rdf4j.org/shacl-extensions#>
+PREFIX  vocsh: <http://example.org/shape/>
+
+INSERT DATA {
+        vocsh:test1 a ont:Test  .
+}

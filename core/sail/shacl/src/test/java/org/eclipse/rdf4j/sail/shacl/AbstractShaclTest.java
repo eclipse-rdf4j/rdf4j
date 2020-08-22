@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,6 +31,8 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.update.UpdateAction;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
@@ -55,6 +58,10 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.topbraid.jenax.util.JenaUtil;
+import org.topbraid.shacl.util.ModelPrinter;
+import org.topbraid.shacl.validation.ValidationUtil;
+import org.topbraid.shacl.vocabulary.SH;
 
 /**
  * @author Håvard Ottestad
@@ -372,6 +379,123 @@ abstract public class AbstractShaclTest {
 			}
 		}
 
+	}
+
+	static void referenceImplementationTestCaseValidation(String shaclPath, String dataPath,
+			ExpectedResult expectedResult) {
+
+		// ignored test cases for shacl extensions
+		if (shaclPath.equals("test-cases/class/complexTargetShape"))
+			return;
+		if (shaclPath.equals("test-cases/class/complexTargetShape2"))
+			return;
+		if (shaclPath.equals("test-cases/class/simpleTargetShape"))
+			return;
+		if (shaclPath.equals("test-cases/datatype/notNodeShapeTargetShape"))
+			return;
+		if (shaclPath.equals("test-cases/datatype/notTargetShape"))
+			return;
+		if (shaclPath.startsWith("test-cases/hasValueIn/"))
+			return;
+
+		// ignored test cases that do not pass validation at the moment
+		if (shaclPath.startsWith("test-cases/deactivated/"))
+			return;
+		if (shaclPath.equals("test-cases/minExclusive/dateVsTime"))
+			return;
+
+		if (!dataPath.endsWith("/")) {
+			dataPath = dataPath + "/";
+		}
+
+		if (!shaclPath.endsWith("/")) {
+			shaclPath = shaclPath + "/";
+		}
+
+		String shaclFile = shaclPath + "shacl.ttl";
+		logger.debug(shaclFile);
+
+		org.apache.jena.rdf.model.Model shacl = JenaUtil.createMemoryModel();
+		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader().getResourceAsStream(shaclFile)) {
+			shacl.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+
+		checkShapesConformToW3cShaclRecommendation(shacl);
+
+		org.apache.jena.rdf.model.Model data = JenaUtil.createMemoryModel();
+
+		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
+				.getResourceAsStream(dataPath + "initialData.ttl")) {
+			if (resourceAsStream != null) {
+				data.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
+			}
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+
+		URL resource = AbstractShaclTest.class.getClassLoader().getResource(dataPath);
+		List<File> queries = FileUtils.listFiles(new File(resource.getFile()), FILENAME_EXTENSION, false)
+				.stream()
+				.sorted()
+				.collect(Collectors.toList());
+
+		for (File queryFile : queries) {
+			try {
+				logger.debug(queryFile.getCanonicalPath());
+				String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
+				logger.debug(query);
+				UpdateAction.parseExecute(query, data);
+			} catch (IOException e) {
+				throw new IllegalStateException(e);
+			}
+
+		}
+
+		Resource report = ValidationUtil.validateModel(data, shacl, true);
+
+		boolean conforms = report.getProperty(SH.conforms).getBoolean();
+
+		try {
+
+			if (expectedResult == ExpectedResult.valid) {
+				assertTrue("Expected test case to conform", conforms);
+			} else {
+				assertFalse("Expected test case to not conform", conforms);
+			}
+		} catch (AssertionError e) {
+
+			org.apache.jena.rdf.model.Model model = report.getModel();
+			model.setNsPrefix("sh", "http://www.w3.org/ns/shacl#");
+
+			System.out.println(ModelPrinter.get().print(model));
+			throw e;
+		}
+
+	}
+
+	private static void checkShapesConformToW3cShaclRecommendation(org.apache.jena.rdf.model.Model shacl) {
+		org.apache.jena.rdf.model.Model w3cShacl = JenaUtil.createMemoryModel();
+		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
+				.getResourceAsStream("w3cshacl.ttl")) {
+			w3cShacl.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
+
+		Resource report = ValidationUtil.validateModel(shacl, w3cShacl, true);
+
+		boolean conforms = report.getProperty(SH.conforms).getBoolean();
+
+		if (!conforms) {
+			org.apache.jena.rdf.model.Model model = report.getModel();
+			model.setNsPrefix("sh", "http://www.w3.org/ns/shacl#");
+
+			System.out.println(ModelPrinter.get().print(model));
+
+			fail("SHACL does not conform to the W3C SHACL Recommendation");
+		}
 	}
 
 	private static void printCurrentState(SailRepository shaclRepository) {

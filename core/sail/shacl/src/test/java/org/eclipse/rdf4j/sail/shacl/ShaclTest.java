@@ -43,6 +43,11 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> runTestCase(testCasePath, path, expectedResult, isolationLevel, true));
 	}
 
+	@Test
+	public void testReferenceImplementation() {
+		referenceImplementationTestCaseValidation(testCasePath, path, expectedResult);
+	}
+
 	private void runWithAutomaticLogging(Runnable r) {
 		try {
 			r.run();

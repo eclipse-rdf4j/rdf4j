@@ -69,6 +69,12 @@
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.topbraid</groupId>
+			<artifactId>shacl</artifactId>
+			<version>1.3.2</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>
