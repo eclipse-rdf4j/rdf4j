@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -22,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -63,31 +66,62 @@ public class HasValueInPropertyShape extends PathPropertyShape {
 		}
 		assert !negateSubPlans : "There are no subplans!";
 
-		if (getPath() == null) {
-			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
-			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-			}
+		if (!hasOwnPath()) {
 
-			PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
-				List<Value> line = t.getLine();
-				t.getLine().add(line.get(0));
-				return t;
-			});
+			if (getPath() == null) {
+				PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+				if (overrideTargetNode != null) {
+					addedTargets = overrideTargetNode.getPlanNode();
+				}
 
-			if (negateThisPlan) {
-				invalidTargets = new ValueInFilter(invalidTargets, hasValueIn).getTrueNode(UnBufferedPlanNode.class);
+				PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
+					List<Value> line = t.getLine();
+					t.getLine().add(line.get(0));
+					return t;
+				});
+
+				if (negateThisPlan) {
+					invalidTargets = new ValueInFilter(invalidTargets, hasValueIn)
+							.getTrueNode(UnBufferedPlanNode.class);
+				} else {
+					invalidTargets = new ValueInFilter(invalidTargets, hasValueIn)
+							.getFalseNode(UnBufferedPlanNode.class);
+				}
+
+				if (printPlans) {
+					String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
+					logger.info(planAsGraphvizDot);
+				}
+
+				return new EnrichWithShape(invalidTargets, this);
+
 			} else {
-				invalidTargets = new ValueInFilter(invalidTargets, hasValueIn).getFalseNode(UnBufferedPlanNode.class);
+
+				PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+				if (overrideTargetNode != null) {
+					addedTargets = overrideTargetNode.getPlanNode();
+				}
+
+				PlanNode joined = new BulkedExternalInnerJoin(addedTargets, connectionsGroup.getBaseConnection(),
+						getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
+
+				PlanNode invalidTargets;
+				if (negateThisPlan) {
+					invalidTargets = new ValueInFilter(joined, hasValueIn)
+							.getTrueNode(UnBufferedPlanNode.class);
+				} else {
+					invalidTargets = new ValueInFilter(joined, hasValueIn)
+							.getFalseNode(UnBufferedPlanNode.class);
+				}
+
+				if (printPlans) {
+					String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
+					logger.info(planAsGraphvizDot);
+				}
+
+				return new EnrichWithShape(invalidTargets, this);
+
 			}
-
-			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
-				logger.info(planAsGraphvizDot);
-			}
-
-			return new EnrichWithShape(invalidTargets, this);
-
 		}
 
 		// TODO - these plans are generally slow because they generate a lot of SPARQL queries and also they don't
