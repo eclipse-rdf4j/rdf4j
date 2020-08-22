@@ -100,6 +100,9 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		}
 
 
+		if(!hasOwnPath() && getPath() != null){
+			System.out.println("HERE");
+		}
 
 
 		if (overrideTargetNode != null) {

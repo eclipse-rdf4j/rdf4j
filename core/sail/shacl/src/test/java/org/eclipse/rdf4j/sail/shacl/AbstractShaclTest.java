@@ -182,6 +182,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValueIn/targetNode",
 		"test-cases/hasValueIn/targetNode2",*/
 		"test-cases/hasValue/or",
+		"test-cases/hasValue/targetShapeOr",
+		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or"
 		)
 		.distinct()
