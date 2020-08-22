@@ -500,4 +500,51 @@ public class TempTest {
 		connection.commit();
 	}
 
+
+	@Test()
+	public void temp() throws Throwable {
+
+		SailRepository shaclRepository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+
+			connection.begin();
+
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+				"@prefix ex: <http://example.com/data/> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
+					"\n" +
+					"ex:shape1\n" +
+					"\ta sh:NodeShape ;\n" +
+					"\tsh:targetClass ex:Test ;\n" +
+					"\tsh:property [\n" +
+					"\t\tsh:path ex:info ; \n" +
+					"\t\tsh:or ([ sh:hasValue \"blue\" ; ] [ sh:hasValue \"green\" ; ] [ sh:hasValue \"red\" ; ]) ;\n" +
+					"\t]  ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.commit();
+
+			connection.begin();
+
+			StringReader invalidSampleData = new StringReader(String.join("\n", "",
+				"@prefix ex: <http://example.com/data/> .\n" +
+					"\n" +
+					"ex:test1 a ex:Test  ."
+			));
+			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				if (e.getCause() != null) {
+					throw e.getCause();
+				}
+				throw e;
+			}
+		}
+
+	}
+
+
 }

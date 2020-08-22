@@ -99,6 +99,9 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 		}
 
+
+
+
 		if (overrideTargetNode != null) {
 			PlanNode planNode = overrideTargetNode.getPlanNode();
 
