@@ -98,6 +98,12 @@ public class HasValueInPropertyShape extends PathPropertyShape {
 			} else {
 
 				PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+				PlanNode addedByPath = getPath().getPlanAddedStatements(connectionsGroup, null);
+				addedTargets = new UnionNode(new TrimTuple(addedByPath, 0, 1), addedTargets);
+				addedTargets = new Unique(addedTargets);
+
+				addedTargets = nodeShape.getTargetFilter(connectionsGroup, addedTargets);
+
 				if (overrideTargetNode != null) {
 					addedTargets = overrideTargetNode.getPlanNode();
 				}
