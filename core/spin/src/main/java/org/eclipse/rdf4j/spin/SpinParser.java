@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SP;
@@ -1828,6 +1829,7 @@ public class SpinParser {
 		DataVisitor() {
 			appendPrefix(RDF.PREFIX, RDF.NAMESPACE);
 			appendPrefix(RDFS.PREFIX, RDFS.NAMESPACE);
+			appendPrefix(RDF4J.PREFIX, RDF4J.NAMESPACE);
 			appendPrefix(SESAME.PREFIX, SESAME.NAMESPACE);
 			appendPrefix(OWL.PREFIX, OWL.NAMESPACE);
 			appendPrefix(XSD.PREFIX, XSD.NAMESPACE);
