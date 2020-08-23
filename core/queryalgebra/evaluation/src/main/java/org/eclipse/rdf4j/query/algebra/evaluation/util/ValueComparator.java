@@ -34,7 +34,7 @@ public class ValueComparator implements Comparator<Value> {
 	@Override
 	public int compare(Value o1, Value o2) {
 		// check equality
-		if (ObjectUtil.nullEquals(o1, o2)) {
+		if (o1 == o2) {
 			return 0;
 		}
 
@@ -60,15 +60,15 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 3. IRIs
-		boolean u1 = o1 instanceof IRI;
-		boolean u2 = o2 instanceof IRI;
-		if (u1 && u2) {
+		boolean iri1 = o1 instanceof IRI;
+		boolean iri2 = o2 instanceof IRI;
+		if (iri1 && iri2) {
 			return compareURIs((IRI) o1, (IRI) o2);
 		}
-		if (u1) {
+		if (iri1) {
 			return -1;
 		}
-		if (u2) {
+		if (iri2) {
 			return 1;
 		}
 
