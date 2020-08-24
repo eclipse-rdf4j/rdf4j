@@ -252,7 +252,7 @@ public abstract class ComplexSPARQLQueryTest {
 		StringBuilder query = new StringBuilder();
 		query.append(getNamespaceDeclarations());
 		query.append(" SELECT * ");
-		query.append(" FROM sesame:nil ");
+		query.append(" FROM rdf4j:nil ");
 		query.append(" WHERE { ?s ?p ?o } ");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
@@ -285,7 +285,7 @@ public abstract class ComplexSPARQLQueryTest {
 		StringBuilder query = new StringBuilder();
 		query.append(getNamespaceDeclarations());
 		query.append(" SELECT * ");
-		query.append(" WHERE { GRAPH sesame:nil { ?s ?p ?o } } ");
+		query.append(" WHERE { GRAPH rdf4j:nil { ?s ?p ?o } } ");
 //		query.append(" WHERE { ?s ?p ?o } ");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
