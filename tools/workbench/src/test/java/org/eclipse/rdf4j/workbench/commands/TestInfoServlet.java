@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -52,7 +52,7 @@ public class TestInfoServlet {
 	public final void testSES1770regression() throws Exception {
 		when(manager.hasRepositoryConfig(null)).thenThrow(new NullPointerException());
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
-		when(req.getParameter(anyString())).thenReturn(SESAME.NIL.toString());
+		when(req.getParameter(anyString())).thenReturn(RDF4J.NIL.toString());
 		HttpServletResponse resp = mock(HttpServletResponse.class);
 		when(resp.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 		servlet.service(req, resp, "");

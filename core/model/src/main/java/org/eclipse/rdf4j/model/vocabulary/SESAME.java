@@ -44,7 +44,10 @@ public class SESAME {
 
 	/**
 	 * The SPARQL null context identifier ( <tt>http://www.openrdf.org/schema/sesame#nil</tt>)
+	 *
+	 * @deprecated since 3.3.2 - use {@link RDF4J#NIL} instead
 	 */
+	@Deprecated
 	public final static IRI NIL;
 
 	/**

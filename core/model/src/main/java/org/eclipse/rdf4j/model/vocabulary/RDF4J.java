@@ -42,6 +42,13 @@ public class RDF4J {
 	public final static IRI SHACL_SHAPE_GRAPH = create("SHACLShapeGraph");
 	public final static IRI TRUNCATED = create("truncated");
 
+	/**
+	 * The SPARQL default context identifier ( <tt>http://rdf4j.org/schema/rdf4j#nil</tt>)
+	 *
+	 * @since 3.3.2
+	 */
+	public final static IRI NIL = create("nil");
+
 	private static IRI create(String localName) {
 		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
 	}
