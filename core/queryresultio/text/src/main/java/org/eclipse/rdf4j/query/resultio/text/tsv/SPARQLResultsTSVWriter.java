@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
@@ -125,7 +126,15 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	protected void writeValue(Value val) throws IOException {
-		if (val instanceof Resource) {
+		if (val instanceof Triple) {
+			writer.write("<<");
+			writeValue(((Triple) val).getSubject());
+			writer.write(' ');
+			writeValue(((Triple) val).getPredicate());
+			writer.write(' ');
+			writeValue(((Triple) val).getObject());
+			writer.write(">>");
+		} else if (val instanceof Resource) {
 			writeResource((Resource) val);
 		} else {
 			writeLiteral((Literal) val);

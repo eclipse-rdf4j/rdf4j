@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
+package org.eclipse.rdf4j.query.resultio.text.tsv;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,20 +22,21 @@ import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 /**
  * @author Pavel Mihaylov
  */
-public class SPARQLStarJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTest {
+public class SPARQLStarTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest {
+
 	@Override
 	protected String getFileName() {
-		return "test.srjs";
+		return "test.tsvs";
 	}
 
 	@Override
 	protected TupleQueryResultFormat getTupleFormat() {
-		return TupleQueryResultFormat.JSON_STAR;
+		return TupleQueryResultFormat.TSV_STAR;
 	}
 
 	@Override
 	protected BooleanQueryResultFormat getMatchingBooleanFormatOrNull() {
-		return BooleanQueryResultFormat.JSON;
+		return null;
 	}
 
 	@Override

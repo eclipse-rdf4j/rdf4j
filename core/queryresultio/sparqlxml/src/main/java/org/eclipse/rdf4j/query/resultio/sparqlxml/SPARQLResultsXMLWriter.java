@@ -36,7 +36,7 @@ public class SPARQLResultsXMLWriter extends AbstractSPARQLXMLWriter implements T
 	 *---------*/
 
 	@Override
-	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+	public TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.SPARQL;
 	}
 

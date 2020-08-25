@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 import com.opencsv.CSVReader;
 
@@ -56,7 +57,9 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 
 	protected Value parseValue(String valueString) {
 		Value v = null;
-		if (valueString.startsWith("_:")) {
+		if (valueString.startsWith("<<")) {
+			v = NTriplesUtil.parseTriple(valueString, valueFactory);
+		} else if (valueString.startsWith("_:")) {
 			v = valueFactory.createBNode(valueString.substring(2));
 		} else if (valueString.startsWith("<") && valueString.endsWith(">")) {
 			try {
