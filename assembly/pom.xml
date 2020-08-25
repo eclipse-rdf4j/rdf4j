@@ -74,6 +74,9 @@
 						<goals>
 							<goal>single</goal>
 						</goals>
+						<configuration>
+							<tarLongFileMode>posix</tarLongFileMode>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>
