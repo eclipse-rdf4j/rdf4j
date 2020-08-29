@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -31,13 +38,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.ValueInFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.stream.Stream;
-
 /**
  * @author Håvard Ottestad
  */
@@ -47,8 +47,8 @@ public class HasValuePropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(HasValuePropertyShape.class);
 
 	HasValuePropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-						  PathPropertyShape parent, Resource path,
-						  Value hasValue) {
+			PathPropertyShape parent, Resource path,
+			Value hasValue) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
 		if (hasValue instanceof BNode) {
@@ -61,7 +61,7 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 	@Override
 	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
-							PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
 
 		if (deactivated) {
 			return null;
@@ -86,12 +86,12 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 				if (negateThisPlan) {
 					invalidTargets = new ValueInFilter(invalidTargets,
-						new HashSet<>(Collections.singletonList(hasValue)))
-						.getTrueNode(UnBufferedPlanNode.class);
+							new HashSet<>(Collections.singletonList(hasValue)))
+									.getTrueNode(UnBufferedPlanNode.class);
 				} else {
 					invalidTargets = new ValueInFilter(invalidTargets,
-						new HashSet<>(Collections.singletonList(hasValue)))
-						.getFalseNode(UnBufferedPlanNode.class);
+							new HashSet<>(Collections.singletonList(hasValue)))
+									.getFalseNode(UnBufferedPlanNode.class);
 				}
 
 				if (printPlans) {
@@ -115,15 +115,15 @@ public class HasValuePropertyShape extends PathPropertyShape {
 				}
 
 				PlanNode joined = new BulkedExternalInnerJoin(addedTargets, connectionsGroup.getBaseConnection(),
-					getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
+						getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
 
 				PlanNode invalidTargets;
 				if (negateThisPlan) {
 					invalidTargets = new ValueInFilter(joined, new HashSet<>(Collections.singletonList(hasValue)))
-						.getTrueNode(UnBufferedPlanNode.class);
+							.getTrueNode(UnBufferedPlanNode.class);
 				} else {
 					invalidTargets = new ValueInFilter(joined, new HashSet<>(Collections.singletonList(hasValue)))
-						.getFalseNode(UnBufferedPlanNode.class);
+							.getFalseNode(UnBufferedPlanNode.class);
 				}
 
 				if (printPlans) {
@@ -140,7 +140,7 @@ public class HasValuePropertyShape extends PathPropertyShape {
 			PlanNode planNode = overrideTargetNode.getPlanNode();
 
 			ExternalFilterByQuery externalFilterByQuery = new ExternalFilterByQuery(
-				connectionsGroup.getBaseConnection(), planNode, 0, buildSparqlValidNodes("?this"), "?this");
+					connectionsGroup.getBaseConnection(), planNode, 0, buildSparqlValidNodes("?this"), "?this");
 
 			if (negateThisPlan) {
 				planNode = externalFilterByQuery.getTrueNode(UnBufferedPlanNode.class);
@@ -158,8 +158,8 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		PlanNode planAddedStatements = nodeShape.getPlanAddedStatements(connectionsGroup, null);
 
 		ExternalFilterByQuery externalFilterByQuery = new ExternalFilterByQuery(connectionsGroup.getBaseConnection(),
-			planAddedStatements, 0,
-			buildSparqlValidNodes("?this"), "?this");
+				planAddedStatements, 0,
+				buildSparqlValidNodes("?this"), "?this");
 
 		PlanNode invalidValues;
 
@@ -174,11 +174,11 @@ public class HasValuePropertyShape extends PathPropertyShape {
 			PlaneNodeWrapper planeNodeWrapper = planNode -> {
 				PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
 				return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
-					buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
+						buildSparqlValidNodes("?this"), "?this").getTrueNode(UnBufferedPlanNode.class);
 			};
 
 			invalidValues = new UnionNode(invalidValues,
-				getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
+					getPlanAddedStatements(connectionsGroup, planeNodeWrapper));
 		}
 
 		if (!negateThisPlan && connectionsGroup.getStats().hasRemoved()) {
@@ -186,11 +186,11 @@ public class HasValuePropertyShape extends PathPropertyShape {
 			PlaneNodeWrapper planeNodeWrapper = planNode -> {
 				PlanNode targetFilter = nodeShape.getTargetFilter(connectionsGroup, planNode);
 				return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), targetFilter, 0,
-					buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
+						buildSparqlValidNodes("?this"), "?this").getFalseNode(UnBufferedPlanNode.class);
 			};
 
 			invalidValues = new UnionNode(invalidValues,
-				getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
+					getPlanRemovedStatements(connectionsGroup, planeNodeWrapper));
 		}
 
 		if (printPlans) {
@@ -230,11 +230,11 @@ public class HasValuePropertyShape extends PathPropertyShape {
 	@Override
 	public String toString() {
 		return "HasValuePropertyShape{" +
-			"hasValue=" + hasValue +
-			", path=" + getPath() +
-			", id=" + id +
+				"hasValue=" + hasValue +
+				", path=" + getPath() +
+				", id=" + id +
 
-			'}';
+				'}';
 	}
 
 	public Value getHasValue() {
@@ -248,26 +248,26 @@ public class HasValuePropertyShape extends PathPropertyShape {
 			String objectVar = "?hasValue_" + UUID.randomUUID().toString().replace("-", "");
 
 			if (hasValue instanceof IRI) {
-				return "BIND(<" + hasValue + "> as " + objectVar + ")\n" + getPath().getQuery(targetVar, objectVar, null);
+				return "BIND(<" + hasValue + "> as " + objectVar + ")\n"
+						+ getPath().getQuery(targetVar, objectVar, null);
 			}
 			if (hasValue instanceof Literal) {
 				return "BIND(" + hasValue.toString() + " as " + objectVar + ")\n"
-					+ getPath().getQuery(targetVar, objectVar, null);
+						+ getPath().getQuery(targetVar, objectVar, null);
 			}
 		} else {
 
 			if (hasValue instanceof IRI) {
-				return targetVar +" = <"+hasValue+">";
+				return targetVar + " = <" + hasValue + ">";
 			}
 			if (hasValue instanceof Literal) {
-				return targetVar +" = "+hasValue.toString()+"";
+				return targetVar + " = " + hasValue.toString();
 
 			}
 		}
 
-
 		throw new UnsupportedOperationException(
-			"hasValue was unsupported type: " + hasValue.getClass().getSimpleName());
+				"hasValue was unsupported type: " + hasValue.getClass().getSimpleName());
 
 	}
 

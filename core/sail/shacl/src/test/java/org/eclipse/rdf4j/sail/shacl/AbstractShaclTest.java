@@ -69,7 +69,7 @@ abstract public class AbstractShaclTest {
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
-		/*"test-cases/and-or/datatypeNodeShape",
+		"test-cases/and-or/datatypeNodeShape",
 		"test-cases/class/allObjects",
 		"test-cases/class/allSubjects",
 		"test-cases/class/and",
@@ -170,6 +170,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/uniqueLang/simple",
 		"test-cases/hasValue/simple",
 		"test-cases/hasValue/and",
+		"test-cases/hasValue/and2",
 		"test-cases/hasValue/not",
 		"test-cases/hasValue/not2",
 		"test-cases/hasValue/not2",
@@ -181,9 +182,11 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValueIn/not2",
 		"test-cases/hasValueIn/targetNode",
 		"test-cases/hasValueIn/targetNode2",
-		"test-cases/hasValue/or",*/
+		"test-cases/hasValue/or",
 		"test-cases/hasValue/targetShapeOr",
-//		"test-cases/hasValueIn/targetShapeOr",
+		"test-cases/hasValue/targetShapeAnd",
+		"test-cases/hasValue/targetShapeAnd2",
+		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or"
 		)
 		.distinct()
@@ -315,7 +318,8 @@ abstract public class AbstractShaclTest {
 			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				ValueFactory vf = connection.getValueFactory();
-				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
+				connection.add(vf.createIRI("http://example.com/fewfkj9832ur8fh8whiu32hu"),
+						vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
 						vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
 				try {
 					connection.commit();

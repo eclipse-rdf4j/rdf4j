@@ -207,25 +207,45 @@ public class HasValueInPropertyShape extends PathPropertyShape {
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
 
-		return hasValueIn
-				.stream()
-				.map(value -> {
-					String objectVar = "?hasValueIn_" + UUID.randomUUID().toString().replace("-", "");
+		if (hasOwnPath()) {
+			return hasValueIn
+					.stream()
+					.map(value -> {
+						String objectVar = "?hasValueIn_" + UUID.randomUUID().toString().replace("-", "");
 
-					if (value instanceof IRI) {
-						return "BIND(<" + value + "> as " + objectVar + ")\n"
-								+ getPath().getQuery(targetVar, objectVar, null);
-					}
-					if (value instanceof Literal) {
-						return "BIND(" + value.toString() + " as " + objectVar + ")\n"
-								+ getPath().getQuery(targetVar, objectVar, null);
-					}
+						if (value instanceof IRI) {
+							return "BIND(<" + value + "> as " + objectVar + ")\n"
+									+ getPath().getQuery(targetVar, objectVar, null);
+						}
+						if (value instanceof Literal) {
+							return "BIND(" + value.toString() + " as " + objectVar + ")\n"
+									+ getPath().getQuery(targetVar, objectVar, null);
+						}
 
-					throw new UnsupportedOperationException(
-							"value was unsupported type: " + value.getClass().getSimpleName());
-				})
-				.collect(Collectors.joining("} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
-						"}"));
+						throw new UnsupportedOperationException(
+								"value was unsupported type: " + value.getClass().getSimpleName());
+					})
+					.collect(
+							Collectors.joining("} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
+									"}"));
+
+		} else {
+
+			return hasValueIn
+					.stream()
+					.map(value -> {
+						if (value instanceof IRI) {
+							return targetVar + " = <" + value + ">";
+						} else if (value instanceof Literal) {
+							return targetVar + " = " + value;
+						}
+						throw new UnsupportedOperationException(
+								"value was unsupported type: " + value.getClass().getSimpleName());
+					})
+					.reduce((a, b) -> a + " || " + b)
+					.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
+
+		}
 
 	}
 

@@ -5,12 +5,20 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
-ex:PersonShape
-	a sh:NodeShape  ;
-	sh:targetClass ex:Person ;
+ex:shape1
+	a sh:NodeShape ;
+	rsx:targetShape [
+	        sh:property [
+        		sh:path ex:info ;
+        		sh:and ([ sh:hasValue "blue" ;] [ sh:hasValue "red" ; ]) ;
+        	]
+	];
+
 	sh:property [
-	        sh:path ex:knows ;
-                sh:and( [sh:hasValue ex:peter] [sh:hasValue ex:steve] ) ;
+	   sh:path ex:info2 ;
+	   sh:minCount 1;
+	]
 
-	].
+	 .
