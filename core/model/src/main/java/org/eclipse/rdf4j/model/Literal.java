@@ -48,8 +48,8 @@ public interface Literal extends Value {
 	 */
 	public IRI getDatatype();
 
-	default public Optional<XmlDatatypeEnum> getXmlDatatypeEnum() {
-		return Optional.empty();
+	default public XmlDatatypeEnum getXmlDatatypeEnum() {
+		return null;
 	}
 
 	/**

@@ -138,11 +138,11 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				Optional<XmlDatatypeEnum> leftXmlDatatypeEnum = leftLit.getXmlDatatypeEnum();
-				Optional<XmlDatatypeEnum> rightXmlDatatypeEnum = rightLit.getXmlDatatypeEnum();
+				XmlDatatypeEnum leftXmlDatatypeEnum = leftLit.getXmlDatatypeEnum();
+				XmlDatatypeEnum rightXmlDatatypeEnum = rightLit.getXmlDatatypeEnum();
 
-				if (leftXmlDatatypeEnum.isPresent() && rightXmlDatatypeEnum.isPresent()) {
-					result = compareDatatypes(leftXmlDatatypeEnum.get(), rightXmlDatatypeEnum.get());
+				if (leftXmlDatatypeEnum != null && rightXmlDatatypeEnum != null) {
+					result = compareDatatypes(leftXmlDatatypeEnum, rightXmlDatatypeEnum);
 
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);

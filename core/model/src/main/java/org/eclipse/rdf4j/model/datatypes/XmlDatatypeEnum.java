@@ -203,8 +203,8 @@ public enum XmlDatatypeEnum {
 		}
 	}
 
-	public static Optional<XmlDatatypeEnum> from(IRI datatype) {
-		return Optional.ofNullable(reverseLookup.get(datatype));
+	public static XmlDatatypeEnum from(IRI datatype) {
+		return reverseLookup.get(datatype);
 	}
 
 	public IRI getIri() {

@@ -353,9 +353,9 @@ public class QueryEvaluationUtil {
 	public static boolean isPlainLiteral(Value v) {
 		if (v instanceof Literal) {
 			Literal l = (Literal) v;
-			Optional<XmlDatatypeEnum> xmlDatatypeEnum = l.getXmlDatatypeEnum();
-			if (xmlDatatypeEnum.isPresent()) {
-				return xmlDatatypeEnum.get() == XmlDatatypeEnum.STRING;
+			XmlDatatypeEnum xmlDatatypeEnum = l.getXmlDatatypeEnum();
+			if (xmlDatatypeEnum != null) {
+				return xmlDatatypeEnum == XmlDatatypeEnum.STRING;
 			}
 
 			return (l.getDatatype().equals(XSD.STRING));
