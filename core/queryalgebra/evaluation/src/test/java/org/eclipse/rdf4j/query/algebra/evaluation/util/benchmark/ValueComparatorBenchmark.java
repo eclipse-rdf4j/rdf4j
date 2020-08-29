@@ -58,7 +58,7 @@ public class ValueComparatorBenchmark {
 	List<Value> manyPointerEquals;
 	List<Value> manyDeepEquals;
 
-	@Setup(Level.Iteration)
+	@Setup(Level.Invocation)
 	public void setUp() throws InterruptedException, IOException {
 
 		try (InputStream resourceAsStream = ValueComparatorBenchmark.class.getClassLoader()
