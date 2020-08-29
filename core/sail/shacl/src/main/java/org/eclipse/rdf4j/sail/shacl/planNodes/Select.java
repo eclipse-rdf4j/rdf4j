@@ -52,7 +52,7 @@ public class Select implements PlanNode {
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 
-		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
+		this.query = "select " + String.join(" ", variables) + " where { \n" + query.replaceAll("(?m)^", "\t") + "\n} order by ?a";
 		this.variables = variables;
 	}
 
