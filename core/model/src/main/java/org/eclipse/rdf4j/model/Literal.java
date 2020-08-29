@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -46,6 +47,10 @@ public interface Literal extends Value {
 	 * @return The datatype for this literal.
 	 */
 	public IRI getDatatype();
+
+	default public Optional<XmlDatatypeEnum> getXmlDatatypeEnum() {
+		return Optional.empty();
+	}
 
 	/**
 	 * Compares a literal object to another object.

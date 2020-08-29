@@ -17,6 +17,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -53,6 +54,8 @@ public class SimpleLiteral implements Literal {
 	 * The literal's datatype.
 	 */
 	private IRI datatype;
+
+	private Optional<XmlDatatypeEnum> xmlDatatype;
 
 	/*--------------*
 	 * Constructors *
@@ -133,6 +136,14 @@ public class SimpleLiteral implements Literal {
 	@Override
 	public IRI getDatatype() {
 		return datatype;
+	}
+
+	@Override
+	public Optional<XmlDatatypeEnum> getXmlDatatypeEnum() {
+		if (xmlDatatype == null) {
+			xmlDatatype = XmlDatatypeEnum.from(datatype);
+		}
+		return xmlDatatype;
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)

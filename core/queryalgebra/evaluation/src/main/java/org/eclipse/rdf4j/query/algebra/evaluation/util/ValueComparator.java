@@ -10,13 +10,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import java.util.Comparator;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -138,7 +138,16 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				result = compareDatatypes(leftDatatype, rightDatatype);
+				Optional<XmlDatatypeEnum> leftXmlDatatypeEnum = leftLit.getXmlDatatypeEnum();
+				Optional<XmlDatatypeEnum> rightXmlDatatypeEnum = rightLit.getXmlDatatypeEnum();
+
+				if (leftXmlDatatypeEnum.isPresent() && rightXmlDatatypeEnum.isPresent()) {
+					result = compareDatatypes(leftXmlDatatypeEnum.get(), rightXmlDatatypeEnum.get());
+
+				} else {
+					result = compareDatatypes(leftDatatype, rightDatatype);
+
+				}
 			} else {
 				result = 1;
 			}
@@ -199,6 +208,31 @@ public class ValueComparator implements Comparator<Value> {
 		} else {
 			// incompatible or unordered datatypes
 			return compareURIs(leftDatatype, rightDatatype);
+		}
+	}
+
+	private int compareDatatypes(XmlDatatypeEnum leftDatatype, XmlDatatypeEnum rightDatatype) {
+		if (leftDatatype.isNumericDatatype()) {
+			if (rightDatatype.isNumericDatatype()) {
+				// both are numeric datatypes
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			} else {
+				return -1;
+			}
+		} else if (rightDatatype.isNumericDatatype()) {
+			return 1;
+		} else if (leftDatatype.isCalendarDatatype()) {
+			if (rightDatatype.isCalendarDatatype()) {
+				// both are calendar datatypes
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			} else {
+				return -1;
+			}
+		} else if (rightDatatype.isCalendarDatatype()) {
+			return 1;
+		} else {
+			// incompatible or unordered datatypes
+			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
 		}
 	}
 
