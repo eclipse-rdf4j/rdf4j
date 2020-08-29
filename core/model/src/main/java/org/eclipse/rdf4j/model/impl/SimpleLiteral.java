@@ -55,7 +55,8 @@ public class SimpleLiteral implements Literal {
 	 */
 	private IRI datatype;
 
-	private Optional<XmlDatatypeEnum> xmlDatatype;
+	private boolean xmlDatatypeCached;
+	private XmlDatatypeEnum xmlDatatype;
 
 	/*--------------*
 	 * Constructors *
@@ -96,9 +97,20 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XSD.STRING;
-		}
-		setDatatype(datatype);
+			setDatatype(XmlDatatypeEnum.STRING);
+		} else
+			setDatatype(datatype);
+	}
+
+	protected SimpleLiteral(String label, XmlDatatypeEnum datatype) {
+		setLabel(label);
+		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		} else if (datatype == null) {
+			setDatatype(XmlDatatypeEnum.STRING);
+		} else
+			setDatatype(datatype);
+
 	}
 
 	/*---------*
@@ -133,15 +145,22 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
+	protected void setDatatype(XmlDatatypeEnum datatype) {
+		this.datatype = datatype.getIri();
+		this.xmlDatatypeCached = true;
+		this.xmlDatatype = datatype;
+	}
+
 	@Override
 	public IRI getDatatype() {
 		return datatype;
 	}
 
 	@Override
-	public Optional<XmlDatatypeEnum> getXmlDatatypeEnum() {
-		if (xmlDatatype == null) {
+	public XmlDatatypeEnum getXmlDatatypeEnum() {
+		if (!xmlDatatypeCached) {
 			xmlDatatype = XmlDatatypeEnum.from(datatype);
+			xmlDatatypeCached = true;
 		}
 		return xmlDatatype;
 	}
