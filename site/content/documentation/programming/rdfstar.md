@@ -38,6 +38,17 @@ IRI certainty = valueFactory.createIRI("http://example.org/certainty");
 Statement aboutBobsAge = valueFactory.createStatement(bobsAge, certainty, valueFactory.createLiteral(0.9));
 ```
 
+The {{< javadoc "Statements" "model/util/Statements.html" >}}  utility class offers several functions to easily transform Statements into Triples, vice versa:
+
+
+```java
+IRI bob = valueFactory.createIRI("http://example.org/bob");
+Triple bobsAge = valueFactory.createTriple(bob, FOAF.AGE, valueFactory.createLiteral(23));
+
+Statement ageStatement = Statements.toStatement(bobsAge);
+Triple backToTriple = Statements.toTriple(ageStatement);
+```
+
 # Reading and writing RDF\* data
 
 RDF4J currently provides several Rio parser/writers for RDF\*-enabled syntax formats: the Turtle\* format, and the TriG\* format. As the names suggest, both are extended versions of existing RDF format (Turtle and TriG, respectively). In addition, RDF4J's [binary RDF format](/documentation/reference/rdf4j-binary/) parser has also been extended to be able to read and write RDF\* data.

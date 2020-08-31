@@ -9,10 +9,13 @@ package org.eclipse.rdf4j.model;
 
 import java.io.Serializable;
 
+import org.eclipse.rdf4j.model.util.Statements;
+
 /**
  * An RDF statement, with optional associated context. A statement can have an associated context in specific cases, for
- * example when fetched from a repository. The context field does not influence statement equality; a statement is equal
- * to another statement if the subjects, predicates and objects are equal.
+ * example when fetched from a repository.
+ *
+ * @see Statements
  */
 public interface Statement extends Serializable {
 

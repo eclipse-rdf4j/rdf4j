@@ -244,5 +244,4 @@ echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-us
 echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
 echo " - Upload the javadocs by adding them to site/static/javadoc/${MVN_VERSION_RELEASE}"
 echo "     - Aggregated javadoc can be found in target/site/apidocs or in the SDK zip file"
-echo "     - Make sure to also replace the site/static/javadoc/latest directory with a copy (don't use a symlink)"
-
+echo "     - Make sure to also replace the site/static/javadoc/latest directory with a copy. Do not use a symlink."
