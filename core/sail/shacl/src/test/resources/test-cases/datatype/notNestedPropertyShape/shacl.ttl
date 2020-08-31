@@ -11,7 +11,7 @@ ex:PersonShape
 	sh:targetClass ex:Person ;
 	sh:not [
 		sh:path ex:knows ;
-		sh:nodeKind sh:IRI;
+		sh:nodeKind sh:BlankNode;
 		sh:property [
 		        sh:path ex:knows ;
 		        sh:property [
