@@ -11,16 +11,23 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren);
+			boolean negatePlan, boolean negateChildren, Scope scope);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren);
+			boolean negateChildren, Scope scope);
 
 	ValidationApproach getPreferedValidationApproach();
 
 	SourceConstraintComponent getConstraintComponent();
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated);
+
+	enum Scope {
+		none,
+		nodeShape,
+		propertyShape,
+		not;
+	}
 
 }

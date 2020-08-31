@@ -8,7 +8,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NodeKindFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -24,21 +23,19 @@ public class NodeKindConstraintComponent extends SimpleAbstractConstraintCompone
 	@Override
 	String getSparqlFilterExpression(String varName, boolean negated) {
 		if (negated) {
-			return "(isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "IRI, <"
-					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "IRIOrLiteral> ) ) ||\n" +
-					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE
-					+ "Literal>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral>, <" + SHACL.NAMESPACE
-					+ "IRIOrLiteral> ) ) ||\n" +
-					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "BlankNode>, <"
-					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral> ) ))";
+			return "(isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.IRI + ">, <"
+					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
+					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.LITERAL + ">, " +
+					"<" + SHACL.BLANK_NODE_OR_LITERAL + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
+					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.BLANK_NODE + ">, <"
+					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.BLANK_NODE_OR_LITERAL + "> ) ))";
 		} else {
-			return "!((isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "IRI>, <"
-					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "IRIOrLiteral> ) ) ||\n" +
-					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE
-					+ "Literal>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral>, <" + SHACL.NAMESPACE
-					+ "IRIOrLiteral> ) ) ||\n" +
-					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.NAMESPACE + "BlankNode>, <"
-					+ SHACL.NAMESPACE + "BlankNodeOrIRI>, <" + SHACL.NAMESPACE + "BlankNodeOrLiteral> ) )))";
+			return "!((isIRI(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.IRI + ">, <"
+					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
+					"\t\t(isLiteral(?" + varName + ") && <" + nodeKind.iri + "> IN ( <" + SHACL.LITERAL + ">, " +
+					"<" + SHACL.BLANK_NODE_OR_LITERAL + ">, <" + SHACL.IRI_OR_LITERAL + "> ) ) ||\n" +
+					"\t\t(isBlank(?" + varName + " && <" + nodeKind.iri + "> IN ( <" + SHACL.BLANK_NODE + ">, <"
+					+ SHACL.BLANK_NODE_OR_IRI + ">, <" + SHACL.BLANK_NODE_OR_LITERAL + "> ) )))";
 		}
 	}
 

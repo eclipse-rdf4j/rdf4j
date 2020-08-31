@@ -281,11 +281,12 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (validationApproach == ValidationApproach.SPARQL) {
-			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, false, false);
+			return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, false, false,
+					Scope.none);
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
 			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, false,
-					false);
+					false, Scope.none);
 		} else {
 			throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
 		}

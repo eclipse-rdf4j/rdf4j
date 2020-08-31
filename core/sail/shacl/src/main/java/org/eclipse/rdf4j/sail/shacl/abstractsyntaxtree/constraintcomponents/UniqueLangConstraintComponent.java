@@ -44,7 +44,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren) {
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 
@@ -103,7 +103,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 

@@ -1,5 +1,11 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -19,31 +25,24 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-
 public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
 
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
-								 Cache cache) {
+			Cache cache) {
 		super(id);
 		or = HelperTool.toList(connection, id, Resource.class)
-			.stream()
-			.map(r -> new ShaclProperties(r, connection))
-			.map(p -> {
-				if (p.getType() == SHACL.NODE_SHAPE) {
-					return NodeShape.getInstance(p, connection, cache);
-				} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-					return PropertyShape.getInstance(p, connection, cache);
-				}
-				throw new IllegalStateException("Unknown shape type for " + p.getId());
-			})
-			.collect(Collectors.toList());
+				.stream()
+				.map(r -> new ShaclProperties(r, connection))
+				.map(p -> {
+					if (p.getType() == SHACL.NODE_SHAPE) {
+						return NodeShape.getInstance(p, connection, cache);
+					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+						return PropertyShape.getInstance(p, connection, cache);
+					}
+					throw new IllegalStateException("Unknown shape type for " + p.getId());
+				})
+				.collect(Collectors.toList());
 	}
 
 	@Override
@@ -79,21 +78,23 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Optional<PlanNode> reduce = or.stream()
-			.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
-			.reduce(UnionNode::new);
+				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
+				.reduce(UnionNode::new);
 
 		return new Unique(reduce.orElseThrow(() -> new IllegalStateException("or is empty")));
-
 
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren) {
-		return super.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode, negatePlan, negateChildren);
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+		return super.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
+				negatePlan, negateChildren, scope);
 	}
 }

@@ -41,7 +41,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 		logger.warn("SPARQL based validation for {} has not been implemented", getConstraintComponent());
 		return new EmptyNode();
 	}
@@ -49,7 +49,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren) {
+			boolean negateChildren, Scope scope) {
 		logger.warn("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return new EmptyNode();
 	}

@@ -16,8 +16,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -97,7 +95,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 		if (isDeactivated()) {
 			return new EmptyNode();
 		}
@@ -106,7 +104,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false);
+					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false,
+							Scope.nodeShape);
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getValue(), t.getValue(), this,
@@ -124,13 +123,13 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren) {
+			boolean negateChildren, Scope scope) {
 
 		if (isDeactivated()) {
 			return new EmptyNode();
 		}
 
-		if(negatePlan){
+		if (negatePlan) {
 			System.out.println();
 		}
 
@@ -138,7 +137,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false);
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false,
+							Scope.nodeShape);
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getValue(), t.getValue(), this,
@@ -168,9 +168,9 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		PlanNode planNode = constraintComponents.stream()
-			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
-			.reduce(UnionNode::new)
-			.orElse(new EmptyNode());
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
 
 		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 

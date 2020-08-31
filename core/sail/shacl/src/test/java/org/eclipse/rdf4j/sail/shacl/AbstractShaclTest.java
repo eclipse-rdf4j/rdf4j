@@ -377,7 +377,7 @@ abstract public class AbstractShaclTest {
 						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
 								.validationReportAsModel();
 						printResults(sailException);
-					}catch (Exception e){
+					} catch (Exception e) {
 						throw e;
 					}
 				} catch (IOException e) {

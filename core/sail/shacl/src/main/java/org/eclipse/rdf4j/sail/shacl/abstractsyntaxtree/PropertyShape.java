@@ -118,7 +118,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren) {
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 		if (isDeactivated())
 			return new EmptyNode();
 
@@ -126,7 +126,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false);
+					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false,
+							Scope.propertyShape);
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
@@ -146,7 +147,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren) {
+			boolean negateChildren, Scope scope) {
 
 		if (isDeactivated())
 			return new EmptyNode();
@@ -161,7 +162,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			for (ConstraintComponent constraintComponent : constraintComponents) {
 				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
 						logValidationPlans, () -> getAllLocalTargetsPlan(connectionsGroup, negatePlan), negateChildren,
-						false);
+						false, Scope.propertyShape);
 
 				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
 
@@ -169,7 +170,6 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
 						.getDiscardedLeft(BufferedPlanNode.class);
-
 
 				ret = new UnionNode(ret, discardedLeft);
 
@@ -183,7 +183,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
 							negateChildren,
-							false);
+							false, Scope.propertyShape);
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
