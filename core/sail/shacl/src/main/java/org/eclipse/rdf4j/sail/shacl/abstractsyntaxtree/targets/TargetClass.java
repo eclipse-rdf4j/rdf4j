@@ -43,11 +43,11 @@ public class TargetClass extends Target {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
 					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), null, null))));
+							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), 0))));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
 					new Select(connectionsGroup.getAddedStatements(), getQueryFragment("?a", "?c", null),
-							b -> new ValidationTuple(b.getValue("a"), null, null), "?a"));
+							b -> new ValidationTuple(b.getValue("a"), 0), "?a"));
 		}
 
 		return new Unique(planNode);

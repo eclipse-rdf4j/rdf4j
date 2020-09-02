@@ -14,8 +14,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class NotConstraintComponent extends AbstractConstraintComponent {
@@ -65,7 +70,29 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
-		return not.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
-				!negatePlan, false, Scope.not);
+
+		if (scope == Scope.nodeShape) {
+
+			PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup,
+					logValidationPlans,
+					() -> getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup),
+					negateChildren,
+					false, scope);
+
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup);
+
+			planNode = new DebugPlanNode(planNode, "", p -> {
+				System.out.println();
+			});
+
+			PlanNode invalid = new Unique(planNode);
+
+			PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
+					.getDiscardedLeft(BufferedPlanNode.class);
+
+			return discardedLeft;
+		}
+
+		throw new UnsupportedOperationException();
 	}
 }

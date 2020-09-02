@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -70,7 +71,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				overrideTargetNode,
 				negatePlan,
 				negateChildren,
-				getFilterAttacher()
+				getFilterAttacher(),
+				scope
 		);
 
 	}
@@ -95,13 +97,20 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					.sorted()
 					.collect(Collectors.toList());
 
-			ValidationTuple validationTuple = new ValidationTuple(b, collect);
-			if (targetChain.getPath().isPresent()) {
-				validationTuple.setPath(targetChain.getPath().get());
-				validationTuple.setValue(b.getValue(value.getName()));
+			ValidationTuple validationTuple;
+			if (scope == Scope.propertyShape) {
+				validationTuple = new ValidationTuple(b, collect, 1);
 			} else {
-				validationTuple.setValue(b.getValue(targetVar.getName()));
+				validationTuple = new ValidationTuple(b, collect, 0);
+
 			}
+
+//			if (targetChain.getPath().isPresent()) {
+//				validationTuple.setPath(targetChain.getPath().get());
+//				validationTuple.setValue(b.getValue(value.getName()));
+//			} else {
+//				validationTuple.setValue(b.getValue(targetVar.getName()));
+//			}
 
 			return validationTuple;
 
@@ -111,7 +120,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, Var value, boolean negated) {
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix);
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
 		String query = effectiveTarget.getQuery();
 
 		Var targetVar = effectiveTarget.getTargetVar();
@@ -133,10 +142,11 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	abstract String getSparqlFilterExpression(String varName, boolean negated);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
-			boolean negatePlan, boolean negateChildren, Function<PlanNode, FilterPlanNode> filterAttacher) {
+			boolean negatePlan, boolean negateChildren, Function<PlanNode, FilterPlanNode> filterAttacher,
+			Scope scope) {
 		assert !negateChildren : "Node does not have children";
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_");
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", Scope.propertyShape);
 		Optional<Path> path = targetChain.getPath();
 
 		if (overrideTargetNode != null) {
@@ -156,7 +166,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
 						path.get().getTargetQueryFragment(new Var("a"), new Var("c")), false, null,
-						(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c")));
+						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1));
 			}
 
 			if (negatePlan) {
@@ -214,7 +224,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					connectionsGroup.getBaseConnection(), path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
-					b -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c")));
+					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1));
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);
 
@@ -252,9 +262,14 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_");
-		return target.getAdded(connectionsGroup);
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape);
+
+		PlanNode added = target.getAdded(connectionsGroup);
+		added = new DebugPlanNode(added, "", p -> {
+			System.out.println(p);
+		});
+		return new TrimToTarget(new TargetChainPopper(added), false);
 
 	}
 

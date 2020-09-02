@@ -54,7 +54,7 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					if (temp.getTargetChain().size() > 1 || temp.getValue() != null) {
+					if (temp.getChain().size() > 1) {
 						useMultiCardinalityDedupeSet = true;
 					}
 

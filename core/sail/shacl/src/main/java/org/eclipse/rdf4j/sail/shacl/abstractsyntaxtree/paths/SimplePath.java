@@ -32,7 +32,7 @@ public class SimplePath extends Path {
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
-				s -> new ValidationTuple(s.getSubject(), this, s.getObject()));
+				s -> new ValidationTuple(s.getSubject(), s.getObject(), 1));
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
 		}

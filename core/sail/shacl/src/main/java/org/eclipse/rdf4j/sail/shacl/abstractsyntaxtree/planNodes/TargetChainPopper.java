@@ -54,10 +54,7 @@ public class TargetChainPopper implements PlanNode {
 
 				ValidationTuple next = iterator.next();
 				next = new ValidationTuple(next);
-
-				Value value = next.getTargetChain().removeLast();
-				next.setValue(value);
-
+				next.getChain().removeLast();
 				return next;
 			}
 

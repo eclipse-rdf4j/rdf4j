@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);
+	private final StackTraceElement[] stackTrace;
 	private boolean printed = false;
 
 	private PlanNode left;
@@ -39,6 +40,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	public InnerJoin(PlanNode left, PlanNode right) {
 		this.left = left;
 		this.right = right;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	public List<PlanNode> parent() {

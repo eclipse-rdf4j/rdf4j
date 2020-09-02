@@ -21,7 +21,7 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	SourceConstraintComponent getConstraintComponent();
 
-	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated);
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope);
 
 	enum Scope {
 		none,

@@ -122,7 +122,7 @@ public class BindSelect implements PlanNode {
 				ValidationTuple next = iterator.next();
 				bulk.add(next);
 
-				int targetChainSize = next.getTargetChain().size();
+				int targetChainSize = next.getChain().size();
 				if (this.targetChainSize != null) {
 					assert targetChainSize == this.targetChainSize;
 				} else {
@@ -164,7 +164,7 @@ public class BindSelect implements PlanNode {
 
 					List<BindingSet> bindingSets = bulk
 							.stream()
-							.map(t -> new ListBindingSet(varNames, new ArrayList<>(t.getTargetChain())))
+							.map(t -> new ListBindingSet(varNames, new ArrayList<>(t.getChain())))
 							.collect(Collectors.toList());
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);

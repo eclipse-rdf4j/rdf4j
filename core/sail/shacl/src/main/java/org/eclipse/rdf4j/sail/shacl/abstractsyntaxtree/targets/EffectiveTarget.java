@@ -32,7 +32,7 @@ public class EffectiveTarget {
 		List<String> varNames = vars.stream().map(Var::getName).collect(Collectors.toList());
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
-			return new ValidationTuple(bindingSet, varNames);
+			return new ValidationTuple(bindingSet, varNames, 0);
 		}, 100);
 	}
 

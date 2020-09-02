@@ -13,10 +13,8 @@ import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
@@ -119,8 +117,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
-		if (isDeactivated())
+		if (isDeactivated()) {
 			return new EmptyNode();
+		}
 
 		PlanNode union = new EmptyNode();
 
@@ -131,7 +130,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getTargetChain().getLast(), t.getValue(), this,
+					return new ValidationResult(t.getChain().getLast(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
@@ -149,35 +148,36 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
 			boolean negateChildren, Scope scope) {
 
-		if (isDeactivated())
+		if (isDeactivated()) {
 			return new EmptyNode();
+		}
 
 		PlanNode union = new EmptyNode();
 
-		if (negatePlan) {
-			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
-
-			PlanNode ret = new EmptyNode();
-
-			for (ConstraintComponent constraintComponent : constraintComponents) {
-				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
-						logValidationPlans, () -> getAllLocalTargetsPlan(connectionsGroup, negatePlan), negateChildren,
-						false, Scope.propertyShape);
-
-				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
-
-				Unique invalid = new Unique(planNode);
-
-				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
-						.getDiscardedLeft(BufferedPlanNode.class);
-
-				ret = new UnionNode(ret, discardedLeft);
-
-			}
-
-			return ret;
-
-		}
+//		if (negatePlan) {
+//			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
+//
+//			PlanNode ret = new EmptyNode();
+//
+//			for (ConstraintComponent constraintComponent : constraintComponents) {
+//				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
+//						logValidationPlans, () -> getAllLocalTargetsPlan(connectionsGroup, negatePlan), negateChildren,
+//						false, Scope.propertyShape);
+//
+//				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
+//
+//				Unique invalid = new Unique(planNode);
+//
+//				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
+//						.getDiscardedLeft(BufferedPlanNode.class);
+//
+//				ret = new UnionNode(ret, discardedLeft);
+//
+//			}
+//
+//			return ret;
+//
+//		}
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
@@ -185,14 +185,23 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 							negateChildren,
 							false, Scope.propertyShape);
 
+			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
+				System.out.println(scope);
+				System.out.println(p);
+			});
+
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getTargetChain().getLast(), t.getValue(), this,
+					return new ValidationResult(t.getChain().getLast(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
 
-			validationPlanNode = new TargetChainPopper(validationPlanNode);
+			if (scope == Scope.propertyShape) {
+				validationPlanNode = new TargetChainPopper(validationPlanNode);
+			} else {
+				validationPlanNode = new TrimToTarget(validationPlanNode, false);
+			}
 
 			union = new UnionNode(union, validationPlanNode);
 		}
@@ -200,51 +209,23 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		return union;
 	}
 
-	public PlanNode getTargetsPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
-			boolean negated) {
-		PlanNode targetsPlan = getAllTargetsPlan(connectionsGroup, negated);
-		if (overrideTargetNode != null) {
-			targetsPlan = new Unique(new UnionNode(targetsPlan, overrideTargetNode.getPlanNode()));
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		PlanNode planNode = constraintComponents.stream()
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
+
+		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
+
+		if (scope == Scope.propertyShape) {
+			planNode = new TargetChainPopper(planNode);
 		}
+		planNode = new TrimToTarget(planNode, false);
 
-		return targetsPlan;
-
-	}
-
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
-				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
-
-		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
-
-		planNode = new TargetChainPopper(planNode);
-		planNode = new TrimToTarget(planNode);
 		planNode = new Unique(planNode);
 
 		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
-
-		return planNode;
-	}
-
-	/**
-	 * Used for retreiving all the targets from the constraint components but without popping the target chain
-	 *
-	 * @param connectionsGroup
-	 * @param negated
-	 * @return
-	 */
-	private PlanNode getAllLocalTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
-				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
-
-		planNode = new TrimToTarget(planNode);
-		planNode = new Unique(planNode);
-
-		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllLocalTargetsPlan");
 
 		return planNode;
 	}

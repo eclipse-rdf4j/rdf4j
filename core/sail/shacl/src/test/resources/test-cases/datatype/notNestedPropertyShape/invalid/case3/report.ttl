@@ -26,5 +26,6 @@ ex:PersonShape a sh:NodeShape;
               sh:path ex:age;
               sh:datatype xsd:string
             ]
-        ]
+        ];
+      sh:nodeKind sh:BlankNode
     ] .

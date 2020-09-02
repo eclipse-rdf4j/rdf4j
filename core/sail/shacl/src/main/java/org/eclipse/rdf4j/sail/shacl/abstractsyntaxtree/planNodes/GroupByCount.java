@@ -51,7 +51,7 @@ public class GroupByCount implements PlanNode {
 
 				long count = 0;
 
-				next = new AggregatedValidationTuple(tempNext.getTargetChain(), tempNext.getPath(), null);
+				next = new AggregatedValidationTuple(tempNext);
 
 				while (tempNext != null && tempNext.sameTargetAs(next)) {
 
@@ -68,7 +68,7 @@ public class GroupByCount implements PlanNode {
 
 				}
 
-				next.setValue(SimpleValueFactory.getInstance().createLiteral(count));
+				next.getChain().addLast(SimpleValueFactory.getInstance().createLiteral(count));
 
 			}
 

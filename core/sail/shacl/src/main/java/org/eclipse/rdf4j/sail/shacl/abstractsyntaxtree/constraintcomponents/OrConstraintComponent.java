@@ -76,9 +76,9 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		Optional<PlanNode> reduce = or.stream()
-				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated))
+				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated, scope))
 				.reduce(UnionNode::new);
 
 		return new Unique(reduce.orElseThrow(() -> new IllegalStateException("or is empty")));

@@ -6,10 +6,10 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,70 +19,96 @@ public class ValidationTuple {
 	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);
 
 	static ValueComparator valueComparator = new ValueComparator();
-	private final Deque<Value> targetChain;
-	private Path path;
-	private Value value;
+	private final Deque<Value> chain;
 
 	Deque<ValidationResult> validationResults;
 
-	public ValidationTuple(Deque<Value> targetChain, Path path, Value value) {
-		this.targetChain = targetChain;
-		this.path = path;
-		this.value = value;
-	}
+	private int focusNodeOffsetFromEnd = 0;
 
 	public ValidationTuple(ValidationTuple validationTuple) {
-		this.targetChain = new ArrayDeque<>(validationTuple.targetChain);
-		this.path = validationTuple.path;
-		this.value = validationTuple.value;
+		this.chain = new ArrayDeque<>(validationTuple.chain);
+		this.focusNodeOffsetFromEnd = validationTuple.focusNodeOffsetFromEnd;
+
 		if (validationTuple.validationResults != null) {
 			this.validationResults = new ArrayDeque<>(validationTuple.validationResults);
 		}
+		assert this.focusNodeOffsetFromEnd >= 0;
 	}
 
-	public ValidationTuple(BindingSet bindingSet, String[] variables) {
-		this(bindingSet, Arrays.asList(variables));
+	public ValidationTuple(BindingSet bindingSet, String[] variables, int focusNodeOffsetFromEnd) {
+		this(bindingSet, Arrays.asList(variables), focusNodeOffsetFromEnd);
 	}
 
-	public ValidationTuple(Value target, Path path, Value value) {
-		targetChain = new ArrayDeque<>();
-		targetChain.addLast(target);
-		this.path = path;
-		this.value = value;
+	public ValidationTuple(Value target) {
+		chain = new ArrayDeque<>();
+		chain.addLast(target);
+
 	}
 
-	public ValidationTuple(BindingSet bindingSet, List<String> variables) {
-		targetChain = new ArrayDeque<>();
+	public ValidationTuple(BindingSet bindingSet, List<String> variables, int focusNodeOffsetFromEnd) {
+		chain = new ArrayDeque<>();
 		for (String variable : variables) {
-			targetChain.addLast(bindingSet.getValue(variable));
+			chain.addLast(bindingSet.getValue(variable));
 		}
+		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+		assert this.focusNodeOffsetFromEnd >= 0;
+	}
+
+	public ValidationTuple(Deque<Value> targets, int focusNodeOffsetFromEnd) {
+		chain = targets;
+		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+	}
+
+	public ValidationTuple(Value a, Value c, int focusNodeOffsetFromEnd) {
+		chain = new ArrayDeque<>();
+		chain.addLast(a);
+		chain.addLast(c);
+		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+	}
+
+	public ValidationTuple(Value subject, int focusNodeOffsetFromEnd) {
+		chain = new ArrayDeque<>();
+		chain.addLast(subject);
+		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
 
-		Value current = targetChain.getLast();
-		Value currentRight = nextRight.targetChain.getLast();
+		Value current = getActiveTarget();
+		Value currentRight = nextRight.getActiveTarget();
 
 		return current.equals(currentRight);
 
 	}
 
-	public Deque<Value> getTargetChain() {
-		return targetChain;
+	public Deque<Value> getChain() {
+		return chain;
 	}
 
-	public Path getPath() {
-		return path;
+	public boolean hasValue() {
+		return focusNodeOffsetFromEnd > 0;
 	}
 
 	public Value getValue() {
-		return value;
+		if (focusNodeOffsetFromEnd > 1) {
+			throw new UnsupportedOperationException();
+		}
+
+		if (focusNodeOffsetFromEnd == 1) {
+			return chain.peekLast();
+		}
+
+		return null;
+	}
+
+	public void setFocusNodeOffsetFromEnd(int focusNodeOffsetFromEnd) {
+		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
 	}
 
 	public int compareTarget(ValidationTuple nextRight) {
 
-		Value left = targetChain.getLast();
-		Value right = nextRight.targetChain.getLast();
+		Value left = chain.getLast();
+		Value right = nextRight.chain.getLast();
 
 		return valueComparator.compare(left, right);
 	}
@@ -98,23 +124,18 @@ public class ValidationTuple {
 		this.validationResults.addFirst(validationResult);
 	}
 
-	public void setValue(Value value) {
-		this.value = value;
-	}
-
 	public Value getActiveTarget() {
-		return targetChain.getLast();
-	}
-
-	public boolean hasValue() {
-		return value != null;
-	}
-
-	public void setPath(Path path) {
-		if (this.path != null) {
-			throw new IllegalStateException();
+		if (focusNodeOffsetFromEnd == 0) {
+			return chain.getLast();
 		}
-		this.path = path;
+
+		assert focusNodeOffsetFromEnd == 1;
+
+		Value value = chain.removeLast();
+		Value last = chain.getLast();
+		chain.addLast(value);
+		return last;
+
 	}
 
 	@Override
@@ -126,28 +147,28 @@ public class ValidationTuple {
 			return false;
 		}
 		ValidationTuple that = (ValidationTuple) o;
-		boolean targetChainEquals = targetChain.size() == that.targetChain.size()
-				&& targetChain.containsAll(that.targetChain);
-		boolean pathEquals = Objects.equals(path, that.path);
-		boolean valueEquals = Objects.equals(value, that.value);
 
-		return targetChainEquals &&
-				pathEquals &&
-				valueEquals;
+		return chain.size() == that.chain.size()
+				&& chain.containsAll(that.chain);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(Objects.hash(targetChain.toArray()), path, value);
+		return Objects.hash(chain.toArray());
 	}
 
 	@Override
 	public String toString() {
 		return "ValidationTuple{" +
-				"targetChain=" + Arrays.toString(targetChain.toArray()) +
-				", path=" + path +
-				", value=" + value +
-				", validationResults=" + validationResults +
+				"chain=" + Arrays.toString(chain.toArray()) +
+				", focusNodeOffsetFromEnd=" + focusNodeOffsetFromEnd +
 				'}';
+	}
+
+	public void trimToTarget() {
+		for (int i = 0; i < focusNodeOffsetFromEnd; i++) {
+			chain.removeLast();
+		}
+		focusNodeOffsetFromEnd = 0;
 	}
 }

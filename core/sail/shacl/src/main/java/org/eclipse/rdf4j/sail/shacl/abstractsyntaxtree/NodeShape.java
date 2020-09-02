@@ -141,7 +141,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 							Scope.nodeShape);
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getValue(), t.getValue(), this,
+					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
@@ -166,9 +166,9 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.nodeShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 

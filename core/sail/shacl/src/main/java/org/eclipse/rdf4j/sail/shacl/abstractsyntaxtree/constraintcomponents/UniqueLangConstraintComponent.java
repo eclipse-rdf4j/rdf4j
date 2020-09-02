@@ -66,8 +66,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					.sorted()
 					.collect(Collectors.toList());
 
-			ValidationTuple validationTuple = new ValidationTuple(b, targetVars);
-			validationTuple.setPath(targetChain.getPath().get());
+			ValidationTuple validationTuple = new ValidationTuple(b, targetVars, 1);
 
 			return validationTuple;
 
@@ -77,7 +76,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix) {
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix);
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
 		String query = effectiveTarget.getQuery();
 
 		Var targetVar = effectiveTarget.getTargetVar();
@@ -107,7 +106,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_");
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", Scope.propertyShape);
 		Optional<Path> path = targetChain.getPath();
 
 		if (!path.isPresent()) {
@@ -121,7 +120,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1)
 			);
 
 			return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
@@ -146,7 +145,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
-		PlanNode trimmed = new TrimToTarget(mergeNode);
+		PlanNode trimmed = new TrimToTarget(mergeNode, false);
 
 		PlanNode allRelevantTargets = new Unique(trimmed);
 
@@ -156,7 +155,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 				false,
 				null,
-				(b) -> new ValidationTuple(b.getValue("a"), path.get(), b.getValue("c"))
+				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1)
 		);
 
 		return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
@@ -164,8 +163,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_");
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape);
 
 		return target.getAdded(connectionsGroup);
 

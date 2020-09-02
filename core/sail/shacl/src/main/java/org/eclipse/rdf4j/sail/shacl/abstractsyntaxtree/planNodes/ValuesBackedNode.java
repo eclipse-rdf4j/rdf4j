@@ -53,7 +53,7 @@ public class ValuesBackedNode implements PlanNode {
 			public ValidationTuple loggingNext() throws SailException {
 				Deque<Value> targets = new ArrayDeque<>();
 				targets.addLast(iterator.next());
-				return new ValidationTuple(targets, null, null);
+				return new ValidationTuple(targets, 0);
 			}
 
 			@Override

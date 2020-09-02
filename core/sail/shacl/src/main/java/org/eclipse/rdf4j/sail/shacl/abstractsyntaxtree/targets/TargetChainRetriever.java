@@ -154,7 +154,7 @@ public class TargetChainRetriever implements PlanNode {
 							.map(nextBinding::getValue)
 							.collect(Collectors.toCollection(ArrayDeque::new));
 
-					next = new ValidationTuple(collect, null, null);
+					next = new ValidationTuple(collect, 0);
 
 				}
 

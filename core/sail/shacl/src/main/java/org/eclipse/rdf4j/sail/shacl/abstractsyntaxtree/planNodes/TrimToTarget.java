@@ -17,19 +17,22 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class TrimToTarget implements PlanNode {
 
+	private final boolean keepValue;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	boolean keepPath = false;
 
-	public TrimToTarget(PlanNode parent) {
+	public TrimToTarget(PlanNode parent, boolean keepValue) {
 		this.parent = parent;
+		this.keepValue = keepValue;
 	}
 
-	public TrimToTarget(PlanNode parent, boolean keepPath) {
+	public TrimToTarget(PlanNode parent, boolean keepPath, boolean keepValue) {
 		this.parent = parent;
 		this.keepPath = keepPath;
+		this.keepValue = keepValue;
 	}
 
 	@Override
@@ -52,15 +55,13 @@ public class TrimToTarget implements PlanNode {
 			ValidationTuple loggingNext() throws SailException {
 
 				ValidationTuple next = parentIterator.next();
-				ValidationTuple validationTuple;
+				ValidationTuple validationTuple = new ValidationTuple(next);
 
-				if (keepPath) {
-					validationTuple = new ValidationTuple(next.getTargetChain(), next.getPath(), null);
+				if (keepValue) {
+					validationTuple.setFocusNodeOffsetFromEnd(0);
 				} else {
-					validationTuple = new ValidationTuple(next.getTargetChain(), null, null);
+					validationTuple.trimToTarget();
 				}
-
-				assert next.validationResults == null || next.validationResults.isEmpty();
 
 				return validationTuple;
 			}

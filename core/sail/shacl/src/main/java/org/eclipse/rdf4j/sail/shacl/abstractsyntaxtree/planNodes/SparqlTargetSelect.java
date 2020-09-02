@@ -81,7 +81,7 @@ public class SparqlTargetSelect implements PlanNode {
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
-				return new ValidationTuple(bindingSet.next(), variables);
+				return new ValidationTuple(bindingSet.next(), variables, 0);
 			}
 
 			@Override

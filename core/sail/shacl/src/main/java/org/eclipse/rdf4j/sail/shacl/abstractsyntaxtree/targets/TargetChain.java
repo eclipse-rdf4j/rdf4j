@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 
 public class TargetChain {
@@ -59,11 +60,11 @@ public class TargetChain {
 		return Optional.empty();
 	}
 
-	public EffectiveTarget getEffectiveTarget(String targetVarPrefix) {
+	public EffectiveTarget getEffectiveTarget(String targetVarPrefix, ConstraintComponent.Scope scope) {
 
 		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
 
-		if (getPath().isPresent()) {
+		if (scope == ConstraintComponent.Scope.propertyShape) {
 			newChain.removeLast();
 		}
 
