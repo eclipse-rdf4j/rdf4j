@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.model.datatypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URISyntaxException;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
@@ -26,8 +27,6 @@ import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-
-import com.google.common.collect.Sets;
 
 /**
  * Provides methods for handling the standard XML Schema datatypes.
@@ -66,30 +65,38 @@ public class XMLDatatypeUtil {
 	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?");
 	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
 
-	private static final Set<IRI> primitiveDatatypes = Sets.newHashSet(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
+	private static final Set<IRI> primitiveDatatypes = createSet(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
 			XSD.GYEARMONTH, XSD.GYEAR, XSD.GMONTHDAY, XSD.GDAY, XSD.GMONTH, XSD.STRING, XSD.BOOLEAN, XSD.BASE64BINARY,
 			XSD.HEXBINARY, XSD.FLOAT, XSD.DECIMAL, XSD.DOUBLE, XSD.ANYURI, XSD.QNAME, XSD.NOTATION
 	);
 
-	private static final Set<IRI> derivedDatatypes = Sets.newHashSet(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE,
+	private static final Set<IRI> derivedDatatypes = createSet(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE,
 			XSD.NMTOKEN, XSD.NMTOKENS, XSD.NAME, XSD.NCNAME, XSD.ID, XSD.IDREF, XSD.IDREFS, XSD.ENTITY, XSD.ENTITIES,
 			XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER,
 			XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER, XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT,
 			XSD.UNSIGNED_BYTE, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION, XSD.DATETIMESTAMP
 	);
 
-	private static final Set<IRI> integerDatatypes = Sets.newHashSet(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT,
+	private static final Set<IRI> integerDatatypes = createSet(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT,
 			XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER, XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER,
 			XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT, XSD.UNSIGNED_BYTE
 	);
 
-	private static final Set<IRI> calendarDatatypes = Sets.newHashSet(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
+	private static final Set<IRI> calendarDatatypes = createSet(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
 			XSD.GMONTHDAY, XSD.GYEAR, XSD.GMONTH, XSD.GDAY, XSD.DATETIMESTAMP
 	);
 
-	private static final Set<IRI> durationDatatypes = Sets.newHashSet(XSD.DURATION, XSD.DAYTIMEDURATION,
+	private static final Set<IRI> durationDatatypes = createSet(XSD.DURATION, XSD.DAYTIMEDURATION,
 			XSD.YEARMONTHDURATION
 	);
+
+	private static final Set<IRI> createSet(IRI... values) {
+		final Set<IRI> set = new HashSet<IRI>(values.length);
+		for (IRI value : values) {
+			set.add(value);
+		}
+		return set;
+	}
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
