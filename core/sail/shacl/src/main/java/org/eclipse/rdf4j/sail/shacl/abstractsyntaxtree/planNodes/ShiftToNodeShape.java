@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * @author Håvard Ottestad
  */
-public class TrimToTarget implements PlanNode {
+public class ShiftToNodeShape implements PlanNode {
 
 	private final boolean keepValue;
 	PlanNode parent;
@@ -24,12 +24,12 @@ public class TrimToTarget implements PlanNode {
 
 	boolean keepPath = false;
 
-	public TrimToTarget(PlanNode parent, boolean keepValue) {
+	public ShiftToNodeShape(PlanNode parent, boolean keepValue) {
 		this.parent = parent;
 		this.keepValue = keepValue;
 	}
 
-	public TrimToTarget(PlanNode parent, boolean keepPath, boolean keepValue) {
+	public ShiftToNodeShape(PlanNode parent, boolean keepPath, boolean keepValue) {
 		this.parent = parent;
 		this.keepPath = keepPath;
 		this.keepValue = keepValue;
@@ -57,9 +57,7 @@ public class TrimToTarget implements PlanNode {
 				ValidationTuple next = parentIterator.next();
 				ValidationTuple validationTuple = new ValidationTuple(next);
 
-
-					validationTuple.trimToTarget();
-
+				validationTuple.shiftToNodeShape();
 
 				return validationTuple;
 			}

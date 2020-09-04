@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NonUniqueTarget
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -123,7 +123,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
 			);
 
-			return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
+			return new ShiftToNodeShape(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -133,7 +133,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
-			return new TrimToTarget(new NonUniqueTargetLang(innerJoin), true);
+			return new ShiftToNodeShape(new NonUniqueTargetLang(innerJoin), true);
 
 		}
 
@@ -145,7 +145,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
-		PlanNode trimmed = new TrimToTarget(mergeNode, false);
+		PlanNode trimmed = new ShiftToNodeShape(mergeNode, false);
 
 		PlanNode allRelevantTargets = new Unique(trimmed);
 
@@ -158,7 +158,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
 		);
 
-		return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
+		return new ShiftToNodeShape(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 
 	}
 

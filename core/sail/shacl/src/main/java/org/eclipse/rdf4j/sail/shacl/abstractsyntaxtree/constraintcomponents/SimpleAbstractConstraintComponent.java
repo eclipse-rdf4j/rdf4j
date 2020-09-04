@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -99,8 +99,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			ValidationTuple validationTuple = new ValidationTuple(b, collect, scope, true);
 
-
-
 //			if (targetChain.getPath().isPresent()) {
 //				validationTuple.setPath(targetChain.getPath().get());
 //				validationTuple.setValue(b.getValue(value.getName()));
@@ -175,7 +173,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		if (scope == Scope.nodeShape) {
 
 			PlanNode targets = effectiveTarget.getAdded(connectionsGroup, scope);
-
 
 			if (negatePlan) {
 				return filterAttacher.apply(targets).getTrueNode(UnBufferedPlanNode.class);
@@ -268,7 +265,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		added = new DebugPlanNode(added, "", p -> {
 			System.out.println(p);
 		});
-		return new TrimToTarget(new TargetChainPopper(added), false);
+		return new ShiftToNodeShape(new TargetChainPopper(added), false);
 
 	}
 

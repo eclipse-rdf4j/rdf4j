@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -200,7 +200,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			if (scope == Scope.propertyShape) {
 				validationPlanNode = new TargetChainPopper(validationPlanNode);
 			} else {
-				validationPlanNode = new TrimToTarget(validationPlanNode, false);
+				validationPlanNode = new ShiftToNodeShape(validationPlanNode, false);
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
@@ -225,7 +225,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);
 		}
-		planNode = new TrimToTarget(planNode, false);
+		planNode = new ShiftToNodeShape(planNode, false);
 
 		planNode = new Unique(planNode);
 

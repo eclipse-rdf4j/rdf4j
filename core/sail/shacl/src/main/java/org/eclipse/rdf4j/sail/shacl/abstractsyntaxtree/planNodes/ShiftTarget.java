@@ -17,15 +17,15 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class ShiftTarget implements PlanNode {
 
+	private final StackTraceElement[] stackTrace;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-
 	public ShiftTarget(PlanNode parent) {
 		this.parent = parent;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
-
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
@@ -81,7 +81,7 @@ public class ShiftTarget implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "TrimToTarget";
+		return "ShiftTarget";
 	}
 
 	@Override

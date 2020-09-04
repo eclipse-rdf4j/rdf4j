@@ -10,6 +10,6 @@ INSERT DATA {
 ex:validPerson1 a ex:Person ;
 	ex:knows ex:p2.
 
-ex:p2 ex:age "123"
+ex:p2 ex:age "123".
 
 }

@@ -1,5 +1,11 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.List;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -7,12 +13,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
-import java.util.Objects;
 
 public class ValidationTuple {
 
@@ -25,7 +25,6 @@ public class ValidationTuple {
 
 	Deque<ValidationResult> validationResults;
 
-
 	public ValidationTuple(ValidationTuple validationTuple) {
 		this.chain = new ArrayDeque<>(validationTuple.chain);
 		this.scope = validationTuple.scope;
@@ -37,7 +36,8 @@ public class ValidationTuple {
 
 	}
 
-	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope,
+			boolean hasValue) {
 		this(bindingSet, Arrays.asList(variables), scope, hasValue);
 	}
 
@@ -47,7 +47,8 @@ public class ValidationTuple {
 
 	}
 
-	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
+			boolean hasValue) {
 		chain = new ArrayDeque<>();
 		for (String variable : variables) {
 			chain.addLast(bindingSet.getValue(variable));
@@ -87,21 +88,19 @@ public class ValidationTuple {
 
 	}
 
-
 	public boolean hasValue() {
-		assert  scope != null;
+		assert scope != null;
 		return propertyShapeScopeWithValue || scope == ConstraintComponent.Scope.nodeShape;
 	}
 
 	public Value getValue() {
-		assert  scope != null;
+		assert scope != null;
 		if (hasValue()) {
 			return chain.peekLast();
 		}
 
 		return null;
 	}
-
 
 	public ConstraintComponent.Scope getScope() {
 		return scope;
@@ -132,8 +131,9 @@ public class ValidationTuple {
 	}
 
 	public Value getActiveTarget() {
-		assert  scope != null;
-		if ((!propertyShapeScopeWithValue && scope == ConstraintComponent.Scope.propertyShape) || scope == ConstraintComponent.Scope.nodeShape) {
+		assert scope != null;
+		if ((!propertyShapeScopeWithValue && scope == ConstraintComponent.Scope.propertyShape)
+				|| scope == ConstraintComponent.Scope.nodeShape) {
 			return chain.getLast();
 		}
 
@@ -157,8 +157,8 @@ public class ValidationTuple {
 		}
 		ValidationTuple that = (ValidationTuple) o;
 		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue &&
-			Objects.equals(chain, that.chain) &&
-			scope == that.scope;
+				Objects.equals(chain, that.chain) &&
+				scope == that.scope;
 	}
 
 	@Override
@@ -169,21 +169,22 @@ public class ValidationTuple {
 	@Override
 	public String toString() {
 		return "ValidationTuple{" +
-			"chain=" + Arrays.toString(chain.toArray()) +
-			", scope=" + scope +
-			", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
-			'}';
+				"chain=" + Arrays.toString(chain.toArray()) +
+				", scope=" + scope +
+				", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+				'}';
 	}
 
-	public void trimToTarget() {
-		if(propertyShapeScopeWithValue){
+	public void shiftToNodeShape() {
+		assert scope == ConstraintComponent.Scope.propertyShape;
+		if (propertyShapeScopeWithValue) {
 			propertyShapeScopeWithValue = false;
-			if(scope == ConstraintComponent.Scope.propertyShape){
+			if (scope == ConstraintComponent.Scope.propertyShape) {
 				chain.removeLast();
 			}
 		}
+		scope = ConstraintComponent.Scope.nodeShape;
 	}
-
 
 	public void shiftToPropertyShapeScope() {
 		assert scope == ConstraintComponent.Scope.nodeShape;
@@ -192,14 +193,13 @@ public class ValidationTuple {
 		propertyShapeScopeWithValue = true;
 	}
 
-
 	public Deque<Value> getChain() {
 		return chain;
 	}
 
 	public void setValue(Value value) {
-		if(scope == ConstraintComponent.Scope.propertyShape){
-			if(propertyShapeScopeWithValue){
+		if (scope == ConstraintComponent.Scope.propertyShape) {
+			if (propertyShapeScopeWithValue) {
 				chain.removeLast();
 			}
 			chain.addLast(value);

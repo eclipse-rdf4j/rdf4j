@@ -70,26 +70,27 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 
-		//if (scope == Scope.nodeShape) {
+		// if (scope == Scope.nodeShape) {
 
-			PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup,
-					logValidationPlans,
-					() -> getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope),
-					negateChildren,
-					false, scope);
+		PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup,
+				logValidationPlans,
+				() -> getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope),
+				negateChildren,
+				false, scope);
 
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope);
+		PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", scope)
+				.getAdded(connectionsGroup, scope);
 
-			planNode = new DebugPlanNode(planNode, "", p -> {
-				System.out.println();
-			});
+		planNode = new DebugPlanNode(planNode, "", p -> {
+			System.out.println();
+		});
 
-			PlanNode invalid = new Unique(planNode);
+		PlanNode invalid = new Unique(planNode);
 
-			PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
-					.getDiscardedLeft(BufferedPlanNode.class);
+		PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
+				.getDiscardedLeft(BufferedPlanNode.class);
 
-			return discardedLeft;
+		return discardedLeft;
 //		}
 //
 //		throw new UnsupportedOperationException();

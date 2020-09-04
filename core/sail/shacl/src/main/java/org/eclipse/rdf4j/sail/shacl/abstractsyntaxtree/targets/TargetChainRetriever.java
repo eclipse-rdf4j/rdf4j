@@ -41,7 +41,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final ConstraintComponent.Scope scope;
 
 	public TargetChainRetriever(SailConnection transactionalConnection, SailConnection baseConnection,
-								List<StatementPattern> statementPatterns, String query, ConstraintComponent.Scope scope) {
+			List<StatementPattern> statementPatterns, String query, ConstraintComponent.Scope scope) {
 		this.transactionalConnection = transactionalConnection;
 		this.baseConnection = baseConnection;
 		this.statementPatterns = statementPatterns;
