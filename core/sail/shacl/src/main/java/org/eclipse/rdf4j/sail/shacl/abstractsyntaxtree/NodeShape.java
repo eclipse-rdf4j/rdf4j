@@ -16,6 +16,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftTarget;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -139,15 +141,27 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false,
 							Scope.nodeShape);
+
+			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
+				System.out.println(p);
+			});
+
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
+
+			if(scope == Scope.propertyShape){
+				validationPlanNode = new ShiftTarget(validationPlanNode);
+			}
+
 			union = new UnionNode(union,
 					validationPlanNode);
 		}
+
+
 
 		return union;
 	}

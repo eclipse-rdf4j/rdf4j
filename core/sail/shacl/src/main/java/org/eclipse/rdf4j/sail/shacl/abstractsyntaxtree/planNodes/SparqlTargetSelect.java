@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,14 +38,17 @@ public class SparqlTargetSelect implements PlanNode {
 
 	private final String query;
 	private final String[] variables;
+	private final ConstraintComponent.Scope scope;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public SparqlTargetSelect(SailConnection connection, String query) {
+	public SparqlTargetSelect(SailConnection connection, String query, ConstraintComponent.Scope scope) {
 		this.connection = connection;
 		this.query = query;
 		assert query.contains("?this") : "Query should contain ?this: " + query;
 		this.variables = new String[] { "?this" };
+		this.scope = scope;
+
 	}
 
 	@Override
@@ -81,7 +85,7 @@ public class SparqlTargetSelect implements PlanNode {
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
-				return new ValidationTuple(bindingSet.next(), variables, 0);
+				return new ValidationTuple(bindingSet.next(), variables, scope, false);
 			}
 
 			@Override

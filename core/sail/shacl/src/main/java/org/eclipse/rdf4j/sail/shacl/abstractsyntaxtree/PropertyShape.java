@@ -192,7 +192,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 			if (!(constraintComponent instanceof PropertyShape)) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getChain().getLast(), t.getValue(), this,
+					return new ValidationResult(t.getActiveTarget(), t.getValue(), this,
 							constraintComponent.getConstraintComponent(), getSeverity());
 				});
 			}
@@ -202,6 +202,10 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			} else {
 				validationPlanNode = new TrimToTarget(validationPlanNode, false);
 			}
+
+			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
+				System.out.println(p);
+			});
 
 			union = new UnionNode(union, validationPlanNode);
 		}

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -37,12 +38,14 @@ public class TargetChainRetriever implements PlanNode {
 	private final List<StatementPattern> statementPatterns;
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
+	private final ConstraintComponent.Scope scope;
 
 	public TargetChainRetriever(SailConnection transactionalConnection, SailConnection baseConnection,
-			List<StatementPattern> statementPatterns, String query) {
+								List<StatementPattern> statementPatterns, String query, ConstraintComponent.Scope scope) {
 		this.transactionalConnection = transactionalConnection;
 		this.baseConnection = baseConnection;
 		this.statementPatterns = statementPatterns;
+		this.scope = scope;
 		this.query = "select * where {" + query + "}";
 
 		queryParserFactory = QueryParserRegistry.getInstance()
@@ -154,7 +157,7 @@ public class TargetChainRetriever implements PlanNode {
 							.map(nextBinding::getValue)
 							.collect(Collectors.toCollection(ArrayDeque::new));
 
-					next = new ValidationTuple(collect, 0);
+					next = new ValidationTuple(collect, scope, false);
 
 				}
 

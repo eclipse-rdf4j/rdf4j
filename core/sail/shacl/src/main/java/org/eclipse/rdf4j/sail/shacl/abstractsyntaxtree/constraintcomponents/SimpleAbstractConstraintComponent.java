@@ -97,13 +97,9 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					.sorted()
 					.collect(Collectors.toList());
 
-			ValidationTuple validationTuple;
-			if (scope == Scope.propertyShape) {
-				validationTuple = new ValidationTuple(b, collect, 1);
-			} else {
-				validationTuple = new ValidationTuple(b, collect, 0);
+			ValidationTuple validationTuple = new ValidationTuple(b, collect, scope, true);
 
-			}
+
 
 //			if (targetChain.getPath().isPresent()) {
 //				validationTuple.setPath(targetChain.getPath().get());
@@ -146,27 +142,26 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			Scope scope) {
 		assert !negateChildren : "Node does not have children";
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", Scope.propertyShape);
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope);
 		Optional<Path> path = targetChain.getPath();
 
 		if (overrideTargetNode != null) {
 
 			PlanNode planNode;
 
-			if (!path.isPresent()) {
+			if (scope == Scope.nodeShape) {
 				planNode = overrideTargetNode.getPlanNode();
-				planNode = new TargetChainPopper(planNode);
 
 			} else {
 				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
 						"SimpleAbstractConstraintComponent");
 
-				temp = effectiveTarget.extend(temp, connectionsGroup);
+				temp = effectiveTarget.extend(temp, connectionsGroup, scope);
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
 						path.get().getTargetQueryFragment(new Var("a"), new Var("c")), false, null,
-						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1));
+						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
 
 			if (negatePlan) {
@@ -177,10 +172,10 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		}
 
-		if (!path.isPresent()) {
+		if (scope == Scope.nodeShape) {
 
-			PlanNode targets = effectiveTarget.getAdded(connectionsGroup);
-			targets = new TargetChainPopper(targets);
+			PlanNode targets = effectiveTarget.getAdded(connectionsGroup, scope);
+
 
 			if (negatePlan) {
 				return filterAttacher.apply(targets).getTrueNode(UnBufferedPlanNode.class);
@@ -203,7 +198,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		}
 
 		InnerJoin innerJoin = new InnerJoin(
-				effectiveTarget.getAdded(connectionsGroup),
+				effectiveTarget.getAdded(connectionsGroup, scope),
 				invalidValuesDirectOnPath);
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -220,11 +215,15 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			top = new UnionNode(top, typeFilterPlan);
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
-					effectiveTarget.getAdded(connectionsGroup),
+					effectiveTarget.getAdded(connectionsGroup, scope),
 					connectionsGroup.getBaseConnection(), path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
-					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1));
+					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+
+			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, "", p -> {
+				System.out.println(p);
+			});
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);
 
@@ -265,7 +264,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape);
 
-		PlanNode added = target.getAdded(connectionsGroup);
+		PlanNode added = target.getAdded(connectionsGroup, scope);
 		added = new DebugPlanNode(added, "", p -> {
 			System.out.println(p);
 		});

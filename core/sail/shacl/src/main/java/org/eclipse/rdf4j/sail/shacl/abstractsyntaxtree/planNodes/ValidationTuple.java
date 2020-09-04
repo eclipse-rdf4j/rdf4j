@@ -1,18 +1,18 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
-
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class ValidationTuple {
 
@@ -20,23 +20,25 @@ public class ValidationTuple {
 
 	static ValueComparator valueComparator = new ValueComparator();
 	private final Deque<Value> chain;
+	private ConstraintComponent.Scope scope;
+	private boolean propertyShapeScopeWithValue;
 
 	Deque<ValidationResult> validationResults;
 
-	private int focusNodeOffsetFromEnd = 0;
 
 	public ValidationTuple(ValidationTuple validationTuple) {
 		this.chain = new ArrayDeque<>(validationTuple.chain);
-		this.focusNodeOffsetFromEnd = validationTuple.focusNodeOffsetFromEnd;
+		this.scope = validationTuple.scope;
+		this.propertyShapeScopeWithValue = validationTuple.propertyShapeScopeWithValue;
 
 		if (validationTuple.validationResults != null) {
 			this.validationResults = new ArrayDeque<>(validationTuple.validationResults);
 		}
-		assert this.focusNodeOffsetFromEnd >= 0;
+
 	}
 
-	public ValidationTuple(BindingSet bindingSet, String[] variables, int focusNodeOffsetFromEnd) {
-		this(bindingSet, Arrays.asList(variables), focusNodeOffsetFromEnd);
+	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope, boolean hasValue) {
+		this(bindingSet, Arrays.asList(variables), scope, hasValue);
 	}
 
 	public ValidationTuple(Value target) {
@@ -45,31 +47,35 @@ public class ValidationTuple {
 
 	}
 
-	public ValidationTuple(BindingSet bindingSet, List<String> variables, int focusNodeOffsetFromEnd) {
+	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope, boolean hasValue) {
 		chain = new ArrayDeque<>();
 		for (String variable : variables) {
 			chain.addLast(bindingSet.getValue(variable));
 		}
-		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
-		assert this.focusNodeOffsetFromEnd >= 0;
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = hasValue;
+
 	}
 
-	public ValidationTuple(Deque<Value> targets, int focusNodeOffsetFromEnd) {
+	public ValidationTuple(Deque<Value> targets, ConstraintComponent.Scope scope, boolean hasValue) {
 		chain = targets;
-		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = hasValue;
 	}
 
-	public ValidationTuple(Value a, Value c, int focusNodeOffsetFromEnd) {
+	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
 		chain = new ArrayDeque<>();
 		chain.addLast(a);
 		chain.addLast(c);
-		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = hasValue;
 	}
 
-	public ValidationTuple(Value subject, int focusNodeOffsetFromEnd) {
+	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
 		chain = new ArrayDeque<>();
 		chain.addLast(subject);
-		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = hasValue;
 	}
 
 	public boolean sameTargetAs(ValidationTuple nextRight) {
@@ -81,34 +87,35 @@ public class ValidationTuple {
 
 	}
 
-	public Deque<Value> getChain() {
-		return chain;
-	}
 
 	public boolean hasValue() {
-		return focusNodeOffsetFromEnd > 0;
+		assert  scope != null;
+		return propertyShapeScopeWithValue || scope == ConstraintComponent.Scope.nodeShape;
 	}
 
 	public Value getValue() {
-		if (focusNodeOffsetFromEnd > 1) {
-			throw new UnsupportedOperationException();
-		}
-
-		if (focusNodeOffsetFromEnd == 1) {
+		assert  scope != null;
+		if (hasValue()) {
 			return chain.peekLast();
 		}
 
 		return null;
 	}
 
-	public void setFocusNodeOffsetFromEnd(int focusNodeOffsetFromEnd) {
-		this.focusNodeOffsetFromEnd = focusNodeOffsetFromEnd;
+
+	public ConstraintComponent.Scope getScope() {
+		return scope;
+	}
+
+	public void setScope(ConstraintComponent.Scope scope) {
+		assert this.scope == null;
+		this.scope = scope;
 	}
 
 	public int compareTarget(ValidationTuple nextRight) {
 
-		Value left = chain.getLast();
-		Value right = nextRight.chain.getLast();
+		Value left = getActiveTarget();
+		Value right = nextRight.getActiveTarget();
 
 		return valueComparator.compare(left, right);
 	}
@@ -125,11 +132,13 @@ public class ValidationTuple {
 	}
 
 	public Value getActiveTarget() {
-		if (focusNodeOffsetFromEnd == 0) {
+		assert  scope != null;
+		if ((!propertyShapeScopeWithValue && scope == ConstraintComponent.Scope.propertyShape) || scope == ConstraintComponent.Scope.nodeShape) {
 			return chain.getLast();
 		}
 
-		assert focusNodeOffsetFromEnd == 1;
+		assert propertyShapeScopeWithValue;
+		assert scope == ConstraintComponent.Scope.propertyShape;
 
 		Value value = chain.removeLast();
 		Value last = chain.getLast();
@@ -147,28 +156,58 @@ public class ValidationTuple {
 			return false;
 		}
 		ValidationTuple that = (ValidationTuple) o;
-
-		return chain.size() == that.chain.size()
-				&& chain.containsAll(that.chain);
+		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue &&
+			Objects.equals(chain, that.chain) &&
+			scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(chain.toArray());
+		return Objects.hash(chain, scope, propertyShapeScopeWithValue);
 	}
 
 	@Override
 	public String toString() {
 		return "ValidationTuple{" +
-				"chain=" + Arrays.toString(chain.toArray()) +
-				", focusNodeOffsetFromEnd=" + focusNodeOffsetFromEnd +
-				'}';
+			"chain=" + Arrays.toString(chain.toArray()) +
+			", scope=" + scope +
+			", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+			'}';
 	}
 
 	public void trimToTarget() {
-		for (int i = 0; i < focusNodeOffsetFromEnd; i++) {
-			chain.removeLast();
+		if(propertyShapeScopeWithValue){
+			propertyShapeScopeWithValue = false;
+			if(scope == ConstraintComponent.Scope.propertyShape){
+				chain.removeLast();
+			}
 		}
-		focusNodeOffsetFromEnd = 0;
+	}
+
+
+	public void shiftToPropertyShapeScope() {
+		assert scope == ConstraintComponent.Scope.nodeShape;
+		assert chain.size() >= 2;
+		scope = ConstraintComponent.Scope.propertyShape;
+		propertyShapeScopeWithValue = true;
+	}
+
+
+	public Deque<Value> getChain() {
+		return chain;
+	}
+
+	public void setValue(Value value) {
+		if(scope == ConstraintComponent.Scope.propertyShape){
+			if(propertyShapeScopeWithValue){
+				chain.removeLast();
+			}
+			chain.addLast(value);
+		}
+
+		chain.removeLast();
+		chain.addLast(value);
+
+		propertyShapeScopeWithValue = true;
 	}
 }

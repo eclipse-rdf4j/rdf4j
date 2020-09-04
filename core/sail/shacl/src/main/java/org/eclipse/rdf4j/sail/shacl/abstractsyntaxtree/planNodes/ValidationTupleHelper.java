@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * .Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -17,8 +17,7 @@ public class ValidationTupleHelper {
 
 		ValidationTuple validationTuple = new ValidationTuple(left);
 		if (right.hasValue()) {
-			validationTuple.getChain().addLast(right.getValue());
-			validationTuple.setFocusNodeOffsetFromEnd(1);
+			validationTuple.setValue(right.getValue());
 		}
 		if (right.validationResults != null && !right.validationResults.isEmpty()) {
 			System.out.println(

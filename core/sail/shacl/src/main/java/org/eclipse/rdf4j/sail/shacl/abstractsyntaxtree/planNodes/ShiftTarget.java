@@ -8,55 +8,50 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.Collection;
-import java.util.Deque;
-import java.util.Iterator;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
-public class ValuesBackedNode implements PlanNode {
+public class ShiftTarget implements PlanNode {
 
-	private static final Logger logger = LoggerFactory.getLogger(ValuesBackedNode.class);
-	private final Collection<Value> collection;
-	private final ConstraintComponent.Scope scope;
-	boolean printed = false;
+	PlanNode parent;
+	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValuesBackedNode(Collection<Value> collection, ConstraintComponent.Scope scope) {
-		this.collection = collection;
-		this.scope = scope;
+
+	public ShiftTarget(PlanNode parent) {
+		this.parent = parent;
 	}
+
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final Iterator<Value> iterator = collection.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			@Override
 			public void close() throws SailException {
+				parentIterator.close();
 			}
 
 			@Override
-			public boolean localHasNext() throws SailException {
-				return iterator.hasNext();
+			boolean localHasNext() throws SailException {
+				return parentIterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple loggingNext() throws SailException {
-				Deque<Value> targets = new ArrayDeque<>();
-				targets.addLast(iterator.next());
-				return new ValidationTuple(targets, scope, false);
+			ValidationTuple loggingNext() throws SailException {
+
+				ValidationTuple next = parentIterator.next();
+				ValidationTuple validationTuple = new ValidationTuple(next);
+
+				validationTuple.shiftToPropertyShapeScope();
+
+				return validationTuple;
 			}
 
 			@Override
@@ -64,11 +59,12 @@ public class ValuesBackedNode implements PlanNode {
 
 			}
 		};
+
 	}
 
 	@Override
 	public int depth() {
-		return 0;
+		return parent.depth() + 1;
 	}
 
 	@Override
@@ -79,7 +75,13 @@ public class ValuesBackedNode implements PlanNode {
 		printed = true;
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
+		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
+		parent.getPlanAsGraphvizDot(stringBuilder);
+	}
 
+	@Override
+	public String toString() {
+		return "TrimToTarget";
 	}
 
 	@Override
@@ -88,32 +90,8 @@ public class ValuesBackedNode implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "ValuesBackedNode{" +
-				"collection=" + collection + '}';
-	}
-
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		ValuesBackedNode that = (ValuesBackedNode) o;
-		return collection.equals(that.collection);
-	}
-
-	@Override
-	public int hashCode() {
-
-		return collection.hashCode();
-
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
+		parent.receiveLogger(validationExecutionLogger);
 	}
 }

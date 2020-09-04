@@ -66,7 +66,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					.sorted()
 					.collect(Collectors.toList());
 
-			ValidationTuple validationTuple = new ValidationTuple(b, targetVars, 1);
+			ValidationTuple validationTuple = new ValidationTuple(b, targetVars, scope, false);
 
 			return validationTuple;
 
@@ -120,14 +120,14 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1)
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
 			);
 
 			return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
-			PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
+			PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup, scope);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -137,7 +137,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		}
 
-		PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup);
+		PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup, scope);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -155,7 +155,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 				false,
 				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), 1)
+				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
 		);
 
 		return new TrimToTarget(new NonUniqueTargetLang(relevantTargetsWithPath), true);
@@ -164,9 +164,9 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape);
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", scope);
 
-		return target.getAdded(connectionsGroup);
+		return target.getAdded(connectionsGroup, scope);
 
 	}
 }

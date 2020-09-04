@@ -10,6 +10,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -25,14 +26,14 @@ public class EffectiveTarget {
 	// Takes a source plan node and for every entry it extends the target chain with all targets that follow.
 	// If the target chain is [type foaf:Person / foaf:knows ] and [ex:Peter] is in the source, this will effectively
 	// retrieve all "ex:Peter foaf:knows ?extension"
-	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup) {
+	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
 
 		String query = getQuery();
 		List<Var> vars = getVars();
 		List<String> varNames = vars.stream().map(Var::getName).collect(Collectors.toList());
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
-			return new ValidationTuple(bindingSet, varNames, 0);
+			return new ValidationTuple(bindingSet, varNames, scope, false);
 		}, 100);
 	}
 
@@ -86,7 +87,7 @@ public class EffectiveTarget {
 
 	}
 
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
 		assert !chain.isEmpty();
 
 		if (chain.size() == 1) {
@@ -94,7 +95,7 @@ public class EffectiveTarget {
 
 			EffectiveTargetObject last = chain.getLast();
 			if (last.target instanceof Target) {
-				return ((Target) last.target).getAdded(connectionsGroup);
+				return ((Target) last.target).getAdded(connectionsGroup, scope);
 			} else {
 				throw new ShaclUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
@@ -113,7 +114,7 @@ public class EffectiveTarget {
 					.orElse("");
 
 			return new TargetChainRetriever(connectionsGroup.getAddedStatements(), connectionsGroup.getBaseConnection(),
-					collect, query);
+					collect, query, scope);
 
 		}
 

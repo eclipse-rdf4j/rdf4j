@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
@@ -32,7 +33,7 @@ public class SimplePath extends Path {
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
-				s -> new ValidationTuple(s.getSubject(), s.getObject(), 1));
+				s -> new ValidationTuple(s.getSubject(), s.getObject(), ConstraintComponent.Scope.propertyShape, true));
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
 		}
