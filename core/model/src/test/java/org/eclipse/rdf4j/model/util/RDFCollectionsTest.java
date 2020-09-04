@@ -73,32 +73,35 @@ public class RDFCollectionsTest {
 
 	@Test
 	public void testNonWellformedCollection() {
-		Resource head = vf.createBNode();
-		Model m = RDFCollections.asRDF(values, head, new TreeModel());
-		m.remove(null, RDF.REST, RDF.NIL);
-		try {
-			RDFCollections.asValues(m, head, new ArrayList<>());
-			fail("collection missing terminator should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
-		}
+		for (int i = 0; i < 1000; i++) {
 
-		m = RDFCollections.asRDF(values, head, new TreeModel());
-		m.add(head, RDF.REST, head);
+			Resource head = vf.createBNode();
+			Model m = RDFCollections.asRDF(values, head, new TreeModel());
+			m.remove(null, RDF.REST, RDF.NIL);
+			try {
+				RDFCollections.asValues(m, head, new ArrayList<>());
+				fail("collection missing terminator should result in error");
+			} catch (ModelException e) {
+				// fall through, expected
+			}
 
-		try {
-			RDFCollections.asValues(m, head, new ArrayList<>());
-			fail("collection with cycle should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
-		}
+			m = RDFCollections.asRDF(values, head, new TreeModel());
+			m.add(head, RDF.REST, head);
 
-		// supply incorrect head node
-		try {
-			RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
-			fail("resource that is not a collection should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
+			try {
+				RDFCollections.asValues(m, head, new ArrayList<>());
+				fail("collection with cycle should result in error");
+			} catch (ModelException e) {
+				// fall through, expected
+			}
+
+			// supply incorrect head node
+			try {
+				RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
+				fail("resource that is not a collection should result in error");
+			} catch (ModelException e) {
+				// fall through, expected
+			}
 		}
 	}
 
