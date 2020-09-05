@@ -18,7 +18,8 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava-testlib</artifactId>
-			<version>${guava.version}</version>
+			<!--  check if test failure is somehow caused by version upgrade of guava testlib -->
+			<version>18.0</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
