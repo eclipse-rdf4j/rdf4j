@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;

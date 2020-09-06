@@ -20,6 +20,9 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
@@ -73,13 +76,13 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		// if (scope == Scope.nodeShape) {
 
+		PlanNode allTargetsPlan = getTargets(connectionsGroup, scope);
+
 		PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup,
 				logValidationPlans,
-				() -> getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope),
+				() -> getTargets(connectionsGroup, scope),
 				negateChildren,
 				false, scope);
-
-		PlanNode allTargetsPlan = not.getAllTargetsPlan(connectionsGroup, negatePlan, scope);
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
 			System.out.println("HERE!" + p);
@@ -97,5 +100,15 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 //		}
 //
 //		throw new UnsupportedOperationException();
+	}
+
+	private PlanNode getTargets(ConnectionsGroup connectionsGroup, Scope scope) {
+		if (scope == Scope.propertyShape) {
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.getAdded(connectionsGroup, Scope.nodeShape);
+			return new ShiftToPropertyShape(allTargetsPlan);
+		}
+
+		return getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope);
 	}
 }

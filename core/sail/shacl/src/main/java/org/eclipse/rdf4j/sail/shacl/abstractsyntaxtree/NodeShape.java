@@ -138,7 +138,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
-					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, negatePlan, false,
+					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
+							negatePlan, false,
 							Scope.nodeShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {

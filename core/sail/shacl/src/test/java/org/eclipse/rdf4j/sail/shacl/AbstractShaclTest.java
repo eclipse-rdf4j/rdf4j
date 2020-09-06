@@ -192,8 +192,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/pattern/multiple",
 		"test-cases/pattern/simple",
 		"test-cases/propertyShapeWithTarget/simple",
-		"test-cases/uniqueLang/not",
-		"test-cases/uniqueLang/simple" ,
+//		"test-cases/uniqueLang/not",
+//		"test-cases/uniqueLang/simple" ,
 		"test-cases/datatype/notNestedPropertyShape"
 
 
@@ -787,8 +787,8 @@ abstract public class AbstractShaclTest {
 		SailRepository repository = new SailRepository(shaclSail);
 
 		shaclSail.setLogValidationPlans(fullLogging);
-		shaclSail.setCacheSelectNodes(true);
-		shaclSail.setParallelValidation(true);
+		shaclSail.setCacheSelectNodes(false);
+		shaclSail.setParallelValidation(false);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
 		shaclSail.setEclipseRdf4jShaclExtensions(true);

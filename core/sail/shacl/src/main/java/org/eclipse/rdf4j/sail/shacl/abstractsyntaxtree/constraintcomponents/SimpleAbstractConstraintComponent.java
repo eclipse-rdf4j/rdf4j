@@ -147,6 +147,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			if (scope == Scope.nodeShape) {
 				planNode = overrideTargetNode.getPlanNode();
+				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope);
 
 			} else {
 				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
