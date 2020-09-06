@@ -82,7 +82,7 @@ public class RDFCollectionsTest {
 
 	@Test(expected = ModelException.class)
 	public void testNonWellformedCollection_Cycle() {
-		Resource head = vf.createBNode();
+		Resource head = vf.createBNode("z");
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
 		m.add(head, RDF.REST, head);
 		RDFCollections.asValues(m, head, new ArrayList<>());
