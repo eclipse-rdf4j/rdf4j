@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * @author Håvard Ottestad
  */
-public class ShiftTarget implements PlanNode {
+public class ShiftToPropertyShape implements PlanNode {
 
 	private final StackTraceElement[] stackTrace;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ShiftTarget(PlanNode parent) {
+	public ShiftToPropertyShape(PlanNode parent) {
 		this.parent = parent;
 		this.stackTrace = Thread.currentThread().getStackTrace();
 	}

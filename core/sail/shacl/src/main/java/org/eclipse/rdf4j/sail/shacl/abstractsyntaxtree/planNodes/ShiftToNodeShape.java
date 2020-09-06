@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.SailException;
 public class ShiftToNodeShape implements PlanNode {
 
 	private final boolean keepValue;
+	private final StackTraceElement[] stackTrace;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -27,12 +28,15 @@ public class ShiftToNodeShape implements PlanNode {
 	public ShiftToNodeShape(PlanNode parent, boolean keepValue) {
 		this.parent = parent;
 		this.keepValue = keepValue;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	public ShiftToNodeShape(PlanNode parent, boolean keepPath, boolean keepValue) {
 		this.parent = parent;
 		this.keepPath = keepPath;
 		this.keepValue = keepValue;
+		this.stackTrace = Thread.currentThread().getStackTrace();
+
 	}
 
 	@Override

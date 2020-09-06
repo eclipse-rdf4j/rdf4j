@@ -65,6 +65,7 @@ class LogStatement {
 		this.depth = depth;
 		this.name = name;
 		this.tuple = tuple;
+		assert tuple != null;
 		this.planNode = planNode;
 		this.id = id;
 	}

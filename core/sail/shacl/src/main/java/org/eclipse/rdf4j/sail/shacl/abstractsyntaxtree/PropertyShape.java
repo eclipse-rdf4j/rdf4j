@@ -186,6 +186,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 							false, Scope.propertyShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
+				System.out.println(constraintComponent);
 				System.out.println(scope);
 				System.out.println(p);
 			});

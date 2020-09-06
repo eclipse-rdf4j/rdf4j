@@ -203,10 +203,11 @@ public class ValidationTuple {
 				chain.removeLast();
 			}
 			chain.addLast(value);
-		}
+		} else {
+			chain.removeLast();
+			chain.addLast(value);
 
-		chain.removeLast();
-		chain.addLast(value);
+		}
 
 		propertyShapeScopeWithValue = true;
 	}

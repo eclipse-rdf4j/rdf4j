@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -78,17 +79,19 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				negateChildren,
 				false, scope);
 
-		PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", scope)
-				.getAdded(connectionsGroup, scope);
+		PlanNode allTargetsPlan = not.getAllTargetsPlan(connectionsGroup, negatePlan, scope);
 
-		planNode = new DebugPlanNode(planNode, "", p -> {
-			System.out.println();
+		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
+			System.out.println("HERE!" + p);
 		});
 
 		PlanNode invalid = new Unique(planNode);
 
-		PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
-				.getDiscardedLeft(BufferedPlanNode.class);
+		PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
+
+		discardedLeft = new DebugPlanNode(discardedLeft, "", p -> {
+			System.out.println();
+		});
 
 		return discardedLeft;
 //		}
