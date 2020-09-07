@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.util;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.atLeastOnce;
@@ -77,16 +76,19 @@ public class RDFCollectionsTest {
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
 		m.remove(null, RDF.REST, RDF.NIL);
 		RDFCollections.asValues(m, head, new ArrayList<>());
-		fail("collection missing terminator should result in error");
 	}
 
 	@Test(expected = ModelException.class)
 	public void testNonWellformedCollection_Cycle() {
 		Resource head = vf.createBNode("z");
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
+
+		// Replace rdf:rest relation for head node with one pointing to itself.
+		// This introduces a cycle in an otherwise well-formed collection.
+		m.remove(head, RDF.REST, null);
 		m.add(head, RDF.REST, head);
+
 		RDFCollections.asValues(m, head, new ArrayList<>());
-		fail("collection with cycle should result in error");
 	}
 
 	@Test(expected = ModelException.class)
@@ -95,7 +97,6 @@ public class RDFCollectionsTest {
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
 
 		RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
-		fail("resource that is not a collection should result in error");
 	}
 
 	@Test
