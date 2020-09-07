@@ -96,6 +96,7 @@ public class RDFCollectionsTest {
 		Resource head = vf.createBNode();
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
 
+		// Use resource that is unrelated to the actual collection as the head node
 		RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
 	}
 
