@@ -19,13 +19,12 @@ import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
 
 /**
- * A proxy class to access any SPARQL endpoint. The instance must be initialized prior to using it.
+ * A proxy class to access any SPARQL 1.1 endpoint.
  *
  * @author James Leigh
  */
@@ -128,16 +127,15 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
+	 * Creates a new {@link SPARQLProtocolSession} object.
 	 *
-	 * @return a HTTPClient object.
+	 * @return a SPARQLProtocolSession object.
 	 */
 	protected SPARQLProtocolSession createHTTPClient() {
 		// initialize HTTP client
 		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,
 				updateEndpointUrl);
-		httpClient.setValueFactory(SimpleValueFactory.getInstance());
-		httpClient.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.SPARQL);
+		httpClient.setValueFactory(getValueFactory());
 		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);
 		if (username != null) {
 			httpClient.setUsernameAndPassword(username, password);
