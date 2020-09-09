@@ -23,13 +23,15 @@ import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
  */
 public class LanguageInFilter extends FilterPlanNode {
 
+	private final List<Locale.LanguageRange> languageRanges;
 	BCP47LanguageHandler languageHandler = new BCP47LanguageHandler();
 
 	private final Set<String> languageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> languageIn) {
+	public LanguageInFilter(PlanNode parent, Set<String> languageIn, List<Locale.LanguageRange> languageRanges) {
 		super(parent);
 		this.languageIn = languageIn;
+		this.languageRanges = languageRanges;
 	}
 
 	@Override
@@ -44,7 +46,7 @@ public class LanguageInFilter extends FilterPlanNode {
 		}
 
 		// early matching
-		boolean languageMatches = language.filter(languageIn::contains).isPresent();
+		boolean languageMatches = language.map(String::toLowerCase).filter(languageIn::contains).isPresent();
 		if (languageMatches) {
 			return true;
 		}
@@ -52,8 +54,13 @@ public class LanguageInFilter extends FilterPlanNode {
 		// test according to BCP47
 		String langTag = language.get();
 
-		return languageIn.stream().anyMatch(langRange -> checkLanguage(langTag, langRange));
+		return checkBCP47CompliantMatch(languageRanges, langTag);
 
+	}
+
+	private static boolean checkBCP47CompliantMatch(List<Locale.LanguageRange> languageRanges, String langTag) {
+		List<String> strings = Locale.filterTags(languageRanges, Collections.singletonList(langTag));
+		return !strings.isEmpty();
 	}
 
 	@Override
@@ -61,10 +68,4 @@ public class LanguageInFilter extends FilterPlanNode {
 		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
 	}
 
-	private static boolean checkLanguage(String langTag, String langRange) {
-
-		List<Locale.LanguageRange> parse = Locale.LanguageRange.parse(langRange);
-		List<String> strings = Locale.filterTags(parse, Collections.singletonList(langTag));
-		return !strings.isEmpty();
-	}
 }
