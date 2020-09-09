@@ -9,15 +9,21 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
 
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInFilter extends FilterPlanNode {
+
+	BCP47LanguageHandler languageHandler = new BCP47LanguageHandler();
 
 	private final Set<String> languageIn;
 
@@ -33,12 +39,32 @@ public class LanguageInFilter extends FilterPlanNode {
 		}
 
 		Optional<String> language = ((Literal) t.getLine().get(1)).getLanguage();
-		return language.filter(languageIn::contains).isPresent();
+		if (!language.isPresent()) {
+			return false;
+		}
+
+		// early matching
+		boolean languageMatches = language.filter(languageIn::contains).isPresent();
+		if (languageMatches) {
+			return true;
+		}
+
+		// test according to BCP47
+		String langTag = language.get();
+
+		return languageIn.stream().anyMatch(langRange -> checkLanguage(langTag, langRange));
 
 	}
 
 	@Override
 	public String toString() {
 		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
+	}
+
+	private static boolean checkLanguage(String langTag, String langRange) {
+
+		List<Locale.LanguageRange> parse = Locale.LanguageRange.parse(langRange);
+		List<String> strings = Locale.filterTags(parse, Collections.singletonList(langTag));
+		return !strings.isEmpty();
 	}
 }

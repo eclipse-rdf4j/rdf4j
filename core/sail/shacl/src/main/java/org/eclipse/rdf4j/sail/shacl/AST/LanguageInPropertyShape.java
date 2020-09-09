@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
@@ -37,7 +38,10 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 			Resource languageIn) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
-		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
+		this.languageIn = toList(connection, languageIn)
+				.stream()
+				.map(Value::stringValue)
+				.collect(Collectors.toSet());
 	}
 
 	@Override

@@ -1,0 +1,19 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {
+
+ex:validPerson1 a ex:Person.
+ex:validPerson1 	ex:label "human"@de-DE.
+ex:validPerson1 	ex:label "human"@de-de.
+ex:validPerson1 	ex:label "human"@de-Latn-DE.
+ex:validPerson1 	ex:label "human"@de-Latf-DE.
+ex:validPerson1 	ex:label "human"@de-DE-x-goethe.
+ex:validPerson1 	ex:label "human"@de-Latn-DE-1996.
+ex:validPerson1 	ex:label "human"@de-Deva-DE.
+
+}

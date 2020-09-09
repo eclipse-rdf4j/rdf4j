@@ -7,6 +7,9 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
 
-ex:validPerson1 	ex:label "human"@en.
+
+ex:validPerson2
+        ex:label  "menneske"@no ;
+        a ex:Person .
 
 }
