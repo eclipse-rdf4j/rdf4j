@@ -33,5 +33,5 @@ ex:PersonShape a sh:NodeShape;
 
 [] rdf:rest ([]) .
 
-_:node1ehhj8jf7x5 a sh:NodeShape;
+_:node1ehhjc48vx5 a sh:NodeShape;
   sh:datatype xsd:string .

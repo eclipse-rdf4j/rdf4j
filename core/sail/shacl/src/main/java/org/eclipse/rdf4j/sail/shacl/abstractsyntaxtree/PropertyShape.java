@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -216,17 +217,33 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
-				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+		PlanNode planNode = new EmptyNode();
 
-		planNode = new DebugPlanNode(planNode, "PropertyShapeGetAllTargetsPlan::getAllTargetsPlan");
+		constraintComponents.stream()
+			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
+			.reduce(UnionNode::new)
+			.orElse(new EmptyNode());
+
+		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape).getAdded(connectionsGroup, Scope.propertyShape);
+		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape).getRemoved(connectionsGroup, Scope.propertyShape);
+
+//		targetAdded = new ShiftToPropertyShape(targetAdded);
+//		targetRemoved = new ShiftToPropertyShape(targetRemoved);
+
+		planNode = new UnionNode(planNode, targetAdded, targetRemoved);
+
+		planNode = new Unique(planNode);
+
+		planNode = new DebugPlanNode(planNode, "PropertyShape32847923::getAllTargetsPlan", p -> {
+			System.out.println(p);
+		});
+
 
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);
+		} else {
+			planNode = new ShiftToNodeShape(planNode, false);
 		}
-		planNode = new ShiftToNodeShape(planNode, false);
 
 		planNode = new Unique(planNode);
 

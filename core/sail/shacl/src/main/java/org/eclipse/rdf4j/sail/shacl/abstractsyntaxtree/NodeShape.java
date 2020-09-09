@@ -183,14 +183,25 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		PlanNode planNode = constraintComponents.stream()
+		PlanNode planNode = new EmptyNode();
+
+			constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.nodeShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
+		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape).getAdded(connectionsGroup, Scope.nodeShape);
+		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape).getRemoved(connectionsGroup, Scope.nodeShape);
+
+		planNode = new UnionNode(planNode, targetAdded, targetRemoved);
 
 		planNode = new Unique(planNode);
+
+		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
+
+		if(scope != Scope.nodeShape){
+			planNode = new ShiftToPropertyShape(planNode);
+		}
 
 		return planNode;
 	}

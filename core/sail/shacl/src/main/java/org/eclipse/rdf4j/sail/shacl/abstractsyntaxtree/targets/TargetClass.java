@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -39,16 +40,25 @@ public class TargetClass extends Target {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
+	}
+
+	@Override
+	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getRemovedStatements());
+	}
+
+	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope, SailConnection connection) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
-					.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false))));
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connection, null,
+					RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false))));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
-					new Select(connectionsGroup.getAddedStatements(), getQueryFragment("?a", "?c", null),
-							b -> new ValidationTuple(b.getValue("a"), scope, false), "?a"));
+				new Select(connection, getQueryFragment("?a", "?c", null),
+					b -> new ValidationTuple(b.getValue("a"), scope, false), "?a"));
 		}
 
 		return new Unique(planNode);

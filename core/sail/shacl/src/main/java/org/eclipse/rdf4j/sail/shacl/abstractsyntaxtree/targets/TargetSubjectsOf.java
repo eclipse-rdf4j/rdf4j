@@ -36,6 +36,12 @@ public class TargetSubjectsOf extends Target {
 	}
 
 	@Override
+	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		throw new ShaclUnsupportedException();
+	}
+
+
+	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		throw new ShaclUnsupportedException();

@@ -120,6 +120,39 @@ public class EffectiveTarget {
 
 	}
 
+	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		assert !chain.isEmpty();
+
+		if (chain.size() == 1) {
+			// simple chain
+
+			EffectiveTargetObject last = chain.getLast();
+			if (last.target instanceof Target) {
+				return ((Target) last.target).getRemoved(connectionsGroup, scope);
+			} else {
+				throw new ShaclUnsupportedException(
+					"Unknown target in chain is type: " + last.getClass().getSimpleName());
+			}
+
+		} else {
+			// complex chain
+
+			List<StatementPattern> collect = chain.stream()
+				.flatMap(EffectiveTargetObject::getStatementPatterns)
+				.collect(Collectors.toList());
+
+			String query = chain.stream()
+				.map(EffectiveTargetObject::getQueryFragment)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+
+			return new TargetChainRetriever(connectionsGroup.getRemovedStatements(), connectionsGroup.getBaseConnection(),
+				collect, query, scope);
+
+		}
+
+	}
+
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 
 		EffectiveTargetObject last = chain.getLast();

@@ -36,7 +36,11 @@ public class TargetNode extends Target {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		return new ValuesBackedNode(targetNodes, scope);
+	}
 
+	@Override
+	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
 		return new ValuesBackedNode(targetNodes, scope);
 	}
 

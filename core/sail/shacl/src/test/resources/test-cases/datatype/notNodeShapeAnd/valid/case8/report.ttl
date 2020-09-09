@@ -33,6 +33,6 @@ ex:PersonShape a sh:NodeShape;
 
 [] rdf:rest ([]) .
 
-_:node1ehhj8mm9x5 a sh:PropertyShape;
+_:node1ehhjc7h7x5 a sh:PropertyShape;
   sh:path ex:age;
   sh:datatype xsd:string .
