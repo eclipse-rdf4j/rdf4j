@@ -13,12 +13,10 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
@@ -52,7 +50,10 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		this.languageRanges = this.languageIn.stream()
 				.flatMap(l -> Locale.LanguageRange.parse(l).stream())
 				.collect(Collectors.toList());
-		this.normalizedLanguageIn = this.languageIn.stream().map(String::toLowerCase).collect(Collectors.toSet());
+
+		this.normalizedLanguageIn = this.languageIn.stream()
+				.map(String::toLowerCase)
+				.collect(Collectors.toSet());
 	}
 
 	@Override

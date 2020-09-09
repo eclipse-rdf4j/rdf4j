@@ -16,7 +16,6 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
 
 /**
  * @author Håvard Ottestad
@@ -24,13 +23,13 @@ import org.eclipse.rdf4j.rio.languages.BCP47LanguageHandler;
 public class LanguageInFilter extends FilterPlanNode {
 
 	private final List<Locale.LanguageRange> languageRanges;
-	BCP47LanguageHandler languageHandler = new BCP47LanguageHandler();
 
-	private final Set<String> languageIn;
+	private final Set<String> normalizedLanguageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> languageIn, List<Locale.LanguageRange> languageRanges) {
+	public LanguageInFilter(PlanNode parent, Set<String> normalizedLanguageIn,
+			List<Locale.LanguageRange> languageRanges) {
 		super(parent);
-		this.languageIn = languageIn;
+		this.normalizedLanguageIn = normalizedLanguageIn;
 		this.languageRanges = languageRanges;
 	}
 
@@ -46,7 +45,7 @@ public class LanguageInFilter extends FilterPlanNode {
 		}
 
 		// early matching
-		boolean languageMatches = language.map(String::toLowerCase).filter(languageIn::contains).isPresent();
+		boolean languageMatches = language.map(String::toLowerCase).filter(normalizedLanguageIn::contains).isPresent();
 		if (languageMatches) {
 			return true;
 		}
@@ -65,7 +64,7 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
+		return "LanguageInFilter{" + "normalizedLanguageIn=" + Arrays.toString(normalizedLanguageIn.toArray()) + '}';
 	}
 
 }
