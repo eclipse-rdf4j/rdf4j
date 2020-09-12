@@ -5,12 +5,13 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
 
 ex:PersonShape
 	a sh:NodeShape  ;
-	sh:targetClass ex:Person ;
+	sh:targetClass foaf:Person ;
 	sh:property [
-		sh:path ex:label ;
-		sh:languageIn ( "en" "no" "de-de" "mn-Cyrl" "a-ab-abc-defg")  ;
+		sh:path rdfs:label ;
+		sh:languageIn ( "en" "no" "de" "se" "dk")  ;
 	] .
 

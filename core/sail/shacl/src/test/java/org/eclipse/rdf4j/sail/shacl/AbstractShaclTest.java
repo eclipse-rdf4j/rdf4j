@@ -181,7 +181,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValueIn/not2",
 		"test-cases/hasValueIn/targetNode",
 		"test-cases/hasValueIn/targetNode2",
-		"test-cases/languageIn/subtags"
+		"test-cases/languageIn/subtags",
+		"test-cases/languageIn/subtags2"
 	)
 		.distinct()
 		.sorted()

@@ -9,27 +9,26 @@
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInFilter extends FilterPlanNode {
 
-	private final List<Locale.LanguageRange> languageRanges;
+	private final List<String> languageRanges;
 
-	private final Set<String> normalizedLanguageIn;
+	private final Set<String> lowerCaseLanguageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> normalizedLanguageIn,
-			List<Locale.LanguageRange> languageRanges) {
+	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn,
+			List<String> languageRanges) {
 		super(parent);
-		this.normalizedLanguageIn = normalizedLanguageIn;
+		this.lowerCaseLanguageIn = lowerCaseLanguageIn;
 		this.languageRanges = languageRanges;
 	}
 
@@ -45,7 +44,7 @@ public class LanguageInFilter extends FilterPlanNode {
 		}
 
 		// early matching
-		boolean languageMatches = language.map(String::toLowerCase).filter(normalizedLanguageIn::contains).isPresent();
+		boolean languageMatches = language.map(String::toLowerCase).filter(lowerCaseLanguageIn::contains).isPresent();
 		if (languageMatches) {
 			return true;
 		}
@@ -53,18 +52,20 @@ public class LanguageInFilter extends FilterPlanNode {
 		// test according to BCP47
 		String langTag = language.get();
 
-		return checkBCP47CompliantMatch(languageRanges, langTag);
+		for (String languageRange : languageRanges) {
+			if (StrictEvaluationStrategy.langTagMatchesRange(langTag, languageRange))
+				return true;
+		}
 
-	}
+		return false;
 
-	private static boolean checkBCP47CompliantMatch(List<Locale.LanguageRange> languageRanges, String langTag) {
-		List<String> strings = Locale.filterTags(languageRanges, Collections.singletonList(langTag));
-		return !strings.isEmpty();
 	}
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" + "normalizedLanguageIn=" + Arrays.toString(normalizedLanguageIn.toArray()) + '}';
+		return "LanguageInFilter{" +
+				"languageRanges=" + Arrays.toString(languageRanges.toArray()) +
+				", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) +
+				'}';
 	}
-
 }

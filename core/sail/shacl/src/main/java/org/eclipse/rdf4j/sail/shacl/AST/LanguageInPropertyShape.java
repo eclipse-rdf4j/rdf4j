@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -34,8 +34,8 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
 
 	private final Set<String> languageIn;
-	private final List<Locale.LanguageRange> languageRanges;
-	private final Set<String> normalizedLanguageIn;
+	private final List<String> languageRanges;
+	private final Set<String> lowerCaseLanguageIn;
 
 	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path,
@@ -47,11 +47,10 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 				.map(Value::stringValue)
 				.collect(Collectors.toSet());
 
-		this.languageRanges = this.languageIn.stream()
-				.flatMap(l -> Locale.LanguageRange.parse(l).stream())
-				.collect(Collectors.toList());
+		this.languageRanges = new ArrayList<>(this.languageIn);
 
-		this.normalizedLanguageIn = this.languageIn.stream()
+		this.lowerCaseLanguageIn = this.languageIn.stream()
+				.filter(l -> !l.contains("*"))
 				.map(String::toLowerCase)
 				.collect(Collectors.toSet());
 	}
@@ -67,7 +66,7 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new LanguageInFilter(parent, normalizedLanguageIn, languageRanges), this,
+				(parent) -> new LanguageInFilter(parent, lowerCaseLanguageIn, languageRanges), this,
 				overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
@@ -96,19 +95,19 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 			return false;
 		}
 		LanguageInPropertyShape that = (LanguageInPropertyShape) o;
-		return normalizedLanguageIn.equals(that.normalizedLanguageIn);
+		return lowerCaseLanguageIn.equals(that.lowerCaseLanguageIn);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), normalizedLanguageIn);
+		return Objects.hash(super.hashCode(), lowerCaseLanguageIn);
 	}
 
 	@Override
 	public String toString() {
 		return "LanguageInPropertyShape{" +
 				"languageIn=" + Arrays.toString(languageIn.toArray()) +
-				", normalizedLanguageIn=" + Arrays.toString(normalizedLanguageIn.toArray()) +
+				", normalizedLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) +
 				", path=" + getPath() +
 				", id=" + id +
 				'}';

@@ -11,6 +11,6 @@ ex:PersonShape
 	sh:targetClass ex:Person ;
 	sh:property [
 		sh:path ex:label ;
-		sh:languageIn ( "en" "no" "de-de" "mn-Cyrl" "a-ab-abc-defg")  ;
+		sh:languageIn ( "*" )  ;
 	] .
 

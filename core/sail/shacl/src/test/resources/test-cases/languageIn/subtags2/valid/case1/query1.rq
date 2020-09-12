@@ -8,6 +8,6 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 INSERT DATA {
 
 ex:validPerson1 a ex:Person ;
-	ex:label "label"@de-Deva.
+	ex:label "human"@en, "menneske"@no.
 
 }
