@@ -14,17 +14,25 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_DATATYPE_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_LANG_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.OBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.PREDICATE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.SUBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.TRIPLE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.URI_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_NAME_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_TAG;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandler;
@@ -63,6 +71,11 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 
 	private QueryResultHandler handler;
 
+	/**
+	 * stack for handling nested RDF* triples
+	 */
+	private Deque<TripleContainer> tripleStack = new ArrayDeque<>();
+
 	public SPARQLResultsSAXParser(ValueFactory valueFactory, QueryResultHandler handler) {
 		this.valueFactory = valueFactory;
 		this.handler = handler;
@@ -97,6 +110,8 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			if (currentBindingName == null) {
 				throw new SAXException(BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
 			}
+		} else if (TRIPLE_TAG.equals(tagName)) {
+			tripleStack.push(new TripleContainer());
 		} else if (URI_TAG.equals(tagName)) {
 			try {
 				currentValue = valueFactory.createIRI(text);
@@ -149,16 +164,51 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 
 	@Override
 	public void endTag(String tagName) throws SAXException {
-		if (BINDING_TAG.equals(tagName)) {
+		TripleContainer currentTriple;
+		switch (tagName) {
+		case BINDING_TAG:
 			if (currentValue == null) {
 				throw new SAXException("Value missing for " + BINDING_TAG + " element");
 			}
-
 			currentSolution.addBinding(currentBindingName, currentValue);
-
 			currentBindingName = null;
 			currentValue = null;
-		} else if (RESULT_TAG.equals(tagName)) {
+			break;
+		case SUBJECT_TAG:
+			currentTriple = tripleStack.peek();
+			if (currentTriple.getSubject() != null) {
+				throw new SAXException("RDF* triple subject defined twice");
+			}
+			if (currentValue instanceof Resource) {
+				currentTriple.setSubject((Resource) currentValue);
+			} else {
+				throw new SAXException("unexpected value type for subject: " + currentValue);
+			}
+			break;
+		case PREDICATE_TAG:
+			currentTriple = tripleStack.peek();
+			if (currentTriple.getPredicate() != null) {
+				throw new SAXException("RDF* triple predicate defined twice");
+			}
+			if (currentValue instanceof IRI) {
+				currentTriple.setPredicate((IRI) currentValue);
+			} else {
+				throw new SAXException("unexpected value type for predicate: " + currentValue);
+			}
+			break;
+		case OBJECT_TAG:
+			currentTriple = tripleStack.peek();
+			if (currentTriple.getObject() != null) {
+				throw new SAXException("RDF* triple object defined twice");
+			}
+			currentTriple.setObject(currentValue);
+			break;
+		case TRIPLE_TAG:
+			currentTriple = tripleStack.pop();
+			currentValue = valueFactory.createTriple(currentTriple.getSubject(), currentTriple.getPredicate(),
+					currentTriple.getObject());
+			break;
+		case RESULT_TAG:
 			try {
 				if (handler != null) {
 					handler.handleSolution(currentSolution);
@@ -167,6 +217,58 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			} catch (TupleQueryResultHandlerException e) {
 				throw new SAXException(e);
 			}
+			break;
 		}
 	}
+
+	private static class TripleContainer {
+
+		private Resource subject;
+		private IRI predicate;
+		private Value object;
+
+		/**
+		 * @return the subject
+		 */
+		public Resource getSubject() {
+			return subject;
+		}
+
+		/**
+		 * @param subject the subject to set
+		 */
+		public void setSubject(Resource subject) {
+			this.subject = subject;
+		}
+
+		/**
+		 * @return the predicate
+		 */
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		/**
+		 * @param predicate the predicate to set
+		 */
+		public void setPredicate(IRI predicate) {
+			this.predicate = predicate;
+		}
+
+		/**
+		 * @return the object
+		 */
+		public Value getObject() {
+			return object;
+		}
+
+		/**
+		 * @param object the object to set
+		 */
+		public void setObject(Value object) {
+			this.object = object;
+		}
+
+	}
+
 }

@@ -7,25 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVMappingStrategy;
-import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVParser;
-
 /**
- * Parser for SPARQL* TSV results. This is equivalent to the SPARQL TSV parser with the addition of support for RDF*
- * triples. Serialized triples must be in Turtle* fashion with the notable exception that any embedded literals may not
- * use the triple quotes notation (as regular literals in SPARQL TSV).
  *
- * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - moved to {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParser}.
  */
-public class SPARQLStarResultsTSVParser extends SPARQLResultsTSVParser {
-	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.TSV_STAR;
-	}
-
-	@Override
-	protected SPARQLResultsTSVMappingStrategy createMappingStrategy() {
-		return new SPARQLStarResultsTSVMappingStrategy(valueFactory);
-	}
+@Deprecated
+public class SPARQLStarResultsTSVParser extends org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParser {
 }

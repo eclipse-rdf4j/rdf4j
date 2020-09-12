@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.3.2-SNAPSHOT</version>
+	<version>3.4.1-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -306,16 +306,11 @@
 		<servlet.version>3.1.0</servlet.version>
 		<jetty.version>9.4.24.v20191120</jetty.version>
 		<spring.version>5.2.4.RELEASE</spring.version>
-		<guava.version>18.0</guava.version>
+		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
-			<dependency>
-				<groupId>org.apache.commons</groupId>
-				<artifactId>commons-collections4</artifactId>
-				<version>4.4</version>
-			</dependency>
 			<!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
