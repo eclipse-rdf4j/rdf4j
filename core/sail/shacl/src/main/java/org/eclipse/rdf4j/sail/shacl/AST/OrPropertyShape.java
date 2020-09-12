@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
@@ -319,8 +320,9 @@ public class OrPropertyShape extends PathPropertyShape {
 
 			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
 
-			query = "{\n#VALUES_INJECTION_POINT#\n " + query.replaceAll("(?m)^", "\t")
-					+ " \n} UNION {\n\t#VALUES_INJECTION_POINT#\n\t" + targetVar + " " + randomVariable() + " "
+			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+					+ randomVariable() + " "
 					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
 					+ " \n})\n}";
 
@@ -332,9 +334,10 @@ public class OrPropertyShape extends PathPropertyShape {
 					.filter(Optional::isPresent)
 					.map(Optional::get)
 					.map(s -> s.replaceAll("(?m)^", "\t"))
-					.collect(Collectors.joining("\n} UNION {\n#VALUES_INJECTION_POINT#\n",
-							"{\n#VALUES_INJECTION_POINT#\n",
-							"\n}"));
+					.collect(
+							Collectors.joining("\n} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"\n}"));
 		}
 
 	}

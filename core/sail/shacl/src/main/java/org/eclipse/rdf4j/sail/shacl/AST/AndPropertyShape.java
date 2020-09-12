@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
@@ -247,8 +248,9 @@ public class AndPropertyShape extends PathPropertyShape {
 
 			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
 
-			query = "{\n#VALUES_INJECTION_POINT#\n " + query.replaceAll("(?m)^", "\t")
-					+ " \n} UNION {\n\t#VALUES_INJECTION_POINT#\n\t" + targetVar + " " + randomVariable() + " "
+			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+					+ randomVariable() + " "
 					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
 					+ " \n})\n}";
 

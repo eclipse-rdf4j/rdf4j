@@ -27,7 +27,11 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
-abstract class AbstractBulkJoinPlanNode implements PlanNode {
+public abstract class AbstractBulkJoinPlanNode implements PlanNode {
+
+	// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
+	// semantics of SPARQL but where we don't actually want a new scope.
+	public static final String VALUES_INJECTION_POINT = "#VALUES_INJECTION_POINT#";
 
 	protected String[] variables;
 	ValidationExecutionLogger validationExecutionLogger;
@@ -35,9 +39,7 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	ParsedQuery parseQuery(String query) {
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
-		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
-		// semantics of SPARQL but where we don't actually want a new scope.
-		query = query.replace("#VALUES_INJECTION_POINT#", "\nVALUES (?a) {}\n");
+		query = query.replace(VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
 		String completeQuery = "select * where { \nVALUES (?a) {}\n" + query + "\n}\nORDER BY ?a";
 		return queryParserFactory.getParser().parseQuery(completeQuery, null);
 	}

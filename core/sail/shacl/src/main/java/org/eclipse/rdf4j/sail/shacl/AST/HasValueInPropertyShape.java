@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
@@ -226,7 +227,8 @@ public class HasValueInPropertyShape extends PathPropertyShape {
 								"value was unsupported type: " + value.getClass().getSimpleName());
 					})
 					.collect(
-							Collectors.joining("} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
+							Collectors.joining("} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
 									"}"));
 
 		} else {
