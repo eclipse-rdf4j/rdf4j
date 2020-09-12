@@ -22,11 +22,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 public class LanguageInFilter extends FilterPlanNode {
 
 	private final List<String> languageRanges;
-
 	private final Set<String> lowerCaseLanguageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn,
-			List<String> languageRanges) {
+	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn, List<String> languageRanges) {
 		super(parent);
 		this.lowerCaseLanguageIn = lowerCaseLanguageIn;
 		this.languageRanges = languageRanges;

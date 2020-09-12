@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -20,7 +19,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -47,11 +45,11 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 1)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class LanguageInBenchmarkEmpty {
 	{
@@ -128,37 +126,7 @@ public class LanguageInBenchmarkEmpty {
 			}
 		}
 
-//		repository.shutDown();
-
-	}
-
-	@Benchmark
-	public void sparqlInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">; <" + FOAF.AGE
-								+ "> ?age. FILTER(datatype(?age) != <http://www.w3.org/2001/XMLSchema#int>)}")
-						.evaluate()
-						.stream()) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
-
-//		repository.shutDown();
+		repository.shutDown();
 
 	}
 
