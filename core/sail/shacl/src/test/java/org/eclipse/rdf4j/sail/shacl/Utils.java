@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class Utils {
 
 	public static void loadShapeData(ShaclSail sail, String resourceName) throws IOException {
+		sail.init();
 		sail.disableValidation();
 		Model shapes;
 		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
