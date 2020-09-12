@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -26,8 +27,13 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
+
+	private static final Logger logger = LoggerFactory.getLogger(AbstractBulkJoinPlanNode.class);
 
 	// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
 	// semantics of SPARQL but where we don't actually want a new scope.
@@ -35,13 +41,29 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	protected String[] variables;
 	ValidationExecutionLogger validationExecutionLogger;
+	private String completeQuery;
 
 	ParsedQuery parseQuery(String query) {
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 		query = query.replace(VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
 		String completeQuery = "select * where { \nVALUES (?a) {}\n" + query + "\n}\nORDER BY ?a";
-		return queryParserFactory.getParser().parseQuery(completeQuery, null);
+		this.completeQuery = completeQuery;
+		try {
+			return queryParserFactory.getParser().parseQuery(completeQuery, null);
+		} catch (MalformedQueryException exception) {
+			logger.error("\n{}", lineNumbers(completeQuery), exception);
+			throw exception;
+		}
+	}
+
+	private String lineNumbers(String in) {
+		String[] split = in.split("\n");
+		StringBuilder stringBuilder = new StringBuilder();
+		for (int i = 0; i < split.length; i++) {
+			stringBuilder.append(String.format(" %3d  %s%s", i, split[i], System.lineSeparator()));
+		}
+		return stringBuilder.toString();
 	}
 
 	void runQuery(ArrayDeque<Tuple> left, ArrayDeque<Tuple> right, SailConnection connection,

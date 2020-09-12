@@ -186,6 +186,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValue/targetShapeOr",
 		"test-cases/hasValue/targetShapeAnd",
 		"test-cases/hasValue/targetShapeAnd2",
+		"test-cases/hasValue/targetShapeAndOr",
+		"test-cases/hasValue/targetShapeAndOr2",
 		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or"
 		)

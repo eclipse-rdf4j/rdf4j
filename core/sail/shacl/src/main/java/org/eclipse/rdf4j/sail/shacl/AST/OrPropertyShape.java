@@ -232,6 +232,12 @@ public class OrPropertyShape extends PathPropertyShape {
 		return or.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
 	}
 
+	public boolean childrenHasOwnPathRecursive() {
+		return or.stream()
+				.flatMap(a -> a.stream().map(PathPropertyShape::childrenHasOwnPathRecursive))
+				.anyMatch(a -> a);
+	}
+
 	private PlanNode unionAll(List<PlanNode> planNodes) {
 		return new Unique(new UnionNode(planNodes.toArray(new PlanNode[0])));
 	}
@@ -303,7 +309,7 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		if (hasOwnPath()) {
 			// within property shape
-			String objectVariable = "?b";
+			String objectVariable = randomVariable();
 			String pathQuery1 = getPath().getQuery(targetVar, objectVariable, null);
 
 			String collect = or.stream()
@@ -327,6 +333,16 @@ public class OrPropertyShape extends PathPropertyShape {
 					+ " \n})\n}";
 
 			return query;
+		} else if (!childrenHasOwnPathRecursive()) {
+
+			return or.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) || ( ", "( ",
+							" )"));
 		} else {
 			// within node shape
 			return or.stream()

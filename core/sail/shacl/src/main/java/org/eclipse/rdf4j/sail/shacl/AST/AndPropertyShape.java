@@ -215,6 +215,12 @@ public class AndPropertyShape extends PathPropertyShape {
 				.anyMatch(a -> a);
 	}
 
+	public boolean childrenHasOwnPathRecursive() {
+		return and.stream()
+				.flatMap(a -> a.stream().map(PathPropertyShape::childrenHasOwnPathRecursive))
+				.anyMatch(a -> a);
+	}
+
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Optional<PlanNode> reduce = and
@@ -231,7 +237,7 @@ public class AndPropertyShape extends PathPropertyShape {
 
 		if (hasOwnPath()) {
 			// within property shape
-			String objectVariable = "?b";
+			String objectVariable = randomVariable();
 			String pathQuery1 = getPath().getQuery(targetVar, objectVariable, null);
 
 			String collect = and.stream()
@@ -255,6 +261,16 @@ public class AndPropertyShape extends PathPropertyShape {
 					+ " \n})\n}";
 
 			return query;
+		} else if (!childrenHasOwnPathRecursive()) {
+
+			return and.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) && ( ", "( ",
+							" )"));
 		} else {
 			// within node shape
 			return and.stream()
