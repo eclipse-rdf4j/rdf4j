@@ -501,6 +501,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 			return;
 		}
 
+		shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
+
 		long prevSize;
 		long currentSize = shaclSailConnection.size();
 		do {
@@ -508,7 +510,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
 			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
 			// shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
-			shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
 			currentSize = shaclSailConnection.size();
 		} while (prevSize != currentSize);
 
