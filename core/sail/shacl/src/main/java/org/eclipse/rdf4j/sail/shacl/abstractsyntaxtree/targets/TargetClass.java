@@ -48,17 +48,18 @@ public class TargetClass extends Target {
 		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getRemovedStatements());
 	}
 
-	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope, SailConnection connection) {
+	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
+			SailConnection connection) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
-				.getCachedNodeFor(new Sort(new UnorderedSelect(connection, null,
-					RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false))));
+					.getCachedNodeFor(new Sort(new UnorderedSelect(connection, null,
+							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false))));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
-				new Select(connection, getQueryFragment("?a", "?c", null),
-					b -> new ValidationTuple(b.getValue("a"), scope, false), "?a"));
+					new Select(connection, getQueryFragment("?a", "?c", null),
+							b -> new ValidationTuple(b.getValue("a"), scope, false), "?a"));
 		}
 
 		return new Unique(planNode);

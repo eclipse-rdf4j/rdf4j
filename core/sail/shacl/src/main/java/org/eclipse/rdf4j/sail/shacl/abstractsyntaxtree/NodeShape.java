@@ -185,13 +185,15 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		PlanNode planNode = new EmptyNode();
 
-			constraintComponents.stream()
+		constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.nodeShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape).getAdded(connectionsGroup, Scope.nodeShape);
-		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape).getRemoved(connectionsGroup, Scope.nodeShape);
+		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
+				.getAdded(connectionsGroup, Scope.nodeShape);
+		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
+				.getRemoved(connectionsGroup, Scope.nodeShape);
 
 		planNode = new UnionNode(planNode, targetAdded, targetRemoved);
 
@@ -199,7 +201,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 
-		if(scope != Scope.nodeShape){
+		if (scope != Scope.nodeShape) {
 			planNode = new ShiftToPropertyShape(planNode);
 		}
 

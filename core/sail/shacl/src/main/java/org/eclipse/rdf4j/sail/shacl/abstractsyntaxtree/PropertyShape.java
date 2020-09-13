@@ -220,12 +220,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		PlanNode planNode = new EmptyNode();
 
 		constraintComponents.stream()
-			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
-			.reduce(UnionNode::new)
-			.orElse(new EmptyNode());
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
 
-		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape).getAdded(connectionsGroup, Scope.propertyShape);
-		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape).getRemoved(connectionsGroup, Scope.propertyShape);
+		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
+				.getAdded(connectionsGroup, Scope.propertyShape);
+		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
+				.getRemoved(connectionsGroup, Scope.propertyShape);
 
 //		targetAdded = new ShiftToPropertyShape(targetAdded);
 //		targetRemoved = new ShiftToPropertyShape(targetRemoved);
@@ -237,7 +239,6 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		planNode = new DebugPlanNode(planNode, "PropertyShape32847923::getAllTargetsPlan", p -> {
 			System.out.println(p);
 		});
-
 
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);

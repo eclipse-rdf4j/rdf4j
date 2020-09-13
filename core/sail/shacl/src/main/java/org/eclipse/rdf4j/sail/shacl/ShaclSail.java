@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
@@ -25,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevel;
@@ -39,7 +41,9 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
@@ -174,10 +178,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private List<Shape> shapes = Collections.emptyList();
 
-	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
-	private static final String PROPERTY_SHAPE_WITH_TARGET;
-	private static final String DASH_CONSTANTS;
+	private static final Model DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -214,18 +215,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	static {
 		try {
-			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
-					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
-			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
-					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
-			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
-					"shacl-sparql-inference/propertyShapeWithTarget.rq");
-			DASH_CONSTANTS = resourceAsString(
-					"shacl-sparql-inference/dashConstants.rq");
+			DASH_CONSTANTS = resourceAsModel("shacl-sparql-inference/dashConstants.ttl");
 			shaclVocabulary = createShaclVocbulary();
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
+
+
 
 	}
 
@@ -400,7 +396,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 					false)) {
 				shapesRepoCacheConnection.add(statements);
 			}
-			runInferencingSparqlQueriesToFixPoint(shapesRepoCacheConnection);
+			enrichShapes(shapesRepoCacheConnection);
 			shapesRepoCacheConnection.commit();
 			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
 		}
@@ -494,25 +490,31 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return shapes;
 	}
 
-	private void runInferencingSparqlQueriesToFixPoint(SailRepositoryConnection shaclSailConnection) {
+	private void enrichShapes(SailRepositoryConnection shaclSailConnection) {
 
 		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
 		if (shaclSailConnection.isEmpty()) {
 			return;
 		}
 
-		shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
+		shaclSailConnection.add(DASH_CONSTANTS);
+		implicitTargetClass(shaclSailConnection);
 
-		long prevSize;
-		long currentSize = shaclSailConnection.size();
-		do {
-			prevSize = currentSize;
-			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
-			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
-			// shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
-			currentSize = shaclSailConnection.size();
-		} while (prevSize != currentSize);
+	}
 
+	private void implicitTargetClass(SailRepositoryConnection shaclSailConnection) {
+		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, true).stream()) {
+			stream
+					.map(Statement::getSubject)
+					.filter(s ->
+
+					shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.NODE_SHAPE, true)
+							|| shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.PROPERTY_SHAPE, true)
+					)
+					.forEach(s -> {
+						shaclSailConnection.add(s, SHACL.TARGET_CLASS, s);
+					});
+		}
 	}
 
 	/**
@@ -835,8 +837,16 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private static String resourceAsString(String s) throws IOException {
-		return IOUtils.toString(Objects.requireNonNull(ShaclSail.class.getClassLoader().getResourceAsStream(s)),
-				StandardCharsets.UTF_8);
+		try (InputStream resourceAsStream = ShaclSail.class.getClassLoader().getResourceAsStream(s)) {
+			return IOUtils.toString(Objects.requireNonNull(resourceAsStream), StandardCharsets.UTF_8);
+		}
+
+	}
+
+	private static Model resourceAsModel(String s) throws IOException {
+		try (InputStream resourceAsStream = ShaclSail.class.getClassLoader().getResourceAsStream(s)) {
+			return Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
+		}
 	}
 
 	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,

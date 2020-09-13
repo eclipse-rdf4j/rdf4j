@@ -40,7 +40,6 @@ public class TargetSubjectsOf extends Target {
 		throw new ShaclUnsupportedException();
 	}
 
-
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {

@@ -15,6 +15,42 @@
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:PersonShape
     ], [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 3;
+      sh:value 3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 3;
+      sh:value 3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 3;
+      sh:value 3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
       sh:focusNode 3;
       sh:value 3;
       sh:sourceConstraintComponent sh:NotConstraintComponent;

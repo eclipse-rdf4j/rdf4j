@@ -14,17 +14,31 @@
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ehhjcv7sx1
+      sh:sourceShape _:node1ei4aki2ox1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value "1234567";
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ehhjcv7sx1
+      sh:sourceShape _:node1ei4aki2ox1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "1234567";
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4aki2ox1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "1234567";
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4aki2ox1
     ] .
 
-_:node1ehhjcv7sx1 a sh:PropertyShape;
+_:node1ei4aki2ox1 a sh:PropertyShape;
   sh:path ex:knows;
   sh:not [ a sh:NodeShape;
       sh:nodeKind sh:Literal
