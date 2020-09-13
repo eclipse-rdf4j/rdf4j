@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
@@ -29,28 +31,38 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Used to run the query that represents the target and sets the bindings based on values that match the statement
+ * patterns from the added/removed sail connection
+ */
 public class TargetChainRetriever implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(TargetChainRetriever.class);
 
-	private final SailConnection transactionalConnection;
-	private final SailConnection baseConnection;
+	private final ConnectionsGroup connectionsGroup;
 	private final List<StatementPattern> statementPatterns;
+	private final List<StatementPattern> removedStatementPatterns;
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
+	private final StackTraceElement[] stackTrace;
 
-	public TargetChainRetriever(SailConnection transactionalConnection, SailConnection baseConnection,
-			List<StatementPattern> statementPatterns, String query, ConstraintComponent.Scope scope) {
-		this.transactionalConnection = transactionalConnection;
-		this.baseConnection = baseConnection;
+	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
+			List<StatementPattern> statementPatterns, List<StatementPattern> removedStatementPatterns, String query,
+			ConstraintComponent.Scope scope) {
+		this.connectionsGroup = connectionsGroup;
 		this.statementPatterns = statementPatterns;
 		this.scope = scope;
 		this.query = "select * where {" + query + "}";
+		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.get();
+
+		this.removedStatementPatterns = removedStatementPatterns != null ? removedStatementPatterns
+				: Collections.emptyList();
+		assert this.removedStatementPatterns.size() <= 1;
 	}
 
 	@Override
@@ -58,6 +70,7 @@ public class TargetChainRetriever implements PlanNode {
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
 			final Iterator<StatementPattern> statementPatternIterator = statementPatterns.iterator();
+			final Iterator<StatementPattern> removedStatementIterator = removedStatementPatterns.iterator();
 
 			StatementPattern currentStatementPattern;
 			CloseableIteration<? extends Statement, SailException> statements;
@@ -70,7 +83,7 @@ public class TargetChainRetriever implements PlanNode {
 					return;
 				}
 
-				if (!statementPatternIterator.hasNext()) {
+				if (!statementPatternIterator.hasNext() && !removedStatementIterator.hasNext()) {
 					if (statements != null) {
 						statements.close();
 					}
@@ -83,13 +96,21 @@ public class TargetChainRetriever implements PlanNode {
 						statements.close();
 					}
 
-					if (!statementPatternIterator.hasNext()) {
+					if (!statementPatternIterator.hasNext() && !removedStatementIterator.hasNext()) {
 						break;
 					}
 
-					currentStatementPattern = statementPatternIterator.next();
+					SailConnection connection;
 
-					statements = transactionalConnection.getStatements(
+					if (statementPatternIterator.hasNext()) {
+						currentStatementPattern = statementPatternIterator.next();
+						connection = connectionsGroup.getAddedStatements();
+					} else {
+						currentStatementPattern = removedStatementIterator.next();
+						connection = connectionsGroup.getRemovedStatements();
+					}
+
+					statements = connection.getStatements(
 							(Resource) currentStatementPattern.getSubjectVar().getValue(),
 							(IRI) currentStatementPattern.getPredicateVar().getValue(),
 							currentStatementPattern.getObjectVar().getValue(), false);
@@ -139,8 +160,9 @@ public class TargetChainRetriever implements PlanNode {
 
 						// TODO: Should really bulk this operation!
 
-						results = baseConnection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-								bindings, true);
+						results = connectionsGroup.getBaseConnection()
+								.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+										bindings, true);
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query: \n{}", query);

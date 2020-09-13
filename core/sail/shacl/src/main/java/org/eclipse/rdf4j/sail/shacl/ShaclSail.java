@@ -221,8 +221,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 			throw new IllegalStateException(e);
 		}
 
-
-
 	}
 
 	private static SchemaCachingRDFSInferencer createShaclVocbulary() throws IOException {

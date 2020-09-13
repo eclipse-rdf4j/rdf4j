@@ -14,31 +14,59 @@
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4ak4drx1
+      sh:sourceShape _:node1ei4jviqsx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value "123";
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4ak4drx1
+      sh:sourceShape _:node1ei4jviqsx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value "123";
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4ak4drx1
+      sh:sourceShape _:node1ei4jviqsx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value "123";
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4ak4drx1
+      sh:sourceShape _:node1ei4jviqsx1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4jviqsx1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4jviqsx1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4jviqsx1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ei4jviqsx1
     ] .
 
-_:node1ei4ak4drx1 a sh:PropertyShape;
+_:node1ei4jviqsx1 a sh:PropertyShape;
   sh:path ex:age;
   sh:not [ a sh:NodeShape;
       sh:not [ a sh:NodeShape;

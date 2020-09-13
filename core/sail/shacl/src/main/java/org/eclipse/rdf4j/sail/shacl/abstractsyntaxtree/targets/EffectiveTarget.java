@@ -14,10 +14,42 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class EffectiveTarget {
+
+	private final ArrayDeque<EffectiveTargetObject> chain;
+	private final EffectiveTargetObject optional;
+
+	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional, String targetVarPrefix) {
+		int index = 0;
+
+		this.chain = new ArrayDeque<>();
+
+		EffectiveTargetObject previous = null;
+
+		for (Targetable targetable : chain) {
+			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
+					new Var(targetVarPrefix + String.format("%010d", index++)),
+					targetable,
+					previous
+			);
+			previous = effectiveTargetObject;
+			this.chain.addLast(effectiveTargetObject);
+		}
+
+		if (optional != null) {
+			this.optional = new EffectiveTargetObject(
+					new Var(targetVarPrefix + String.format("%010d", index)),
+					optional,
+					previous
+			);
+		} else {
+			this.optional = null;
+		}
+	}
 
 	public Var getTargetVar() {
 		return chain.getLast().var;
@@ -70,27 +102,11 @@ public class EffectiveTarget {
 		}
 	}
 
-	private final ArrayDeque<EffectiveTargetObject> chain;
-
-	public EffectiveTarget(ArrayDeque<Targetable> chain, String targetVarPrefix) {
-		int index = 0;
-
-		this.chain = new ArrayDeque<>();
-		EffectiveTargetObject prev = null;
-		for (Targetable o : chain) {
-			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new Var(targetVarPrefix + String.format("%010d", index++)), o,
-					prev);
-			prev = effectiveTargetObject;
-			this.chain.addLast(effectiveTargetObject);
-		}
-
-	}
-
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
+			boolean includeTargetsAffectedByRemoval) {
 		assert !chain.isEmpty();
 
-		if (chain.size() == 1) {
+		if (chain.size() == 1 && !(includeTargetsAffectedByRemoval && optional != null)) {
 			// simple chain
 
 			EffectiveTargetObject last = chain.getLast();
@@ -113,42 +129,23 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
-			return new TargetChainRetriever(connectionsGroup.getAddedStatements(), connectionsGroup.getBaseConnection(),
-					collect, query, scope);
-
-		}
-
-	}
-
-	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		assert !chain.isEmpty();
-
-		if (chain.size() == 1) {
-			// simple chain
-
-			EffectiveTargetObject last = chain.getLast();
-			if (last.target instanceof Target) {
-				return ((Target) last.target).getRemoved(connectionsGroup, scope);
+			if (includeTargetsAffectedByRemoval && optional != null) {
+				return new TargetChainRetriever(
+						connectionsGroup,
+						collect,
+						optional.getStatementPatterns().collect(Collectors.toList()),
+						query,
+						scope
+				);
 			} else {
-				throw new ShaclUnsupportedException(
-						"Unknown target in chain is type: " + last.getClass().getSimpleName());
+				return new Sort(new TargetChainRetriever(
+						connectionsGroup,
+						collect,
+						null,
+						query,
+						scope
+				));
 			}
-
-		} else {
-			// complex chain
-
-			List<StatementPattern> collect = chain.stream()
-					.flatMap(EffectiveTargetObject::getStatementPatterns)
-					.collect(Collectors.toList());
-
-			String query = chain.stream()
-					.map(EffectiveTargetObject::getQueryFragment)
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
-
-			return new TargetChainRetriever(connectionsGroup.getRemovedStatements(),
-					connectionsGroup.getBaseConnection(),
-					collect, query, scope);
 
 		}
 

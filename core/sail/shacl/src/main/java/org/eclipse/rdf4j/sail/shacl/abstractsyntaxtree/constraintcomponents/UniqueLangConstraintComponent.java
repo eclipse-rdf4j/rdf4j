@@ -127,7 +127,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
-			PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup, scope);
+			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -137,7 +137,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		}
 
-		PlanNode addedTargets = effectiveTarget.getAdded(connectionsGroup, scope);
+		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -166,7 +166,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", scope);
 
-		return target.getAdded(connectionsGroup, scope);
+		return target.getPlanNode(connectionsGroup, scope, false);
 
 	}
 }

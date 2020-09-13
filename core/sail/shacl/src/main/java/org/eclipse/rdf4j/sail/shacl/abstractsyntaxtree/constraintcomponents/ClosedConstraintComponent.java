@@ -39,8 +39,6 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 			this.ignoredProperties = Collections.emptyList();
 		}
 
-		System.out.println();
-
 	}
 
 	@Override

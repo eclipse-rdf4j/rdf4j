@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -187,9 +186,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 							false, Scope.propertyShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(constraintComponent);
-				System.out.println(scope);
-				System.out.println(p);
+//				System.out.println(constraintComponent);
+//				System.out.println(scope);
+//				System.out.println(p);
 			});
 
 			if (!(constraintComponent instanceof PropertyShape)) {
@@ -206,7 +205,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(p);
+//				System.out.println(p);
 			});
 
 			union = new UnionNode(union, validationPlanNode);
@@ -217,28 +216,13 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		PlanNode planNode = new EmptyNode();
-
-		constraintComponents.stream()
+		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
-				.getAdded(connectionsGroup, Scope.propertyShape);
-		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
-				.getRemoved(connectionsGroup, Scope.propertyShape);
-
-//		targetAdded = new ShiftToPropertyShape(targetAdded);
-//		targetRemoved = new ShiftToPropertyShape(targetRemoved);
-
-		planNode = new UnionNode(planNode, targetAdded, targetRemoved);
-
-		planNode = new Unique(planNode);
-
-		planNode = new DebugPlanNode(planNode, "PropertyShape32847923::getAllTargetsPlan", p -> {
-			System.out.println(p);
-		});
+		planNode = new UnionNode(planNode, getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
+				.getPlanNode(connectionsGroup, Scope.propertyShape, true));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);

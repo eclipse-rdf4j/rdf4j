@@ -82,7 +82,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				false, scope);
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
-			System.out.println("HERE!" + p);
+//			System.out.println("HERE!" + p);
 		});
 
 		PlanNode invalid = new Unique(planNode);
@@ -90,14 +90,33 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
 
 		discardedLeft = new DebugPlanNode(discardedLeft, "", p -> {
-			System.out.println();
+//			System.out.println();
 		});
 
 		return discardedLeft;
-//		}
-//
-//		throw new UnsupportedOperationException();
+
 	}
+
+	/*
+	 * PlanNodeProvider targetProvider = overrideTargetNode; if (targetProvider == null) { targetProvider = () ->
+	 * getAllTargetsPlan(connectionsGroup, negatePlan, scope); }else{ System.out.println(); }
+	 *
+	 * PlanNode allTargetsPlan = targetProvider.getPlanNode();
+	 *
+	 * allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> { System.out.println("HERE!" + p); });
+	 *
+	 * PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, targetProvider,
+	 * negateChildren, false, scope);
+	 *
+	 * PlanNode invalid = new Unique(planNode);
+	 *
+	 * PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
+	 *
+	 * discardedLeft = new DebugPlanNode(discardedLeft, "", p -> { System.out.println(); });
+	 *
+	 * return discardedLeft;
+	 *
+	 */
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
@@ -105,19 +124,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
-					.getAdded(connectionsGroup, Scope.nodeShape);
-
-			allTargetsPlan = new UnionNode(allTargetsPlan,
-					getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
-							.getRemoved(connectionsGroup, Scope.nodeShape));
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			allTargets = new ShiftToPropertyShape(new Unique(allTargetsPlan));
 		} else {
-			PlanNode target_1 = getTargetChain().getEffectiveTarget("target_", scope).getAdded(connectionsGroup, scope);
-			PlanNode target_2 = getTargetChain().getEffectiveTarget("target_", scope)
-					.getRemoved(connectionsGroup, scope);
-
-			allTargets = new Unique(new UnionNode(target_1, target_2));
+			allTargets = getTargetChain().getEffectiveTarget("target_", scope)
+					.getPlanNode(connectionsGroup, scope, true);
 
 		}
 

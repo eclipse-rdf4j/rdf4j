@@ -130,10 +130,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			return new EmptyNode();
 		}
 
-		if (negatePlan) {
-			System.out.println();
-		}
-
 		PlanNode union = new EmptyNode();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
@@ -143,7 +139,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 							Scope.nodeShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(p);
+//				System.out.println(p);
 			});
 
 			if (!(constraintComponent instanceof PropertyShape)) {
@@ -158,7 +154,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(p);
+//				System.out.println(p);
 			});
 
 			union = new UnionNode(union,
@@ -183,27 +179,22 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		PlanNode planNode = new EmptyNode();
 
-		constraintComponents.stream()
+		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.nodeShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		PlanNode targetAdded = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
-				.getAdded(connectionsGroup, Scope.nodeShape);
-		PlanNode targetRemoved = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
-				.getRemoved(connectionsGroup, Scope.nodeShape);
-
-		planNode = new UnionNode(planNode, targetAdded, targetRemoved);
-
-		planNode = new Unique(planNode);
+		planNode = new UnionNode(planNode, getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
+				.getPlanNode(connectionsGroup, Scope.nodeShape, true));
 
 		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 
 		if (scope != Scope.nodeShape) {
 			planNode = new ShiftToPropertyShape(planNode);
 		}
+
+		planNode = new Unique(planNode);
 
 		return planNode;
 	}

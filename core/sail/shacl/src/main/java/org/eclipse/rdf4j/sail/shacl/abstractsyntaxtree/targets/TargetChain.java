@@ -64,11 +64,13 @@ public class TargetChain {
 
 		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
 
+		Targetable targetable = null;
+
 		if (scope == ConstraintComponent.Scope.propertyShape) {
-			newChain.removeLast();
+			targetable = newChain.removeLast();
 		}
 
-		return new EffectiveTarget(newChain, targetVarPrefix);
+		return new EffectiveTarget(newChain, targetable, targetVarPrefix);
 	}
 
 }

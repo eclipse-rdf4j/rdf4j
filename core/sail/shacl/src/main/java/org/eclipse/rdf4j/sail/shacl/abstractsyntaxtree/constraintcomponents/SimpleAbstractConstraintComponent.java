@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -171,7 +172,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		if (scope == Scope.nodeShape) {
 
-			PlanNode targets = effectiveTarget.getAdded(connectionsGroup, scope);
+			PlanNode targets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
 
 			if (negatePlan) {
 				return filterAttacher.apply(targets).getTrueNode(UnBufferedPlanNode.class);
@@ -194,7 +195,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		}
 
 		InnerJoin innerJoin = new InnerJoin(
-				effectiveTarget.getAdded(connectionsGroup, scope),
+				effectiveTarget.getPlanNode(connectionsGroup, scope, false),
 				invalidValuesDirectOnPath);
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -211,14 +212,14 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			top = new UnionNode(top, typeFilterPlan);
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
-					effectiveTarget.getAdded(connectionsGroup, scope),
+					effectiveTarget.getPlanNode(connectionsGroup, scope, false),
 					connectionsGroup.getBaseConnection(), path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, "", p -> {
-				System.out.println(p);
+//				System.out.println(p);
 			});
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);
@@ -258,13 +259,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("target_", scope);
-
-		PlanNode added = target.getAdded(connectionsGroup, scope);
-		added = new DebugPlanNode(added, "", p -> {
-			System.out.println(p);
-		});
-		return added;
+		return new EmptyNode();
 	}
 
 }

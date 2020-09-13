@@ -76,16 +76,6 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
-		Optional<PlanNode> reduce = or.stream()
-				.map(a -> a.getAllTargetsPlan(connectionsGroup, negated, scope))
-				.reduce(UnionNode::new);
-
-		return new Unique(reduce.orElseThrow(() -> new IllegalStateException("or is empty")));
-
-	}
-
-	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new UnsupportedOperationException("Not implemented yet");
