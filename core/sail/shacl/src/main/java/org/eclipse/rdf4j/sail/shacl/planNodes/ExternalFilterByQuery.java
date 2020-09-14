@@ -34,6 +34,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final ParsedQuery query;
 	private final String queryVariable;
 	private final String bindingVariable;
+	private final String queryString;
 
 	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, int index, String queryFragment,
 			String queryVariable) {
@@ -50,9 +51,9 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		queryFragment = "SELECT " + queryVariable + " WHERE {\n" + queryFragment + "\n}";
+		this.queryString = "SELECT " + queryVariable + " WHERE {\n" + queryFragment + "\n}";
 		try {
-			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null);
+			this.query = queryParserFactory.getParser().parseQuery(queryString, null);
 		} catch (MalformedQueryException e) {
 			logger.error("Malformed query: \n{}", queryFragment);
 			throw e;
@@ -81,7 +82,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	public String toString() {
 		return "ExternalFilterByQuery{" +
 				"index=" + index +
-				", query=" + query +
+				", queryString=" + queryString.replace("\n", "\t") +
 				", queryVariable='" + queryVariable + '\'' +
 				'}';
 	}
