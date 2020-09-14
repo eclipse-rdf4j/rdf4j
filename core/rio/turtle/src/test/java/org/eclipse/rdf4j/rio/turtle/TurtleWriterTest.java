@@ -334,13 +334,39 @@ public class TurtleWriterTest extends RDFWriterTest {
 	public void anotherBnodeTestReduced() throws Exception {
 		String data = "" +
 				"@prefix ex:    <http://example.com/ns#> .\n" +
-				"@prefix sh:    <http://www.w3.org/ns/shacl#> .\n" +
-				"@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-				"@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .\n" +
-				"@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-				"@prefix foaf:  <http://xmlns.com/foaf/0.1/> .\n" +
 				"\n" +
 				"ex:a  ex:list   (_:b0 _:b0) .";
+
+		System.out.println("### EXPECTED ###");
+		System.out.println(data);
+		System.out.println("#################\n");
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		System.out.println("### ACTUAL ###");
+		System.out.println(stringWriter.toString());
+		System.out.println("#################\n");
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void anotherBnodeTestReduced2() throws Exception {
+		String data = "@prefix ex:    <http://example.com/ns#> .\n" +
+				"@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+				"\n" +
+				"ex:ex1    ex:list  [ rdf:first  [  ] ;\n" +
+				"                             rdf:rest   rdf:nil ;\n" +
+				"                             ex:abc   ex:def\n" +
+				"                           ]\n" +
+				"                   .\n" +
+				"";
 
 		System.out.println("### EXPECTED ###");
 		System.out.println(data);
