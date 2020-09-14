@@ -206,4 +206,8 @@ public abstract class PathPropertyShape extends PropertyShape {
 		Unique unique = new Unique(select);
 		return nodeShape.getTargetFilter(connectionsGroup, unique);
 	}
+
+	public boolean childrenHasOwnPathRecursive() {
+		return hasOwnPath();
+	}
 }
