@@ -5,41 +5,47 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x1977 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4jvfd4x1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4jvfd4x1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4jvfd4x1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ei4jvfd4x1
-    ] .
+  sh:result _:2297c926-fc80-4b69-8260-39d041553d73, _:da743577-d2c5-492f-a03c-bc0f1256fb65,
+    _:2fad54e9-7671-43af-9dae-db025fad0525, _:3b418c32-d323-4c1d-81d6-7fede9c731a4 .
 
-_:node1ei4jvfd4x1 a sh:PropertyShape;
+_:2297c926-fc80-4b69-8260-39d041553d73 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7pmdx1 .
+
+_:node1ei5i7pmdx1 a sh:PropertyShape;
   sh:path ex:age;
-  sh:not [ a sh:NodeShape;
-      sh:datatype xsd:string
-    ] .
+  sh:not _:node1ei5i7pmdx3 .
+
+_:node1ei5i7pmdx3 a sh:NodeShape;
+  sh:datatype xsd:string .
+
+_:da743577-d2c5-492f-a03c-bc0f1256fb65 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7pmdx1 .
+
+_:2fad54e9-7671-43af-9dae-db025fad0525 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7pmdx1 .
+
+_:3b418c32-d323-4c1d-81d6-7fede9c731a4 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "123";
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7pmdx1 .

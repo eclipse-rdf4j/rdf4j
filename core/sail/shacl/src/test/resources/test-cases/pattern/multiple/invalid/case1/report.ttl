@@ -5,29 +5,33 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x21753 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "invalid";
-      sh:resultPath ex:test;
-      sh:sourceConstraintComponent sh:PatternConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:test;
-          sh:pattern ".*?(Q)";
-          sh:flags "ims"
-        ]
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "invalid";
-      sh:resultPath ex:test;
-      sh:sourceConstraintComponent sh:PatternConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:test;
-          sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
-          sh:flags "ims"
-        ]
-    ] .
+  sh:result _:f022cb47-69af-416e-8cad-a31f2a1f1a0f, _:33b61843-ca4f-4d6d-9202-e5e67fd61681 .
+
+_:f022cb47-69af-416e-8cad-a31f2a1f1a0f a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "invalid";
+  sh:resultPath ex:test;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7uhjx1 .
+
+_:node1ei5i7uhjx1 a sh:PropertyShape;
+  sh:path ex:test;
+  sh:pattern ".*?(Q)";
+  sh:flags "ims" .
+
+_:33b61843-ca4f-4d6d-9202-e5e67fd61681 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value "invalid";
+  sh:resultPath ex:test;
+  sh:sourceConstraintComponent sh:PatternConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7uhjx2 .
+
+_:node1ei5i7uhjx2 a sh:PropertyShape;
+  sh:path ex:test;
+  sh:pattern "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)";
+  sh:flags "ims" .

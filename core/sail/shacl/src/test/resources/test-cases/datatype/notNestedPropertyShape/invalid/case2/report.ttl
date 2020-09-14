@@ -5,33 +5,38 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x1910 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ] .
+  sh:result _:4f0c426f-fdd4-4847-8034-a12a006edd02, _:85d002a6-ae0f-422b-850f-f7d5756a8bbb .
+
+_:4f0c426f-fdd4-4847-8034-a12a006edd02 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:validPerson1;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Person;
-  sh:not [ a sh:PropertyShape;
-      sh:path ex:knows;
-      sh:property [ a sh:PropertyShape;
-          sh:path ex:knows;
-          sh:property [ a sh:PropertyShape;
-              sh:path ex:age;
-              sh:datatype xsd:string
-            ]
-        ];
-      sh:nodeKind sh:BlankNode
-    ] .
+  sh:not _:node1ei5i7pnfx1 .
+
+_:node1ei5i7pnfx1 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:property _:node1ei5i7pnfx2;
+  sh:nodeKind sh:BlankNode .
+
+_:node1ei5i7pnfx2 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:property _:node1ei5i7pnfx3 .
+
+_:node1ei5i7pnfx3 a sh:PropertyShape;
+  sh:path ex:age;
+  sh:datatype xsd:string .
+
+_:85d002a6-ae0f-422b-850f-f7d5756a8bbb a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:validPerson1;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .

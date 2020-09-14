@@ -1,0 +1,149 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+_:node1ei5i7ns4x11801 a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result _:5d3edcf8-c380-4c2c-bd93-2b25cb24c903, _:409742ba-7ea2-46f0-98e9-c2105db78687,
+    _:9a8167e0-ae35-4ee2-b4ea-3cd6bb423afd, _:154e6e2a-78c6-49bb-9b34-6b61f5820fe8, _:6e9ef78d-237c-40b9-b61a-03982be61b43,
+    _:758bd16b-9181-4442-8802-7618746e0cdf, _:e7cda092-0277-40f4-8ae6-4a0d9c650db1, _:465b0044-0ed3-4a1c-b4bd-dc841cc50f2e .
+
+_:5d3edcf8-c380-4c2c-bd93-2b25cb24c903 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7sdsx1 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:not _:node1ei5i7sdsx2 .
+
+_:node1ei5i7sdsx2 a sh:NodeShape;
+  sh:and _:node1ei5i7sdsx3 .
+
+_:node1ei5i7sdsx3 rdf:first _:node1ei5i7sdsx4;
+  rdf:rest _:node1ei5i7ns4x11803, _:node1ei5i7ns4x11807, _:node1ei5i7ns4x11810, _:node1ei5i7ns4x11812,
+    _:node1ei5i7ns4x11815, _:node1ei5i7ns4x11817, _:node1ei5i7ns4x11819, _:node1ei5i7ns4x11821 .
+
+_:node1ei5i7ns4x11803 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7sdsx4 a sh:NodeShape;
+  sh:in _:node1ei5i7sdsx5 .
+
+_:node1ei5i7sdsx5 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7sdsx7 a sh:NodeShape;
+  sh:in _:node1ei5i7sdsx8 .
+
+_:node1ei5i7sdsx8 rdf:first ex:pete;
+  rdf:rest _:node1ei5i7ns4x11805, _:node1ei5i7ns4x11809, _:node1ei5i7ns4x11811, _:node1ei5i7ns4x11813,
+    _:node1ei5i7ns4x11816, _:node1ei5i7ns4x11818, _:node1ei5i7ns4x11820, _:node1ei5i7ns4x11822 .
+
+_:node1ei5i7ns4x11805 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:409742ba-7ea2-46f0-98e9-c2105db78687 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11807 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11809 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:9a8167e0-ae35-4ee2-b4ea-3cd6bb423afd a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11810 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11811 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:154e6e2a-78c6-49bb-9b34-6b61f5820fe8 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11812 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11813 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:6e9ef78d-237c-40b9-b61a-03982be61b43 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11815 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11816 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:758bd16b-9181-4442-8802-7618746e0cdf a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11817 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11818 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:e7cda092-0277-40f4-8ae6-4a0d9c650db1 a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11819 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11820 rdf:first ex:steve;
+  rdf:rest rdf:nil .
+
+_:465b0044-0ed3-4a1c-b4bd-dc841cc50f2e a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value ex:steve;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sdsx1 .
+
+_:node1ei5i7ns4x11821 rdf:first _:node1ei5i7sdsx7;
+  rdf:rest rdf:nil .
+
+_:node1ei5i7ns4x11822 rdf:first ex:steve;
+  rdf:rest rdf:nil .

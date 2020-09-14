@@ -5,17 +5,82 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x12944 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value 123;
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:InConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:age;
-          sh:in (0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
-        ]
-    ] .
+  sh:result _:35ee9880-b91b-4306-9cdf-fbb95831356f .
+
+_:35ee9880-b91b-4306-9cdf-fbb95831356f a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value 123;
+  sh:resultPath ex:age;
+  sh:sourceConstraintComponent sh:InConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7sj8x1 .
+
+_:node1ei5i7sj8x1 a sh:PropertyShape;
+  sh:path ex:age;
+  sh:in _:node1ei5i7sj8x2 .
+
+_:node1ei5i7sj8x2 rdf:first 0;
+  rdf:rest _:node1ei5i7ns4x12945 .
+
+_:node1ei5i7ns4x12945 rdf:first 1;
+  rdf:rest _:node1ei5i7ns4x12946 .
+
+_:node1ei5i7ns4x12946 rdf:first 2;
+  rdf:rest _:node1ei5i7ns4x12947 .
+
+_:node1ei5i7ns4x12947 rdf:first 3;
+  rdf:rest _:node1ei5i7ns4x12948 .
+
+_:node1ei5i7ns4x12948 rdf:first 4;
+  rdf:rest _:node1ei5i7ns4x12949 .
+
+_:node1ei5i7ns4x12949 rdf:first 5;
+  rdf:rest _:node1ei5i7ns4x12950 .
+
+_:node1ei5i7ns4x12950 rdf:first 6;
+  rdf:rest _:node1ei5i7ns4x12951 .
+
+_:node1ei5i7ns4x12951 rdf:first 7;
+  rdf:rest _:node1ei5i7ns4x12952 .
+
+_:node1ei5i7ns4x12952 rdf:first 8;
+  rdf:rest _:node1ei5i7ns4x12953 .
+
+_:node1ei5i7ns4x12953 rdf:first 9;
+  rdf:rest _:node1ei5i7ns4x12954 .
+
+_:node1ei5i7ns4x12954 rdf:first 10;
+  rdf:rest _:node1ei5i7ns4x12955 .
+
+_:node1ei5i7ns4x12955 rdf:first 11;
+  rdf:rest _:node1ei5i7ns4x12956 .
+
+_:node1ei5i7ns4x12956 rdf:first 12;
+  rdf:rest _:node1ei5i7ns4x12957 .
+
+_:node1ei5i7ns4x12957 rdf:first 13;
+  rdf:rest _:node1ei5i7ns4x12959 .
+
+_:node1ei5i7ns4x12959 rdf:first 14;
+  rdf:rest _:node1ei5i7ns4x12960 .
+
+_:node1ei5i7ns4x12960 rdf:first 15;
+  rdf:rest _:node1ei5i7ns4x12961 .
+
+_:node1ei5i7ns4x12961 rdf:first 16;
+  rdf:rest _:node1ei5i7ns4x12962 .
+
+_:node1ei5i7ns4x12962 rdf:first 17;
+  rdf:rest _:node1ei5i7ns4x12963 .
+
+_:node1ei5i7ns4x12963 rdf:first 18;
+  rdf:rest _:node1ei5i7ns4x12964 .
+
+_:node1ei5i7ns4x12964 rdf:first 19;
+  rdf:rest _:node1ei5i7ns4x12965 .
+
+_:node1ei5i7ns4x12965 rdf:first 20;
+  rdf:rest rdf:nil .

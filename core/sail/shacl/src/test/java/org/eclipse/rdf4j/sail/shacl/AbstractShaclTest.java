@@ -141,7 +141,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValueIn/targetNode",
 //		"test-cases/hasValueIn/targetNode2",
 		"test-cases/implicitTargetClass/simple",
-//		"test-cases/in/notAnd",
+		"test-cases/in/notAnd",
 //		"test-cases/in/notOr",
 		"test-cases/in/simple",
 		"test-cases/languageIn/simple",
@@ -502,7 +502,7 @@ abstract public class AbstractShaclTest {
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+//		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		writerConfig.set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true);
 
 		StringWriter stringWriter = new StringWriter();

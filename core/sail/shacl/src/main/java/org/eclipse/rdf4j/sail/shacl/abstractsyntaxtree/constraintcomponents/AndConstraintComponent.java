@@ -10,12 +10,21 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class AndConstraintComponent extends AbstractConstraintComponent {
@@ -63,5 +72,36 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.AndConstraintComponent;
+	}
+
+	@Override
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+
+		PlanNode planNode = and.stream()
+			.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode, negatePlan, negateChildren, scope))
+			.reduce(UnionNode::new)
+			.orElse(new EmptyNode());
+
+		return planNode;
+
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		PlanNode planNode = and.stream()
+			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, scope))
+			.reduce(UnionNode::new)
+			.orElse(new EmptyNode());
+
+		planNode = new Unique(planNode);
+
+		planNode = new DebugPlanNode(planNode, "AndConstraintComponent::getAllTargetsPlan");
+
+		return planNode;
 	}
 }

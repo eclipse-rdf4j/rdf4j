@@ -5,17 +5,25 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x13761 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value [];
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:InConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:knows;
-          sh:in (ex:pete ex:steve)
-        ]
-    ] .
+  sh:result _:e0599e22-6456-4f8b-aebf-f94dffb2d4ba .
+
+_:e0599e22-6456-4f8b-aebf-f94dffb2d4ba a sh:ValidationResult;
+  sh:focusNode ex:validPerson1;
+  sh:value _:node1ei5i7snbx26;
+  sh:resultPath ex:knows;
+  sh:sourceConstraintComponent sh:InConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape _:node1ei5i7snbx23 .
+
+_:node1ei5i7snbx23 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:in _:node1ei5i7snbx24 .
+
+_:node1ei5i7snbx24 rdf:first ex:pete;
+  rdf:rest _:node1ei5i7ns4x13767 .
+
+_:node1ei5i7ns4x13767 rdf:first ex:steve;
+  rdf:rest rdf:nil .

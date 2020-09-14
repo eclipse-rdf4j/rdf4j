@@ -5,37 +5,43 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-[] a sh:ValidationReport;
+_:node1ei5i7ns4x6444 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result [ a sh:ValidationResult;
-      sh:focusNode 2;
-      sh:value 2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode 2;
-      sh:value 2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode 3;
-      sh:value 3;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode 3;
-      sh:value 3;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ] .
+  sh:result _:25f90b17-b044-4b7b-a7df-3c4efc828be3, _:ce56869d-4c13-4c4d-b6df-ba8bdb5196ec,
+    _:97eed04b-a06b-455f-8fbf-487eec75fd79, _:c9a0cfcc-056f-47a0-ae84-3fd70c279475 .
+
+_:25f90b17-b044-4b7b-a7df-3c4efc828be3 a sh:ValidationResult;
+  sh:focusNode 2;
+  sh:value 2;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetNode 2, 3, "hello";
-  sh:not [ a sh:NodeShape;
-      sh:datatype xsd:integer
-    ] .
+  sh:not _:node1ei5i7r3vx1 .
+
+_:node1ei5i7r3vx1 a sh:NodeShape;
+  sh:datatype xsd:integer .
+
+_:ce56869d-4c13-4c4d-b6df-ba8bdb5196ec a sh:ValidationResult;
+  sh:focusNode 2;
+  sh:value 2;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+_:97eed04b-a06b-455f-8fbf-487eec75fd79 a sh:ValidationResult;
+  sh:focusNode 3;
+  sh:value 3;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
+
+_:c9a0cfcc-056f-47a0-ae84-3fd70c279475 a sh:ValidationResult;
+  sh:focusNode 3;
+  sh:value 3;
+  sh:sourceConstraintComponent sh:NotConstraintComponent;
+  sh:resultSeverity sh:Violation;
+  sh:sourceShape ex:PersonShape .
