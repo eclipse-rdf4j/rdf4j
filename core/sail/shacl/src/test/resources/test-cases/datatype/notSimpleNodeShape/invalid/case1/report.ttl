@@ -5,12 +5,12 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei5i7ns4x6003 a sh:ValidationReport;
+_:node1ei7fklmux6162 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:0990e80a-4c3d-4b1b-9e22-36deb2a58f26, _:b94cc3b8-6978-4044-a380-d27c9a6c1ebe .
+  sh:result _:1737798f-a1eb-48f9-b33d-1739c82ad7c0, _:0d9291e7-4ad0-4132-b277-1c00e9332ba6 .
 
-_:0990e80a-4c3d-4b1b-9e22-36deb2a58f26 a sh:ValidationResult;
+_:1737798f-a1eb-48f9-b33d-1739c82ad7c0 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value ex:validPerson1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
@@ -19,13 +19,13 @@ _:0990e80a-4c3d-4b1b-9e22-36deb2a58f26 a sh:ValidationResult;
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Person;
-  sh:not _:node1ei5i7r04x1 .
+  sh:not _:node1ei7fl15dx1 .
 
-_:node1ei5i7r04x1 a sh:PropertyShape;
+_:node1ei7fl15dx1 a sh:PropertyShape;
   sh:path ex:age;
   sh:datatype xsd:string .
 
-_:b94cc3b8-6978-4044-a380-d27c9a6c1ebe a sh:ValidationResult;
+_:0d9291e7-4ad0-4132-b277-1c00e9332ba6 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value ex:validPerson1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;

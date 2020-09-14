@@ -5,97 +5,97 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei5i7ns4x3408 a sh:ValidationReport;
+_:node1ei7fklmux3610 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:0e1084a3-72fc-4dfa-b9b5-1fdea9339cdb, _:6c72f957-aadb-46a5-8025-26273bc76854,
-    _:dc1b7344-774c-4f80-a133-6b3912b2a1d0, _:fdf57d41-9ffc-4100-a06e-3e2d676d4cc8, _:4d164087-04bf-4d14-8333-1a9d6acdc61f,
-    _:6387b5b6-09d0-4a28-b3c2-6f372e9dff1e, _:d1dce997-32ee-42e0-91a3-29c8915abf0d, _:53d02367-85e3-4938-9470-fbc166d9c301,
-    _:f51a45af-90a7-4e9b-a4da-e2e332a6b2ed .
+  sh:result _:be96a449-2be2-4f37-a9e8-27226b68d514, _:b0e616b3-21bb-4c39-995b-417c43dadf8a,
+    _:fea65938-1f5a-4d74-8718-194549d20293, _:77a446b3-d9b4-42e1-91b7-e2c6ed5e0312, _:c2a97d4c-b69f-4037-92a5-090d5f6529a8,
+    _:281d1389-0e7b-4ebd-8da4-bfed387b9ca2, _:51ef0e63-2b30-432d-a7cf-ec38144f6e33, _:6ddef1a5-e020-4223-8e86-1babda192e90,
+    _:087e722e-310b-4ae9-911e-1ccfbecae59a .
 
-_:0e1084a3-72fc-4dfa-b9b5-1fdea9339cdb a sh:ValidationResult;
+_:be96a449-2be2-4f37-a9e8-27226b68d514 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:node1ei5i7q7tx1 a sh:PropertyShape;
+_:node1ei7fku5kx1 a sh:PropertyShape;
   sh:path ex:knows1;
-  sh:not _:node1ei5i7q7tx2 .
+  sh:not _:node1ei7fku5kx2 .
 
-_:node1ei5i7q7tx2 a sh:NodeShape;
-  sh:property _:node1ei5i7q7tx3 .
+_:node1ei7fku5kx2 a sh:NodeShape;
+  sh:property _:node1ei7fku5kx3 .
 
-_:node1ei5i7q7tx3 a sh:PropertyShape;
+_:node1ei7fku5kx3 a sh:PropertyShape;
   sh:path ex:knows2;
-  sh:property _:node1ei5i7q7tx4 .
+  sh:property _:node1ei7fku5kx4 .
 
-_:node1ei5i7q7tx4 a sh:PropertyShape;
+_:node1ei7fku5kx4 a sh:PropertyShape;
   sh:path ex:age;
   sh:datatype xsd:string .
 
-_:6c72f957-aadb-46a5-8025-26273bc76854 a sh:ValidationResult;
+_:b0e616b3-21bb-4c39-995b-417c43dadf8a a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:dc1b7344-774c-4f80-a133-6b3912b2a1d0 a sh:ValidationResult;
+_:fea65938-1f5a-4d74-8718-194549d20293 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:fdf57d41-9ffc-4100-a06e-3e2d676d4cc8 a sh:ValidationResult;
+_:77a446b3-d9b4-42e1-91b7-e2c6ed5e0312 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:4d164087-04bf-4d14-8333-1a9d6acdc61f a sh:ValidationResult;
+_:c2a97d4c-b69f-4037-92a5-090d5f6529a8 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:6387b5b6-09d0-4a28-b3c2-6f372e9dff1e a sh:ValidationResult;
+_:281d1389-0e7b-4ebd-8da4-bfed387b9ca2 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:d1dce997-32ee-42e0-91a3-29c8915abf0d a sh:ValidationResult;
+_:51ef0e63-2b30-432d-a7cf-ec38144f6e33 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:53d02367-85e3-4938-9470-fbc166d9c301 a sh:ValidationResult;
+_:6ddef1a5-e020-4223-8e86-1babda192e90 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .
 
-_:f51a45af-90a7-4e9b-a4da-e2e332a6b2ed a sh:ValidationResult;
+_:087e722e-310b-4ae9-911e-1ccfbecae59a a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
-  sh:value _:node1ei5i7q7tx5;
+  sh:value _:node1ei7fku5kx5;
   sh:resultPath ex:knows1;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7q7tx1 .
+  sh:sourceShape _:node1ei7fku5kx1 .

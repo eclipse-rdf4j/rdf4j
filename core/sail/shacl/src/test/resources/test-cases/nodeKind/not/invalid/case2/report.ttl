@@ -5,47 +5,47 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei5i7ns4x19848 a sh:ValidationReport;
+_:node1ei7fklmux19699 a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:2b2de18e-b8e7-4164-8d97-e93e7ee954d4, _:dd488321-5509-4c8e-b2d2-fb5fd751dd2e,
-    _:2f4259ab-1cc2-4fec-b377-26e51b025403, _:9b86be05-1629-47ed-b448-183172644fbd .
+  sh:result _:15e3a42c-e540-46e2-8665-ff6129c1de92, _:3ea02168-af81-42be-aa31-65b8a631a994,
+    _:4af1f50e-e607-4d36-b3d0-d08337e5b234, _:9f758888-1aba-4657-81aa-aa367b1ba182 .
 
-_:2b2de18e-b8e7-4164-8d97-e93e7ee954d4 a sh:ValidationResult;
+_:15e3a42c-e540-46e2-8665-ff6129c1de92 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "1234567";
   sh:resultPath ex:knows;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7u3ox1 .
+  sh:sourceShape _:node1ei7flch5x1 .
 
-_:node1ei5i7u3ox1 a sh:PropertyShape;
+_:node1ei7flch5x1 a sh:PropertyShape;
   sh:path ex:knows;
-  sh:not _:node1ei5i7u3ox2 .
+  sh:not _:node1ei7flch5x2 .
 
-_:node1ei5i7u3ox2 a sh:NodeShape;
+_:node1ei7flch5x2 a sh:NodeShape;
   sh:nodeKind sh:Literal .
 
-_:dd488321-5509-4c8e-b2d2-fb5fd751dd2e a sh:ValidationResult;
+_:3ea02168-af81-42be-aa31-65b8a631a994 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "1234567";
   sh:resultPath ex:knows;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7u3ox1 .
+  sh:sourceShape _:node1ei7flch5x1 .
 
-_:2f4259ab-1cc2-4fec-b377-26e51b025403 a sh:ValidationResult;
+_:4af1f50e-e607-4d36-b3d0-d08337e5b234 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "1234567";
   sh:resultPath ex:knows;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7u3ox1 .
+  sh:sourceShape _:node1ei7flch5x1 .
 
-_:9b86be05-1629-47ed-b448-183172644fbd a sh:ValidationResult;
+_:9f758888-1aba-4657-81aa-aa367b1ba182 a sh:ValidationResult;
   sh:focusNode ex:validPerson1;
   sh:value "1234567";
   sh:resultPath ex:knows;
   sh:sourceConstraintComponent sh:NotConstraintComponent;
   sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei5i7u3ox1 .
+  sh:sourceShape _:node1ei7flch5x1 .

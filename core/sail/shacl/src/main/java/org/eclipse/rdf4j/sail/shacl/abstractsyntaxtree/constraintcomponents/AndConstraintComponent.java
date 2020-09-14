@@ -75,17 +75,20 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		PlanNode planNode = and.stream()
-			.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode, negatePlan, negateChildren, scope))
-			.reduce(UnionNode::new)
-			.orElse(new EmptyNode());
+				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
+						overrideTargetNode, negatePlan, negateChildren, scope))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
 
 		return planNode;
 
@@ -94,9 +97,9 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		PlanNode planNode = and.stream()
-			.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, scope))
-			.reduce(UnionNode::new)
-			.orElse(new EmptyNode());
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, scope))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
 
 		planNode = new Unique(planNode);
 
