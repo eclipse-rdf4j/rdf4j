@@ -15,10 +15,14 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_LANG_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.OBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.O_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.PREDICATE_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.P_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.STATEMENT_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.SUBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.S_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.TRIPLE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.URI_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_NAME_ATT;
@@ -110,7 +114,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			if (currentBindingName == null) {
 				throw new SAXException(BINDING_NAME_ATT + " attribute missing for " + BINDING_TAG + " element");
 			}
-		} else if (TRIPLE_TAG.equals(tagName)) {
+		} else if (TRIPLE_TAG.equals(tagName) || STATEMENT_TAG.equals(tagName)) {
 			tripleStack.push(new TripleContainer());
 		} else if (URI_TAG.equals(tagName)) {
 			try {
@@ -175,6 +179,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			currentValue = null;
 			break;
 		case SUBJECT_TAG:
+		case S_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getSubject() != null) {
 				throw new SAXException("RDF* triple subject defined twice");
@@ -186,6 +191,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			}
 			break;
 		case PREDICATE_TAG:
+		case P_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getPredicate() != null) {
 				throw new SAXException("RDF* triple predicate defined twice");
@@ -197,6 +203,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			}
 			break;
 		case OBJECT_TAG:
+		case O_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getObject() != null) {
 				throw new SAXException("RDF* triple object defined twice");
@@ -204,6 +211,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			currentTriple.setObject(currentValue);
 			break;
 		case TRIPLE_TAG:
+		case STATEMENT_TAG:
 			currentTriple = tripleStack.pop();
 			currentValue = valueFactory.createTriple(currentTriple.getSubject(), currentTriple.getPredicate(),
 					currentTriple.getObject());
