@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  */
 public class ConfigurableSailRepository extends SailRepository implements RepositorySettings {
-	int failAfter = -1; // fail after x operations, -1 means inactive
+	volatile int failAfter = -1; // fail after x operations, -1 means inactive
 	boolean writable = true;
 
 	/**
