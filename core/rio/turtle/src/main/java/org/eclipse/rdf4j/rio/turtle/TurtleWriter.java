@@ -291,7 +291,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		try {
 			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
-				handleList(st);
+				handleList(st, canShortenObjectBNode);
 			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
 				handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);
 			} else {
@@ -694,7 +694,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 	}
 
-	private void handleList(Statement st) throws IOException {
+	private void handleList(Statement st, boolean canInlineObjectBNode) throws IOException {
 		Resource subj = st.getSubject();
 		boolean first = RDF.FIRST.equals(st.getPredicate());
 		boolean rest = RDF.REST.equals(st.getPredicate()) && !RDF.NIL.equals(st.getObject());
@@ -707,13 +707,13 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			lastWrittenSubject = subj;
 			path.addLast(FIRST);
 			lastWrittenPredicate = FIRST;
-			writeValue(st.getObject(), inlineBNodes);
+			writeValue(st.getObject(), canInlineObjectBNode);
 		} else if (first && REST == lastWrittenPredicate) {
 			// item in existing collection
 			lastWrittenSubject = subj;
 			path.addLast(FIRST);
 			lastWrittenPredicate = FIRST;
-			writeValue(st.getObject(), inlineBNodes);
+			writeValue(st.getObject(), canInlineObjectBNode);
 		} else {
 			closeNestedResources(subj);
 			if (rest && FIRST == lastWrittenPredicate) {
@@ -735,7 +735,8 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 					lastWrittenPredicate = path.peekLast();
 				}
 			} else {
-				writeStatement(subj, st.getPredicate(), st.getObject(), st.getContext(), inlineBNodes, inlineBNodes);
+				writeStatement(subj, st.getPredicate(), st.getObject(), st.getContext(), inlineBNodes,
+						inlineBNodes);
 			}
 		}
 	}
@@ -834,7 +835,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			return false;
 		}
 		if (v instanceof BNode) {
-			return (contextData.filter(null, null, v).size() <= 1);
+			contextData.filter(null, null, v).forEach(System.out::println);
+			boolean result = (contextData.filter(null, null, v).size() <= 1);
+			return result;
 		}
 		return true;
 	}
