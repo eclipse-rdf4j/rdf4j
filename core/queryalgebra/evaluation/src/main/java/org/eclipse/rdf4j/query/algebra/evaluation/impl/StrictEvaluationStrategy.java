@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
@@ -1414,27 +1415,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			String langTag = ((Literal) langTagValue).getLabel();
 			String langRange = ((Literal) langRangeValue).getLabel();
 
-			boolean result = langTagMatchesRange(langTag, langRange);
+			boolean result = Literals.langMatches(langTag, langRange);
 
 			return BooleanLiteral.valueOf(result);
 		}
 
 		throw new ValueExprEvaluationException();
 
-	}
-
-	public static boolean langTagMatchesRange(String langTag, String langRange) {
-		boolean result = false;
-		if (langRange.equals("*")) {
-			result = langTag.length() > 0;
-		} else if (langTag.length() == langRange.length()) {
-			result = langTag.equalsIgnoreCase(langRange);
-		} else if (langTag.length() > langRange.length()) {
-			// check if the range is a prefix of the tag
-			String prefix = langTag.substring(0, langRange.length());
-			result = prefix.equalsIgnoreCase(langRange) && langTag.charAt(langRange.length()) == '-';
-		}
-		return result;
 	}
 
 	/**

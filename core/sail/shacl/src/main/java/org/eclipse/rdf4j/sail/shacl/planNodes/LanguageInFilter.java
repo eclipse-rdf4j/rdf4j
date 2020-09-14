@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
@@ -51,7 +52,7 @@ public class LanguageInFilter extends FilterPlanNode {
 		String langTag = language.get();
 
 		for (String languageRange : languageRanges) {
-			if (StrictEvaluationStrategy.langTagMatchesRange(langTag, languageRange))
+			if (Literals.langMatches(langTag, languageRange))
 				return true;
 		}
 

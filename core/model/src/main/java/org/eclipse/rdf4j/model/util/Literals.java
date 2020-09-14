@@ -504,6 +504,28 @@ public class Literals {
 		}
 	}
 
+	/**
+	 * Implements language range filtering for SPARQL langMatches
+	 * (https://www.w3.org/TR/sparql11-query/#func-langMatches).
+	 * 
+	 * @param langTag   the tag to filter
+	 * @param langRange the range to filter against
+	 * @return true if langTag matches langRange
+	 */
+	public static boolean langMatches(String langTag, String langRange) {
+		boolean result = false;
+		if (langRange.equals("*")) {
+			result = langTag.length() > 0;
+		} else if (langTag.length() == langRange.length()) {
+			result = langTag.equalsIgnoreCase(langRange);
+		} else if (langTag.length() > langRange.length()) {
+			// check if the range is a prefix of the tag
+			String prefix = langTag.substring(0, langRange.length());
+			result = prefix.equalsIgnoreCase(langRange) && langTag.charAt(langRange.length()) == '-';
+		}
+		return result;
+	}
+
 	protected Literals() {
 		// Protected default constructor to prevent instantiation
 	}
