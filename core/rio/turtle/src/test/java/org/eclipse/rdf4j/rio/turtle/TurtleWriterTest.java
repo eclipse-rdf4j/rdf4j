@@ -197,159 +197,123 @@ public class TurtleWriterTest extends RDFWriterTest {
 
 	@Test
 	public void anotherBnodeTest() throws Exception {
-		String data = "@prefix ex: <http://example.com/ns#> .\n" +
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n" +
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
-				"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-				"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-				"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+		String data = "@prefix ex:    <http://example.com/ns#> .\n" +
+				"@prefix sh:    <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+				"@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"@prefix foaf:  <http://xmlns.com/foaf/0.1/> .\n" +
 				"\n" +
-				"_:node1ei5i7ns4x11752 a sh:ValidationReport;\n" +
-				"  sh:conforms false;\n" +
-				"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
-				"  sh:result _:5f9908e9-caee-4059-aa52-69227a27ac20, _:3a37be3d-7af5-4b74-b7cf-b6358196bf0e,\n" +
-				"    _:ba3bb72d-eb40-4aec-987a-bf2a3d925f06, _:6c86bbd3-a6ea-4b4f-8881-d479cff3aff5, _:ff167b12-c1b4-4341-bf63-187bed54e1ed,\n"
-				+
-				"    _:c3c6878c-7a69-41c8-b65b-50ab02da9519, _:f07f8ae4-1137-454c-ac6a-f385631b592e, _:a7b959ba-a7b4-4922-9974-9f363fdaccdf .\n"
-				+
+				"_:b0    a        sh:PropertyShape ;\n" +
+				"        sh:not   [ a       sh:NodeShape ;\n" +
+				"                   sh:and  [ rdf:first  [ a       sh:NodeShape ;\n" +
+				"                                          sh:in   ( ex:steve )\n" +
+				"                                        ] ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        ) ;\n" +
+				"                             rdf:rest   ( _:b1\n" +
+				"                                        )\n" +
+				"                           ]\n" +
+				"                 ] ;\n" +
+				"        sh:path  ex:knows .\n" +
 				"\n" +
-				"_:5f9908e9-caee-4059-aa52-69227a27ac20 a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
+				"_:b1    a       sh:NodeShape ;\n" +
+				"        sh:in   [ rdf:first  ex:pete ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve ) ;\n" +
+				"                  rdf:rest   ( ex:steve )\n" +
+				"                ] .\n" +
 				"\n" +
-				"_:node1ei5i7sdex1 a sh:PropertyShape;\n" +
-				"  sh:path ex:knows;\n" +
-				"  sh:not _:node1ei5i7sdex2 .\n" +
-				"\n" +
-				"_:node1ei5i7sdex2 a sh:NodeShape;\n" +
-				"  sh:and _:node1ei5i7sdex3 .\n" +
-				"\n" +
-				"_:node1ei5i7sdex3 rdf:first _:node1ei5i7sdex4;\n" +
-				"  rdf:rest _:node1ei5i7ns4x11754, _:node1ei5i7ns4x11756, _:node1ei5i7ns4x11758, _:node1ei5i7ns4x11760,\n"
-				+
-				"    _:node1ei5i7ns4x11763, _:node1ei5i7ns4x11765, _:node1ei5i7ns4x11767, _:node1ei5i7ns4x11769 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11754 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7sdex4 a sh:NodeShape;\n" +
-				"  sh:in _:node1ei5i7sdex5 .\n" +
-				"\n" +
-				"_:node1ei5i7sdex5 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7sdex7 a sh:NodeShape;\n" +
-				"  sh:in _:node1ei5i7sdex8 .\n" +
-				"\n" +
-				"_:node1ei5i7sdex8 rdf:first ex:pete;\n" +
-				"  rdf:rest _:node1ei5i7ns4x11755, _:node1ei5i7ns4x11757, _:node1ei5i7ns4x11759, _:node1ei5i7ns4x11761,\n"
-				+
-				"    _:node1ei5i7ns4x11764, _:node1ei5i7ns4x11766, _:node1ei5i7ns4x11768, _:node1ei5i7ns4x11770 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11755 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:3a37be3d-7af5-4b74-b7cf-b6358196bf0e a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11756 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11757 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:ba3bb72d-eb40-4aec-987a-bf2a3d925f06 a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11758 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11759 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:6c86bbd3-a6ea-4b4f-8881-d479cff3aff5 a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11760 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11761 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:ff167b12-c1b4-4341-bf63-187bed54e1ed a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11763 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11764 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:c3c6878c-7a69-41c8-b65b-50ab02da9519 a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11765 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11766 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:f07f8ae4-1137-454c-ac6a-f385631b592e a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11767 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11768 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:a7b959ba-a7b4-4922-9974-9f363fdaccdf a sh:ValidationResult;\n" +
-				"  sh:focusNode ex:validPerson1;\n" +
-				"  sh:value ex:steve;\n" +
-				"  sh:resultPath ex:knows;\n" +
-				"  sh:sourceConstraintComponent sh:NotConstraintComponent;\n" +
-				"  sh:resultSeverity sh:Violation;\n" +
-				"  sh:sourceShape _:node1ei5i7sdex1 .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11769 rdf:first _:node1ei5i7sdex7;\n" +
-				"  rdf:rest rdf:nil .\n" +
-				"\n" +
-				"_:node1ei5i7ns4x11770 rdf:first ex:steve;\n" +
-				"  rdf:rest rdf:nil .\n";
+				"[ a            sh:ValidationReport ;\n" +
+				"  <http://rdf4j.org/schema/rdf4j#truncated>\n" +
+				"          false ;\n" +
+				"  sh:conforms  false ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ] ;\n" +
+				"  sh:result    [ a                             sh:ValidationResult ;\n" +
+				"                 sh:focusNode                  ex:validPerson1 ;\n" +
+				"                 sh:resultPath                 ex:knows ;\n" +
+				"                 sh:resultSeverity             sh:Violation ;\n" +
+				"                 sh:sourceConstraintComponent  sh:NotConstraintComponent ;\n" +
+				"                 sh:sourceShape                _:b0 ;\n" +
+				"                 sh:value                      ex:steve\n" +
+				"               ]\n" +
+				"] .\n";
+
+		System.out.println("### EXPECTED ###");
+		System.out.println(data);
+		System.out.println("#################\n");
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
@@ -358,7 +322,40 @@ public class TurtleWriterTest extends RDFWriterTest {
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
+		System.out.println("### ACTUAL ###");
 		System.out.println(stringWriter.toString());
+		System.out.println("#################\n");
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void anotherBnodeTestReduced() throws Exception {
+		String data = "" +
+				"@prefix ex:    <http://example.com/ns#> .\n" +
+				"@prefix sh:    <http://www.w3.org/ns/shacl#> .\n" +
+				"@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+				"@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .\n" +
+				"@prefix foaf:  <http://xmlns.com/foaf/0.1/> .\n" +
+				"\n" +
+				"ex:a  ex:list   (_:b0 _:b0) .";
+
+		System.out.println("### EXPECTED ###");
+		System.out.println(data);
+		System.out.println("#################\n");
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		System.out.println("### ACTUAL ###");
+		System.out.println(stringWriter.toString());
+		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
