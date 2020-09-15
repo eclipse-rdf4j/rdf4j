@@ -5,47 +5,19 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux19585 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:de0b4519-daaa-4b67-98ff-7eff9f14dae3, _:9e2fefa0-2fcc-496b-b2e0-73b7ab477fe0,
-    _:ea6660d4-50cc-4995-a02f-98c63e0989ab, _:c6384838-02ea-4c87-aff3-f7dcddb4aaf0 .
-
-_:de0b4519-daaa-4b67-98ff-7eff9f14dae3 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "1234567";
-  sh:resultPath ex:knows;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flcdmx1 .
-
-_:node1ei7flcdmx1 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:not _:node1ei7flcdmx2 .
-
-_:node1ei7flcdmx2 a sh:NodeShape;
-  sh:nodeKind sh:Literal .
-
-_:9e2fefa0-2fcc-496b-b2e0-73b7ab477fe0 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "1234567";
-  sh:resultPath ex:knows;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flcdmx1 .
-
-_:ea6660d4-50cc-4995-a02f-98c63e0989ab a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "1234567";
-  sh:resultPath ex:knows;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flcdmx1 .
-
-_:c6384838-02ea-4c87-aff3-f7dcddb4aaf0 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "1234567";
-  sh:resultPath ex:knows;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flcdmx1 .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "1234567";
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:knows;
+          sh:not [ a sh:NodeShape;
+              sh:nodeKind sh:Literal
+            ]
+        ]
+    ] .

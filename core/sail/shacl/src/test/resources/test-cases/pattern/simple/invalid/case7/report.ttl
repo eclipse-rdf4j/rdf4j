@@ -5,20 +5,18 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux22817 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:b9c7b6f8-5cdf-4e11-8ed1-d32c738d4069 .
-
-_:b9c7b6f8-5cdf-4e11-8ed1-d32c738d4069 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:temp;
-  sh:resultPath ex:uuid;
-  sh:sourceConstraintComponent sh:PatternConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flf0gx1 .
-
-_:node1ei7flf0gx1 a sh:PropertyShape;
-  sh:path ex:uuid;
-  sh:pattern "([0-9a-f]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})";
-  sh:flags "i" .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:temp;
+      sh:resultPath ex:uuid;
+      sh:sourceConstraintComponent sh:PatternConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:uuid;
+          sh:pattern "([0-9a-f]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})";
+          sh:flags "i"
+        ]
+    ] .

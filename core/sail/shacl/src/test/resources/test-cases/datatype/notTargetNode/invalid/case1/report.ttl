@@ -5,43 +5,25 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux6356 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:c0650ed9-9b4a-40ac-8b73-dfc30a7b328e, _:be267756-32bc-436b-8d1d-3c9c3d24bf5a,
-    _:544710bd-9992-44b1-b4a1-dae6de940c1e, _:c6575d8e-e87d-49fc-948a-88f521cc6835 .
-
-_:c0650ed9-9b4a-40ac-8b73-dfc30a7b328e a sh:ValidationResult;
-  sh:focusNode 2;
-  sh:value 2;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ], [ a sh:ValidationResult;
+      sh:focusNode 3;
+      sh:value 3;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetNode 2, 3, "hello";
-  sh:not _:node1ei7fl1dvx1 .
-
-_:node1ei7fl1dvx1 a sh:NodeShape;
-  sh:datatype xsd:integer .
-
-_:be267756-32bc-436b-8d1d-3c9c3d24bf5a a sh:ValidationResult;
-  sh:focusNode 2;
-  sh:value 2;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
-
-_:544710bd-9992-44b1-b4a1-dae6de940c1e a sh:ValidationResult;
-  sh:focusNode 3;
-  sh:value 3;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
-
-_:c6575d8e-e87d-49fc-948a-88f521cc6835 a sh:ValidationResult;
-  sh:focusNode 3;
-  sh:value 3;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:not [ a sh:NodeShape;
+      sh:datatype xsd:integer
+    ] .

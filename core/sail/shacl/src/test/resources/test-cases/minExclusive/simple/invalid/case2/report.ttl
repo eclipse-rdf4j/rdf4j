@@ -5,19 +5,17 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux17481 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:c5fd45a2-c975-4e1e-9ce8-496648adba1a .
-
-_:c5fd45a2-c975-4e1e-9ce8-496648adba1a a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value 6;
-  sh:resultPath ex:phoneNumber;
-  sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7flaojx1 .
-
-_:node1ei7flaojx1 a sh:PropertyShape;
-  sh:path ex:phoneNumber;
-  sh:minExclusive 6 .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value 6;
+      sh:resultPath ex:phoneNumber;
+      sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:phoneNumber;
+          sh:minExclusive 6
+        ]
+    ] .

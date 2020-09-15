@@ -5,72 +5,25 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux3811 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:346a74df-7436-45f9-a6fe-40ab5a1bc2a0, _:108c8d4a-cf20-4051-a9c6-209f331582c3,
-    _:79512ac1-6c48-4105-8e6d-92b3912a25d1, _:08d3cbac-add1-4f76-8fa8-fca69baffa71, _:8e503ded-ca7e-4952-8468-c98cf01537c2,
-    _:91a7c78e-7849-4cb2-a2d0-dd02ec313657 .
-
-_:346a74df-7436-45f9-a6fe-40ab5a1bc2a0 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
-
-_:node1ei7fkucmx1 a sh:PropertyShape;
-  sh:path ex:knows1;
-  sh:not _:node1ei7fkucmx2 .
-
-_:node1ei7fkucmx2 a sh:NodeShape;
-  sh:property _:node1ei7fkucmx3 .
-
-_:node1ei7fkucmx3 a sh:PropertyShape;
-  sh:path ex:knows2;
-  sh:property _:node1ei7fkucmx4 .
-
-_:node1ei7fkucmx4 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:datatype xsd:string .
-
-_:108c8d4a-cf20-4051-a9c6-209f331582c3 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
-
-_:79512ac1-6c48-4105-8e6d-92b3912a25d1 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
-
-_:08d3cbac-add1-4f76-8fa8-fca69baffa71 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
-
-_:8e503ded-ca7e-4952-8468-c98cf01537c2 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
-
-_:91a7c78e-7849-4cb2-a2d0-dd02ec313657 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:p3;
-  sh:resultPath ex:knows1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkucmx1 .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:p3;
+      sh:resultPath ex:knows1;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:knows1;
+          sh:not [ a sh:NodeShape;
+              sh:property [ a sh:PropertyShape;
+                  sh:path ex:knows2;
+                  sh:property [ a sh:PropertyShape;
+                      sh:path ex:age;
+                      sh:datatype xsd:string
+                    ]
+                ]
+            ]
+        ]
+    ] .

@@ -5,82 +5,17 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux12757 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:661f224b-d844-4628-b23d-d183f740a802 .
-
-_:661f224b-d844-4628-b23d-d183f740a802 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value 123;
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:InConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fl75ux1 .
-
-_:node1ei7fl75ux1 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:in _:node1ei7fl75ux2 .
-
-_:node1ei7fl75ux2 rdf:first 0;
-  rdf:rest _:node1ei7fklmux12758 .
-
-_:node1ei7fklmux12758 rdf:first 1;
-  rdf:rest _:node1ei7fklmux12759 .
-
-_:node1ei7fklmux12759 rdf:first 2;
-  rdf:rest _:node1ei7fklmux12760 .
-
-_:node1ei7fklmux12760 rdf:first 3;
-  rdf:rest _:node1ei7fklmux12761 .
-
-_:node1ei7fklmux12761 rdf:first 4;
-  rdf:rest _:node1ei7fklmux12762 .
-
-_:node1ei7fklmux12762 rdf:first 5;
-  rdf:rest _:node1ei7fklmux12763 .
-
-_:node1ei7fklmux12763 rdf:first 6;
-  rdf:rest _:node1ei7fklmux12764 .
-
-_:node1ei7fklmux12764 rdf:first 7;
-  rdf:rest _:node1ei7fklmux12765 .
-
-_:node1ei7fklmux12765 rdf:first 8;
-  rdf:rest _:node1ei7fklmux12766 .
-
-_:node1ei7fklmux12766 rdf:first 9;
-  rdf:rest _:node1ei7fklmux12767 .
-
-_:node1ei7fklmux12767 rdf:first 10;
-  rdf:rest _:node1ei7fklmux12768 .
-
-_:node1ei7fklmux12768 rdf:first 11;
-  rdf:rest _:node1ei7fklmux12769 .
-
-_:node1ei7fklmux12769 rdf:first 12;
-  rdf:rest _:node1ei7fklmux12770 .
-
-_:node1ei7fklmux12770 rdf:first 13;
-  rdf:rest _:node1ei7fklmux12771 .
-
-_:node1ei7fklmux12771 rdf:first 14;
-  rdf:rest _:node1ei7fklmux12772 .
-
-_:node1ei7fklmux12772 rdf:first 15;
-  rdf:rest _:node1ei7fklmux12773 .
-
-_:node1ei7fklmux12773 rdf:first 16;
-  rdf:rest _:node1ei7fklmux12774 .
-
-_:node1ei7fklmux12774 rdf:first 17;
-  rdf:rest _:node1ei7fklmux12775 .
-
-_:node1ei7fklmux12775 rdf:first 18;
-  rdf:rest _:node1ei7fklmux12776 .
-
-_:node1ei7fklmux12776 rdf:first 19;
-  rdf:rest _:node1ei7fklmux12777 .
-
-_:node1ei7fklmux12777 rdf:first 20;
-  rdf:rest rdf:nil .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value 123;
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:InConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:age;
+          sh:in (0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
+        ]
+    ] .

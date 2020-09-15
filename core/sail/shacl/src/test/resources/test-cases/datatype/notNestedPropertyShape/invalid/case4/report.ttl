@@ -5,38 +5,27 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux2529 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:6d7cd1df-d692-4e8e-bb04-a9ba967d5d6b, _:19d115bc-5b6b-4b94-b5a5-51afcbc1dd44 .
-
-_:6d7cd1df-d692-4e8e-bb04-a9ba967d5d6b a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:validPerson1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:validPerson1;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:PersonShape
+    ] .
 
 ex:PersonShape a sh:NodeShape;
   sh:targetClass ex:Person;
-  sh:not _:node1ei7fksjbx1 .
-
-_:node1ei7fksjbx1 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:property _:node1ei7fksjbx2;
-  sh:nodeKind sh:BlankNode .
-
-_:node1ei7fksjbx2 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:property _:node1ei7fksjbx3 .
-
-_:node1ei7fksjbx3 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:datatype xsd:string .
-
-_:19d115bc-5b6b-4b94-b5a5-51afcbc1dd44 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value ex:validPerson1;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape ex:PersonShape .
+  sh:not [ a sh:PropertyShape;
+      sh:path ex:knows;
+      sh:property [ a sh:PropertyShape;
+          sh:path ex:knows;
+          sh:property [ a sh:PropertyShape;
+              sh:path ex:age;
+              sh:datatype xsd:string
+            ]
+        ];
+      sh:nodeKind sh:BlankNode
+    ] .

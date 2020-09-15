@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
@@ -79,10 +80,10 @@ public class ValidationTuple {
 		this.propertyShapeScopeWithValue = hasValue;
 	}
 
-	public boolean sameTargetAs(ValidationTuple nextRight) {
+	public boolean sameTargetAs(ValidationTuple other) {
 
 		Value current = getActiveTarget();
-		Value currentRight = nextRight.getActiveTarget();
+		Value currentRight = other.getActiveTarget();
 
 		return current.equals(currentRight);
 
@@ -111,10 +112,10 @@ public class ValidationTuple {
 		this.scope = scope;
 	}
 
-	public int compareTarget(ValidationTuple nextRight) {
+	public int compareTarget(ValidationTuple other) {
 
 		Value left = getActiveTarget();
-		Value right = nextRight.getActiveTarget();
+		Value right = other.getActiveTarget();
 
 		return valueComparator.compare(left, right);
 	}
@@ -157,13 +158,13 @@ public class ValidationTuple {
 		}
 		ValidationTuple that = (ValidationTuple) o;
 		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue &&
-				Objects.equals(chain, that.chain) &&
+				Objects.equals(new ArrayList<>(chain), new ArrayList<>(that.chain)) &&
 				scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(chain, scope, propertyShapeScopeWithValue);
+		return Objects.hash(new ArrayList<>(chain), scope, propertyShapeScopeWithValue);
 	}
 
 	@Override
@@ -179,9 +180,7 @@ public class ValidationTuple {
 		assert scope == ConstraintComponent.Scope.propertyShape;
 		if (propertyShapeScopeWithValue) {
 			propertyShapeScopeWithValue = false;
-			if (scope == ConstraintComponent.Scope.propertyShape) {
-				chain.removeLast();
-			}
+			chain.removeLast();
 		}
 		scope = ConstraintComponent.Scope.nodeShape;
 	}

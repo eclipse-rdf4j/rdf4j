@@ -5,47 +5,19 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-_:node1ei7fklmux861 a sh:ValidationReport;
+[] a sh:ValidationReport;
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:result _:be9d8b1b-e3ce-4d3c-937e-db78b11f6646, _:90881f2e-9675-4102-90e9-4a37387753b7,
-    _:5064d514-bbcf-419a-a5d2-4e65bea48806, _:cb78645e-0c75-45ef-a70a-89eeeb21e44e .
-
-_:be9d8b1b-e3ce-4d3c-937e-db78b11f6646 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "123";
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkperx1 .
-
-_:node1ei7fkperx1 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:not _:node1ei7fkperx3 .
-
-_:node1ei7fkperx3 a sh:NodeShape;
-  sh:datatype xsd:string .
-
-_:90881f2e-9675-4102-90e9-4a37387753b7 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "123";
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkperx1 .
-
-_:5064d514-bbcf-419a-a5d2-4e65bea48806 a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "123";
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkperx1 .
-
-_:cb78645e-0c75-45ef-a70a-89eeeb21e44e a sh:ValidationResult;
-  sh:focusNode ex:validPerson1;
-  sh:value "123";
-  sh:resultPath ex:age;
-  sh:sourceConstraintComponent sh:NotConstraintComponent;
-  sh:resultSeverity sh:Violation;
-  sh:sourceShape _:node1ei7fkperx1 .
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value "123";
+      sh:resultPath ex:age;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:age;
+          sh:not [ a sh:NodeShape;
+              sh:datatype xsd:string
+            ]
+        ]
+    ] .
