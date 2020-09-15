@@ -58,8 +58,22 @@ interface SPARQLResultsXMLConstants {
 
 	public static final String QNAME = "q:qname";
 
+	/* tag constants for serialization of RDF* values in results */
+
 	public static final String TRIPLE_TAG = "triple";
+
+	/* Stardog variant */
+	public static final String STATEMENT_TAG = "statement";
+
 	public static final String SUBJECT_TAG = "subject";
+	/* Stardog variant */
+	public static final String S_TAG = "s";
+
 	public static final String PREDICATE_TAG = "predicate";
+	/* Stardog variant */
+	public static final String P_TAG = "p";
+
 	public static final String OBJECT_TAG = "object";
+	/* Stardog variant */
+	public static final String O_TAG = "o";
 }
