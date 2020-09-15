@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.junit.Test;
@@ -301,6 +303,32 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatRDF4J_incompleteTriple() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass()
+				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j-incompletetriple.srj");
+		assertNotNull("Could not find test resource", stream);
+		assertThatThrownBy(() -> parser.parseQueryResult(stream)).isInstanceOf(QueryResultParseException.class)
+				.hasMessageContaining("Did not find triple attribute in triple value");
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatRDF4J_doubleSubject() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass()
+				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j-doublesubject.srj");
+		assertNotNull("Could not find test resource", stream);
+		assertThatThrownBy(() -> parser.parseQueryResult(stream)).isInstanceOf(QueryResultParseException.class)
+				.hasMessageContaining("s field encountered twice in triple value:");
 	}
 
 	@Test
