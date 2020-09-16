@@ -313,9 +313,9 @@ public class TurtleWriterTest extends RDFWriterTest {
 				"               ]\n" +
 				"] .\n";
 
-		System.out.println("### EXPECTED ###");
-		System.out.println(data);
-		System.out.println("#################\n");
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
@@ -324,24 +324,24 @@ public class TurtleWriterTest extends RDFWriterTest {
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
-		System.out.println("### ACTUAL ###");
-		System.out.println(stringWriter.toString());
-		System.out.println("#################\n");
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
 	}
 
 	@Test
-	public void anotherBnodeTestReduced() throws Exception {
+	public void testBNodeValuesInList() throws Exception {
 		String data = "" +
 				"@prefix ex:    <http://example.com/ns#> .\n" +
 				"\n" +
 				"ex:a  ex:list   (_:b0 _:b0) .";
 
-		System.out.println("### EXPECTED ###");
-		System.out.println(data);
-		System.out.println("#################\n");
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
@@ -350,17 +350,51 @@ public class TurtleWriterTest extends RDFWriterTest {
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
-		System.out.println("### ACTUAL ###");
-		System.out.println(stringWriter.toString());
-		System.out.println("#################\n");
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
 	}
 
 	@Test
-	@Ignore
-	public void anotherBnodeTestReduced2() throws Exception {
+	public void testBNodeValuesInList2() throws Exception {
+		String data = "" +
+				"@prefix ex:    <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:a  ex:list   (_:b0 _:b1) .";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testBNodeValuesInList3() throws Exception {
+		String data = "" +
+				"@prefix ex:    <http://example.com/ns#> .\n" +
+				"\n" +
+				"ex:a  ex:list   (_:b0 _:b1) .\n" +
+				"_:b1 ex:foo ex:bar.\n";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testInvalidList_nonListPredicate() throws Exception {
 		String data = "@prefix ex:    <http://example.com/ns#> .\n" +
 				"@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
 				"\n" +
@@ -371,9 +405,9 @@ public class TurtleWriterTest extends RDFWriterTest {
 				"                   .\n" +
 				"";
 
-		System.out.println("### EXPECTED ###");
-		System.out.println(data);
-		System.out.println("#################\n");
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
@@ -382,17 +416,16 @@ public class TurtleWriterTest extends RDFWriterTest {
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
-		System.out.println("### ACTUAL ###");
-		System.out.println(stringWriter.toString());
-		System.out.println("#################\n");
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
 	}
 
 	@Test
-	@Ignore
-	public void anotherBnodeTest3() throws Exception {
+	public void testInvalidList_multipleRdfRestPredicates() throws Exception {
 		String data = "@prefix ex: <http://example.com/ns#> .\n" +
 				"@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n" +
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
@@ -549,12 +582,18 @@ public class TurtleWriterTest extends RDFWriterTest {
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
+//		System.out.println("### EXPECTEd ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
+
 		StringWriter stringWriter = new StringWriter();
 		WriterConfig config = new WriterConfig();
 		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
 
-		System.out.println(stringWriter.toString());
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));

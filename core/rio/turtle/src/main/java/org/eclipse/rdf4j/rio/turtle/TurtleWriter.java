@@ -37,6 +37,9 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.util.ModelException;
+import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -191,7 +194,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public void endRDF() throws RDFHandlerException {
 		checkWritingStarted();
-
 		synchronized (bufferLock) {
 			processBuffer();
 		}
@@ -261,7 +263,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		if (isBuffering()) {
 			synchronized (bufferLock) {
 				bufferedStatements.add(st);
-
 				if (bufferedStatements.size() >= this.bufferSize) {
 					processBuffer();
 				}
@@ -290,15 +291,69 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		Value obj = st.getObject();
 
 		try {
-			if (inlineBNodes && (pred.equals(RDF.FIRST) || pred.equals(RDF.REST))) {
-				handleList(st, canShortenObjectBNode);
-			} else if (inlineBNodes && !subj.equals(lastWrittenSubject) && stack.contains(subj)) {
-				handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);
+			if (inlineBNodes) {
+				if ((pred.equals(RDF.FIRST) || pred.equals(RDF.REST)) && isWellFormedCollection(subj)) {
+					// we only use list shorthand syntax if the collection is considered well-formed
+					handleList(st, canShortenObjectBNode);
+				} else if (!subj.equals(lastWrittenSubject) && stack.contains(subj)) {
+					handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);
+				} else {
+					writeStatement(subj, pred, obj, st.getContext(), canShortenSubjectBNode, canShortenObjectBNode);
+				}
 			} else {
 				writeStatement(subj, pred, obj, st.getContext(), canShortenSubjectBNode, canShortenObjectBNode);
 			}
 		} catch (IOException e) {
 			throw new RDFHandlerException(e);
+		}
+	}
+
+	/**
+	 * Check that the collection started with the supplied subject node is a well-formed RDF Collection.
+	 * <p>
+	 * It specifically checks that any collection subject blank nodes (the subjects of the rdf:first and rdf:rest
+	 * statements) are _not_ reused for any other, unrelated statements, and there are no things like multiple rdf:first
+	 * or rdf:rest statements for the same subject.
+	 * </p>
+	 *
+	 * @return true if the collection is considered well-formed false otherwise.
+	 */
+	private boolean isWellFormedCollection(Resource subj) {
+		try {
+			// first check is if we can process as a collection. This is not enough to establish it's well-formed but a
+			// useful first step.
+			final Model collection = RDFCollections.getCollection(bufferedStatements, subj,
+					getModelFactory().createEmptyModel());
+
+			// check that collection subject nodes are not re-used for non-collection purposes
+			for (Resource s : Models.subjectBNodes(collection)) {
+				boolean firstFound = false, restFound = false;
+				for (Statement st : bufferedStatements.getStatements(s, null, null)) {
+					IRI pred = st.getPredicate();
+					if (pred.equals(RDF.FIRST)) {
+						if (!firstFound) {
+							firstFound = true;
+						} else {
+							// second rdf:first statement on same subject is invalid.
+							return false;
+						}
+					} else if (pred.equals(RDF.REST)) {
+						if (!restFound) {
+							restFound = true;
+						} else {
+							// second rdf:rest statement on same subject is invalid.
+							return false;
+						}
+					} else {
+						// non-list-structure statement connected to collection subject blank node
+						return false;
+					}
+				}
+			}
+			return true;
+		} catch (ModelException e) {
+			// collection util could not process the collection
+			return false;
 		}
 	}
 
@@ -699,6 +754,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		boolean first = RDF.FIRST.equals(st.getPredicate());
 		boolean rest = RDF.REST.equals(st.getPredicate()) && !RDF.NIL.equals(st.getObject());
 		boolean nil = RDF.REST.equals(st.getPredicate()) && RDF.NIL.equals(st.getObject());
+
 		if (first && REST != lastWrittenPredicate && isHanging()) {
 			// new collection
 			writer.write("(");
@@ -808,11 +864,11 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 		// retrieve other statement from this context with the same
 		// subject, and output them grouped by predicate
-		contextData.filter(subject, null, null).predicates().forEach(predicate -> {
+		for (IRI predicate : contextData.filter(subject, null, null).predicates()) {
 			if (!processedPredicates.contains(predicate)) {
 				processPredicate(contextData, subject, predicate, processedSubjects, processedPredicates);
 			}
-		});
+		}
 
 		processedSubjects.add(subject);
 	}
@@ -835,9 +891,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 			return false;
 		}
 		if (v instanceof BNode) {
-			contextData.filter(null, null, v).forEach(System.out::println);
-			boolean result = (contextData.filter(null, null, v).size() <= 1);
-			return result;
+			return (contextData.filter(null, null, v).size() <= 1);
 		}
 		return true;
 	}
