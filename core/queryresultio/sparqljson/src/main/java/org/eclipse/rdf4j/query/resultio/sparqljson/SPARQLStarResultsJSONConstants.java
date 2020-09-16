@@ -70,4 +70,25 @@ final class SPARQLStarResultsJSONConstants {
 	 * Key name of the JSON object for the triple's object.
 	 */
 	static final String OBJECT = "o";
+
+	/**
+	 * Type string for serialized {@link org.eclipse.rdf4j.model.Triple} value - Stardog dialect
+	 */
+	final static String TRIPLE_STARDOG = "statement";
+
+	/**
+	 * Key name of the JSON object for the triple's subject - Apache Jena dialect
+	 */
+	final static String SUBJECT_JENA = "subject";
+
+	/**
+	 * Key name of the JSON object for the triple's predicate - Apache Jena dialect
+	 */
+	final static String PREDICATE_JENA = "predicate";
+
+	/**
+	 * Key name of the JSON object for the triple's object - Apache Jena dialect
+	 */
+	final static String OBJECT_JENA = "object";
+
 }

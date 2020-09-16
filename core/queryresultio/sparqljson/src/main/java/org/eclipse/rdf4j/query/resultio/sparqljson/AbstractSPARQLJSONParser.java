@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE_STARDOG;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -335,13 +337,26 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			// set the appropriate state variable
 			if (TYPE.equals(fieldName)) {
 				type = jp.getText();
+				if (TRIPLE_STARDOG.equals(type)) {
+					// Stardog RDF* serialization dialect is slightly different, in that it doesn't use a value
+					// property.
+					fieldName = jp.getCurrentName();
+					jp.nextToken();
+					triple = parseTripleValue(jp, fieldName);
+				}
 			} else if (XMLLANG.equals(fieldName)) {
 				lang = jp.getText();
 			} else if (DATATYPE.equals(fieldName)) {
 				datatype = jp.getText();
 			} else if (VALUE.equals(fieldName)) {
 				if (jp.getCurrentToken() == JsonToken.START_OBJECT) {
+					jp.nextToken();
 					triple = parseTripleValue(jp, fieldName);
+					if (jp.nextToken() != JsonToken.END_OBJECT) {
+						throw new QueryResultParseException("Unexpected token: " + jp.getCurrentName(),
+								jp.getCurrentLocation().getLineNr(),
+								jp.getCurrentLocation().getColumnNr());
+					}
 				} else {
 					value = jp.getText();
 				}
