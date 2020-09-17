@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.examples;
 
+import java.io.File;
+import java.io.FileInputStream;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -56,6 +59,9 @@ public class LuceneSailExample {
 		// set this parameter to let the lucene index store its data in ram
 		lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
 		// set this parameter to store the lucene index on disk
+		lucenesail.setParameter(LuceneSail.WKT_FIELDS,
+				"http://nuts.de/geometry https://linkedopendata.eu/prop/direct/P127");
+
 		// lucenesail.setParameter(LuceneSail.LUCENE_DIR_KEY,
 		// "./data/mydirectory");
 
@@ -69,45 +75,35 @@ public class LuceneSailExample {
 		try ( // add some test data, the FOAF ont
 				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
-			connection.add(LuceneSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
-					"", RDFFormat.RDFXML);
+			connection.add(new FileInputStream(new File("some_dir")),
+					"", RDFFormat.NTRIPLES);
 			connection.commit();
 
 			// search for resources that mention "person"
-			String queryString = "PREFIX search:   <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \n" + "SELECT * WHERE { \n"
-					+ "?subject search:matches ?match . \n" + "?match search:query \"person\" ; \n"
-					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
-					+ "       search:snippet ?snippet . \n" + "?subject rdf:type ?type . \n" + "} LIMIT 3 \n"
-					+ "BINDINGS ?type { \n" + " (<http://www.w3.org/2002/07/owl#Class>) \n" + "}";
+			// String queryString = "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> PREFIX geo:
+			// <http://www.opengis.net/ont/geosparql#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX
+			// rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id WHERE { ?s <http://nuts.de/geometry> ?o . FILTER
+			// (geof:sfWithin(\"Point(-2.7633 47.826)\"^^geo:wktLiteral,?o)) }";
+			// String queryString = "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> PREFIX geo:
+			// <http://www.opengis.net/ont/geosparql#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX
+			// rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id WHERE { ?s <http://nuts.de/geometry> ?o . FILTER
+			// (geof:sfContains(?o,\"POINT(33.30260 38.675310)\"^^geo:wktLiteral)) ?s <http://example.com/id> ?id . }";
+			// String queryString = "PREFIX geof: <http://www.opengis.net/def/function/geosparql/> PREFIX geo:
+			// <http://www.opengis.net/ont/geosparql#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX
+			// rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id WHERE { ?s <http://nuts.de/geometry> ?o . FILTER
+			// (geof:sfWithin(\"Point(7.98 45.363)\"^^geo:wktLiteral,?o)) ?s <http://nuts.de/id> ?id . }";
+			String queryString = "SELECT ?s0 where { ?s0 <https://linkedopendata.eu/prop/direct/P127> ?coordinates . FILTER ( <http://www.opengis.net/def/function/geosparql/distance>(\"Point(12.2018 44.4161)\"^^<http://www.opengis.net/ont/geosparql#wktLiteral>,?coordinates,<http://www.opengis.net/def/uom/OGC/1.0/metre>)< 100000) .    ?s0 <https://linkedopendata.eu/prop/direct/P35> <https://linkedopendata.eu/entity/Q9934> .}";
+			/*
+			 * String queryString = "PREFIX geo: <http://www.opengis.net/ont/geosparql#>\n" +
+			 * "PREFIX geof: <http://www.opengis.net/def/function/geosparql/>\n" +
+			 * "PREFIX uom: <http://www.opengis.net/def/uom/OGC/1.0/>\n" + "PREFIX ex: <http://example.org/>\n" +
+			 * "SELECT *\n" + "WHERE {\n" + "  ?lmA a ex:Landmark ;\n" +
+			 * "       geo:hasGeometry [ geo:asWKT ?coord1 ].\n" + "  ?lmB a ex:Landmark ;\n" +
+			 * "       geo:hasGeometry [ geo:asWKT ?coord2 ].\n" +
+			 * "  BIND((geof:distance(?coord1, ?coord2, uom:metre)/1000) as ?dist) .\n" +
+			 * "  FILTER (str(?lmA) < str(?lmB))\n" + "}";
+			 */
 			tupleQuery(queryString, connection);
-
-			// search for property "name" with domain "person"
-			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n" + "SELECT * WHERE { \n"
-					+ "?subject rdfs:domain ?domain . \n" + "?subject search:matches ?match . \n"
-					+ "?match search:query \"chat\" ; \n" + "       search:score ?score . \n"
-					+ "?domain search:matches ?match2 . \n" + "?match2 search:query \"person\" ; \n"
-					+ "        search:score ?score2 . \n" + "} LIMIT 5";
-			tupleQuery(queryString, connection);
-
-			// search in subquery and filter results
-			queryString = "PREFIX search:   <" + LuceneSailSchema.NAMESPACE + "> \n" + "SELECT * WHERE { \n"
-					+ "{ SELECT * WHERE { \n" + "  ?subject search:matches ?match . \n"
-					+ "  ?match search:query \"person\" ; \n" + "         search:property ?property ; \n"
-					+ "         search:score ?score ; \n" + "         search:snippet ?snippet . \n" + "} } \n"
-					+ "FILTER(CONTAINS(STR(?subject), \"Person\")) \n" + "} \n" + "";
-			tupleQuery(queryString, connection);
-
-			// search for property "homepage" with domain foaf:Person
-			queryString = "PREFIX search: <" + LuceneSailSchema.NAMESPACE + "> \n"
-					+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
-					+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
-					+ "CONSTRUCT { ?x rdfs:domain foaf:Person } \n" + "WHERE { \n" + "?x rdfs:domain foaf:Person . \n"
-					+ "?x search:matches ?match . \n" + "?match search:query \"homepage\" ; \n"
-					+ "       search:property ?property ; \n" + "       search:score ?score ; \n"
-					+ "       search:snippet ?snippet . \n" + "} LIMIT 3 \n";
-			graphQuery(queryString, connection);
 		} finally {
 			repository.shutDown();
 		}
