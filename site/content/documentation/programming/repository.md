@@ -1359,7 +1359,9 @@ try(RepositoryConnection conn = repo.getConnection()) {
 
 So far, we have shown individual operations on repositories: adding statements, removing them, etc. By default, each operation on a `RepositoryConnection` is immediately sent to the store and committed.
 
-The `RepositoryConnection` interface supports a full transactional mechanism that allows one to group modification operations together and treat them as a single update: before the transaction is committed, none of the operations in the transaction has taken effect, and after, they all take effect. If something goes wrong at any point during a transaction, it can be rolled back so that the state of the repository is the same as before the transaction started. Bundling update operations in a single transaction often also improves update performance compared to multiple smaller transactions.
+The `RepositoryConnection` interface supports a full transactional mechanism that allows one to group modification operations together and treat them as a single update: before the transaction is committed, none of the operations in the transaction has taken effect, and after, they all take effect. If something goes wrong at any point during a transaction, it can be rolled back so that the state of the repository is the same as before the transaction started.
+
+Bundling update operations in a single transaction often also improves update performance compared to multiple smaller transactions. This may not be noticeable when adding a few thousand statements, but it can make a big difference when loading millions of statements into a repository.
 
 We can indicate that we want to begin a transaction by using the `RepositoryConnection.begin()` method. In the following example, we use a connection to bundle two file addition operations in a single transaction:
 
