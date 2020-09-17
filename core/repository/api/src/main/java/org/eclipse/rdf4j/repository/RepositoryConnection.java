@@ -40,10 +40,12 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
- * Main interface for updating data in and performing queries on an RDF4J {@link Repository}. By default, a
- * RepositoryConnection is in auto-commit mode, meaning that each operation corresponds to a single transaction on the
- * underlying store. Multiple operations can be bundled in a single transaction by using {@link #begin()} and
- * {@link #commit() commit}/ {@link #rollback() rollback}. Care should be taking to always properly close a
+ * Main interface for updating data in and performing queries on an RDF4J {@link Repository}.
+ * <p>
+ * By default, a RepositoryConnection is in auto-commit mode, meaning that each operation corresponds to a single
+ * transaction on the underlying store. Multiple operations can be bundled in a single transaction by using
+ * {@link #begin()} and {@link #commit() commit}/ {@link #rollback() rollback}, which may improve performance
+ * considerably when dealing with many thousands of statements. Care should be taking to always properly close a
  * RepositoryConnection after one is finished with it, to free up resources and avoid unnecessary locks.
  * <p>
  * RepositoryConnection is not guaranteed to be thread-safe. The recommended access pattern in a multithreaded
