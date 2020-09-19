@@ -10,18 +10,18 @@
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:value 12345678901;
-      sh:resultPath ex:iriOr10LengthEnglishNorwegianLiteral;
-      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:value ex:pete;
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:iriOr10LengthEnglishNorwegianLiteral;
-          sh:or ([ a sh:NodeShape;
-                sh:nodeKind sh:IRI
-              ] [ a sh:NodeShape;
-                sh:minLength 10;
-                sh:languageIn ("en" "no");
-                sh:nodeKind sh:Literal
-              ])
+          sh:path ex:knows;
+          sh:not [ a sh:NodeShape;
+              sh:or ([ a sh:NodeShape;
+                    sh:in (ex:steve)
+                  ] [ a sh:NodeShape;
+                    sh:in (ex:pete ex:steve)
+                  ])
+            ]
         ]
     ] .

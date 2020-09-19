@@ -83,7 +83,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				false, scope);
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
-//			System.out.println("HERE!" + p);
+			System.out.println("HERE!" + p);
 		});
 
 		PlanNode invalid = new Unique(planNode);
@@ -91,7 +91,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
 		invalid = new DebugPlanNode(invalid, "", p -> {
-//			System.out.println();
+			System.out.println();
 		});
 
 		return invalid;

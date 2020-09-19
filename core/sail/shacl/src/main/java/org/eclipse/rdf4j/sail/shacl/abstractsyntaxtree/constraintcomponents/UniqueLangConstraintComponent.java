@@ -15,12 +15,14 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NonUniqueTargetLang;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -109,21 +111,25 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", Scope.propertyShape);
 		Optional<Path> path = targetChain.getPath();
 
-		if (!path.isPresent()) {
+		if (!path.isPresent() || scope != Scope.propertyShape) {
 			throw new IllegalStateException("UniqueLang only operates on paths");
 		}
 
 		if (overrideTargetNode != null) {
+
+			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope);
+
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-					overrideTargetNode.getPlanNode(),
+					targets,
 					connectionsGroup.getBaseConnection(),
 					path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
 			);
 
-			return new ShiftToNodeShape(new NonUniqueTargetLang(relevantTargetsWithPath), true);
+			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
+			return new Unique(new TrimToTarget(nonUniqueTargetLang));
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -133,8 +139,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
-			return new ShiftToNodeShape(new NonUniqueTargetLang(innerJoin), true);
-
+			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(innerJoin);
+			return new Unique(new TrimToTarget(nonUniqueTargetLang));
 		}
 
 		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
@@ -145,9 +151,12 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
-		PlanNode trimmed = new ShiftToNodeShape(mergeNode, false);
+		mergeNode = new TrimToTarget(mergeNode);
 
-		PlanNode allRelevantTargets = new Unique(trimmed);
+		PlanNode allRelevantTargets = new Unique(mergeNode);
+		allRelevantTargets = new DebugPlanNode(allRelevantTargets, "", t -> {
+			System.out.println(t);
+		});
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
@@ -155,10 +164,14 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
 				false,
 				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, false)
+				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
 		);
 
-		return new ShiftToNodeShape(new NonUniqueTargetLang(relevantTargetsWithPath), true);
+		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
+		nonUniqueTargetLang = new DebugPlanNode(nonUniqueTargetLang, "", t -> {
+			System.out.println(t);
+		});
+		return new Unique(new TrimToTarget(nonUniqueTargetLang));
 
 	}
 

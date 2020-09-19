@@ -217,4 +217,13 @@ public class ValidationTuple {
 
 		return valueComparator.compare(left, right);
 	}
+
+	public void trimToTarget() {
+		if (scope == ConstraintComponent.Scope.propertyShape) {
+			if (propertyShapeScopeWithValue) {
+				chain.removeLast();
+				propertyShapeScopeWithValue = false;
+			}
+		}
+	}
 }

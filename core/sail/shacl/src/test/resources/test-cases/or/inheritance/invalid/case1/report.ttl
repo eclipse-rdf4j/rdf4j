@@ -10,23 +10,16 @@
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:value "123";
+      sh:value "abc";
       sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eik0d49dx1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eik0d49dx1
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:age;
+          sh:or ([ a sh:NodeShape;
+                sh:datatype xsd:integer
+              ] [ a sh:NodeShape;
+                sh:datatype xsd:long
+              ])
+        ]
     ] .
-
-_:node1eik0d49dx1 a sh:PropertyShape;
-  sh:path ex:age;
-  sh:node ex:node .
-
-ex:node a sh:NodeShape;
-  sh:datatype xsd:integer .

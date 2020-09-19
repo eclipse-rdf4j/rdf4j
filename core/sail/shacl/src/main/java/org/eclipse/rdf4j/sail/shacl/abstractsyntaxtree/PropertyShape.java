@@ -201,7 +201,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			if (scope == Scope.propertyShape) {
 				validationPlanNode = new TargetChainPopper(validationPlanNode);
 			} else {
-				validationPlanNode = new ShiftToNodeShape(validationPlanNode, false);
+				validationPlanNode = new ShiftToNodeShape(validationPlanNode);
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
@@ -227,7 +227,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);
 		} else {
-			planNode = new ShiftToNodeShape(planNode, false);
+			planNode = new ShiftToNodeShape(planNode);
 		}
 
 		planNode = new Unique(planNode);

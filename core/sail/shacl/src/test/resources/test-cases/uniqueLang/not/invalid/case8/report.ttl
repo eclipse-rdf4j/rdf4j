@@ -6008,12 +6008,6 @@
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:bigCo0999;
-      sh:value ex:bigCo0999;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
     ] .
 
 ex:PersonShape a sh:NodeShape;
