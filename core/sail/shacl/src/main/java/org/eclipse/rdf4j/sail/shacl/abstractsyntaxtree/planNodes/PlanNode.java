@@ -26,4 +26,8 @@ public interface PlanNode {
 
 	void receiveLogger(ValidationExecutionLogger validationExecutionLogger);
 
+	boolean producesSorted();
+
+	boolean requiresSorted();
+
 }

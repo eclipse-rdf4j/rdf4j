@@ -42,6 +42,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
+
+		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
 
 		parsedQuery = parseQuery(query);

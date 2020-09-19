@@ -19,9 +19,13 @@ public class EqualsJoin implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
+		left = PlanNodeHelper.handleSorting(this, left);
+		right = PlanNodeHelper.handleSorting(this, right);
+
 		this.left = left;
 		this.right = right;
 		this.useAsFilter = useAsFilter;
+
 	}
 
 	@Override
@@ -153,5 +157,15 @@ public class EqualsJoin implements PlanNode {
 		this.validationExecutionLogger = validationExecutionLogger;
 		left.receiveLogger(validationExecutionLogger);
 		right.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

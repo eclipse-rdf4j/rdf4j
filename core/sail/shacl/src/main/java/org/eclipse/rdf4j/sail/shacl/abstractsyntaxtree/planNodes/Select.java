@@ -38,6 +38,7 @@ public class Select implements PlanNode {
 	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
+	private final boolean sorted;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -52,6 +53,11 @@ public class Select implements PlanNode {
 			query = "" +
 					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+		}
+		if (orderBy != null) {
+			sorted = true;
+		} else {
+			sorted = false;
 		}
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
@@ -167,5 +173,15 @@ public class Select implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return sorted;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

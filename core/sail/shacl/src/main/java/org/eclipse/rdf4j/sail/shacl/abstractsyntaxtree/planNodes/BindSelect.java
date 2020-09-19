@@ -61,6 +61,7 @@ public class BindSelect implements PlanNode {
 		this.mapper = mapper;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
+		source = PlanNodeHelper.handleSorting(this, source);
 		this.source = source;
 
 		if (query.trim().equals("")) {
@@ -279,5 +280,15 @@ public class BindSelect implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		source.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.SortedSet;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -27,12 +28,12 @@ import org.slf4j.LoggerFactory;
 public class ValuesBackedNode implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValuesBackedNode.class);
-	private final Collection<Value> collection;
+	private final SortedSet<Value> collection;
 	private final ConstraintComponent.Scope scope;
 	boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValuesBackedNode(Collection<Value> collection, ConstraintComponent.Scope scope) {
+	public ValuesBackedNode(SortedSet<Value> collection, ConstraintComponent.Scope scope) {
 		this.collection = collection;
 		this.scope = scope;
 	}
@@ -115,5 +116,15 @@ public class ValuesBackedNode implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

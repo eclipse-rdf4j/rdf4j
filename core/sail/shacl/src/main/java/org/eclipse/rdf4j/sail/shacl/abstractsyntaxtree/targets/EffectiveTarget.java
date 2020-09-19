@@ -130,19 +130,21 @@ public class EffectiveTarget {
 					.orElse("");
 
 			if (includeTargetsAffectedByRemoval && optional != null) {
-				return new TargetChainRetriever(
+				return new Sort(new TargetChainRetriever(
 						connectionsGroup,
 						collect,
 						optional.getStatementPatterns().collect(Collectors.toList()),
 						query,
+						getVars(),
 						scope
-				);
+				));
 			} else {
 				return new Sort(new TargetChainRetriever(
 						connectionsGroup,
 						collect,
 						null,
 						query,
+						getVars(),
 						scope
 				));
 			}

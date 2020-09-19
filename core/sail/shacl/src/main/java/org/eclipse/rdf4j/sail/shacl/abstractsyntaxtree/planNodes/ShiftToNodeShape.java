@@ -26,6 +26,7 @@ public class ShiftToNodeShape implements PlanNode {
 	boolean keepPath = false;
 
 	public ShiftToNodeShape(PlanNode parent, boolean keepValue) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 		this.keepValue = keepValue;
 		this.stackTrace = Thread.currentThread().getStackTrace();
@@ -105,5 +106,15 @@ public class ShiftToNodeShape implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return false;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

@@ -23,6 +23,7 @@ public class ValidationReportNode implements PlanNode {
 
 	public ValidationReportNode(PlanNode parent,
 			Function<ValidationTuple, ValidationResult> validationResultFunction) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 		this.validationResultFunction = validationResultFunction;
 	}
@@ -89,5 +90,15 @@ public class ValidationReportNode implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

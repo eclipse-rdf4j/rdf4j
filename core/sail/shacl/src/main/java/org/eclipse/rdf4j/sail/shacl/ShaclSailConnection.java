@@ -38,9 +38,8 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.SingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationSingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
@@ -390,8 +389,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.map(shape -> shape.generatePlans(connectionsGroup, sail.isLogValidationPlans(),
 							validateEntireBaseSail))
 					.filter(Objects::nonNull)
-					.map(temp -> () -> {
-						PlanNode planNode = new ValidationSingleCloseablePlanNode(temp);
+					.map(SingleCloseablePlanNode::new)
+					.map(planNode -> () -> {
 
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);

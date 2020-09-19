@@ -23,6 +23,8 @@ public class GroupByCount implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public GroupByCount(PlanNode parent) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
+
 		this.parent = parent;
 	}
 
@@ -133,5 +135,15 @@ public class GroupByCount implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

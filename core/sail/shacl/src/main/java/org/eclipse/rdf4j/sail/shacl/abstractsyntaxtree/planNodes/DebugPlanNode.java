@@ -109,4 +109,14 @@ public class DebugPlanNode implements PlanNode {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
 	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
+	}
 }

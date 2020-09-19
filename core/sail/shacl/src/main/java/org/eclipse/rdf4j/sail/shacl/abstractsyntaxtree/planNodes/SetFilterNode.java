@@ -26,6 +26,7 @@ public class SetFilterNode implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public SetFilterNode(Set<Value> targetNodeList, PlanNode parent, int index, boolean returnValid) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.targetNodeList = targetNodeList;
 		this.parent = parent;
 		this.index = index;
@@ -113,5 +114,15 @@ public class SetFilterNode implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

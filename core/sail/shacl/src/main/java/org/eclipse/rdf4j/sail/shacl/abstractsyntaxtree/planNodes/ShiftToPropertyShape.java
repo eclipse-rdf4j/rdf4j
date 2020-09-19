@@ -23,6 +23,7 @@ public class ShiftToPropertyShape implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ShiftToPropertyShape(PlanNode parent) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
@@ -93,5 +94,15 @@ public class ShiftToPropertyShape implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return false;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

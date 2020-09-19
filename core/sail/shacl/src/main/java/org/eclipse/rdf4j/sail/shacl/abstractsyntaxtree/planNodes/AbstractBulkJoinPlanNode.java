@@ -124,4 +124,13 @@ abstract class AbstractBulkJoinPlanNode implements PlanNode {
 				.collect(Collectors.toList());
 	}
 
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
+	}
 }

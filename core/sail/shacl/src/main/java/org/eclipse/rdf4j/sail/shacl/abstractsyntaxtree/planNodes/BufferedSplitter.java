@@ -129,6 +129,16 @@ public class BufferedSplitter implements PlanNodeProvider {
 				parent.receiveLogger(validationExecutionLogger);
 			}
 
+			@Override
+			public boolean producesSorted() {
+				return parent.producesSorted();
+			}
+
+			@Override
+			public boolean requiresSorted() {
+				return parent.requiresSorted();
+			}
+
 		};
 
 	}

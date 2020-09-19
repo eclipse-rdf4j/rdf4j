@@ -14,6 +14,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
+ * A plan node that can only be closed once
+ *
+ *
  * @author Håvard Ottestad
  */
 public class SingleCloseablePlanNode implements PlanNode {
@@ -23,6 +26,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public SingleCloseablePlanNode(PlanNode parent) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 
 	}
@@ -84,5 +88,15 @@ public class SingleCloseablePlanNode implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

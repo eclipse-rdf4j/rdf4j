@@ -158,4 +158,14 @@ public class UnorderedSelect implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 	}
+
+	@Override
+	public boolean producesSorted() {
+		return false;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
+	}
 }

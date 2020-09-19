@@ -21,7 +21,7 @@ public class ValidationTupleTest {
 
 	@Test
 	public void testEqualsAndHashCode() {
-		
+
 		ValidationTuple abc = new ValidationTuple(
 				new ArrayDeque<>(
 						Arrays.asList(RDF.TYPE, RDF.HTML, SimpleValueFactory.getInstance().createLiteral("abc"))),

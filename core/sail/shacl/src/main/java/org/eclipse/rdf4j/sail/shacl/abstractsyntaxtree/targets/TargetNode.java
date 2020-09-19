@@ -91,7 +91,8 @@ public class TargetNode extends Target {
 	@Override
 	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
 		assert (subject == null);
-		throw new ShaclUnsupportedException();
+		return Stream.empty();
+//		throw new ShaclUnsupportedException();
 	}
 
 	@Override

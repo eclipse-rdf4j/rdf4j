@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
@@ -126,7 +127,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new ShiftToPropertyShape(new Unique(allTargetsPlan));
+			allTargets = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 		} else {
 			allTargets = getTargetChain().getEffectiveTarget("target_", scope)
 					.getPlanNode(connectionsGroup, scope, true);

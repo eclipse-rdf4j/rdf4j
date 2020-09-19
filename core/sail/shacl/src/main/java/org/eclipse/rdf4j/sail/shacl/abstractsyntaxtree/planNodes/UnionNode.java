@@ -21,12 +21,18 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class UnionNode implements PlanNode {
 
-	private PlanNode[] nodes;
+	private final StackTraceElement[] stackTrace;
+	private final PlanNode[] nodes;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnionNode(PlanNode... nodes) {
+		for (int i = 0; i < nodes.length; i++) {
+			nodes[i] = PlanNodeHelper.handleSorting(this, nodes[i]);
+		}
+
 		this.nodes = nodes;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
@@ -40,6 +46,7 @@ public class UnionNode implements PlanNode {
 			ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 
 			ValidationTuple next;
+			ValidationTuple prev;
 
 			private void calculateNext() {
 
@@ -98,7 +105,12 @@ public class UnionNode implements PlanNode {
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
+				if (prev != null && next.compareTarget(prev) < 0) {
+					throw new AssertionError();
+				}
+
 				ValidationTuple temp = next;
+				prev = next;
 				next = null;
 				return temp;
 			}
@@ -147,5 +159,15 @@ public class UnionNode implements PlanNode {
 		for (PlanNode node : nodes) {
 			node.receiveLogger(validationExecutionLogger);
 		}
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

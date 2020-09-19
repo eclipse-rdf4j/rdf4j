@@ -126,4 +126,14 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			parent.receiveLogger(validationExecutionLogger);
 		}
 	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return parent.requiresSorted();
+	}
 }

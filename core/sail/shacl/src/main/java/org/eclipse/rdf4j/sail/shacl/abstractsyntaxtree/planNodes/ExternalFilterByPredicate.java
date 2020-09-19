@@ -39,6 +39,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
 			On on) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
+
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
 		this.parent = parent;
@@ -158,5 +160,15 @@ public class ExternalFilterByPredicate implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

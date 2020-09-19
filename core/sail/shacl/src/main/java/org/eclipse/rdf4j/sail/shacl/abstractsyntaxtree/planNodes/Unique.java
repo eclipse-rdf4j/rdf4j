@@ -33,6 +33,8 @@ public class Unique implements PlanNode {
 	static AtomicInteger counter = new AtomicInteger();
 
 	public Unique(PlanNode parent) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
+
 		this.parent = parent;
 		this.id = counter.incrementAndGet();
 	}
@@ -117,7 +119,9 @@ public class Unique implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
-
+				if (previous != null && next.compareTarget(previous) < 0) {
+					throw new AssertionError();
+				}
 				ValidationTuple temp = next;
 				next = null;
 				return temp;
@@ -161,5 +165,15 @@ public class Unique implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

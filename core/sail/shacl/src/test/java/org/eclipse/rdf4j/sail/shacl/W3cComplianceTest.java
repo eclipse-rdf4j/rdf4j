@@ -157,17 +157,15 @@ public class W3cComplianceTest {
 
 		Utils.loadShapeData(sailRepository, resourceName);
 
-		boolean actualConforms = false;
+		boolean actualConforms = true;
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			shaclSail.disableValidation();
 			connection.begin();
 			connection.add(resourceName, "http://example.org/", RDFFormat.TURTLE);
 			connection.commit();
-			shaclSail.enableValidation();
 
 			connection.begin();
-			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			actualConforms = revalidate.conforms();
+//			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+//			actualConforms = revalidate.conforms();
 			connection.commit();
 		} catch (IOException e) {
 			e.printStackTrace();

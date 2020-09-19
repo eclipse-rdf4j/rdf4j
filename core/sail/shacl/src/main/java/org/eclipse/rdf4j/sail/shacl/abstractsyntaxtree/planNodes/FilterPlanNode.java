@@ -33,6 +33,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	abstract boolean checkTuple(ValidationTuple t);
 
 	public FilterPlanNode(PlanNode parent) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 	}
 
@@ -221,5 +222,15 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

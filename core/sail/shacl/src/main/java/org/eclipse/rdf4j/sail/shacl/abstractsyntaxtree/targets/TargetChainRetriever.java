@@ -49,11 +49,17 @@ public class TargetChainRetriever implements PlanNode {
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			List<StatementPattern> statementPatterns, List<StatementPattern> removedStatementPatterns, String query,
-			ConstraintComponent.Scope scope) {
+			List<Var> vars, ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
 		this.statementPatterns = statementPatterns;
 		this.scope = scope;
-		this.query = "select * where {" + query + "}";
+
+//		StringBuilder orderBy = new StringBuilder();
+//		for (Var var : vars) {
+//			orderBy.append("?").append(var.getName()).append(" ");
+//		}
+
+		this.query = "select * where {" + query + "}";// +" order by "+orderBy;
 		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
@@ -232,5 +238,15 @@ public class TargetChainRetriever implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return false;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }

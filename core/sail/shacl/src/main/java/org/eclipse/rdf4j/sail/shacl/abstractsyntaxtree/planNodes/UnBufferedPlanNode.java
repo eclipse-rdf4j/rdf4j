@@ -130,4 +130,14 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 			parent.receiveLogger(validationExecutionLogger);
 		}
 	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return parent.producesSorted();
+	}
 }

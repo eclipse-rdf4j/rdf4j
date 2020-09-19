@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -192,6 +193,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		if (scope != Scope.nodeShape) {
 			planNode = new ShiftToPropertyShape(planNode);
+			planNode = new Sort(planNode);
 		}
 
 		planNode = new Unique(planNode);

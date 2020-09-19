@@ -18,13 +18,15 @@ import org.eclipse.rdf4j.sail.SailException;
 
 public class NotValuesIn implements PlanNode {
 
-	private final PlanNode source;
+	private final PlanNode parent;
 	private final PlanNode notIn;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public NotValuesIn(PlanNode source, PlanNode notIn) {
-		this.source = source;
+	public NotValuesIn(PlanNode parent, PlanNode notIn) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
+
+		this.parent = parent;
 		this.notIn = notIn;
 	}
 
@@ -32,7 +34,7 @@ public class NotValuesIn implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> sourceIterator = source.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			final Set<Value> notInValueSet = new HashSet<>();
 
@@ -48,8 +50,8 @@ public class NotValuesIn implements PlanNode {
 
 			void calculateNext() {
 
-				while (next == null && sourceIterator.hasNext()) {
-					ValidationTuple temp = sourceIterator.next();
+				while (next == null && parentIterator.hasNext()) {
+					ValidationTuple temp = parentIterator.next();
 					if (!notInValueSet.contains(temp.getValue())) {
 						next = temp;
 					}
@@ -76,7 +78,7 @@ public class NotValuesIn implements PlanNode {
 			@Override
 			public void close() throws SailException {
 
-				sourceIterator.close();
+				parentIterator.close();
 			}
 
 			@Override
@@ -88,7 +90,7 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public int depth() {
-		return source.depth() + 1;
+		return parent.depth() + 1;
 	}
 
 	@Override
@@ -112,7 +114,7 @@ public class NotValuesIn implements PlanNode {
 	@Override
 	public String toString() {
 		return "NotValuesIn{" +
-				"source=" + source +
+				"parent=" + parent +
 				", notIn=" + notIn +
 				'}';
 	}
@@ -120,7 +122,17 @@ public class NotValuesIn implements PlanNode {
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
-		source.receiveLogger(validationExecutionLogger);
+		parent.receiveLogger(validationExecutionLogger);
 		notIn.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

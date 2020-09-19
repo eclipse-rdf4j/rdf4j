@@ -23,6 +23,9 @@ public class LeftOuterJoin implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public LeftOuterJoin(PlanNode left, PlanNode right) {
+		left = PlanNodeHelper.handleSorting(this, left);
+		right = PlanNodeHelper.handleSorting(this, right);
+
 		this.left = left;
 		this.right = right;
 	}
@@ -168,5 +171,15 @@ public class LeftOuterJoin implements PlanNode {
 		this.validationExecutionLogger = validationExecutionLogger;
 		left.receiveLogger(validationExecutionLogger);
 		right.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

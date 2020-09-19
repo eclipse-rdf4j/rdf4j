@@ -38,6 +38,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public InnerJoin(PlanNode left, PlanNode right) {
+		left = PlanNodeHelper.handleSorting(this, left);
+		right = PlanNodeHelper.handleSorting(this, right);
+
 		this.left = left;
 		this.right = right;
 		this.stackTrace = Thread.currentThread().getStackTrace();
@@ -306,5 +309,15 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			}
 		}
 
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return true;
 	}
 }

@@ -22,6 +22,7 @@ public class TupleMapper implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TupleMapper(PlanNode parent, Function<ValidationTuple, ValidationTuple> function) {
+		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
 		this.function = function;
 	}
@@ -85,5 +86,15 @@ public class TupleMapper implements PlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 }
