@@ -88,13 +88,13 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode invalid = new Unique(planNode);
 
-		PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
+		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
-		discardedLeft = new DebugPlanNode(discardedLeft, "", p -> {
+		invalid = new DebugPlanNode(invalid, "", p -> {
 //			System.out.println();
 		});
 
-		return discardedLeft;
+		return invalid;
 
 	}
 

@@ -9,96 +9,6 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson2;
       sh:value ex:validPerson2;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
@@ -112,11 +22,7 @@ ex:PersonShape a sh:NodeShape;
       sh:path ex:age;
       sh:or ([ a sh:NodeShape;
             sh:datatype xsd:boolean
-          ] [])
+          ] [ a sh:NodeShape;
+            sh:datatype xsd:string
+          ])
     ] .
-
-[] rdf:rest ([]), ([]), ([]), ([]), ([]), ([]), ([]), ([]), ([]), ([]), ([]), ([]),
-    ([]), ([]), ([]) .
-
-_:node1ei4jlsl1x5 a sh:NodeShape;
-  sh:datatype xsd:string .

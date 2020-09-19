@@ -14,17 +14,17 @@
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiiudo9hx1
+      sh:sourceShape _:node1eijn65f6x1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value "123";
       sh:resultPath ex:age;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiiudo9hx1
+      sh:sourceShape _:node1eijn65f6x1
     ] .
 
-_:node1eiiudo9hx1 a sh:PropertyShape;
+_:node1eijn65f6x1 a sh:PropertyShape;
   sh:path ex:age;
   sh:node ex:node .
 

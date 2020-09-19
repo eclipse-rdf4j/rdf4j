@@ -4,3 +4,34 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+[] a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value [];
+      sh:resultPath ex:iriOrMinLength5String;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eijn6k8fx1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:value [];
+      sh:resultPath ex:iriOrMinLength5String;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eijn6k8fx1
+    ] .
+
+_:node1eijn6k8fx1 a sh:PropertyShape;
+  sh:path ex:iriOrMinLength5String;
+  sh:or [
+      rdf:first [ a sh:NodeShape;
+          sh:nodeKind sh:IRI
+        ];
+      rdf:rest (_:node1eijn6k8fx5), (_:node1eijn6k8fx5)
+    ] .
+
+_:node1eijn6k8fx5 a sh:NodeShape;
+  sh:minLength 100 .

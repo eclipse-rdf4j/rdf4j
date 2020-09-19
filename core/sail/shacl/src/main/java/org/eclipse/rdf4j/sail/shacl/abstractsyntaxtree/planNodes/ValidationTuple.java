@@ -210,4 +210,11 @@ public class ValidationTuple {
 
 		propertyShapeScopeWithValue = true;
 	}
+
+	public int compareValue(ValidationTuple other) {
+		Value left = getValue();
+		Value right = other.getValue();
+
+		return valueComparator.compare(left, right);
+	}
 }

@@ -2,7 +2,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -19,8 +18,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EqualsJoinValue;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
@@ -84,7 +88,58 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
-		return super.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
-				negatePlan, negateChildren, scope);
+		// if (scope == Scope.nodeShape) {
+
+		PlanNodeProvider planNodeProvider;
+
+		if (overrideTargetNode != null) {
+			planNodeProvider = overrideTargetNode;
+		} else {
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, negatePlan, scope);
+		}
+
+		PlanNode orPlanNodes = or.stream()
+				.map(or -> or.generateTransactionalValidationPlan(
+						connectionsGroup,
+						logValidationPlans,
+						planNodeProvider,
+						negateChildren,
+						false,
+						scope
+				)
+				)
+				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
+				.orElse(new EmptyNode());
+
+		PlanNode invalid = new Unique(orPlanNodes);
+
+		invalid = new DebugPlanNode(invalid, "", p -> {
+			System.out.println();
+		});
+
+		return invalid;
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		PlanNode allTargets;
+
+		if (scope == Scope.propertyShape) {
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+
+			allTargets = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+		} else {
+			allTargets = getTargetChain().getEffectiveTarget("target_", scope)
+					.getPlanNode(connectionsGroup, scope, true);
+
+		}
+
+		PlanNode planNode = or.stream()
+				.map(or -> or.getAllTargetsPlan(connectionsGroup, negated, scope))
+				.reduce(UnionNode::new)
+				.orElse(new EmptyNode());
+
+		return new Unique(new UnionNode(allTargets, planNode));
 	}
 }
