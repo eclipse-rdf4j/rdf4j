@@ -9,21 +9,25 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.util.Literals;
 
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInFilter extends FilterPlanNode {
 
-	private final Set<String> languageIn;
+	private final List<String> languageRanges;
+	private final Set<String> lowerCaseLanguageIn;
 
-	public LanguageInFilter(PlanNode parent, Set<String> languageIn) {
+	public LanguageInFilter(PlanNode parent, Set<String> lowerCaseLanguageIn, List<String> languageRanges) {
 		super(parent);
-		this.languageIn = languageIn;
+		this.lowerCaseLanguageIn = lowerCaseLanguageIn;
+		this.languageRanges = languageRanges;
 	}
 
 	@Override
@@ -33,12 +37,33 @@ public class LanguageInFilter extends FilterPlanNode {
 		}
 
 		Optional<String> language = ((Literal) t.getValue()).getLanguage();
-		return language.filter(languageIn::contains).isPresent();
+		if (!language.isPresent()) {
+			return false;
+		}
+
+		// early matching
+		boolean languageMatches = language.map(String::toLowerCase).filter(lowerCaseLanguageIn::contains).isPresent();
+		if (languageMatches) {
+			return true;
+		}
+
+		// test according to BCP47
+		String langTag = language.get();
+
+		for (String languageRange : languageRanges) {
+			if (Literals.langMatches(langTag, languageRange))
+				return true;
+		}
+
+		return false;
 
 	}
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + '}';
+		return "LanguageInFilter{" +
+				"languageRanges=" + Arrays.toString(languageRanges.toArray()) +
+				", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) +
+				'}';
 	}
 }

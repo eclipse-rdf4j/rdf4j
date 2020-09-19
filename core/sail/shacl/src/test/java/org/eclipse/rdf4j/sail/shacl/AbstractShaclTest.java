@@ -195,7 +195,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/uniqueLang/not",
 //		"test-cases/uniqueLang/simple" ,
 		"test-cases/datatype/notNestedPropertyShape",
-		"test-cases/datatype/notNestedPropertyShape2"
+		"test-cases/datatype/notNestedPropertyShape2",
 //		"test-cases/hasValue/simple",
 //		"test-cases/hasValue/and",
 //		"test-cases/hasValue/and2",
@@ -209,6 +209,9 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValueIn/not",
 //		"test-cases/hasValueIn/not2",
 //		"test-cases/hasValueIn/targetNode",
+//		"test-cases/hasValueIn/targetNode2",
+		"test-cases/languageIn/subtags",
+		"test-cases/languageIn/subtags2"
 //		"test-cases/hasValueIn/targetNode2",
 //		"test-cases/hasValue/or",
 //		"test-cases/hasValue/targetShapeOr",
