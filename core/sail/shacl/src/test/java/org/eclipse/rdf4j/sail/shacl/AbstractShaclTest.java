@@ -191,7 +191,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/or/nodeKindValidateTarget",
 		"test-cases/pattern/multiple",
 		"test-cases/pattern/simple",
-//		"test-cases/propertyShapeWithTarget/simple",
+		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
 		"test-cases/uniqueLang/simple" ,
 		"test-cases/datatype/notNestedPropertyShape",
