@@ -18,9 +18,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-maven-
+          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Verify formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
