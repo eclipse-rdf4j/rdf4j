@@ -6,11 +6,5 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ex:PersonShape
-	a sh:NodeShape  ;
-	sh:targetNode ex:validPerson1, ex:validPerson2 ;
-	sh:property [
-		sh:path ex:ssn ;
-		sh:minCount 2 ;
-	] .
-
+ex:validPerson1 ex:ssn "123", "234", "567".
+ex:validPerson1 a ex:Person.

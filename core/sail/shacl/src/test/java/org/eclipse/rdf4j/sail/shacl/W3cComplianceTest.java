@@ -22,11 +22,14 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
@@ -69,20 +72,26 @@ public class W3cComplianceTest {
 
 		Utils.loadShapeData(sailRepository, resourceName);
 
+		Model statements = extractShapesModel(shaclSail);
+
+
+		System.out.println(AbstractShaclTest.modelToString(statements));
+
+		assert !statements.isEmpty();
+
+
+	}
+
+	private Model extractShapesModel(ShaclSail shaclSail) {
 		List<Shape> shapes = shaclSail.getCurrentShapes();
 
-		Model statements = shapes.stream()
+		return shapes.stream()
 				.map(shape -> shape.toModel(new DynamicModelFactory().createEmptyModel()))
 				.reduce((a, b) -> {
 					a.addAll(b);
 					return a;
 				})
-				.orElse(null);
-
-		assert statements != null;
-
-		System.out.println(AbstractShaclTest.modelToString(statements));
-
+				.orElse(new LinkedHashModel());
 	}
 
 	private static Set<URL> getTestFiles() {
@@ -157,6 +166,10 @@ public class W3cComplianceTest {
 
 		Utils.loadShapeData(sailRepository, resourceName);
 
+		Model statements = extractShapesModel(shaclSail);
+
+		System.out.println(AbstractShaclTest.modelToString(statements));
+
 		boolean actualConforms = true;
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -170,7 +183,17 @@ public class W3cComplianceTest {
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (RepositoryException e) {
-			actualConforms = !e.toString().contains("Failed SHACL validation");
+			if(e.getCause() instanceof ShaclSailValidationException){
+				Model statements1 = ((ShaclSailValidationException) e.getCause()).validationReportAsModel();
+				actualConforms = statements1.contains(null, SHACL.CONFORMS, SimpleValueFactory.getInstance().createLiteral(true));
+
+				System.out.println("\n######### Report ######### \n");
+				Rio.write(statements1, System.out, RDFFormat.TURTLE);
+				System.out.println("\n##################### \n");
+			}else{
+				actualConforms = true;
+			}
+
 		}
 
 		assertEquals(expected.conforms, actualConforms);

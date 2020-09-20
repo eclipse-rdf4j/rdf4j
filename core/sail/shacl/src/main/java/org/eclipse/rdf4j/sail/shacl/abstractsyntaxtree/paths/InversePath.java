@@ -12,8 +12,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnorderedSelect;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class InversePath extends Path {
 
@@ -38,16 +42,25 @@ public class InversePath extends Path {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
-		throw new ShaclUnsupportedException();
+		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
+				(IRI) inversePath.getId(), null,
+				s -> new ValidationTuple(s.getObject(), s.getSubject(), ConstraintComponent.Scope.propertyShape, true));
+		if (planNodeWrapper != null) {
+			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
+		}
+
+		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
 	}
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
-		throw new ShaclUnsupportedException();
+		return Stream.of(new StatementPattern(object, new Var(inversePath.getId()), subject));
 	}
 
 	@Override
 	public String getTargetQueryFragment(Var subject, Var object) {
-		throw new ShaclUnsupportedException();
+
+		return inversePath.getTargetQueryFragment(object, subject);
+
 	}
 }
