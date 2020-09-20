@@ -8,7 +8,21 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCount;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCountFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.MinCountFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
@@ -27,5 +41,39 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.MinCountConstraintComponent;
+	}
+
+	@Override
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+
+		PlanNode target = getTargetChain().getEffectiveTarget("_target", scope)
+				.getPlanNode(connectionsGroup, scope, true);
+
+		if (overrideTargetNode != null) {
+			target = getTargetChain().getEffectiveTarget("_target", scope)
+					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope);
+		}
+
+		target = new Unique(new TrimToTarget(target));
+
+		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
+				target,
+				connectionsGroup.getBaseConnection(),
+				getTargetChain().getPath().get().getTargetQueryFragment(new Var("a"), new Var("c")),
+				false,
+				null,
+				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
+		);
+
+		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
+
+		return new Unique(new TrimToTarget(groupByCount));
+
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+		return new EmptyNode();
 	}
 }
