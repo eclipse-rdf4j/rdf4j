@@ -29,7 +29,9 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.document.Field.Store;
+import org.apache.lucene.geo.Line;
 import org.apache.lucene.geo.Polygon;
+import org.apache.lucene.geo.Rectangle;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.FieldInfo;
@@ -78,8 +80,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.io.OnePointsBuilder;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
+import org.locationtech.spatial4j.shape.impl.GeoCircle;
+import org.locationtech.spatial4j.shape.impl.PointImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -102,6 +107,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private static final String GEO_FIELD_PREFIX = "_geo_";
+	private static final String POINT_FIELD_PREFIX = "_pt_";
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -748,13 +754,12 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
-		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
-		final Shape boundingCircle = strategy.getSpatialContext().getShapeFactory().circle(p, degs);
-		Query q = strategy.makeQuery(new SpatialArgs(SpatialOperation.Intersects, boundingCircle));
+		SpatialContext context = SpatialContext.GEO;
+		final Shape boundingCircle = context.getShapeFactory().circle(p, degs);
 
 		// use LatLonPoint for distance query after indexing it with the same data structure
 
-		q = LatLonPoint.newDistanceQuery(geoField, p.getY(), p.getX(), distance);
+		Query q = LatLonPoint.newDistanceQuery(POINT_FIELD_PREFIX + geoField, p.getY(), p.getX(), distance);
 		if (contextVar != null) {
 			q = addContextTerm(q, (Resource) contextVar.getValue());
 		}
@@ -781,20 +786,23 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
 			Var contextVar) throws MalformedQueryException, IOException {
+
+		Object shape = null;
+		try {
+			shape = super.parseLuceneQueryShape(SearchFields.getPropertyField(geoProperty), wkt);
+		} catch (java.text.ParseException e) {
+			logger.error("error while parsing wkt geometry", e);
+		}
 		SpatialOperation op = toSpatialOp(relation);
 		if (op == null) {
 			return null;
 		}
-
 		final String geoField = SearchFields.getPropertyField(geoProperty);
 
-		// SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
-		// Query q = strategy.makeQuery(new SpatialArgs(op, shape));
-
 		// Use the new indexing algorithm from lucene (LatLonShape)
-		Query q = makeQuery(op, geoField, shape);
+		Query q = makeQuery(op, GEO_FIELD_PREFIX + geoField, shape);
 		if (contextVar != null) {
 			q = addContextTerm(q, (Resource) contextVar.getValue());
 		}
@@ -813,22 +821,35 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		});
 	}
 
-	private Query makeQuery(SpatialOperation op, String geoField, Shape shape) {
-		Query q;
+	private LatLonShape.QueryRelation getRelation(SpatialOperation op) {
 		if (op.toString().equals("Contains")) {
-			q = LatLonShape.newBoxQuery(geoField, LatLonShape.QueryRelation.INTERSECTS,
-					((Point) shape).getY(), ((Point) shape).getY(), ((Point) shape).getX(), ((Point) shape).getX());
+			return LatLonShape.QueryRelation.INTERSECTS;
 		} else if (op.toString().equals("Within")) {
-			q = LatLonShape.newBoxQuery(geoField, LatLonShape.QueryRelation.INTERSECTS,
-					((Point) shape).getY(), ((Point) shape).getY(), ((Point) shape).getX(), ((Point) shape).getX());
+			return LatLonShape.QueryRelation.WITHIN;
 		} else if (op.toString().equals("Disjoint")) {
-			q = LatLonShape.newBoxQuery(geoField, LatLonShape.QueryRelation.DISJOINT,
-					((Point) shape).getY(), ((Point) shape).getY(), ((Point) shape).getX(), ((Point) shape).getX());
-		} else if (op.toString().equals("Intersects")) {
-			q = LatLonShape.newBoxQuery(geoField, LatLonShape.QueryRelation.INTERSECTS,
-					((Point) shape).getY(), ((Point) shape).getY(), ((Point) shape).getX(), ((Point) shape).getX());
+			return LatLonShape.QueryRelation.DISJOINT;
 		} else {
-			throw new IllegalArgumentException("The geo-function [" + op.toString() + "] is not supported yet");
+			throw new IllegalArgumentException("The geo function [" + op.toString() + " is not supported");
+		}
+	}
+
+	private Query makeQuery(SpatialOperation op, String geoField, Object shape) {
+		Query q = null;
+		LatLonShape.QueryRelation relation = getRelation(op);
+		if (shape instanceof double[]) {
+			double[] point = (double[]) shape;
+			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[0], point[1], point[0]);
+		} else if (shape instanceof Polygon) {
+			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon) shape);
+		} else if (shape instanceof Polygon[]) {
+			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon[]) shape);
+		} else if (shape instanceof Line) {
+			q = LatLonShape.newLineQuery(geoField, relation, (Line) shape);
+		} else if (shape instanceof Line[]) {
+			q = LatLonShape.newLineQuery(geoField, relation, (Line[]) shape);
+		} else if (shape instanceof Rectangle[]) {
+			Rectangle box = (Rectangle) shape;
+			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);
 		}
 		return q;
 	}
@@ -848,6 +869,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			return SpatialOperation.Contains;
 		} else if (GEOF.SF_WITHIN.stringValue().equals(relation)) {
 			return SpatialOperation.IsWithin;
+		} else if (GEOF.EH_CONTAINS.stringValue().equals(relation)) {
+			return SpatialOperation.Contains;
 		}
 		return null;
 	}

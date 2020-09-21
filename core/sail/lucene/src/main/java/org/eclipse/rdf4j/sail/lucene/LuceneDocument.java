@@ -7,36 +7,32 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import java.io.IOException;
 import java.text.ParseException;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.LatLonPoint;
-import org.apache.lucene.document.LatLonShape;
+import org.apache.lucene.document.*;
 import org.apache.lucene.geo.Line;
 import org.apache.lucene.geo.Polygon;
+import org.apache.lucene.geo.Rectangle;
 import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.spatial.SpatialStrategy;
-import org.apache.lucene.spatial.spatial4j.Geo3dSpatialContextFactory;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.spatial4j.context.SpatialContext;
-import org.locationtech.spatial4j.context.SpatialContextFactory;
-import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
-import org.locationtech.spatial4j.context.jts.JtsSpatialContextFactory;
-import org.locationtech.spatial4j.io.GeoJSONWriter;
-import org.locationtech.spatial4j.io.ShapeReader;
-import org.locationtech.spatial4j.io.WKTReader;
-import org.locationtech.spatial4j.shape.Point;
-import org.locationtech.spatial4j.shape.Shape;
-import org.locationtech.spatial4j.shape.jts.JtsGeometry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Function;
 
 public class LuceneDocument implements SearchDocument {
 
 	private final Document doc;
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+
+	private static final String POINT_FIELD_PREFIX = "_pt_";
+	private static final String GEO_FIELD_PREFIX = "_geo_";
 
 	private final Function<? super String, ? extends SpatialStrategy> geoStrategyMapper;
 
@@ -150,37 +146,47 @@ public class LuceneDocument implements SearchDocument {
 		return Arrays.asList(doc.getValues(name));
 	}
 
+	private void indexShape(Object shape, String field) {
+
+		if (shape instanceof Object[]) { // case of GEOMETRYCOLLECTION
+			Object[] geometries = (Object[]) shape;
+
+			for (int i = 0; i < geometries.length; i++) {
+				indexShape(geometries[i], field);
+			}
+		} else {
+			if (shape instanceof Polygon) { // WKT:POLYGON
+				for (Field f : LatLonShape.createIndexableFields(GEO_FIELD_PREFIX + field, (Polygon) shape)) {
+					doc.add(f);
+				}
+			} else if (shape instanceof Line) { // WKT:LINESTRING
+				for (Field f : LatLonShape.createIndexableFields(GEO_FIELD_PREFIX + field, (Line) shape)) {
+					doc.add(f);
+				}
+			} else if (shape instanceof double[]) { // WKT:POINT
+				double point[] = (double[]) shape;
+				doc.add(new LatLonPoint(POINT_FIELD_PREFIX + field, point[1], point[0]));
+			} else if (shape instanceof Rectangle) { // WKT:ENVELOPE / RECTANGLE
+				Rectangle box = (Rectangle) shape;
+				doc.add(new LatLonBoundingBox(GEO_FIELD_PREFIX + field, box.minLat, box.minLon, box.maxLat,
+						box.maxLon));
+			} else {
+				throw new IllegalArgumentException("Geometry for shape " + shape.toString() + " is not supported");
+			}
+		}
+	}
+
 	@Override
 	public void addGeoProperty(String field, String value) {
 		LuceneIndex.addStoredOnlyPredicateField(field, value, doc);
 		try {
 			String wkt = value;
-			// wkt = wkt.replace("\"", "").replace("^^<http://www.opengis.net/ont/geosparql#wktLiteral>", "");
-			// System.out.println(wkt);
 			Object shape = SimpleWKTShapeParser.parse(wkt);
-			if (shape instanceof Polygon[]) {
-				for (Polygon p : (Polygon[]) shape) {
-					for (Field f : LatLonShape.createIndexableFields(field, p)) {
-						doc.add(f);
-					}
-				}
-			} else if (shape instanceof Polygon) {
-				for (Field f : LatLonShape.createIndexableFields(field, (Polygon) shape)) {
-					doc.add(f);
-				}
-			} else if (shape instanceof Line) {
-				for (Field f : LatLonShape.createIndexableFields(field, (Line) shape)) {
-					doc.add(f);
-				}
-			} else if (shape instanceof double[]) {
-				double point[] = (double[]) shape;
-				// System.out.println(point[0]+" "+point[1]);
-				doc.add(new LatLonPoint(field, point[1], point[0]));
-			} else {
-				throw new IllegalArgumentException("Geometry is not supported");
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
+			indexShape(shape, field);
+		} catch (ParseException e) {
+			logger.warn("error while processing geo property", e);
+		} catch (IOException e) {
+			logger.warn("error while parsing wkt geometry", e);
 		}
 	}
 }
