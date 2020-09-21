@@ -67,7 +67,7 @@ public class LuceneSailExample {
 		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
-			  SailRepositoryConnection connection = repository.getConnection()) {
+				SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(LuceneSailExample.class.getResourceAsStream("/org/openrdf/sail/lucene/examples/foaf.rdfs"),
 					"", RDFFormat.RDFXML);
