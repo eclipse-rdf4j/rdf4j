@@ -168,10 +168,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			if (negatePlan) {
 				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
 			} else {
-				planNode = new DebugPlanNode(planNode, "", p -> {
-					System.out.println(p);
+
+				PlanNode falseNode = filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
+				falseNode = new DebugPlanNode(falseNode, "", p -> {
+					System.out.println();
 				});
-				return filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
+				return falseNode;
 			}
 
 		}

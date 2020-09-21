@@ -36,12 +36,12 @@ public class NotValuesIn implements PlanNode {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
-			final Set<Value> notInValueSet = new HashSet<>();
+			final Set<ValidationTuple> notInValueSet = new HashSet<>();
 
 			{
 				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
 					while (iterator.hasNext()) {
-						notInValueSet.add(iterator.next().getValue());
+						notInValueSet.add(iterator.next());
 					}
 				}
 			}
@@ -52,7 +52,7 @@ public class NotValuesIn implements PlanNode {
 
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
-					if (!notInValueSet.contains(temp.getValue())) {
+					if (!notInValueSet.contains(temp)) {
 						next = temp;
 					}
 

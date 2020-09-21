@@ -112,13 +112,18 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						scope
 				)
 				)
+				.map(p -> {
+					return (PlanNode) new DebugPlanNode(p, "", p1 -> {
+						System.out.println(p1);
+					});
+				})
 				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
 				.orElse(new EmptyNode());
 
 		PlanNode invalid = new Unique(orPlanNodes);
 
 		invalid = new DebugPlanNode(invalid, "", p -> {
-			System.out.println();
+//			System.out.println(p);
 		});
 
 		return invalid;

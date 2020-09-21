@@ -59,7 +59,7 @@ public class EqualsJoinValue implements PlanNode {
 				while (next == null) {
 					if (nextRight != null) {
 
-						if (nextLeft.getValue().equals(nextRight.getValue())) {
+						if (nextLeft.sameTargetAs(nextRight) && nextLeft.getValue().equals(nextRight.getValue())) {
 							if (useAsFilter) {
 								next = nextLeft;
 							} else {
@@ -68,7 +68,10 @@ public class EqualsJoinValue implements PlanNode {
 							nextRight = null;
 						} else {
 
-							int compareTo = nextLeft.compareValue(nextRight);
+							int compareTo = nextLeft.compareTarget(nextRight);
+							if (compareTo == 0) {
+								compareTo = nextLeft.compareValue(nextRight);
+							}
 
 							if (compareTo < 0) {
 								if (leftIterator.hasNext()) {
