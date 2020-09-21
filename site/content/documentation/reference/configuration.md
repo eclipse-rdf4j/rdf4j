@@ -445,3 +445,13 @@ The `sail:sailType` value of the SHACL Sail is `"rdf4j:ShaclSail"`. Its paramete
 
 ### LuceneSail
 
+TODO
+
+### Solr Sail
+
+TODO
+
+### Elasticsearch Sail
+
+TODO
+
