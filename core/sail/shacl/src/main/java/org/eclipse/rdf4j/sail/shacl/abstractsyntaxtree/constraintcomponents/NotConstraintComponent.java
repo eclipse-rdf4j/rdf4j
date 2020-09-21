@@ -78,20 +78,42 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		// if (scope == Scope.nodeShape) {
 
-		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, negatePlan, scope);
+		PlanNodeProvider planNodeProvider;
+		if (overrideTargetNode != null) {
+			planNodeProvider = overrideTargetNode;
+		} else {
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, negatePlan, scope);
+		}
 
-		PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup,
+		PlanNode planNode = not.generateTransactionalValidationPlan(
+				connectionsGroup,
 				logValidationPlans,
-				() -> getAllTargetsPlan(connectionsGroup, negatePlan, scope),
+				planNodeProvider,
 				negateChildren,
-				false, scope);
+				false,
+				scope
+		);
+
+		PlanNode invalid = new Unique(planNode);
+
+		PlanNode allTargetsPlan;
+		if (overrideTargetNode != null) {
+			if (scope == Scope.propertyShape) {
+				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape);
+				allTargetsPlan = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+			} else {
+				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", scope)
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope);
+			}
+
+		} else {
+			allTargetsPlan = planNodeProvider.getPlanNode();
+		}
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
 			System.out.println();
 		});
-
-		PlanNode invalid = new Unique(planNode);
-
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
 		invalid = new DebugPlanNode(invalid, "", p -> {
