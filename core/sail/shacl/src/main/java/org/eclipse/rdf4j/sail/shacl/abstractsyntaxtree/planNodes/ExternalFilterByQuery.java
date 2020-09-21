@@ -36,6 +36,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final ParsedQuery query;
 	private final Var queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
+	private final String queryString;
 
 	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment, Var queryVariable,
 			Function<ValidationTuple, Value> filterOn) {
@@ -49,6 +50,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 				.get();
 
 		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
+		this.queryString = queryFragment;
 		try {
 			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null);
 		} catch (MalformedQueryException e) {
@@ -78,8 +80,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterByQuery{" +
-				", query=" + query +
-				", queryVariable='" + queryVariable + '\'' +
+				", queryString=" + queryString.replace("\n", "\t") +
+				", queryVariable='" + queryVariable.toString().replace("\n", "  ") + '\'' +
 				'}';
 	}
 }

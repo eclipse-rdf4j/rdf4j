@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToProperty
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class NotConstraintComponent extends AbstractConstraintComponent {
@@ -100,11 +101,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			if (scope == Scope.propertyShape) {
 				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
-						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape);
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
+								EffectiveTarget.Extend.right);
 				allTargetsPlan = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 			} else {
 				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", scope)
-						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope);
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right);
 			}
 
 		} else {

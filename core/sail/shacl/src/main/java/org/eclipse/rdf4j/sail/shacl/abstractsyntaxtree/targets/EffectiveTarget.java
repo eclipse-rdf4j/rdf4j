@@ -58,7 +58,8 @@ public class EffectiveTarget {
 	// Takes a source plan node and for every entry it extends the target chain with all targets that follow.
 	// If the target chain is [type foaf:Person / foaf:knows ] and [ex:Peter] is in the source, this will effectively
 	// retrieve all "ex:Peter foaf:knows ?extension"
-	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
+			Extend direction) {
 
 		String query = getQuery();
 		List<Var> vars = getVars();
@@ -66,7 +67,7 @@ public class EffectiveTarget {
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
 			return new ValidationTuple(bindingSet, varNames, scope, false);
-		}, 100);
+		}, 100, direction);
 	}
 
 	private List<Var> getVars() {
@@ -186,6 +187,11 @@ public class EffectiveTarget {
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
 
+	}
+
+	public enum Extend {
+		left,
+		right
 	}
 
 }

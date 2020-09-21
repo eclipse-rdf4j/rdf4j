@@ -9,11 +9,13 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:property [
-		sh:path ex:knows ;
-		sh:property [
-			sh:path ex:age ;
-		        sh:datatype xsd:integer ;
-		]
+	sh:node [
+	        sh:property [
+		        sh:path ex:knows ;
+		        sh:property [
+			        sh:path ex:age ;
+		                sh:datatype xsd:integer ;
+		        ]
+	        ]
 	] .
 

@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,23 +54,25 @@ public class BindSelect implements PlanNode {
 	private final List<Var> vars;
 	private final int bulkSize;
 	private final PlanNode source;
+	private final EffectiveTarget.Extend direction;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BindSelect(SailConnection connection, String query, List<Var> vars, PlanNode source,
-			Function<BindingSet, ValidationTuple> mapper, int bulkSize) {
+			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction) {
 		this.connection = connection;
 		this.mapper = mapper;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
 		source = PlanNodeHelper.handleSorting(this, source);
-		this.source = source;
+		this.source = new TrimToTarget(source);
 
 		if (query.trim().equals("")) {
 			throw new IllegalStateException();
 		}
 
 		this.query = query;
+		this.direction = direction;
 
 	}
 
@@ -81,7 +85,7 @@ public class BindSelect implements PlanNode {
 						public void meet(BindingSetAssignment node) throws Exception {
 							Set<String> bindingNames = node.getBindingNames();
 							if (bindingNames.size() == size) { // TODO consider checking if bindingnames is equal to
-																// vars
+								// vars
 								node.setBindingSets(newBindindingset);
 							}
 							super.meet(node);
@@ -121,6 +125,7 @@ public class BindSelect implements PlanNode {
 				List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
 
 				ValidationTuple next = iterator.next();
+
 				bulk.add(next);
 
 				int targetChainSize = next.getChain().size();
@@ -133,9 +138,20 @@ public class BindSelect implements PlanNode {
 				StringBuilder orderBy = new StringBuilder("");
 
 				StringBuilder values = new StringBuilder("\nVALUES( ");
-				for (int i = 0; i < targetChainSize; i++) {
-					values.append("?").append(vars.get(i).getName()).append(" ");
+				if (direction == EffectiveTarget.Extend.right) {
+
+					for (int i = 0; i < targetChainSize; i++) {
+						values.append("?").append(vars.get(i).getName()).append(" ");
+					}
+				} else if (direction == EffectiveTarget.Extend.left) {
+					for (int i = vars.size() - targetChainSize; i < vars.size(); i++) {
+						values.append("?").append(vars.get(i).getName()).append(" ");
+					}
+
+				} else {
+					throw new IllegalStateException("Unknown direction: " + direction);
 				}
+
 				values.append("){}\n");
 
 				for (Var var : vars) {
@@ -157,11 +173,21 @@ public class BindSelect implements PlanNode {
 						bulk.add(iterator.next());
 					}
 
-					List<String> varNames = vars
-							.stream()
-							.limit(targetChainSize)
-							.map(Var::getName)
-							.collect(Collectors.toList());
+					List<String> varNames;
+
+					if (direction == EffectiveTarget.Extend.right) {
+						varNames = vars
+								.stream()
+								.limit(targetChainSize)
+								.map(Var::getName)
+								.collect(Collectors.toList());
+					} else {
+						varNames = vars
+								.stream()
+								.skip(vars.size() - targetChainSize)
+								.map(Var::getName)
+								.collect(Collectors.toList());
+					}
 
 					List<BindingSet> bindingSets = bulk
 							.stream()

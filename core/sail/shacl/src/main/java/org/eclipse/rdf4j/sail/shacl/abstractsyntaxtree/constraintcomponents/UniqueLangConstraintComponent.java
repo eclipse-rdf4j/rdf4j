@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NonUniqueTarget
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
@@ -120,7 +119,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		if (overrideTargetNode != null) {
 
-			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope);
+			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
+					EffectiveTarget.Extend.right);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
@@ -150,7 +150,9 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
-		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, addedByPath);
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
@@ -158,7 +160,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode allRelevantTargets = new Unique(mergeNode);
 		allRelevantTargets = new DebugPlanNode(allRelevantTargets, "", t -> {
-			System.out.println(t);
+			System.out.println();
 		});
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(

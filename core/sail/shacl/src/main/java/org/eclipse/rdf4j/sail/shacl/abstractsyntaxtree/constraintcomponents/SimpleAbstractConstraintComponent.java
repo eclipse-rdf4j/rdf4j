@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -151,13 +152,13 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			if (scope == Scope.nodeShape) {
 				planNode = overrideTargetNode.getPlanNode();
-				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope);
+				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope, EffectiveTarget.Extend.right);
 
 			} else {
 				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
 						"SimpleAbstractConstraintComponent");
 
-				temp = effectiveTarget.extend(temp, connectionsGroup, scope);
+				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right);
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),

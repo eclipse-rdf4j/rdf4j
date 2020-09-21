@@ -56,12 +56,15 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
-		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, addedByPath);
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
 		if (overrideTargetNode != null) {
-			mergeNode = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope);
+			mergeNode = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
+					EffectiveTarget.Extend.right);
 		}
 
 		mergeNode = new Unique(new TrimToTarget(mergeNode));

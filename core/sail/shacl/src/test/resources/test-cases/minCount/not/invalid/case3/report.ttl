@@ -9,8 +9,8 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode _:node1einkpaqbx2;
-      sh:value _:node1einkpaqbx2;
+      sh:focusNode _:node1eip4fgvox2;
+      sh:value _:node1eip4fgvox2;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:PersonShape

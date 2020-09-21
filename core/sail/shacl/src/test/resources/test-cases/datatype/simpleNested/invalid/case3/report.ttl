@@ -9,13 +9,21 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:pete;
-      sh:value "123";
-      sh:resultPath ex:age;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:validPerson1;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:age;
-          sh:datatype xsd:integer
+      sh:sourceShape ex:PersonShape
+    ] .
+
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Person;
+  sh:node [ a sh:NodeShape;
+      sh:property [ a sh:PropertyShape;
+          sh:path ex:knows;
+          sh:property [ a sh:PropertyShape;
+              sh:path ex:age;
+              sh:datatype xsd:integer
+            ]
         ]
     ] .
