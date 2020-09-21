@@ -56,6 +56,11 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	}
 
 	@Override
+	public ConstraintComponent deepClone() {
+		return new PatternConstraintComponent(pattern, flags);
+	}
+
+	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new PatternFilter(parent, pattern, flags);
 	}

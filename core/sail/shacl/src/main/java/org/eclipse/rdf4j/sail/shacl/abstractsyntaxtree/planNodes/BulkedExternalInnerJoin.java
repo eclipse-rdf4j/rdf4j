@@ -94,7 +94,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						assert leftPeek.getActiveTarget() != null;
 						assert rightPeek.getActiveTarget() != null;
 
-						if (rightPeek.sameTargetAs(rightPeek)) {
+						if (rightPeek.sameTargetAs(leftPeek)) {
 							// we have a join !
 							joined.addLast(ValidationTupleHelper.join(leftPeek, rightPeek));
 							right.removeLast();

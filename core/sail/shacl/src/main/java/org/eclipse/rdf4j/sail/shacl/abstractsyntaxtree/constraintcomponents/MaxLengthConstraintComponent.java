@@ -46,4 +46,9 @@ public class MaxLengthConstraintComponent extends SimpleAbstractConstraintCompon
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.MaxLengthConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new MaxLengthConstraintComponent(maxLength);
+	}
 }

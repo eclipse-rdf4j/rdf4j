@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class NotConstraintComponent extends AbstractConstraintComponent {
-	final Shape not;
+	Shape not;
 
 	public NotConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache) {
@@ -41,6 +41,10 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}
 
+	}
+
+	public NotConstraintComponent(NotConstraintComponent notConstraintComponent) {
+		super(notConstraintComponent.getId());
 	}
 
 	@Override
@@ -137,5 +141,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, negated, scope);
 
 		return new Unique(new UnionNode(allTargets, notTargets));
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		NotConstraintComponent notConstraintComponent = new NotConstraintComponent(this);
+		notConstraintComponent.not = (Shape) not.deepClone();
+		return notConstraintComponent;
 	}
 }

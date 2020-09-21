@@ -326,7 +326,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 									.forEach(propertyConstraintComponent -> {
 										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
 												.shallowClone();
-										clonedConstraintComponent.constraintComponents.add(propertyConstraintComponent);
+										clonedConstraintComponent.constraintComponents
+												.add(propertyConstraintComponent.deepClone());
 
 										Shape shape = s.shallowClone();
 										shape.target.add(target);

@@ -74,11 +74,9 @@ public class W3cComplianceTest {
 
 		Model statements = extractShapesModel(shaclSail);
 
-
 		System.out.println(AbstractShaclTest.modelToString(statements));
 
 		assert !statements.isEmpty();
-
 
 	}
 
@@ -162,6 +160,7 @@ public class W3cComplianceTest {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setParallelValidation(false);
 		SailRepository sailRepository = new SailRepository(shaclSail);
 
 		Utils.loadShapeData(sailRepository, resourceName);
@@ -183,14 +182,15 @@ public class W3cComplianceTest {
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (RepositoryException e) {
-			if(e.getCause() instanceof ShaclSailValidationException){
+			if (e.getCause() instanceof ShaclSailValidationException) {
 				Model statements1 = ((ShaclSailValidationException) e.getCause()).validationReportAsModel();
-				actualConforms = statements1.contains(null, SHACL.CONFORMS, SimpleValueFactory.getInstance().createLiteral(true));
+				actualConforms = statements1.contains(null, SHACL.CONFORMS,
+						SimpleValueFactory.getInstance().createLiteral(true));
 
 				System.out.println("\n######### Report ######### \n");
 				Rio.write(statements1, System.out, RDFFormat.TURTLE);
 				System.out.println("\n##################### \n");
-			}else{
+			} else {
 				actualConforms = true;
 			}
 

@@ -28,6 +28,11 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 		this.in = new HashSet<>(HelperTool.toList(connection, in, Value.class));
 	}
 
+	public InConstraintComponent(InConstraintComponent inConstraintComponent) {
+		super(inConstraintComponent.getId());
+		in = inConstraintComponent.in;
+	}
+
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.IN, getId());
@@ -39,6 +44,11 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.InConstraintComponent;
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new InConstraintComponent(this);
 	}
 
 	@Override

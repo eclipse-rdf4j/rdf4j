@@ -25,4 +25,10 @@ public class DisjointConstraintComponent extends AbstractConstraintComponent {
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.DisjointConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new DisjointConstraintComponent(predicate);
+	}
+
 }

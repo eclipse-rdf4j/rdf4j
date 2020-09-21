@@ -40,6 +40,10 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
+	public XoneConstraintComponent(XoneConstraintComponent xoneConstraintComponent) {
+		super(xoneConstraintComponent.getId());
+	}
+
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.XONE, getId());
@@ -68,5 +72,16 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.XoneConstraintComponent;
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+
+		XoneConstraintComponent constraintComponent = new XoneConstraintComponent(this);
+		constraintComponent.xone = xone.stream()
+				.map(ConstraintComponent::deepClone)
+				.map(a -> ((Shape) a))
+				.collect(Collectors.toList());
+		return constraintComponent;
 	}
 }

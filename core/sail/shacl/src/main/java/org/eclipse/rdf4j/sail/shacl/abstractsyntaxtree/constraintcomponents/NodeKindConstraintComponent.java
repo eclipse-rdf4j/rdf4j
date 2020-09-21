@@ -50,6 +50,11 @@ public class NodeKindConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
+	public ConstraintComponent deepClone() {
+		return new NodeKindConstraintComponent(nodeKind.iri);
+	}
+
+	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new NodeKindFilter(parent, nodeKind);
 	}

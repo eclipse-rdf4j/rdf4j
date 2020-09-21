@@ -42,6 +42,11 @@ public class MaxExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
+	public ConstraintComponent deepClone() {
+		return new MaxExclusiveConstraintComponent(maxExclusive);
+	}
+
+	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new LiteralComparatorFilter(parent, maxExclusive, Compare.CompareOp.GT);
 	}

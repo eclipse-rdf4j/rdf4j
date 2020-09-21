@@ -25,4 +25,9 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.ClassConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new ClassConstraintComponent(clazz);
+	}
 }

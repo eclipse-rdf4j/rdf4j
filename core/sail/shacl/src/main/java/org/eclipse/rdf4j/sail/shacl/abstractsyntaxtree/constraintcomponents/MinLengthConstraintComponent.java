@@ -46,4 +46,9 @@ public class MinLengthConstraintComponent extends SimpleAbstractConstraintCompon
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.MinLengthConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new MinLengthConstraintComponent(minLength);
+	}
 }

@@ -30,4 +30,6 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 		not;
 	}
 
+	ConstraintComponent deepClone();
+
 }

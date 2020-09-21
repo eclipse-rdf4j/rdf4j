@@ -14,18 +14,28 @@
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
+    ], [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
     ] .
 
 ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
   sh:targetObjectsOf ex:id, ex:username;
-  sh:and ([ a sh:PropertyShape;
-        sh:path [
-            sh:inversePath ex:id
-          ];
-        sh:maxCount 1
-      ] [ a sh:PropertyShape;
-        sh:path [
-            sh:inversePath ex:username
-          ];
-        sh:maxCount 1
-      ]) .
+  sh:and [
+      rdf:first [ a sh:PropertyShape;
+          sh:path [
+              sh:inversePath ex:id
+            ];
+          sh:maxCount 1
+        ];
+      rdf:rest (_:node1einig8u8x5), (_:node1einig8u8x5)
+    ] .
+
+_:node1einig8u8x5 a sh:PropertyShape;
+  sh:path [
+      sh:inversePath ex:username
+    ];
+  sh:maxCount 1 .

@@ -25,4 +25,9 @@ public class EqualsConstraintComponent extends AbstractConstraintComponent {
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.EqualsConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new EqualsConstraintComponent(predicate);
+	}
 }

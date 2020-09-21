@@ -37,7 +37,7 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 		try {
 			return QueryEvaluationUtil.compare(compareTo, literal, this.compareOp);
 		} catch (ValueExprEvaluationException e) {
-			return true;
+			return false;
 		}
 
 	}

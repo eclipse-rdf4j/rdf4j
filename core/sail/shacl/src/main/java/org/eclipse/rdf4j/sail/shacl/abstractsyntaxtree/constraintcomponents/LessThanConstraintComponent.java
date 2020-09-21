@@ -25,4 +25,9 @@ public class LessThanConstraintComponent extends AbstractConstraintComponent {
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.LessThanConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new LessThanConstraintComponent(predicate);
+	}
 }

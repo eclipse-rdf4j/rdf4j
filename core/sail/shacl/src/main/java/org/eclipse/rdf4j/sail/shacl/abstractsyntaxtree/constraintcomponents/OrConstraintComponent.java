@@ -49,6 +49,10 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.collect(Collectors.toList());
 	}
 
+	public OrConstraintComponent(OrConstraintComponent orConstraintComponent) {
+		super(orConstraintComponent.getId());
+	}
+
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.OR, getId());
@@ -141,5 +145,16 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.orElse(new EmptyNode());
 
 		return new Unique(new UnionNode(allTargets, planNode));
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+
+		OrConstraintComponent constraintComponent = new OrConstraintComponent(this);
+		constraintComponent.or = or.stream()
+				.map(ConstraintComponent::deepClone)
+				.map(a -> ((Shape) a))
+				.collect(Collectors.toList());
+		return constraintComponent;
 	}
 }

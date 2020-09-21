@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -48,6 +49,12 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode target = getTargetChain().getEffectiveTarget("_target", scope)
 				.getPlanNode(connectionsGroup, scope, true);
 
+		System.out.println(getTargetChain().getChain().stream().findFirst().get());
+
+		target = new DebugPlanNode(target, "", p -> {
+			System.out.println();
+		});
+
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope)
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope);
@@ -73,5 +80,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		return new EmptyNode();
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new MinCountConstraintComponent(minCount);
 	}
 }

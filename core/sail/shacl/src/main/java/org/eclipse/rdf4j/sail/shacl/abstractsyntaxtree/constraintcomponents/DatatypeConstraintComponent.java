@@ -31,6 +31,11 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
+	public ConstraintComponent deepClone() {
+		return new DatatypeConstraintComponent(datatype);
+	}
+
+	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new DatatypeFilter(parent, datatype);
 	}

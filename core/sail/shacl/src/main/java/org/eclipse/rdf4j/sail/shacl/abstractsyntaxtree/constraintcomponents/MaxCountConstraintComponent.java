@@ -91,4 +91,9 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 		}
 		return new EmptyNode();
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new MaxCountConstraintComponent(maxCount);
+	}
 }

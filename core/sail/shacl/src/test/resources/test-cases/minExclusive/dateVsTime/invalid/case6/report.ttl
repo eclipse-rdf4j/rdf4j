@@ -10,13 +10,12 @@
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:node1einigb4cx2;
-      sh:sourceConstraintComponent sh:MaxCountConstraintComponent;
+      sh:value "2018-01-01"^^xsd:date;
+      sh:resultPath ex:time;
+      sh:sourceConstraintComponent sh:MinExclusiveConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:path _:node1einigb4cx2;
-          sh:maxCount 3
+          sh:path ex:time;
+          sh:minExclusive "13:00:00"^^xsd:time
         ]
     ] .
-
-_:node1einigb4cx2 sh:inversePath ex:knows .

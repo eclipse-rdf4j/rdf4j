@@ -46,6 +46,13 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 				.collect(Collectors.toSet());
 	}
 
+	private LanguageInConstraintComponent(LanguageInConstraintComponent languageInConstraintComponent) {
+		super(languageInConstraintComponent.getId());
+		this.languageIn = languageInConstraintComponent.languageIn;
+		this.languageRanges = languageInConstraintComponent.languageRanges;
+		this.lowerCaseLanguageIn = languageInConstraintComponent.lowerCaseLanguageIn;
+	}
+
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.LANGUAGE_IN, getId());
@@ -70,6 +77,11 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.LanguageInConstraintComponent;
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new LanguageInConstraintComponent(this);
 	}
 
 	@Override

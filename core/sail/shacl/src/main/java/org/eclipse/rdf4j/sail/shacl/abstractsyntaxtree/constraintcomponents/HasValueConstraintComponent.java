@@ -26,4 +26,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.HasValueConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new HasValueConstraintComponent(hasValue);
+	}
 }

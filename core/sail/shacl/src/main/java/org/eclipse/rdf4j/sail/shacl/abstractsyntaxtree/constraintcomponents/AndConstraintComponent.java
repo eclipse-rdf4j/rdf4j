@@ -21,8 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToNodeShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TargetChainPopper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
@@ -46,6 +44,10 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				})
 				.collect(Collectors.toList());
 
+	}
+
+	public AndConstraintComponent(AndConstraintComponent andConstraintComponent) {
+		super(andConstraintComponent.getId());
 	}
 
 	@Override
@@ -106,5 +108,16 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 		planNode = new DebugPlanNode(planNode, "AndConstraintComponent::getAllTargetsPlan");
 
 		return planNode;
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+
+		AndConstraintComponent andConstraintComponent = new AndConstraintComponent(this);
+		andConstraintComponent.and = and.stream()
+				.map(ConstraintComponent::deepClone)
+				.map(a -> ((Shape) a))
+				.collect(Collectors.toList());
+		return andConstraintComponent;
 	}
 }

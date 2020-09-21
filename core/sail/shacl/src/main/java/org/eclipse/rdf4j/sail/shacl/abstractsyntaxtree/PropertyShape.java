@@ -1,14 +1,20 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
+import java.io.StringWriter;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -247,6 +253,27 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	public Path getPath() {
 		return path;
+	}
+
+	@Override
+	public String toString() {
+		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(statements, stringWriter, RDFFormat.TURTLE);
+		return stringWriter.toString();
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		PropertyShape nodeShape = new PropertyShape(this);
+
+		constraintComponents.stream()
+				.map(ConstraintComponent::deepClone)
+				.collect(Collectors.toList());
+
+		nodeShape.constraintComponents = constraintComponents;
+
+		return nodeShape;
 	}
 
 }

@@ -42,6 +42,11 @@ public class MinExclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
+	public ConstraintComponent deepClone() {
+		return new MinExclusiveConstraintComponent(minExclusive);
+	}
+
+	@Override
 	Function<PlanNode, FilterPlanNode> getFilterAttacher() {
 		return (parent) -> new LiteralComparatorFilter(parent, minExclusive, Compare.CompareOp.LT);
 	}

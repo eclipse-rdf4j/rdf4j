@@ -41,6 +41,11 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
+	public ClosedConstraintComponent(ClosedConstraintComponent closedConstraintComponent) {
+		paths = closedConstraintComponent.paths;
+		ignoredProperties = closedConstraintComponent.ignoredProperties;
+	}
+
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.CLOSED, SimpleValueFactory.getInstance().createLiteral(true));
@@ -51,5 +56,10 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.ClosedConstraintComponent;
+	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new ClosedConstraintComponent(this);
 	}
 }

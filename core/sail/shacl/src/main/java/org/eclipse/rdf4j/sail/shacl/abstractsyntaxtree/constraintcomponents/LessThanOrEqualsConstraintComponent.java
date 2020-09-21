@@ -25,4 +25,9 @@ public class LessThanOrEqualsConstraintComponent extends AbstractConstraintCompo
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.LessThanOrEqualsConstraintComponent;
 	}
+
+	@Override
+	public ConstraintComponent deepClone() {
+		return new LessThanOrEqualsConstraintComponent(predicate);
+	}
 }
