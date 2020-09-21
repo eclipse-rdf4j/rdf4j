@@ -838,7 +838,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		LatLonShape.QueryRelation relation = getRelation(op);
 		if (shape instanceof double[]) {
 			double[] point = (double[]) shape;
-			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[0], point[1], point[0]);
+			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[1], point[0], point[0]);
 		} else if (shape instanceof Polygon) {
 			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon) shape);
 		} else if (shape instanceof Polygon[]) {
