@@ -2,20 +2,21 @@
 title: "Parsing and Writing RDF with Rio"
 weight: 4
 toc: true
+autonumbering: true
 ---
-The RDF4J framework includes a set of parsers and writers for RDF called Rio. Rio (“RDF I/O”) is a toolkit that can be used independently from the rest of RDF4J. 
+The RDF4J framework includes a set of parsers and writers for RDF called Rio. Rio (“RDF I/O”) is a toolkit that can be used independently from the rest of RDF4J.
 <!--more-->
 In this chapter, we will take a look at various ways to use Rio to parse from or write to an RDF document. We will show how to do a simple parse and collect the results, how to count the number of triples in a file, how to convert a file from one syntax format to another, and how to dynamically create a parser for the correct syntax format.
 
 If you use RDF4J via the Repository API, then typically you will not need to use the parsers directly: you simply supply the document (either via a URL, or as a File, InputStream or Reader object) to the RepositoryConnection and the parsing is all handled internally. However, sometimes you may want to parse an RDF document without immediately storing it in a triplestore. For those cases, you can use Rio directly.
 
-# Listening to the parser
+## Listening to the parser
 
 The Rio parsers all work with a set of Listener interfaces that they report results to: {{< javadoc "ParseErrorListener" "rio/ParseErrorListener.html" >}}, {{< javadoc "ParseLocationListener" "rio/ParseLocationListener.html" >}}, and {{< javadoc "RDFHandler" "rio/RDFHandler.html" >}}. Of these three, `RDFHandler` is the most interesting one: this is the listener that receives parsed RDF triples. So we will concentrate on this interface here.
 
 The `RDFHandler` interface contains five methods: `startRDF`, `handleNamespace`, `handleComment`, `handleStatement`, and `endRDF`. Rio also provides a number of default implementations of RDFHandler, such as {{< javadoc "StatementCollector" "rio/helpers/StatementCollector.html" >}}, which stores all received RDF triples in a Java Collection. Depending on what you want to do with parsed statements, you can either reuse one of the existing RDFHandlers, or, if you have a specific task in mind, you can simply write your own implementation of RDFHandler. Here, I will show you some simple examples of things you can do with RDFHandlers.
 
-## Parsing a file and collecting all triples
+### Parsing a file and collecting all triples
 
 As a simple example of how to use Rio, we parse an RDF document and collect all the parsed statements in a Java Collection object (specifically, in a {{< javadoc "Model" "model/Model.html" >}} object).
 
@@ -76,7 +77,7 @@ Model results = Rio.parse(inputStream, documentUrl.toString(), RDFFormat.TURTLE)
 {{< / highlight >}}
 
 
-## Iterating through all the triples in a file
+### Iterating through all the triples in a file
 
 RDF files can also be parsed in a background thread and iterated through as a query result. This allows files that are too big to fit into memory (at once) to be parsed sequentially using a familiar API (specifically, the {{< javadoc "GraphQueryResult" "query/GraphQueryResult.html" >}} interface).
 
@@ -106,7 +107,7 @@ finally {
 }
 {{< / highlight >}}
 
-## Using your own RDFHandler: counting statements
+### Using your own RDFHandler: counting statements
 
 Suppose you want to count the number of triples in an RDF file. You could of
 course parse the file, add all triples to a Collection, and then check the size
@@ -160,7 +161,7 @@ finally {
 int numberOfStatements = myCounter.getCountedStatements();
 {{< / highlight >}}
 
-# Detecting the file format
+## Detecting the file format
 
 In the examples sofar, we have always assumed that you know what the syntax
 format of your input file is: we assumed Turtle syntax and created a new parser
@@ -197,7 +198,7 @@ use the same code with a different file (say, a .owl file – which is in RDF/XM
 format), our program would be able to detect the format at runtime and create
 the correct parser for it.
 
-# Writing RDF
+## Writing RDF
 
 Sofar, we’ve seen how to read RDF, but Rio of course also allows you to write
 RDF, using {{< javadoc "RDFWriter" "rio/RDFWriter.html" >}}s, which are a subclass of `RDFHandler` that is intended for
@@ -252,7 +253,7 @@ collecting all statements into main memory (in a `Model` object).
 Fortunately, there is a shortcut. We can eliminate the need for using a Model
 altogether. If you’ve paid attention, you might have spotted it already:
 `RDFWriter`s are also `RDFHandler`s. So instead of first using a `StatementCollector`
-to collect our RDF data and then writing that to our `RDFWriter`, we can 
+to collect our RDF data and then writing that to our `RDFWriter`, we can
 use the RDFWriter directly. So if we want to convert our input RDF file from
 Turtle syntax to RDF/XML syntax, we can do that, like so:
 
@@ -285,7 +286,7 @@ finally {
 }
 {{< / highlight >}}
 
-# Configuring the parser / writer
+## Configuring the parser / writer
 
 The Rio parsers and writers have several configuration options, allowing you to
 tweak their behavior. The configuration of a Rio parser/writer can be modified
@@ -296,7 +297,7 @@ The available configuration options are available via several helper classes,
 listed in the Javadoc documentation:
 
 - {{< javadoc "BasicParserSettings" "rio/helpers/BasicParserSettings.html" >}}
-  and {{< javadoc "BasicWriterSettings" "rio/helpers/BasicWriterSettings.html" >}} 
+  and {{< javadoc "BasicWriterSettings" "rio/helpers/BasicWriterSettings.html" >}}
   contains various parser/writers settings that can be used with most Rio parsers/writers. This includes things
   such a IRI syntax validation, datatype verification/normalisation, and
   various other general options;
@@ -309,7 +310,7 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
-## Programmatic configuration
+### Programmatic configuration
 
 The Rio parser/writer configuration can be retrieved and modified via `RDFParser.getParserConfig()` / `RDFWriter.getWriterConfig()`. This returns a {{< javadoc "RioConfig" "rio/RioConfig.html" >}} object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice.
 
@@ -319,7 +320,7 @@ Lastly, the `RioConfig` also allows you to mark certain types of error as "non-f
 
 Some examples follow:
 
-### Example: IRI syntax validation
+#### Example: IRI syntax validation
 
 By default the Rio parsers validate IRI syntax and produce a fatal error if an IRI can not be parsed. You can disable this as follows:
 
@@ -335,7 +336,7 @@ RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_URI_SYNTAX);
 {{< / highlight >}}
 
-### Example: blank node preservation
+#### Example: blank node preservation
 
 If you want to preserve blank node identifiers as found in the source file (by default the parser creates new identifiers to ensure uniqueness across multiple files), you can reconfigure the parser as follows:
 
@@ -344,7 +345,7 @@ RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE);
 rdfParser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 {{< / highlight >}}
 
-## Configuration via command line switches
+### Configuration via command line switches
 
 To allow reconfiguring a Rio parser/writer in a runtime deployment (for example in an Rdf4j Server), it is also possible to set certain configuration options through Java system properties. You can specify these by passing `-D` commandline switches to the JRE in which the application runs.
 
@@ -352,7 +353,7 @@ The Javadoc for each parser/writer setting documents the system property name by
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
 
-## Some notes on parsing RDF/XML and JAXP limits
+### Some notes on parsing RDF/XML and JAXP limits
 
 The Rio RDF/XML parser uses the [Java API for XML Processing
 (JAXP)](https://www.oracle.com/technetwork/java/intro-140052.html) to process

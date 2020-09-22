@@ -2,6 +2,7 @@
 title: "Starting a new Maven project in Eclipse"
 weight: 2
 toc: true
+autonumbering: true
 ---
 If you are new to RDF4J, or to tools like Eclipse IDE or Apache Maven, this tutorial will help you get started.
 <!--more-->
@@ -34,7 +35,7 @@ The reason we want this, by the way, is that having either the sources or the Ja
 
 ## Creating a new project
 
-Now that we’re all set up, we can kick things off by creating a new project. Select the File menu, then `New -> New Project...` . A dialog will appear. In this dialog, select the option `Maven Project`: 
+Now that we’re all set up, we can kick things off by creating a new project. Select the File menu, then `New -> New Project...` . A dialog will appear. In this dialog, select the option `Maven Project`:
 
 ![Image](../images/eclipse-create-project-mvn.png)
 
@@ -119,7 +120,7 @@ Once you have created the (empty) file, add the following XML to it:
 <configuration>
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
       <encoder>
-	 <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n </pattern> 
+	 <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n </pattern>
       </encoder>
   </appender>
   <root level="info"><appender-ref ref="STDOUT" /></root>
@@ -157,7 +158,7 @@ Now that we have created and initialized our repository, we are going to put som
 Adding data can be done in numerous ways. In this tutorial, we will be creating a few RDF statements directly in Java (rather than, say, loading them from a file). To do this, we need some ingredients: a namespace that we can use to create any new IRIs we need, and a ValueFactory, which we can use to create IRI, BNode, and Literal objects:
 
 ```java
-String namespace = "http://example.org/"; 
+String namespace = "http://example.org/";
 ValueFactory f = rep.getValueFactory();
 ```
 
@@ -174,7 +175,7 @@ RepositoryConnection conn = rep.getConnection();
 ```
 
 It is important to keep track of open connections and to close them again when we are finished with them, to free up any resources the connection may keep hold of. RDF4J connections are “AutoCloseable”, which means we can let Java handle the closing of the connection when we’re done with it, rather than having to deal with this ourselves. We use a try-with-resources construction for this, like so:
-   
+
 ```java
 try (RepositoryConnection conn = rep.getConnection()) {
 }
@@ -187,7 +188,7 @@ Your code should now look as follows:
 Using the connection, we can start adding statements to our repository. We will add two triples, one to assert that John is a Person, and one to assert that John’s name is “John”:
 
 ```java
-conn.add(john, RDF.TYPE, FOAF.PERSON); 
+conn.add(john, RDF.TYPE, FOAF.PERSON);
 conn.add(john, RDFS.LABEL, f.createLiteral("John"));
 ```
 
@@ -235,7 +236,7 @@ However, it is a bit ugly, using all those long IRIs. We can make the output a b
 ```java
 model.setNamespace(RDF.NS);
 model.setNamespace(RDFS.NS);
-model.setNamespace(FOAF.NS); 
+model.setNamespace(FOAF.NS);
 model.setNamespace("ex", namespace);
 ```
 
