@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -55,7 +54,7 @@ public class TargetChainPopper implements PlanNode {
 
 				ValidationTuple next = iterator.next();
 				next = new ValidationTuple(next);
-				next.getChain().removeLast();
+				next.pop();
 				return next;
 			}
 

@@ -52,7 +52,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 
-		if (!targetChain.getPath().isPresent()) {
+		if (!getTargetChain().getPath().isPresent()) {
 			throw new IllegalStateException("UniqueLang only operates on paths");
 		}
 
@@ -80,16 +80,16 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix) {
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
 		String query = effectiveTarget.getQuery();
 
 		Var targetVar = effectiveTarget.getTargetVar();
 
-		String pathQuery1 = targetChain.getPath()
+		String pathQuery1 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value1")))
 				.get();
 
-		String pathQuery2 = targetChain.getPath()
+		String pathQuery2 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value2")))
 				.get();
 
@@ -110,8 +110,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", Scope.propertyShape);
-		Optional<Path> path = targetChain.getPath();
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape);
+		Optional<Path> path = getTargetChain().getPath();
 
 		if (!path.isPresent() || scope != Scope.propertyShape) {
 			throw new IllegalStateException("UniqueLang only operates on paths");

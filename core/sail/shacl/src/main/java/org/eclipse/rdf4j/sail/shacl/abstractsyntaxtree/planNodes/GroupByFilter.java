@@ -8,24 +8,30 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * @author Håvard Ottestad
  */
-public class GroupByCount implements PlanNode {
+public class GroupByFilter implements PlanNode {
 
+	private final Function<Collection<ValidationTuple>, Boolean> filter;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public GroupByCount(PlanNode parent) {
+	public GroupByFilter(PlanNode parent, Function<Collection<ValidationTuple>, Boolean> filter) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.parent = parent;
+		this.filter = filter;
 	}
 
 	@Override
@@ -34,43 +40,42 @@ public class GroupByCount implements PlanNode {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
+			ValidationTuple next;
 			ValidationTuple tempNext;
 
-			AggregatedValidationTuple next;
+			List<ValidationTuple> group = new ArrayList<>();
 
 			private void calculateNext() {
 				if (next != null) {
 					return;
 				}
 
-				if (tempNext == null && parentIterator.hasNext()) {
-					tempNext = parentIterator.next();
-				}
-
-				if (tempNext == null) {
-					return;
-				}
-
-				long count = 0;
-
-				next = new AggregatedValidationTuple(tempNext);
-
-				while (tempNext != null && tempNext.sameTargetAs(next)) {
-
-					if (tempNext.hasValue()) {
-						count++;
-						next.addAggregate(tempNext.getValue());
-					}
-
-					if (parentIterator.hasNext()) {
+				while (next == null && (tempNext != null || parentIterator.hasNext())) {
+					if (tempNext == null) {
 						tempNext = parentIterator.next();
-					} else {
-						tempNext = null;
 					}
 
-				}
+					this.next = new ValidationTuple(tempNext);
+					group.clear();
 
-				next.getChain().addLast(SimpleValueFactory.getInstance().createLiteral(count));
+					while (tempNext != null && tempNext.sameTargetAs(this.next)) {
+
+						if (tempNext.hasValue()) {
+							group.add(tempNext);
+						}
+
+						tempNext = null;
+
+						if (parentIterator.hasNext()) {
+							tempNext = parentIterator.next();
+						}
+
+					}
+
+					if (!filter.apply(group)) {
+						this.next = null;
+					}
+				}
 
 			}
 
@@ -87,11 +92,11 @@ public class GroupByCount implements PlanNode {
 			}
 
 			@Override
-			AggregatedValidationTuple loggingNext() throws SailException {
+			ValidationTuple loggingNext() throws SailException {
 
 				calculateNext();
 
-				AggregatedValidationTuple temp = next;
+				ValidationTuple temp = next;
 				next = null;
 
 				return temp;
@@ -123,7 +128,7 @@ public class GroupByCount implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "GroupByCount";
+		return "GroupByCountFilter";
 	}
 
 	@Override

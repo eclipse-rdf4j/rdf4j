@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Severity;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 
 /**
@@ -46,7 +47,7 @@ public class ValidationResult {
 	private ValidationResult detail;
 
 	public ValidationResult(Value focusNode, Value value, Shape shape,
-			SourceConstraintComponent sourceConstraintComponent, Severity severity) {
+			SourceConstraintComponent sourceConstraintComponent, Severity severity, ConstraintComponent.Scope scope) {
 		this.focusNode = focusNode;
 		assert this.focusNode != null;
 		this.sourceConstraintComponent = sourceConstraintComponent;
@@ -56,7 +57,9 @@ public class ValidationResult {
 			assert value != null;
 			this.value = Optional.of(value);
 		} else {
-			assert value == null;
+			if (scope == ConstraintComponent.Scope.propertyShape) {
+				assert value == null;
+			}
 			this.value = Optional.empty();
 		}
 

@@ -40,7 +40,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache);
+						return NodeShape.getInstance(p, connection, cache, false);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, connection, cache);
 					}

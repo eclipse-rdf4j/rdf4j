@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +75,7 @@ public class BindSelect implements PlanNode {
 
 	}
 
-	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset, int size) {
+	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset, int expectedSize) {
 		try {
 
 			parsedQuery.getTupleExpr()
@@ -84,7 +83,8 @@ public class BindSelect implements PlanNode {
 						@Override
 						public void meet(BindingSetAssignment node) throws Exception {
 							Set<String> bindingNames = node.getBindingNames();
-							if (bindingNames.size() == size) { // TODO consider checking if bindingnames is equal to
+							if (bindingNames.size() == expectedSize) { // TODO consider checking if bindingnames is
+																		// equal to
 								// vars
 								node.setBindingSets(newBindindingset);
 							}
@@ -128,7 +128,7 @@ public class BindSelect implements PlanNode {
 
 				bulk.add(next);
 
-				int targetChainSize = next.getChain().size();
+				int targetChainSize = next.getTargetChain().size();
 				if (this.targetChainSize != null) {
 					assert targetChainSize == this.targetChainSize;
 				} else {
@@ -191,7 +191,7 @@ public class BindSelect implements PlanNode {
 
 					List<BindingSet> bindingSets = bulk
 							.stream()
-							.map(t -> new ListBindingSet(varNames, new ArrayList<>(t.getChain())))
+							.map(t -> new ListBindingSet(varNames, new ArrayList<>(t.getTargetChain())))
 							.collect(Collectors.toList());
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);

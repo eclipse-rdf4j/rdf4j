@@ -36,7 +36,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache);
+						return NodeShape.getInstance(p, connection, cache, false);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, connection, cache);
 					}
@@ -91,6 +91,10 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 						overrideTargetNode, negatePlan, negateChildren, scope))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
+
+		planNode = new DebugPlanNode(planNode, "", p -> {
+			System.out.println(p);
+		});
 
 		return planNode;
 

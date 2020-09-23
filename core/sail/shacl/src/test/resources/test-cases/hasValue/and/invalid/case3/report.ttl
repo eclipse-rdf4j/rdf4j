@@ -9,33 +9,29 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode 1;
-      sh:value 1;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:steve;
+      sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
+      sh:sourceShape _:node1eitqson8x1
     ], [ a sh:ValidationResult;
-      sh:focusNode 2;
-      sh:value 2;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:steve;
+      sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
+      sh:sourceShape _:node1eitqson8x1
     ] .
 
-ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
-  sh:targetObjectsOf ex:id, ex:username;
+_:node1eitqson8x1 a sh:PropertyShape;
+  sh:path ex:knows;
   sh:and [
-      rdf:first [ a sh:PropertyShape;
-          sh:path [
-              sh:inversePath ex:id
-            ];
-          sh:maxCount 1
+      rdf:first [ a sh:NodeShape;
+          sh:hasValue ex:peter
         ];
-      rdf:rest (_:node1eitqsoccx5), (_:node1eitqsoccx5)
+      rdf:rest (_:node1eitqson8x5), (_:node1eitqson8x5)
     ] .
 
-_:node1eitqsoccx5 a sh:PropertyShape;
-  sh:path [
-      sh:inversePath ex:username
-    ];
-  sh:maxCount 1 .
+_:node1eitqson8x5 a sh:NodeShape;
+  sh:hasValue ex:steve .

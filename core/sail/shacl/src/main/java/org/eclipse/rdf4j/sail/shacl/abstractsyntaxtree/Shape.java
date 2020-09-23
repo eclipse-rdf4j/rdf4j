@@ -139,7 +139,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		properties.getNode()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache))
+				.map(p -> NodeShape.getInstance(p, connection, cache, true))
 				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
@@ -358,7 +358,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					.map(r -> new ShaclProperties(r, connection))
 					.map(p -> {
 						if (p.getType() == SHACL.NODE_SHAPE) {
-							return NodeShape.getInstance(p, connection, cache);
+							return NodeShape.getInstance(p, connection, cache, true);
 						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 							return PropertyShape.getInstance(p, connection, cache);
 						}
@@ -397,7 +397,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public SourceConstraintComponent getConstraintComponent() {
-		throw new ShaclUnsupportedException();
+		throw new ShaclUnsupportedException(this.getClass().getSimpleName());
 	}
 
 	public Severity getSeverity() {

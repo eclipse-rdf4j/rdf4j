@@ -35,7 +35,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		ShaclProperties p = new ShaclProperties(id, connection);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			not = NodeShape.getInstance(p, connection, cache);
+			not = NodeShape.getInstance(p, connection, cache, false);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 			not = PropertyShape.getInstance(p, connection, cache);
 		} else {

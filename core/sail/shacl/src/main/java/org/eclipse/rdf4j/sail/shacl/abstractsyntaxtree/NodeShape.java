@@ -31,19 +31,23 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
-	public NodeShape() {
+	protected boolean produceValidationReports;
+
+	public NodeShape(boolean produceValidationReports) {
+		this.produceValidationReports = produceValidationReports;
 	}
 
 	public NodeShape(NodeShape nodeShape) {
 		super(nodeShape);
+		this.produceValidationReports = nodeShape.produceValidationReports;
 	}
 
 	public static NodeShape getInstance(ShaclProperties properties,
-			RepositoryConnection connection, Cache cache) {
+			RepositoryConnection connection, Cache cache, boolean produceValidationReports) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
-			shape = new NodeShape();
+			shape = new NodeShape(produceValidationReports);
 			cache.put(properties.getId(), shape);
 			shape.populate(properties, connection, cache);
 		}
@@ -114,10 +118,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			PlanNode validationPlanNode = constraintComponent
 					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false,
 							Scope.nodeShape);
-			if (!(constraintComponent instanceof PropertyShape)) {
+			if (!(constraintComponent instanceof PropertyShape) && produceValidationReports) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getValue(), t.getValue(), this,
-							constraintComponent.getConstraintComponent(), getSeverity());
+					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
+							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope());
 				});
 			}
 			union = new UnionNode(union,
@@ -146,13 +150,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 							Scope.nodeShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-//				System.out.println(p);
+				System.out.println(p);
 			});
-
-			if (!(constraintComponent instanceof PropertyShape)) {
+			if (!(constraintComponent instanceof PropertyShape) && produceValidationReports) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
-							constraintComponent.getConstraintComponent(), getSeverity());
+							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope());
 				});
 			}
 
@@ -161,7 +164,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-//				System.out.println(p);
+				System.out.println(p);
 			});
 
 			union = new UnionNode(union,

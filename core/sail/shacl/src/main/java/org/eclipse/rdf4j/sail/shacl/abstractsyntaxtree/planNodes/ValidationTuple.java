@@ -3,9 +3,11 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,7 +26,7 @@ public class ValidationTuple {
 	private ConstraintComponent.Scope scope;
 	private boolean propertyShapeScopeWithValue;
 
-	Deque<ValidationResult> validationResults;
+	Deque<ValidationResult> validationResults = new ArrayDeque<>();
 
 	public ValidationTuple(ValidationTuple validationTuple) {
 		this.chain = new ArrayDeque<>(validationTuple.chain);
@@ -192,8 +194,22 @@ public class ValidationTuple {
 		propertyShapeScopeWithValue = true;
 	}
 
-	public Deque<Value> getChain() {
-		return chain;
+	public int getFullChainSize() {
+		return chain.size();
+	}
+
+	/**
+	 * This is only the target part. For property shape scope it will not include the value.
+	 * 
+	 * @return
+	 */
+	public Collection<Value> getTargetChain() {
+
+		if (scope == ConstraintComponent.Scope.propertyShape && hasValue()) {
+			return chain.stream().limit(chain.size() - 1).collect(Collectors.toList());
+		}
+
+		return new ArrayList<>(chain);
 	}
 
 	public void setValue(Value value) {
@@ -225,5 +241,9 @@ public class ValidationTuple {
 				propertyShapeScopeWithValue = false;
 			}
 		}
+	}
+
+	public void pop() {
+		chain.removeLast();
 	}
 }

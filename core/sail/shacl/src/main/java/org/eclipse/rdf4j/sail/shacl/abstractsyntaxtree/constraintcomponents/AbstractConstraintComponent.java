@@ -15,7 +15,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	private static final Logger logger = LoggerFactory.getLogger(AbstractConstraintComponent.class);
 
 	private Resource id;
-	TargetChain targetChain;
+	private TargetChain targetChain;
 
 	public AbstractConstraintComponent(Resource id) {
 		this.id = id;

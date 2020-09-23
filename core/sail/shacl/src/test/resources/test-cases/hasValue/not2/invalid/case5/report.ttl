@@ -10,13 +10,20 @@
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:resultPath _:node1eitqsrqmx2;
-      sh:sourceConstraintComponent sh:MaxCountConstraintComponent;
+      sh:value ex:validPerson1;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path _:node1eitqsrqmx2;
-          sh:maxCount 3
-        ]
+      sh:sourceShape ex:PersonShape
     ] .
 
-_:node1eitqsrqmx2 sh:inversePath ex:knows .
+ex:PersonShape a sh:NodeShape;
+  sh:targetClass ex:Person;
+  sh:not [ a sh:NodeShape;
+      sh:and ([ a sh:PropertyShape;
+            sh:path ex:knows;
+            sh:hasValue ex:peter
+          ] [ a sh:PropertyShape;
+            sh:path ex:knows;
+            sh:hasValue ex:steve
+          ])
+    ] .
