@@ -9,12 +9,16 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:ssn;
-      sh:sourceConstraintComponent sh:MaxCountConstraintComponent;
+      sh:focusNode ex:a;
+      sh:value 999;
+      sh:resultPath ex:number;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:ssn;
-          sh:maxCount 3
+          sh:path ex:number;
+          sh:not [ a sh:NodeShape;
+              sh:minLength 3;
+              sh:maxExclusive 1000
+            ]
         ]
     ] .

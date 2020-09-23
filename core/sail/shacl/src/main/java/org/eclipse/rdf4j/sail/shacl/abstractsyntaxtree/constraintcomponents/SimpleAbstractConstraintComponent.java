@@ -166,6 +166,10 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
 
+			planNode = new DebugPlanNode(planNode, "", p -> {
+				System.out.println(p);
+			});
+
 			if (negatePlan) {
 				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
 			} else {

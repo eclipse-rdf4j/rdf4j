@@ -94,8 +94,12 @@ public class TargetSubjectsOf extends Target {
 		assert (subject == null);
 
 		return targetSubjectsOf.stream()
-				.map(t -> new StatementPattern(new Var(UUID.randomUUID().toString().replace("-", "")), new Var(t),
-						object));
+				.map(t -> new StatementPattern(
+						object,
+						new Var(t),
+						new Var(UUID.randomUUID().toString().replace("-", ""))
+				)
+				);
 	}
 
 	@Override
@@ -105,7 +109,7 @@ public class TargetSubjectsOf extends Target {
 		String tempPredicate = "?" + UUID.randomUUID().toString().replace("-", "");
 
 		return targetSubjectsOf.stream()
-				.map(t -> tempPredicate + " <" + t + "> " + "?" + object.getName() + " .")
+				.map(t -> "?" + object.getName() + " <" + t + "> " + tempPredicate + " .")
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
 	}

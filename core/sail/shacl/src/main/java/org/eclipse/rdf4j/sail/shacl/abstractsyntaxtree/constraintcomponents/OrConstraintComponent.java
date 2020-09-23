@@ -99,7 +99,10 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, negatePlan, scope);
+			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, negatePlan, scope), "",
+					p -> {
+						System.out.println(p);
+					});
 		}
 
 		PlanNode orPlanNodes = or.stream()
@@ -123,7 +126,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		PlanNode invalid = new Unique(orPlanNodes);
 
 		invalid = new DebugPlanNode(invalid, "", p -> {
-//			System.out.println(p);
+			System.out.println(p);
 		});
 
 		return invalid;

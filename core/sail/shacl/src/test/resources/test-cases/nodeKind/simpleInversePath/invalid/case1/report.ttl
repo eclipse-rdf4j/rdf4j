@@ -11,13 +11,13 @@
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:Peter;
       sh:value [];
-      sh:resultPath _:node1eitqstqnx2;
+      sh:resultPath _:node1eittd14vx2;
       sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:path _:node1eitqstqnx2;
+          sh:path _:node1eittd14vx2;
           sh:nodeKind sh:IRI
         ]
     ] .
 
-_:node1eitqstqnx2 sh:inversePath ex:knows .
+_:node1eittd14vx2 sh:inversePath ex:knows .

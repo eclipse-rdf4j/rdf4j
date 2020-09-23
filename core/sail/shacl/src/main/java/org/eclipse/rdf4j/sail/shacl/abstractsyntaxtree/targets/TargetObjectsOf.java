@@ -7,19 +7,16 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -97,8 +94,12 @@ public class TargetObjectsOf extends Target {
 		assert (subject == null);
 
 		return targetObjectsOf.stream()
-				.map(t -> new StatementPattern(object, new Var(t),
-						new Var(UUID.randomUUID().toString().replace("-", ""))));
+				.map(t -> new StatementPattern(
+						new Var(UUID.randomUUID().toString().replace("-", "")),
+						new Var(t),
+						object
+				)
+				);
 	}
 
 	@Override
@@ -108,7 +109,7 @@ public class TargetObjectsOf extends Target {
 		String tempPredicate = "?" + UUID.randomUUID().toString().replace("-", "");
 
 		return targetObjectsOf.stream()
-				.map(t -> "?" + object.getName() + " <" + t + "> " + tempPredicate + " .")
+				.map(t -> tempPredicate + " <" + t + "> ?" + object.getName() + " .")
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
 	}
