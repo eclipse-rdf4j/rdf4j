@@ -363,7 +363,10 @@ The `sail:sailType` value for the RDF Schema inferencer is `"rdf4j:SchemaCaching
          sail:sailType "rdf4j:SchemaCachingRDFSInferencer";
          sail:delegate [
              sail:sailType "openrdf:MemoryStore" ;
-             ...
+             sail:iterationCacheSyncThreshold "10000";
+             ms:persist true;
+             ms:syncDelay 0;
+             sb:evaluationStrategyFactory "org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory"
          ];
       ]
    ].
@@ -413,20 +416,21 @@ The SHACL Sail is a Sail Adapter that performs transaction validation using the 
 The `sail:sailType` value of the SHACL Sail is `"rdf4j:ShaclSail"`. Its parameter namespace is `http://rdf4j.org/config/sail/shacl#`, commonly abbreviated to `ssc`. It takes the following configuration options:
 
 - `ssc:parallelValidation` (boolean): Enables parallel validation (optional).
-- `ssc:undefinedTargetValidatesAllSubjects` (boolean): Specifies if an undefined target in a shape leads to validating all subject (optional).
+- `ssc:undefinedTargetValidatesAllSubjects` (boolean):
+Specifies if an undefined target in a shape leads to validating all subjects (optional) {{< tag "deprecated" >}} .
 - `ssc:logValidationPlans` (boolean): Specifies if validation plans are sent to the logging framework (optional).
 - `ssc:logValidationViolations` (boolean): Specifies if shape violations are sent to the logging framework (optional).
-- `ssc:ignoreNoShapesLoadedException` (boolean): Specifies if the "no shapes loaded" error is ignored (optional).
+- `ssc:ignoreNoShapesLoadedException` (boolean): Specifies if the "no shapes loaded" error is ignored (optional) {{< tag "deprecated" >}}.
 - `ssc:validationEnabled` (boolean): Specifies if transaction valudation is enabled by default (optional).
 - `ssc:cacheSelectNodes` (boolean): Specifies if select nodes are cached (optional).
 - `ssc:globalLogValidationExecution` (boolean): Specifies if validation execution details are sent to the logging framework (optional).
 - `ssc:rdfsSubClassReasoning` (boolean): Enables RDF Schema Subclass entailment (optional).
 - `ssc:performanceLogging` (boolean): Enables performance logging (optional).
-- `ssc:serializableValidation` (boolean):
-- `ssc:eclipseRdf4jShaclExtensions` (boolean): Enables RDF4J-specific extensions to the SHACL proposal (optional).
-- `ssc:dashDataShapes` (boolean): Enables use of DASH data shapes (optional).
-- `ssc:validationResultsLimitTotal` (integer): Specifies a limit on the total number of validation results sent in a validation report (optional).
-- `ssc:validationResultsLimitPerConstraint` (integer): Specifies a limit on the number of validation results sent per constraint in a validation report (optional).
+- `ssc:serializableValidation` (boolean): When enabled, combined with transactions using isolation level `SNAPSHOT` the validation guarantee is equivalent to using `SERIALIZABLE` without the performance impact.
+- `ssc:eclipseRdf4jShaclExtensions` (boolean): Enables [RDF4J-specific SHACL extensions](/shacl-extensions/)  (optional).
+- `ssc:dashDataShapes` (boolean): Enables use of [DASH data shapes](https://datashapes.org/dash) (optional).
+- `ssc:validationResultsLimitTotal` (integer): Specifies a limit on the total number of validation results sent in a validation report (optional). A values of -1 indicates no limit.
+- `ssc:validationResultsLimitPerConstraint` (integer): Specifies a limit on the number of validation results sent per constraint in a validation report (optional). A values of -1 indicates no limit.
 
 ##### Example configuration
 
