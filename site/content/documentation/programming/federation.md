@@ -2,6 +2,7 @@
 title: "Federation with FedX"
 weight: 7
 toc: true
+autonumbering: true
 ---
 (new in RDF4J 3.1)
 
@@ -29,9 +30,9 @@ The examples query data from http://dbpedia.org/ and join it with data from http
 _Retrieve the European Union countries from DBpedia and join it with the GDP data coming from Wikidata_
 
 ```sparql
-SELECT * WHERE { 
+SELECT * WHERE {
   ?country a yago:WikicatMemberStatesOfTheEuropeanUnion .
-  ?country owl:sameAs ?countrySameAs . 
+  ?country owl:sameAs ?countrySameAs .
   ?countrySameAs wdt:P2131 ?gdp .
 }
 ```
@@ -41,17 +42,17 @@ Note that the query is a bit artificial, however, it illustrates quite well the 
 
 ### Using a Java program
 
-The following Java code can be used to execute our example query against the federation. 
+The following Java code can be used to execute our example query against the federation.
 
 ```java
 Repository repository = FedXFactory.newFederation()
 	.withSparqlEndpoint("http://dbpedia.org/sparql")
 	.withSparqlEndpoint("https://query.wikidata.org/sparql")
 	.create();
-		
+
 try (RepositoryConnection conn = repository.getConnection()) {
 
-	String query = 
+	String query =
 		"PREFIX wd: <http://www.wikidata.org/entity/> "
 		+ "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
 		+ "SELECT * WHERE { "
@@ -73,7 +74,7 @@ try (RepositoryConnection conn = repository.getConnection()) {
 		System.out.println("Results: " + count);
 	}
 }
-		
+
 repository.shutDown();
 ```
 
@@ -119,11 +120,11 @@ The following snippet depicts an example repository configuration that defines a
       rep:repositoryType "fedx:FedXRepository" ;
       fedx:member [
          fedx:store "ResolvableRepository" ;
-         fedx:repositoryName "my-repository-1" 
+         fedx:repositoryName "my-repository-1"
       ] ,
       [
          fedx:store "ResolvableRepository" ;
-         fedx:repositoryName "my-repository-2" 
+         fedx:repositoryName "my-repository-2"
       ]
    ];
    rep:repositoryID "my-federation" ;
@@ -171,7 +172,7 @@ System.exit(0);
 
 **Example 2: Using a data configuration file**
 
-In this example we use a data configuration file to set up the federation members (see section on member configuration below for more details). Note that in this example we use an initialized Repository to create the query, as well as the connection. 
+In this example we use a data configuration file to set up the federation members (see section on member configuration below for more details). Note that in this example we use an initialized Repository to create the query, as well as the connection.
 
 ```java
 File dataConfig = new File("local/dataSourceConfig.ttl");
@@ -293,22 +294,22 @@ For details about the methods please refer to the javadoc help of the class _End
 
 ## FedX configuration
 
-FedX provides various means for configuration. Configuration settings can be defined using the `FedXConfig` facility, which can be passed at initialization time. Note that certain settings can also be changed during runtime, please refer to the API documentation for details. 
+FedX provides various means for configuration. Configuration settings can be defined using the `FedXConfig` facility, which can be passed at initialization time. Note that certain settings can also be changed during runtime, please refer to the API documentation for details.
 
 ### Available Properties
 
 |Property | Description |
-|prefixDeclarations | Path to prefix declarations file, see PREFIX Declarations | 
-|cacheLocation | Location where the memory cache gets persisted at shutdown, default _cache.db_ | 
-|joinWorkerThreads | The number of join worker threads for parallelization, default _20_ | 
-|unionWorkerThreads | The number of union worker threads for parallelization, default _20_ | 
-|boundJoinBlockSize | Block size for bound joins, default _15_ | 
-|enforceMaxQueryTime | Max query time in seconds, 0 to disable, default _30_ | 
-|enableServiceAsBoundJoin | Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default _true_. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE | 
-|debugQueryPlan | Print the optimized query execution plan to stdout, default _false_ | 
-|enableMonitoring | Flag to enable/disable monitoring features, default _false_ | 
-|logQueryPlan | Flag to enable/disable query plan logging via Java class _QueryPlanLog_, default _false_ | 
-|logQueries | Flag to enable/disable query logging via _QueryLog_, default _false_. The _QueryLog_ facility allows to log all queries to a file | 
+|prefixDeclarations | Path to prefix declarations file, see PREFIX Declarations |
+|cacheLocation | Location where the memory cache gets persisted at shutdown, default _cache.db_ |
+|joinWorkerThreads | The number of join worker threads for parallelization, default _20_ |
+|unionWorkerThreads | The number of union worker threads for parallelization, default _20_ |
+|boundJoinBlockSize | Block size for bound joins, default _15_ |
+|enforceMaxQueryTime | Max query time in seconds, 0 to disable, default _30_ |
+|enableServiceAsBoundJoin | Flag for evaluating a SERVICE expression (contacting non-federation members) using vectored evaluation, default _true_. For today's endpoints it is more efficient to disable vectored evaluation of SERVICE |
+|debugQueryPlan | Print the optimized query execution plan to stdout, default _false_ |
+|enableMonitoring | Flag to enable/disable monitoring features, default _false_ |
+|logQueryPlan | Flag to enable/disable query plan logging via Java class _QueryPlanLog_, default _false_ |
+|logQueries | Flag to enable/disable query logging via _QueryLog_, default _false_. The _QueryLog_ facility allows to log all queries to a file |
 
 ### Query timeouts
 
@@ -320,13 +321,13 @@ If a query timeout occurs, a _QueryInterruptedException_ is thrown.
 
 ### Prefix declarations
 
-FedX allows to (optionally) define commonly used prefixes (e.g. rdf, foaf, etc.) in a 
+FedX allows to (optionally) define commonly used prefixes (e.g. rdf, foaf, etc.) in a
 configuration file. These configured prefixes are then automatically inserted into a query,
-meaning that the user does not have to specify full URIs nor the PREFIX declaration in the 
+meaning that the user does not have to specify full URIs nor the PREFIX declaration in the
 query.
 
 The prefixes can be either specified in a configuration file as key-value pairs or directly
-configured via Java code (see examples below). When using a configuration file, this can be 
+configured via Java code (see examples below). When using a configuration file, this can be
 configured via the _prefixDeclarations_ property.
 
 **Example: Prefix configuration via configuration file**
@@ -424,7 +425,7 @@ Note that also hybrid combinations are possible.
 
 ### Example 5: Federation with writable endpoint:
 
-(new in RDF4J 3.2.0) 
+(new in RDF4J 3.2.0)
 
 FedX supports nominating a single federation member as being able to receive updates. If enabled, any statement add/remove operations, including SPARQL updates, will be forwarded on top of the nominated member:
 
@@ -459,7 +460,7 @@ Note: for the following features `enableMonitoring` must be set in the FedX conf
 ### Logging queries
 
 By setting _logQueries=true_ in the FedX configuration, all incoming queries are traced
-to a logger with the name _QueryLogger_. If a corresponding configuration is added to the logging backend, the queries can for instance be traced to a file. 
+to a logger with the name _QueryLogger_. If a corresponding configuration is added to the logging backend, the queries can for instance be traced to a file.
 
 ### Logging the query plan
 
@@ -468,7 +469,7 @@ There are two ways of seeing the optimized query plan:
 a) by setting _debugQueryPlan=true_, the query plan is printed to stdout (which is handy in the CLI or for debugging).
 
 b) by setting _logQueryPlan=true_ the optimized query plan is written to a variable local to the executing thread.The optimized query plan can be retrieved via the _QueryPlanLog_ service, as illustrated in the following abstract snippet.
- 
+
 ```java
 FedXConfig config = new FedXConfig().withEnableMonitoring(true).withLogQueryPlan(true);
 Repository repo = FedXFactory.newFederation()
@@ -487,7 +488,7 @@ System.out.println(QueryPlanLog.getQueryPlan());
 ### Monitoring the number of requests
 
 If monitoring is enabled, the number of requests sent to each individual federation member are monitored. All
-available information can be retrieved by the _MonitoringService_, which can be retrieved via 
+available information can be retrieved by the _MonitoringService_, which can be retrieved via
 
 `MonitoringUtil.getMonitoringService()`
 

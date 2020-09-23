@@ -2,12 +2,13 @@
 title: "RDF4J Console"
 toc: true
 weight: 1
+autonumbering: true
 ---
 
 The RDF4J Console is a text console application for interacting with RDF4J. It can be used to create and use local RDF databases, or to connect to a running <a href="/documentation/tools/workbench-server/">RDF4J Server</a>.
 <!--more-->
 
-# Getting started
+## Getting started
 
 Rdf4j Console can be started using the `console.bat`/`.sh` scripts in the bin directory of the Rdf4j SDK. By default, the console will connect to the “default data directory”, which contains the console’s own set of repositories.
 
@@ -18,8 +19,8 @@ The console is operated by typing commands. For example, to get an overview of t
 To get help for a specific command, type ‘help’ followed by the command name, e.g.:
 
    help connect
- 
-## History
+
+### History
 
 The Console has a built-in history, use the `Up` and `Down` arrows to cycle through the history of commands.
 
@@ -30,12 +31,12 @@ To prevent newly entered commands from being saved to file, set the `savehistory
 
 To re-enable, simply set `savehistory` to true.
 
-## Connecting to a set of repositories
+### Connecting to a set of repositories
 
 As indicated in the previous section, the Console connects to its own set of repositories by default. Using the `connect` command you can make the console connect to a Rdf4j Server or to a set of repositories on your file system. For example, to connect to a Rdf4j Server that is listening to port 8080 on localhost, enter the following command:
 
     connect http://localhost:8080/rdf4j-server
- 
+
 To connect to the default set of repositories, enter:
 
     connect default
@@ -46,13 +47,13 @@ When connecting to a remote server, a user name and password can be provided as 
 
 Not surprisingly, the `disconnect` command disconnects the console from the set of repository.
 
-## Showing the list of repositories
+### Showing the list of repositories
 
 To get an overview of the repositories that are available in the set that your console is connected to, use the `show` command:
 
      show repositories
 
-## Creating a new repository
+### Creating a new repository
 
 The `create` command creates a new repository in the set the console is connected to. This command expects the name of a template describing the <a href="/documentation/tools/repository-configuration/">repository's configuration</a>. Several templates are available, including:
 
@@ -75,10 +76,10 @@ The console will ask you to provide an ID and title for the repository, as well 
      Please specify values for the following variables:
      Repository ID [native]: myRepo
      Repository title [Native store]: My repository
-     Triple indexes [spoc,posc]: 
+     Triple indexes [spoc,posc]:
      Repository created
 
-## Opening and closing a repository
+### Opening and closing a repository
 
 The `open` command opens a specific repository. For example, to open the `myrepo` repository, enter:
 
@@ -86,10 +87,10 @@ The `open` command opens a specific repository. For example, to open the `myrepo
 
 The `close` command closes the connection.
 
-## Verifying a file
+### Verifying a file
 
-The `verify` command verifies the validity of an RDF file. Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name. For example, to verify a JSON-LD file: 
- 
+The `verify` command verifies the validity of an RDF file. Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name. For example, to verify a JSON-LD file:
+
     verify data.jsonld
 
 On a MS-Windows system, forward slashes or double backward slashes are to be used when specifying the file path, for example:
@@ -99,12 +100,12 @@ On a MS-Windows system, forward slashes or double backward slashes are to be use
 or:
 
     verify C:/data/rdf/data.jsonld
-  
-Validating the file against a set of shapes and constraints in a SHACL file, and storing the validation report to a file, is equally straightforward:   
+
+Validating the file against a set of shapes and constraints in a SHACL file, and storing the validation report to a file, is equally straightforward:
 
    verify data.jsonld shacl-file.ttl validation-report.ttl
 
-## Loading a file into a repository
+### Loading a file into a repository
 
 The `load` command loads a file into the opened repository.  Several formats (serializations) are supported, including JSON-LD, Turtle, N-Triples and RDF/XML. The console will select the format based upon the extension of the file name.
 
@@ -114,15 +115,15 @@ Specifying a base IRI for resolving relative IRIs:
 
     load import.nt from http://example.org
 
-## Exporting a repository to a file
+### Exporting a repository to a file
 
 The `export` command exports statements from a repository to a file. Either the entire repository can be exported, or a (list of) named graphs / contexts.
 
     export export.nt
 
-## Executing a SPARQL query
+### Executing a SPARQL query
 
-The `sparql` command executes a sparql query. 
+The `sparql` command executes a sparql query.
 
     sparql
 
@@ -132,7 +133,7 @@ Multiple lines can be entered. To terminate the input, enter a new line containi
     where { ?s ?p ?o }
     .
 
-##= reading queries from and exporting results to a file
+###= reading queries from and exporting results to a file
 
 Queries can be read from an existing file:
 
@@ -159,7 +160,7 @@ When relative paths are used, files are read from or saved to the working direct
    set workdir=/path/to/working/dir
 
 
-## Setting namespace prefixes
+### Setting namespace prefixes
 
 Using prefixes for namespaces (e.g. `dcterms:` instead of `http://purl.org/dc/terms/`) makes queries and results easier to read, and queries less error-prone to write.
 By default a few well-known prefixes are available, including `dcterms`, `foaf`, `rdfs` and `skos`.
@@ -181,12 +182,12 @@ Going back to the built-in list of well-know prefixes is easy, even when the lis
 
     set prefixes=<default>
 
-In addition, it is possible to toggle between using / showing the short prefix or using / showing the full namespace URI, without actually changing the prefixes: 
+In addition, it is possible to toggle between using / showing the short prefix or using / showing the full namespace URI, without actually changing the prefixes:
 
     set queryprefix=true
     set showprefix=true
 
-## Other commands
+### Other commands
 
 Please check the documentation that is provided by the console itself for help on how to use the other commands. Most commands should be self explanatory.
- 
+
