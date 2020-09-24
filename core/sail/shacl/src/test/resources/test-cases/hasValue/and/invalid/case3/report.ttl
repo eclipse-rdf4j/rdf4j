@@ -1,37 +1,37 @@
 @prefix ex: <http://example.com/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 [] a sh:ValidationReport;
-  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:value ex:steve;
       sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiu75b94x1
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape _:genid-659a8f9d9bb04b2c9897ecd2c610a861-b1;
+      sh:value ex:steve
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:value ex:steve;
       sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiu75b94x1
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape _:genid-659a8f9d9bb04b2c9897ecd2c610a861-b1;
+      sh:value ex:steve
     ] .
 
-_:node1eiu75b94x1 a sh:PropertyShape;
-  sh:path ex:knows;
+_:genid-659a8f9d9bb04b2c9897ecd2c610a861-b1 a sh:PropertyShape;
   sh:and [
       rdf:first [ a sh:NodeShape;
           sh:hasValue ex:peter
         ];
-      rdf:rest (_:node1eiu75b94x5), (_:node1eiu75b94x5)
-    ] .
+      rdf:rest (_:genid-659a8f9d9bb04b2c9897ecd2c610a861-b6), (_:genid-659a8f9d9bb04b2c9897ecd2c610a861-b6)
+    ];
+  sh:path ex:knows .
 
-_:node1eiu75b94x5 a sh:NodeShape;
+_:genid-659a8f9d9bb04b2c9897ecd2c610a861-b6 a sh:NodeShape;
   sh:hasValue ex:steve .

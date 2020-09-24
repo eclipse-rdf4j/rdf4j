@@ -1,27 +1,27 @@
 @prefix ex: <http://example.com/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 [] a sh:ValidationReport;
-  sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiu75c3px1
-    ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson2;
       sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1eiu75c3px1
+      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
+      sh:sourceShape _:genid-012df1b8785a4ca0a061a7da4acb0283-b1
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
+      sh:sourceShape _:genid-012df1b8785a4ca0a061a7da4acb0283-b1
     ] .
 
-_:node1eiu75c3px1 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:hasValue ex:peter .
+_:genid-012df1b8785a4ca0a061a7da4acb0283-b1 a sh:PropertyShape;
+  sh:hasValue ex:peter;
+  sh:path ex:knows .
