@@ -1,32 +1,32 @@
 @prefix ex: <http://example.com/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
+      sh:value "123";
       sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:genid-09f7e06bc7be4ec2a810e172bca0c1a3-b1;
-      sh:value "123"
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eivht0cbx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
+      sh:value "123";
       sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:genid-09f7e06bc7be4ec2a810e172bca0c1a3-b1;
-      sh:value "123"
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eivht0cbx1
     ] .
 
-_:genid-09f7e06bc7be4ec2a810e172bca0c1a3-b1 a sh:PropertyShape;
-  sh:node ex:node;
-  sh:path ex:age .
+_:node1eivht0cbx1 a sh:PropertyShape;
+  sh:path ex:age;
+  sh:node ex:node .
 
 ex:node a sh:NodeShape;
   sh:datatype xsd:integer .

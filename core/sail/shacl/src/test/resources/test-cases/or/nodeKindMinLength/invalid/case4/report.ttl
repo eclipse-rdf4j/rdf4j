@@ -1,37 +1,37 @@
 @prefix ex: <http://example.com/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
+      sh:value [];
       sh:resultPath ex:iriOrMinLength5String;
-      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
-      sh:sourceShape _:genid-c82bc498d58041888ecb298949d92272-b1;
-      sh:value []
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eivhtb06x1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
+      sh:value [];
       sh:resultPath ex:iriOrMinLength5String;
-      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
-      sh:sourceShape _:genid-c82bc498d58041888ecb298949d92272-b1;
-      sh:value []
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1eivhtb06x1
     ] .
 
-_:genid-c82bc498d58041888ecb298949d92272-b1 a sh:PropertyShape;
+_:node1eivhtb06x1 a sh:PropertyShape;
+  sh:path ex:iriOrMinLength5String;
   sh:or [
       rdf:first [ a sh:NodeShape;
           sh:nodeKind sh:IRI
         ];
-      rdf:rest (_:genid-c82bc498d58041888ecb298949d92272-b8), (_:genid-c82bc498d58041888ecb298949d92272-b8)
-    ];
-  sh:path ex:iriOrMinLength5String .
+      rdf:rest (_:node1eivhtb06x5), (_:node1eivhtb06x5)
+    ] .
 
-_:genid-c82bc498d58041888ecb298949d92272-b8 a sh:NodeShape;
+_:node1eivhtb06x5 a sh:NodeShape;
   sh:minLength 100 .

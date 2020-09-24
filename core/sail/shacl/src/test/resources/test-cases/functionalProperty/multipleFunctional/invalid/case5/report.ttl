@@ -1,41 +1,41 @@
 @prefix ex: <http://example.com/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode 2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
-      sh:value 2
-    ], [ a sh:ValidationResult;
       sh:focusNode 1;
-      sh:resultSeverity sh:Violation;
+      sh:value 1;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
-      sh:value 1
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
+    ], [ a sh:ValidationResult;
+      sh:focusNode 2;
+      sh:value 2;
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
     ] .
 
 ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
+  sh:targetObjectsOf ex:id, ex:username;
   sh:and [
       rdf:first [ a sh:PropertyShape;
-          sh:maxCount 1;
           sh:path [
               sh:inversePath ex:id
-            ]
+            ];
+          sh:maxCount 1
         ];
-      rdf:rest (_:genid-d7efbdbfc0e3409db2d995b376b7314e-b5), (_:genid-d7efbdbfc0e3409db2d995b376b7314e-b5)
-    ];
-  sh:targetObjectsOf ex:id, ex:username .
+      rdf:rest (_:node1eivht1lqx5), (_:node1eivht1lqx5)
+    ] .
 
-_:genid-d7efbdbfc0e3409db2d995b376b7314e-b5 a sh:PropertyShape;
-  sh:maxCount 1;
+_:node1eivht1lqx5 a sh:PropertyShape;
   sh:path [
       sh:inversePath ex:username
-    ] .
+    ];
+  sh:maxCount 1 .

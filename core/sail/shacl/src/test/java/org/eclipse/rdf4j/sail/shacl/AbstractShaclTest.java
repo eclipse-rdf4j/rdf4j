@@ -509,9 +509,6 @@ abstract public class AbstractShaclTest {
 	}
 
 	static String modelToString(Model model) {
-
-		model = jsonLdRoundTrip(model);
-
 		model.setNamespace("ex", "http://example.com/ns#");
 		model.setNamespace(FOAF.PREFIX, FOAF.NAMESPACE);
 		model.setNamespace(XSD.PREFIX, XSD.NAMESPACE);
@@ -531,16 +528,6 @@ abstract public class AbstractShaclTest {
 		Rio.write(model, stringWriter, RDFFormat.TURTLE, writerConfig);
 
 		return stringWriter.toString();
-	}
-
-	private static Model jsonLdRoundTrip(Model model) {
-		StringWriter jsonld = new StringWriter();
-		Rio.write(model, jsonld, RDFFormat.JSONLD);
-		try {
-			return new TreeModel(Rio.parse(new StringReader(jsonld.toString()), "", RDFFormat.JSONLD));
-		} catch (IOException e) {
-			throw new IllegalStateException();
-		}
 	}
 
 	private static void printFile(String filename) {
