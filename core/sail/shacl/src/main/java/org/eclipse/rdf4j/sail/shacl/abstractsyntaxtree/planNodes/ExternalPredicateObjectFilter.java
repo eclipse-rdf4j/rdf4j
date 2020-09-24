@@ -29,6 +29,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	private final SailConnection connection;
 	private final Set<Resource> filterOnObject;
 	private final IRI filterOnPredicate;
+	private final FilterOn filterOn;
 	PlanNode parent;
 	private final boolean returnMatching;
 	private boolean printed = false;
@@ -36,13 +37,14 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 	public ExternalPredicateObjectFilter(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
 			PlanNode parent,
-			boolean returnMatching) {
+			boolean returnMatching, FilterOn filterOn) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.connection = connection;
 		this.filterOnPredicate = filterOnPredicate;
 		this.filterOnObject = filterOnObject;
 		this.parent = parent;
+		this.filterOn = filterOn;
 		this.returnMatching = returnMatching;
 	}
 
@@ -59,9 +61,19 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					Value subject = temp.getActiveTarget();
+					Value value;
+					switch (filterOn) {
+					case value:
+						value = temp.getValue();
+						break;
+					case activeTarget:
+						value = temp.getActiveTarget();
+						break;
+					default:
+						throw new IllegalStateException("Unknown filterOn: " + filterOn);
+					}
 
-					Resource matchedType = isType(subject);
+					Resource matchedType = isType(value);
 
 					if (returnMatching) {
 						if (matchedType != null) {
@@ -183,5 +195,10 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	public enum FilterOn {
+		activeTarget,
+		value
 	}
 }

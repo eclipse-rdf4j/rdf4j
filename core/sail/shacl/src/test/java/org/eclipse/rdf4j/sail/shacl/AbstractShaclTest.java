@@ -83,23 +83,23 @@ abstract public class AbstractShaclTest {
 		"test-cases/and-or/datatypeNodeShape",
 //		"test-cases/class/allObjects",
 //		"test-cases/class/allSubjects",
-//		"test-cases/class/and",
-//		"test-cases/class/and2",
+		"test-cases/class/and",
+		"test-cases/class/and2",
 //		"test-cases/class/complexTargetShape",
 //		"test-cases/class/complexTargetShape2",
-//		"test-cases/class/multipleClass",
-//		"test-cases/class/not",
-//		"test-cases/class/not2",
-//		"test-cases/class/notAnd",
-//		"test-cases/class/notNotSimple",
-//		"test-cases/class/simple",
+		"test-cases/class/multipleClass",
+		"test-cases/class/not",
+		"test-cases/class/not2",
+		"test-cases/class/notAnd",
+		"test-cases/class/notNotSimple",
+		"test-cases/class/simple",
 //		"test-cases/class/simpleTargetShape",
 //		"test-cases/class/sparqlTarget",
 //		"test-cases/class/sparqlTargetNot",
 //		"test-cases/class/subclass",
-//		"test-cases/class/targetNode",
-//		"test-cases/class/validateTarget",
-//		"test-cases/class/validateTargetNot",
+		"test-cases/class/targetNode",
+		"test-cases/class/validateTarget",
+		"test-cases/class/validateTargetNot",
 //		"test-cases/complex/dcat",
 //		"test-cases/complex/foaf",
 //		"test-cases/complex/sparqlTarget",
@@ -488,9 +488,9 @@ abstract public class AbstractShaclTest {
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
 			if (connection.isEmpty()) {
-				System.out.println("### CURRENT REPOSITORY STATE ###");
-				System.out.println("   EMPTY!");
-				System.out.println("################################################\n");
+				System.out.println("########### CURRENT REPOSITORY STATE ###########");
+				System.out.println("\nEMPTY!\n");
+				System.out.println("################################################\n\n");
 			} else {
 
 				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
@@ -498,9 +498,9 @@ abstract public class AbstractShaclTest {
 
 					String prettyPrintedModel = modelToString(model);
 
-					System.out.println("### CURRENT REPOSITORY STATE ###");
+					System.out.println("########### CURRENT REPOSITORY STATE ###########");
 					System.out.println(prettyPrintedModel);
-					System.out.println("################################################\n");
+					System.out.println("################################################\n\n");
 
 				}
 			}
@@ -543,7 +543,7 @@ abstract public class AbstractShaclTest {
 			s = removeLeadingPrefixStatements(s);
 
 			System.out.println(s);
-			System.out.println("################################################\n");
+			System.out.println("################################################\n\n");
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}

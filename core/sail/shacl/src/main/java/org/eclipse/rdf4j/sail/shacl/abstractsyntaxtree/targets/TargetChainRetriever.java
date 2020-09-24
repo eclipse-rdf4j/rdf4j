@@ -59,7 +59,12 @@ public class TargetChainRetriever implements PlanNode {
 //			orderBy.append("?").append(var.getName()).append(" ");
 //		}
 
-		this.query = "select * where {" + query + "}";// +" order by "+orderBy;
+		String s1 = vars.stream()
+				.map(s -> "?" + s.getName())
+				.reduce((a, b) -> a + " " + b)
+				.orElseThrow(IllegalStateException::new);
+
+		this.query = "select " + s1 + " where {" + query + "}";
 		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()

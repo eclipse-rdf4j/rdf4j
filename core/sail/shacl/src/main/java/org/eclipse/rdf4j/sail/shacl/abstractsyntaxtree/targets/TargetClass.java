@@ -91,7 +91,7 @@ public class TargetClass extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), RDF.TYPE, targetClass, parent,
-				true);
+				true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
 
 	}
 
@@ -113,10 +113,20 @@ public class TargetClass extends Target {
 	public String getTargetQueryFragment(Var subject, Var object) {
 		assert (subject == null);
 
-		return targetClass.stream()
-				.map(t -> "?" + object.getName() + " a <" + t + "> .")
-				.reduce((a, b) -> a + "\n" + b)
+		String in = targetClass.stream()
+				.map(t -> "<" + t + ">")
+				.reduce((a, b) -> a + " , " + b)
 				.orElse("");
+
+		String query = "?" + object.getName() + " a ?typekokokopko.\n" +
+				"FILTER(?typekokokopko in (" + in + ")) \n";
+
+		return query;
+
+//		return targetClass.stream()
+//				.map(t -> "?" + object.getName() + " a <" + t + "> .")
+//				.reduce((a, b) -> a + "\n" + b)
+//				.orElse("");
 
 	}
 }
