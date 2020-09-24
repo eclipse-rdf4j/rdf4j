@@ -54,17 +54,12 @@ public class TargetChainRetriever implements PlanNode {
 		this.statementPatterns = statementPatterns;
 		this.scope = scope;
 
-//		StringBuilder orderBy = new StringBuilder();
-//		for (Var var : vars) {
-//			orderBy.append("?").append(var.getName()).append(" ");
-//		}
-
-		String s1 = vars.stream()
+		String sparqlProjection = vars.stream()
 				.map(s -> "?" + s.getName())
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.query = "select " + s1 + " where {" + query + "}";
+		this.query = "select " + sparqlProjection + " where {" + query + "}";
 		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
