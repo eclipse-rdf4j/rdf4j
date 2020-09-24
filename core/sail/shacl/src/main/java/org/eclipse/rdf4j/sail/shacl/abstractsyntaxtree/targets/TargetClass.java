@@ -113,20 +113,23 @@ public class TargetClass extends Target {
 	public String getTargetQueryFragment(Var subject, Var object) {
 		assert (subject == null);
 
-		String in = targetClass.stream()
-				.map(t -> "<" + t + ">")
-				.reduce((a, b) -> a + " , " + b)
-				.orElse("");
+		if (targetClass.size() == 1) {
 
-		String query = "?" + object.getName() + " a ?typekokokopko.\n" +
-				"FILTER(?typekokokopko in (" + in + ")) \n";
+			return targetClass.stream()
+					.map(t -> "?" + object.getName() + " a <" + t + "> .")
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
 
-		return query;
+		} else {
 
-//		return targetClass.stream()
-//				.map(t -> "?" + object.getName() + " a <" + t + "> .")
-//				.reduce((a, b) -> a + "\n" + b)
-//				.orElse("");
+			String in = targetClass.stream()
+					.map(t -> "<" + t + ">")
+					.reduce((a, b) -> a + " , " + b)
+					.orElse("");
+
+			return "?" + object.getName() + " a ?typekokokopko.\n" +
+					"FILTER(?typekokokopko in (" + in + ")) \n";
+		}
 
 	}
 }
