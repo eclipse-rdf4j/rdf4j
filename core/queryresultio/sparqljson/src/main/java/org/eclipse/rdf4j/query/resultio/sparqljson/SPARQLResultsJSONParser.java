@@ -91,7 +91,7 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
 		Value subject = null, predicate = null, object = null;
 
-		while (subject == null || predicate == null || object == null) {
+		while (jp.nextToken() != JsonToken.END_OBJECT) {
 			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
 				throw new QueryResultParseException("Did not find triple attribute in triple value",
 						jp.getCurrentLocation().getLineNr(),
@@ -106,9 +106,6 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 							jp.getCurrentLocation().getColumnNr());
 				}
 				subject = parseValue(jp, fieldName + ":" + posName);
-				if (predicate == null || object == null) {
-					jp.nextToken();
-				}
 			} else if (PREDICATE.equals(posName) || PREDICATE_JENA.equals(posName)) {
 				if (predicate != null) {
 					throw new QueryResultParseException(
@@ -117,9 +114,6 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 							jp.getCurrentLocation().getColumnNr());
 				}
 				predicate = parseValue(jp, fieldName + ":" + posName);
-				if (subject == null || object == null) {
-					jp.nextToken();
-				}
 			} else if (OBJECT.equals(posName) || OBJECT_JENA.equals(posName)) {
 				if (object != null) {
 					throw new QueryResultParseException(
@@ -128,9 +122,9 @@ public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements
 							jp.getCurrentLocation().getColumnNr());
 				}
 				object = parseValue(jp, fieldName + ":" + posName);
-				if (predicate == null || subject == null) {
-					jp.nextToken();
-				}
+			} else if ("g".equals(posName)) {
+				// silently ignore named graph field in Stardog dialect
+				parseValue(jp, fieldName + ":" + posName);
 			} else {
 				throw new QueryResultParseException("Unexpected field name in triple value: " + posName,
 						jp.getCurrentLocation().getLineNr(),
