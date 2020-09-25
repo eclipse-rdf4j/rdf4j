@@ -24,6 +24,6 @@
  * by means of a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory}.
  * </p>
  *
- * @see <a href="https://rdf4j.eclipse.org/documentation/programming/model/">rdf4j model documentation</a>
+ * @see <a href="https://rdf4j.org/documentation/programming/model/">RDF4J model documentation</a>
  */
 package org.eclipse.rdf4j.model;
