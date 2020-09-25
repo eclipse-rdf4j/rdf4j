@@ -8,6 +8,6 @@
  * An important notion in a rdf4j repository is that of <strong>context</strong> . Within one repository, subsets of
  * statements can be identified by their context.
  *
- * @see <a href="https://rdf4j.eclipse.org/documentation/programming/repository/">rdf4j repository API documentation</a>
+ * @see <a href="https://rdf4j.org/documentation/programming/repository/">rdf4j repository API documentation</a>
  */
 package org.eclipse.rdf4j.repository;
