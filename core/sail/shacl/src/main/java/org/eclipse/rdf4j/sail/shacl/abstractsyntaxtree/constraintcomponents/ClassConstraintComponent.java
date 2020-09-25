@@ -72,6 +72,17 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
 
+				if (connectionsGroup.getStats().hasRemoved()) {
+					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
+							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+					deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+							.getTargetFilter(connectionsGroup, deletedTypes);
+					deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+							.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+					addedTargets = new UnionNode(addedTargets,
+							new TrimToTarget(new ShiftToPropertyShape(deletedTypes)));
+				}
+
 				addedTargets = new UnionNode(addedByPath, addedTargets);
 				addedTargets = new Unique(addedTargets);
 			}
@@ -102,6 +113,16 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right);
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
+
+				if (connectionsGroup.getStats().hasRemoved()) {
+					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
+							clazz, s -> new ValidationTuple(s.getSubject(), scope, false));
+					deletedTypes = getTargetChain().getEffectiveTarget("target_", scope)
+							.getTargetFilter(connectionsGroup, deletedTypes);
+					deletedTypes = getTargetChain().getEffectiveTarget("target_", scope)
+							.extend(deletedTypes, connectionsGroup, scope, EffectiveTarget.Extend.left);
+					addedTargets = new UnionNode(addedTargets, new TrimToTarget(deletedTypes));
+				}
 			}
 
 			// filter by type against the base sail
@@ -138,7 +159,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
 			}
 
-			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+			return new Unique(new Sort(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan))));
 		}
 
 		if (connectionsGroup.getStats().hasRemoved()) {

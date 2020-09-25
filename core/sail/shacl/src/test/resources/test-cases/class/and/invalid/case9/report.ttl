@@ -14,67 +14,67 @@
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:peter;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:peter;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:peter;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej215tu9x1
+      sh:sourceShape _:node1ej22ch4tx1
     ] .
 
-_:node1ej215tu9x1 a sh:PropertyShape;
+_:node1ej22ch4tx1 a sh:PropertyShape;
   sh:path ex:knows;
   sh:and [
       rdf:first [ a sh:NodeShape;
           sh:class ex:Person
         ];
-      rdf:rest (_:node1ej215tu9x5), (_:node1ej215tu9x5), (_:node1ej215tu9x5), (_:node1ej215tu9x5),
-        (_:node1ej215tu9x5), (_:node1ej215tu9x5), (_:node1ej215tu9x5), (_:node1ej215tu9x5)
+      rdf:rest (_:node1ej22ch4tx5), (_:node1ej22ch4tx5), (_:node1ej22ch4tx5), (_:node1ej22ch4tx5),
+        (_:node1ej22ch4tx5), (_:node1ej22ch4tx5), (_:node1ej22ch4tx5), (_:node1ej22ch4tx5)
     ] .
 
-_:node1ej215tu9x5 a sh:NodeShape;
+_:node1ej22ch4tx5 a sh:NodeShape;
   sh:class ex:Human .
