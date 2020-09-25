@@ -10,14 +10,14 @@ categories: ["news"]
 <div class="big-emoji">&#x1F680;</div>
 
 The release of [RDF4J 3.2.0](/release-notes/3.2.0/) introduced a large number
-of performance improvements to the framework. 
+of performance improvements to the framework.
 
 One major change was the introduction of a new `Model` implementation, the
 `DynamicModel`, and switching to this new model implementation throughout major parts
-of the code base. The advantage of the `DynamicModel` over other implementations is 
+of the code base. The advantage of the `DynamicModel` over other implementations is
 that it uses a very light-weight internal datastructure initially, only converting
 to a more heavily indexed form when necessary to answer particular queries. It
-can avoid this upgrade, however, for many use cases where we are adding or 
+can avoid this upgrade, however, for many use cases where we are adding or
 removing data, iterating over all data, or checking for the existence of a triple.
 <!--more-->
 
@@ -36,16 +36,16 @@ transaction levels. These changes were already introduced to the NativeStore in
 when using IsolationLevels.NONE.
 
 The Native Store has received three performance upgrades in the 3.2 release:
-predictive reads, dynamic caching and lower IO for transactions. 
+predictive reads, dynamic caching and lower IO for transactions.
 
 _Predictive reads_ are an improvement in how bytes are read from disk. Some of
 the native store data structures store many differently sized blocks of data in
 the same file.  We would then have to first read the size of the block, and
-then read the block (2 IOPS in total) in order to retrieve a block. Predictive 
-reading means that we instead perform a slightly bigger read (1 IOPS) hoping 
-to both read the size and the whole block. This is predictive since we have to 
+then read the block (2 IOPS in total) in order to retrieve a block. Predictive
+reading means that we instead perform a slightly bigger read (1 IOPS) hoping
+to both read the size and the whole block. This is predictive since we have to
 guess the size of the block based on other blocks we have read recently. Guessing
-correctly reduces IOPS by 50% while the cost of guessing wrong would still only 
+correctly reduces IOPS by 50% while the cost of guessing wrong would still only
 be 2 IOPS per block.
 
 _Dynamic caching_ is a technique where the native store uses a garbage
@@ -54,15 +54,15 @@ items will be removed if the application starts running low on memory.
 
 The _lowering of transaction IO_ has been achieved by various small improvements
 in the transaction handling process, including low-level caching of writes for
-the various native store files and reducing the IOPS for transaction state logging. 
-It gives us around a 15% higher transaction throughput for small transactions. 
+the various native store files and reducing the IOPS for transaction state logging.
+It gives us around a 15% higher transaction throughput for small transactions.
 
-Predictive reads and dynamic caching together make queries that read a lot of data up 
-to 72% faster. In our benchmarks we saw a 69% performance improvement for a 
-query that retrieve all distinct predicates, and nearly 72% for a query that retrieves 
-a large number of values and groups and aggregates them.  The dynamic caching 
-will help with all queries in general and adapts to the amount of available RAM.  
-Typically the dynamic cache uses around 2 GB of RAM for a NativeStore with 250 
+Predictive reads and dynamic caching together make queries that read a lot of data up
+to 72% faster. In our benchmarks we saw a 69% performance improvement for a
+query that retrieve all distinct predicates, and nearly 72% for a query that retrieves
+a large number of values and groups and aggregates them.  The dynamic caching
+will help with all queries in general and adapts to the amount of available RAM.
+Typically the dynamic cache uses around 2 GB of RAM for a NativeStore with 250
 million triples.
 
 All in all, these improvements mean that both the native store and the memory
