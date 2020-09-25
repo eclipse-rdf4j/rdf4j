@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -102,6 +103,17 @@ public class TurtleStarParserTest {
 			assertTrue(stmts.contains(vf.createStatement(bookTitleEn, DCTERMS.SOURCE, bobshomepage)));
 			assertTrue(stmts.contains(vf.createStatement(bookTitleDe, DCTERMS.SOURCE, bobshomepage)));
 			assertTrue(stmts.contains(vf.createStatement(bookTitleEnUs, DCTERMS.SOURCE, bobshomepage)));
+		}
+	}
+
+	@Test
+	public void testParseRDFStar_TurtleStarDisabled() throws IOException {
+		parser.getParserConfig().set(TurtleParserSettings.ACCEPT_TURTLESTAR, false);
+
+		try (InputStream in = this.getClass().getResourceAsStream("/test-rdfstar.ttls")) {
+			parser.parse(in, baseURI);
+		} catch (RDFParseException e) {
+			fail("parser setting should have no influence on TurtleStarParser handling of RDF* data");
 		}
 	}
 
