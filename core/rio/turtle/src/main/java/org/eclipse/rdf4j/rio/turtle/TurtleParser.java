@@ -104,6 +104,7 @@ public class TurtleParser extends AbstractRDFParser {
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
+		result.add(TurtleParserSettings.ACCEPT_TURTLESTAR);
 		return result;
 	}
 
@@ -568,6 +569,10 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted literal, integer, double and boolean.
 	 */
 	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
+		if (getParserConfig().get(TurtleParserSettings.ACCEPT_TURTLESTAR) && peekIsTripleValue()) {
+			return parseTripleValue();
+		}
+
 		int c = peekCodePoint();
 
 		if (c == '<') {
