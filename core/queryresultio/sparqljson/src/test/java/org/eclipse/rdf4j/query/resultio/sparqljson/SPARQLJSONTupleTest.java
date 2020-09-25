@@ -315,7 +315,7 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-rdf4j-incompletetriple.srj");
 		assertNotNull("Could not find test resource", stream);
 		assertThatThrownBy(() -> parser.parseQueryResult(stream)).isInstanceOf(QueryResultParseException.class)
-				.hasMessageContaining("Did not find triple attribute in triple value");
+				.hasMessageContaining("Incomplete or invalid triple value");
 	}
 
 	@Test
@@ -338,6 +338,25 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.setQueryResultHandler(handler);
 
 		InputStream stream = this.getClass().getResourceAsStream("/sparqljson/rdfstar-extendedformat-stardog.srj");
+		assertNotNull("Could not find test resource", stream);
+		parser.parseQueryResult(stream);
+
+		assertThat(handler.getBindingNames().size()).isEqualTo(3);
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
+		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
+		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
+		assertThat(a.getObject().stringValue()).isEqualTo("23");
+	}
+
+	@Test
+	public void testRDFStar_extendedFormatStardog_NamedGraph() throws Exception {
+		SPARQLResultsJSONParser parser = new SPARQLResultsJSONParser(SimpleValueFactory.getInstance());
+		QueryResultCollector handler = new QueryResultCollector();
+		parser.setQueryResultHandler(handler);
+
+		InputStream stream = this.getClass()
+				.getResourceAsStream("/sparqljson/rdfstar-extendedformat-stardog-namedgraph.srj");
 		assertNotNull("Could not find test resource", stream);
 		parser.parseQueryResult(stream);
 
