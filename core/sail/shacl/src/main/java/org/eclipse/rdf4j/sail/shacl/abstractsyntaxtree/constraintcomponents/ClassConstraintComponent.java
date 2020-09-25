@@ -18,11 +18,13 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 
@@ -65,7 +67,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, true);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
@@ -126,8 +128,28 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
+			if (connectionsGroup.getStats().hasRemoved()) {
+				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
+						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+				deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+						.getTargetFilter(connectionsGroup, deletedTypes);
+				deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+						.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+				allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
+			}
+
 			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 		}
+
+		if (connectionsGroup.getStats().hasRemoved()) {
+			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
+					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+			deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.getTargetFilter(connectionsGroup, deletedTypes);
+			return getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+		}
+
 		return new EmptyNode();
 	}
 }

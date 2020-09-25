@@ -44,12 +44,6 @@ public class ValidationTuple {
 		this(bindingSet, Arrays.asList(variables), scope, hasValue);
 	}
 
-	public ValidationTuple(Value target) {
-		chain = new ArrayDeque<>();
-		chain.addLast(target);
-
-	}
-
 	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
 			boolean hasValue) {
 		chain = new ArrayDeque<>();
@@ -200,7 +194,7 @@ public class ValidationTuple {
 
 	/**
 	 * This is only the target part. For property shape scope it will not include the value.
-	 * 
+	 *
 	 * @return
 	 */
 	public Collection<Value> getTargetChain() {
