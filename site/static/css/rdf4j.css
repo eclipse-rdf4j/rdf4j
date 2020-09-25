@@ -47,6 +47,10 @@ h4.doc-section-header {
   margin-bottom: 0px;
 }
 
+#TableOfContents ul {
+    padding-left: 1em;
+}
+
 .big-emoji {
   float: left;
   font-size: 9em;
@@ -79,3 +83,17 @@ pre code {
 pre {
   word-wrap: unset !important;
 }
+
+/* Auto Numbering */
+/* main {counter-reset: h1} */
+main {counter-reset: h2} 
+h2 {counter-reset: h3}
+h3 {counter-reset: h4}
+h4 {counter-reset: h5} 
+
+main[autonumbering] h2:before {counter-increment: h2; content: counter(h2) ". "}
+main[autonumbering] h3:before {counter-increment: h3; content: counter(h2) "." counter(h3) ". "}
+main[autonumbering] h4:before {counter-increment: h4; content: counter(h2) "." counter(h3) "." counter(h4) ". "}
+
+main[autonumbering] #TableOfContents ul { counter-reset: item }
+main[autonumbering] #TableOfContents li a:before { content: counters(item, ".") ". "; counter-increment: item }

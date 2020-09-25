@@ -2,6 +2,7 @@
 title: "The SAIL API"
 toc: true
 weight: 2
+autonumbering: true
 ---
 The SAIL (Storage And Inference Layer) API is a collection of interfaces designed for low-level transactional access to RDF data.
 <!--more-->
@@ -60,9 +61,9 @@ WARNING: this document is currently in draft, and incomplete. Feedback and sugge
 
 In the above diagram we see an overview of the two main interfaces: `Sail`, and `SailConnection`. The `Sail` interface is the main access point for RDF storage. Roughly speaking, this is "the database". Each `Sail` object is composed of zero or more `SailConnection` objects. This is where all the actual database access functionality is concentrated. `SailConnection` provides methods to execute queries, retrieve and modify triples, and manage transactions.
 
-## AbstractSail and AbstractSailConnection
+### AbstractSail and AbstractSailConnection
 
-rdf4j provides default (abstract) implementations for most of the SAIL functionality, which can be reused (and of course overridden) by any concrete implementation. 
+rdf4j provides default (abstract) implementations for most of the SAIL functionality, which can be reused (and of course overridden) by any concrete implementation.
 
 {{< gravizo "Abstract base implementations" >}}
   @startuml;
@@ -123,13 +124,13 @@ Similarly, the `AbstractSailConnection` provides base implementations of all met
 . (configurable) buffering of active changes in any transaction
 . ongoing compatibility: future rdf4j releases that introduce new functionality in `SailConnection` provide default implementations in `AbstractSailConnection`.
 
-The abstract base classes use the naming convention ``methodname**Internal**`` to indicate the methods that concrete subclasses should concentrate on implementing. The rationale is that the public method implementations in the abstract class implement basic concurrency handling and other book-keeping, and their corresponding (protected) `...Internal` methods can be implemented by the concrete subclass to provide the actual business logic of the method. 
+The abstract base classes use the naming convention ``methodname**Internal**`` to indicate the methods that concrete subclasses should concentrate on implementing. The rationale is that the public method implementations in the abstract class implement basic concurrency handling and other book-keeping, and their corresponding (protected) `...Internal` methods can be implemented by the concrete subclass to provide the actual business logic of the method.
 
 For example, the query method `AbstractSailConnection.getStatements()` provides a lot of book keeping: it ensures pending updates are flushed, acquires a read lock on the connection, verifies the connection is still open, and takes care of internally registering the resulting `Iteration` from the query for resource management and concurrency purposes. In between all of this, it calls `getStatementsInternal`. The only job of this method is to answer the query by retrieving the relevant data from the data source.
 
-## NotifyingSail and AbstractNotifyingSail
+### NotifyingSail and AbstractNotifyingSail
 
-The `NotifyingSail` and `NotifyingSailConnection` interfaces provide basic event handling for SAIL implementations. The main goal of these interfaces is to provide a messaging mechanism for closely-linked SAIL implementations (for example, a "Sail stack" where a reasoner is to be kept informed of changes to the underlying database). 
+The `NotifyingSail` and `NotifyingSailConnection` interfaces provide basic event handling for SAIL implementations. The main goal of these interfaces is to provide a messaging mechanism for closely-linked SAIL implementations (for example, a "Sail stack" where a reasoner is to be kept informed of changes to the underlying database).
 
 {{< gravizo "NotifyingSail interfaces" >}}
   @startuml;
@@ -173,12 +174,12 @@ The `NotifyingSail` and `NotifyingSailConnection` interfaces provide basic event
 
 As can be seen in this diagram, the `NotifyingSail` interface provides the option of registering one or more `SailChangedListener` implementations. When registered, the listener will be messaged via the `sailChanged` method. The contents of the message is a `SailChangedEvent` that provides basic info on what has been changed.
 
-More fine-grained event data is available at the Connection level. The `NotifyingSailConnection` allows registering a `SailConnectionListener`, which receives a message for each individual statement added or removed on the connection. 
+More fine-grained event data is available at the Connection level. The `NotifyingSailConnection` allows registering a `SailConnectionListener`, which receives a message for each individual statement added or removed on the connection.
 
-Rdf4j also provides base implementation classes for these two interfaces. These classes - `AbstractNotifyingSail` and `AbstractNotifyingSailConnection` - are extensions of the AbstractSail(Connection) classes that add 
+Rdf4j also provides base implementation classes for these two interfaces. These classes - `AbstractNotifyingSail` and `AbstractNotifyingSailConnection` - are extensions of the AbstractSail(Connection) classes that add
 default implementations of the methods defined in the NotifyingSail(Connection) interfaces.
 
-## Stacking SAILs
+### Stacking SAILs
 
 {{< gravizo "Stackable SAIL interface" >}}
   @startuml
@@ -194,13 +195,13 @@ default implementations of the methods defined in the NotifyingSail(Connection) 
 
 The SAIL API provides the `StackableSail` interface to allow SAIL implementations to "stack" on top of each other, providing a chain of responsility: each SAIL implementation in the stack implements a specific feature (reasoning, access control, data filtering, query expansion, etc. etc.). The last SAIL implementation in the stack is expected to _not_ implement `StackableSail`, and this Sail is responsible for the actual persistence of the data. rdf4j's `NativeStore` and `MemoryStore` are implementations of such a persistence SAIL, while the `SchemaCachingRDFSInferencer` (responsible for RDFS inferencing) and `LuceneSail` (responsible for full-text indexing) are examples of `StackableSail` implementations.
 
-# Querying
+## Querying
 
-The SAIL API has no knowledge of SPARQL queries. Instead, it operates on a query algebra, that is, an object representation of a (SPARQL) query as provided by the SPARQL query parser. 
+The SAIL API has no knowledge of SPARQL queries. Instead, it operates on a query algebra, that is, an object representation of a (SPARQL) query as provided by the SPARQL query parser.
 
-`SailConnection` has a single `evaluate()` method, which accepts a `org.eclipse.rdf4j.queryalgebra.model.TupleExpr` object. This is the object representation of the query as produced by the query parser. 
+`SailConnection` has a single `evaluate()` method, which accepts a `org.eclipse.rdf4j.queryalgebra.model.TupleExpr` object. This is the object representation of the query as produced by the query parser.
 
-# Transactions
+## Transactions
 
 TODO
 

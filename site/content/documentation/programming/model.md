@@ -2,11 +2,12 @@
 title: "The RDF Model API"
 weight: 2
 toc: true
+autonumbering: true
 ---
 The RDF Model API is the core of the RDF4J framework. It provides the basic building blocks for manipulating RDF data in Java.
 <!--more-->
 
-# RDF Building Blocks: IRIs, literals, blank nodes and statements
+## RDF Building Blocks: IRIs, literals, blank nodes and statements
 
 The core of the RDF4J framework is the RDF Model API (see the [Model API Javadoc](https://rdf4j.eclipse.org/javadoc/latest/index.html?org/eclipse/rdf4j/model/package-summary.html)), defined in package `org.eclipse.rdf4j.model`. This API defines how the building blocks of RDF (statements, IRIs, blank nodes, literals, and models) are represented.
 
@@ -40,7 +41,7 @@ The Model API also provides pre-defined IRIs for several well-known vocabularies
 Statement typeStatement = factory.createStatement(bob, RDF.TYPE, FOAF.PERSON);
 ```
 
-# The Model interface
+## The Model interface
 
 The above interfaces and classes show how we can create the individual building blocks that make up an RDF model. However, an actual collection of RDF data is just that: a collection. In order to deal with collections of RDF statements, we can use the {{< javadoc "org.eclipse.rdf4j.model.Model" "model/Model.html" >}} interface.
 
@@ -81,7 +82,7 @@ The `filter()` method returns a `Model` again. However, the `Model` returned by 
 
 Rdf4j provides two default implementations of the `Model` interface: {{< javadoc "org.eclipse.rdf4j.model.impl.LinkedHashModel" "model/impl/LinkedHashModel.html" >}}, and {{< javadoc "org.eclipse.rdf4j.model.impl.TreeModel" "model/impl/TreeModel.html" >}}. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.
 
-# Building RDF Models with the ModelBuilder
+## Building RDF Models with the ModelBuilder
 
 Since version 2.1, rdf4j provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} utility. The `ModelBuilder` provides a fluent API to quickly and efficiently create RDF models programmatically.
 
@@ -112,7 +113,7 @@ The `ModelBuilder` offers several conveniences:
 - you can add a literal object as a `String`, an `int`, or several other supported Java primitive types.
 - the `subject()` method makes it easier to take a resource-centric view when building an RDF Model.
 
-# Quickly accessing data with the Models utility
+## Quickly accessing data with the Models utility
 
 The {{< javadoc "Models" "model/util/Models.html" >}} utility class offers a number of useful methods for convenient access and manipulation of data in a `Model` object. We have already shown some examples of its use in previous sections. For example, to retrieve the value of the `foaf:name` properties for all resources of type `foaf:Person`:
 
@@ -127,7 +128,7 @@ The `Models.objectLiteral` method retrieves an arbitrary object literal value fr
 
 The `Models` utility provides variants for retrieving different types of object values: `Models.object()` retrieves a `Value`, `Models.objectResource()` a `Resource`, `Models.objectIRI()` an `IRI`.
 
-## Property-centric access
+### Property-centric access
 
 To provide quicker access to a property’s value(s), the `Models` class offers some further shortcuts that bypass the need to first filter the `Model`. For example, to retrieve the name literal, we can replace the `objectLiteral call from the previous example like so:
 
@@ -159,7 +160,7 @@ Models.setProperty(person, FOAF.NAME, newName);
 This will remove any existing name-properties for the given person, and set it to the single new value "John".
 
 
-# RDF Collections
+## RDF Collections
 
 To model closed lists of items, RDF provides a Collection vocabulary . RDF Collections are represented as a list of items using a Lisp-like structure. The list starts with a head resource (typically a blank node), which is connected to the first collection member via the rdf:first relation. The head resource is then connected to the rest of the list via an rdf:rest relation. The last resource in the list is marked using the rdf:nil node.
 
@@ -170,7 +171,7 @@ Here, the blank node `_:n1` is the head resource of the list. In this example it
 
 Working with this kind of structure directly is rather cumbersome. To make life a little easier, rdf4j provides several utilities to convert between Java Collections and RDF Collections.
 
-## Converting to/from Java Collections
+### Converting to/from Java Collections
 
 As an example, suppose we wish to add the above list of three string literals as a property value for the property `ex:favoriteLetters` of `ex:John` .
 
@@ -207,7 +208,7 @@ if(node != null) {
 }
 ```
 
-## Extracting, copying, or deleting an RDF Collection
+### Extracting, copying, or deleting an RDF Collection
 
 To extract an RDF Collection from the model which contains it, we can do the following:
 
@@ -241,7 +242,7 @@ RDFCollections.extract(aboutJohn, node, st -> aboutJohn.remove(st));
 aboutJohn.remove(john, favoriteLetters, node);
 ```
 
-# Working with rdf:Alt, rdf:Bag, rdf:Seq
+## Working with rdf:Alt, rdf:Bag, rdf:Seq
 
 (new since 3.3.0)
 

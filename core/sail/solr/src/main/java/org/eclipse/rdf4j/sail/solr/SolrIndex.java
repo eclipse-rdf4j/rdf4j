@@ -427,13 +427,12 @@ public class SolrIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
 			Var contextVar) throws MalformedQueryException, IOException {
 		String spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;
 		}
-		String wkt = toWkt(shape);
 		String qstr = "\"" + spatialOp + "(" + wkt + ")\"";
 		if (contextVar != null) {
 			Resource ctx = (Resource) contextVar.getValue();

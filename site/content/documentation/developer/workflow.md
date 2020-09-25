@@ -1,14 +1,15 @@
 ---
 title: "Developer workflow and project management"
 layout: "doc"
-hide_page_title: "true"
+toc: true
+autonumbering: true
 ---
 
 In this document the Eclipse RDF4J project workflow and developer best practices are explained. It contains information on how to create branches, tag releases, manage pull requests, create and schedule issues, and so on.
 <!--more-->
 Some of this information is targeted specifically at the project lead(s), other information is relevant to every committer.
 
-# Semantic Versioning
+## Semantic Versioning
 
 RDF4J strives to apply [Semantic Versioning](http://www.semver.org/) principles to its development:
 
@@ -29,7 +30,7 @@ For patch releases we never allow changes in the public API, unless the change i
 
 The main branches (`master` and `develop`) use a SNAPSHOT version number to indicate that they are snapshots on the road to the next version. The `master` version always has the same major and minor number as the latest release, with the patch version incremented by one: for example if the latest release was 3.1.0, the master version will be 3.1.1-SNAPSHOT. The `develop` version uses the next expected major/minor release number, for example 3.2.0-SNAPSHOT.
 
-# Workflow
+## Workflow
 
 Every issue, no matter how small, gets its own [issue
 ticket](https://github.com/eclipse/rdf4j/issues), and its own branch while
@@ -44,7 +45,7 @@ For example: `GH-1664-transformation-servlet` is the branch for a fix for issue
 RDF4J uses a git branching model where collaborative feature development takes
 place on branches from the `develop` branch. This is where all development for
 the next (minor or major) release happens. The `master` branch is reserved for
-small bug fixes (to be released in patch/service releases) only. 
+small bug fixes (to be released in patch/service releases) only.
 
 Once a issue is complete and tested, a *Pull Request* (PR) should be created
 for peer review. Like the feature branch to which it corresponds, a Pull
@@ -66,7 +67,7 @@ RDF4J uses 'squash and merge' as its pull request merge strategy, to preserve a
 clean history. Read more about our strategy and the motivation for in this
 article: [RDF4J merge strategy](/documentation/developer/merge-strategy/).
 
-## Patch Requests
+### Patch Requests
 
 If the change is a bug fix, contains no new features, and does not change any public or protected APIs:
 
@@ -84,7 +85,7 @@ If the change is a bug fix, contains no new features, and does not change any pu
 then be merged into the `develop` branch by the project committer that merged the PR,
 any conflicts (such as due to new features) should be resolved. This merge should happen using a merge-commit.
 
-## Feature Requests
+### Feature Requests
 
 Pull Requests that add a self-contained new feature to the public API follow
 the same steps as a Patch Request but should target the `develop` branch.
@@ -106,7 +107,7 @@ release plan that incorporates these changes and any required documentation is
 in place.  The comment section in the PR can be used to keep everyone informed
 of the progress.
 
-# Further reading
+## Further reading
 
 Some generic sources of information about projects hosted by Eclipse:
 
