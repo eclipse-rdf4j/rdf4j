@@ -80,7 +80,7 @@ abstract public class AbstractShaclTest {
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
 
-/*		"test-cases/and-or/datatypeNodeShape",
+		"test-cases/and-or/datatypeNodeShape",
 //		"test-cases/class/allObjects",
 //		"test-cases/class/allSubjects",
 		"test-cases/class/and",
@@ -208,14 +208,14 @@ abstract public class AbstractShaclTest {
 		"test-cases/languageIn/subtags",
 		"test-cases/languageIn/subtags2",
 //		"test-cases/hasValueIn/targetNode2",
-		"test-cases/hasValue/or"
+		"test-cases/hasValue/or",
 //		"test-cases/hasValue/targetShapeOr",
 //		"test-cases/hasValue/targetShapeAnd",
 //		"test-cases/hasValue/targetShapeAnd2",
 //		"test-cases/hasValue/targetShapeAndOr",
 //		"test-cases/hasValue/targetShapeAndOr2",
 //		"test-cases/hasValueIn/targetShapeOr",
-//		"test-cases/hasValueIn/or"*/
+//		"test-cases/hasValueIn/or"
 				"test-cases/class/simpleNested"
 
 	)

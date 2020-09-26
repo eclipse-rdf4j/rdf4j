@@ -72,6 +72,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
 
+				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
