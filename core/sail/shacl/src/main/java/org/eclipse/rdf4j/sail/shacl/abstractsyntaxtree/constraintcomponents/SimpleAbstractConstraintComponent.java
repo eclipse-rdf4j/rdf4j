@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -118,7 +117,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, Var value, boolean negated) {
 
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
-		String query = effectiveTarget.getQuery();
+		String query = effectiveTarget.getQuery(false);
 
 		Var targetVar = effectiveTarget.getTargetVar();
 
@@ -152,13 +151,14 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			if (scope == Scope.nodeShape) {
 				planNode = overrideTargetNode.getPlanNode();
-				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope, EffectiveTarget.Extend.right);
+				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope, EffectiveTarget.Extend.right,
+						false);
 
 			} else {
 				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
 						"SimpleAbstractConstraintComponent");
 
-				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right);
+				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right, false);
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
@@ -221,6 +221,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
 			PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup, discardedRight);
+			discardedRight = new DebugPlanNode(discardedRight, "", p -> {
+				System.out.println(p);
+			});
+
+			typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup, scope,
+					EffectiveTarget.Extend.left, true);
 
 			top = new UnionNode(top, typeFilterPlan);
 

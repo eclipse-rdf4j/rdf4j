@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -59,15 +60,20 @@ public class EffectiveTarget {
 	// If the target chain is [type foaf:Person / foaf:knows ] and [ex:Peter] is in the source, this will effectively
 	// retrieve all "ex:Peter foaf:knows ?extension"
 	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			Extend direction) {
+			Extend direction, boolean includePropertyShapeValues) {
 
-		String query = getQuery();
+		String query = getQuery(includePropertyShapeValues);
 		List<Var> vars = getVars();
+		if (includePropertyShapeValues) {
+			vars = new ArrayList<>(vars);
+			vars.add(optional.var);
+		}
+
 		List<String> varNames = vars.stream().map(Var::getName).collect(Collectors.toList());
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
-			return new ValidationTuple(bindingSet, varNames, scope, false);
-		}, 100, direction);
+			return new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
+		}, 100, direction, includePropertyShapeValues);
 	}
 
 	private List<Var> getVars() {
@@ -180,7 +186,16 @@ public class EffectiveTarget {
 						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
-	public String getQuery() {
+	public String getQuery(boolean includeOptional) {
+
+		ArrayDeque<EffectiveTargetObject> chain;
+
+		if (includeOptional) {
+			chain = new ArrayDeque<>(this.chain);
+			chain.addLast(optional);
+		} else {
+			chain = this.chain;
+		}
 
 		return chain.stream()
 				.map(EffectiveTargetObject::getQueryFragment)

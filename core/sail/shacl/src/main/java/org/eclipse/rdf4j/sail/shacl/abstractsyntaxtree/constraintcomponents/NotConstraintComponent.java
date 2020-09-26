@@ -102,11 +102,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			if (scope == Scope.propertyShape) {
 				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
-								EffectiveTarget.Extend.right);
+								EffectiveTarget.Extend.right, false);
 				allTargetsPlan = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 			} else {
 				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", scope)
-						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right);
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+								false);
 			}
 
 		} else {

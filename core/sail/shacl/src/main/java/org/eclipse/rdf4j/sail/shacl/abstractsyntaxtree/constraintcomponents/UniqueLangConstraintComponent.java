@@ -81,7 +81,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix) {
 
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
-		String query = effectiveTarget.getQuery();
+		String query = effectiveTarget.getQuery(false);
 
 		Var targetVar = effectiveTarget.getTargetVar();
 
@@ -120,7 +120,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 
 			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
-					EffectiveTarget.Extend.right);
+					EffectiveTarget.Extend.right, false);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
@@ -152,7 +152,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
 
-		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left);
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 

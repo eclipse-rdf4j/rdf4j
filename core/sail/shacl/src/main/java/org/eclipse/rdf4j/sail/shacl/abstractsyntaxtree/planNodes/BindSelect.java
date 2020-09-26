@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,17 +55,20 @@ public class BindSelect implements PlanNode {
 	private final int bulkSize;
 	private final PlanNode source;
 	private final EffectiveTarget.Extend direction;
+	private final boolean includePropertyShapeValues;
+	private final StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BindSelect(SailConnection connection, String query, List<Var> vars, PlanNode source,
-			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction) {
+			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction,
+			boolean includePropertyShapeValues) {
 		this.connection = connection;
 		this.mapper = mapper;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
 		source = PlanNodeHelper.handleSorting(this, source);
-		this.source = new TrimToTarget(source);
+		this.source = source;
 
 		if (query.trim().equals("")) {
 			throw new IllegalStateException();
@@ -72,6 +76,8 @@ public class BindSelect implements PlanNode {
 
 		this.query = query;
 		this.direction = direction;
+		this.includePropertyShapeValues = includePropertyShapeValues;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
 
@@ -126,9 +132,20 @@ public class BindSelect implements PlanNode {
 
 				ValidationTuple next = iterator.next();
 
+				if (includePropertyShapeValues) {
+					assert next.getScope() == ConstraintComponent.Scope.propertyShape;
+					assert next.hasValue();
+				}
+
 				bulk.add(next);
 
-				int targetChainSize = next.getTargetChain().size();
+				int targetChainSize;
+				if (includePropertyShapeValues) {
+					targetChainSize = next.getFullChainSize();
+				} else {
+					targetChainSize = next.getTargetChain(includePropertyShapeValues).size();
+				}
+
 				if (this.targetChainSize != null) {
 					assert targetChainSize == this.targetChainSize;
 				} else {
@@ -191,7 +208,8 @@ public class BindSelect implements PlanNode {
 
 					List<BindingSet> bindingSets = bulk
 							.stream()
-							.map(t -> new ListBindingSet(varNames, new ArrayList<>(t.getTargetChain())))
+							.map(t -> new ListBindingSet(varNames,
+									new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
 							.collect(Collectors.toList());
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);

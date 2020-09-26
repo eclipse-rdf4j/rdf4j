@@ -196,10 +196,11 @@ public class ValidationTuple {
 	 * This is only the target part. For property shape scope it will not include the value.
 	 *
 	 * @return
+	 * @param includePropertyShapeValues
 	 */
-	public Collection<Value> getTargetChain() {
+	public Collection<Value> getTargetChain(boolean includePropertyShapeValues) {
 
-		if (scope == ConstraintComponent.Scope.propertyShape && hasValue()) {
+		if (scope == ConstraintComponent.Scope.propertyShape && hasValue() && !includePropertyShapeValues) {
 			return chain.stream().limit(chain.size() - 1).collect(Collectors.toList());
 		}
 

@@ -56,7 +56,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope)
-					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right);
+					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+							false);
 		}
 
 		target = new Unique(new TrimToTarget(target));

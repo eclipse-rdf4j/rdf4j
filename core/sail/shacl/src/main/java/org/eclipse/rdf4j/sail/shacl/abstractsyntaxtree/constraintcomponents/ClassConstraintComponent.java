@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
@@ -64,7 +63,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
+						false);
 
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
@@ -78,7 +78,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 							.getTargetFilter(connectionsGroup, deletedTypes);
 					deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
-							.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+							.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left,
+									false);
 					addedTargets = new UnionNode(addedTargets,
 							new TrimToTarget(new ShiftToPropertyShape(deletedTypes)));
 				}
@@ -110,7 +111,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
+						false);
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
 
@@ -120,7 +122,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					deletedTypes = getTargetChain().getEffectiveTarget("target_", scope)
 							.getTargetFilter(connectionsGroup, deletedTypes);
 					deletedTypes = getTargetChain().getEffectiveTarget("target_", scope)
-							.extend(deletedTypes, connectionsGroup, scope, EffectiveTarget.Extend.left);
+							.extend(deletedTypes, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 					addedTargets = new UnionNode(addedTargets, new TrimToTarget(deletedTypes));
 				}
 			}
@@ -155,7 +157,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 						.getTargetFilter(connectionsGroup, deletedTypes);
 				deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
-						.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+						.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
 				allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
 			}
 
@@ -168,7 +170,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.getTargetFilter(connectionsGroup, deletedTypes);
 			return getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
-					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left);
+					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
 		}
 
 		return new EmptyNode();
