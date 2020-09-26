@@ -9,43 +9,43 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode _:node1ej57jhfux6;
-      sh:value _:genid-a3489dfe0e184117a228a24a51403545-b1;
+      sh:focusNode _:node1ej587q87x6;
+      sh:value _:genid-c6e7050a175547e2bd6f81c0bc7645c9-b1;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej57jhfux1
+      sh:sourceShape _:node1ej587q87x1
     ], [ a sh:ValidationResult;
-      sh:focusNode _:node1ej57jhfux6;
-      sh:value _:genid-a3489dfe0e184117a228a24a51403545-b1;
+      sh:focusNode _:node1ej587q87x6;
+      sh:value _:genid-c6e7050a175547e2bd6f81c0bc7645c9-b1;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej57jhfux1
+      sh:sourceShape _:node1ej587q87x1
     ], [ a sh:ValidationResult;
-      sh:focusNode _:node1ej57jhfux6;
-      sh:value _:genid-a3489dfe0e184117a228a24a51403545-b1;
+      sh:focusNode _:node1ej587q87x6;
+      sh:value _:genid-c6e7050a175547e2bd6f81c0bc7645c9-b1;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej57jhfux1
+      sh:sourceShape _:node1ej587q87x1
     ], [ a sh:ValidationResult;
-      sh:focusNode _:node1ej57jhfux6;
-      sh:value _:genid-a3489dfe0e184117a228a24a51403545-b1;
+      sh:focusNode _:node1ej587q87x6;
+      sh:value _:genid-c6e7050a175547e2bd6f81c0bc7645c9-b1;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej57jhfux1
+      sh:sourceShape _:node1ej587q87x1
     ] .
 
-_:node1ej57jhfux1 a sh:PropertyShape;
+_:node1ej587q87x1 a sh:PropertyShape;
   sh:path ex:knows;
   sh:and [
       rdf:first [ a sh:NodeShape;
           sh:class ex:Person
         ];
-      rdf:rest (_:node1ej57jhfux5), (_:node1ej57jhfux5), (_:node1ej57jhfux5), (_:node1ej57jhfux5)
+      rdf:rest (_:node1ej587q87x5), (_:node1ej587q87x5), (_:node1ej587q87x5), (_:node1ej587q87x5)
     ] .
 
-_:node1ej57jhfux5 a sh:NodeShape;
+_:node1ej587q87x5 a sh:NodeShape;
   sh:class ex:Human .

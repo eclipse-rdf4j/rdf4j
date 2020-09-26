@@ -73,11 +73,11 @@ public class TargetObjectsOf extends Target {
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		String tempPredicate = "?" + UUID.randomUUID().toString().replace("-", "");
+		String tempVar = "?" + UUID.randomUUID().toString().replace("-", "");
 
 		return targetObjectsOf.stream()
-				.map(target -> "\n{ BIND(<" + target + "> as " + tempPredicate + ") \n " + objectVariable + " "
-						+ tempPredicate + " " + subjectVariable
+				.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ") \n " + objectVariable + " "
+						+ tempVar + " " + subjectVariable
 						+ ". } \n")
 				.reduce((a, b) -> a + " UNION " + b)
 				.get();
@@ -106,11 +106,26 @@ public class TargetObjectsOf extends Target {
 	public String getTargetQueryFragment(Var subject, Var object) {
 		assert (subject == null);
 
-		String tempPredicate = "?" + UUID.randomUUID().toString().replace("-", "");
+		String tempVar = "?" + UUID.randomUUID().toString().replace("-", "");
 
-		return targetObjectsOf.stream()
-				.map(t -> tempPredicate + " <" + t + "> ?" + object.getName() + " .")
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+		if (targetObjectsOf.size() == 1) {
+
+			return targetObjectsOf.stream()
+					.map(t -> tempVar + " <" + t + "> ?" + object.getName() + " .")
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+
+		} else {
+
+			String in = targetObjectsOf.stream()
+					.map(t -> "<" + t + ">")
+					.reduce((a, b) -> a + " , " + b)
+					.orElse("");
+
+			return tempVar + " ?predicatefjhfuewhw ?" + object.getName() + " .\n" +
+					"FILTER(?predicatefjhfuewhw in (" + in + ")) \n";
+		}
+
 	}
+
 }
