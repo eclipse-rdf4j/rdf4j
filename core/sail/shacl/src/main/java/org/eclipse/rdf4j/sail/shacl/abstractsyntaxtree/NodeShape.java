@@ -134,8 +134,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren, Scope scope) {
+			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			Scope scope) {
 
 		if (isDeactivated()) {
 			return new EmptyNode();
@@ -146,7 +146,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
-							negatePlan, false,
 							Scope.nodeShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
@@ -196,10 +195,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.nodeShape))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.nodeShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
@@ -210,7 +209,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 
-		if (scope != Scope.nodeShape) {
+		if (scope == Scope.propertyShape) {
 			planNode = new ShiftToPropertyShape(planNode);
 		}
 

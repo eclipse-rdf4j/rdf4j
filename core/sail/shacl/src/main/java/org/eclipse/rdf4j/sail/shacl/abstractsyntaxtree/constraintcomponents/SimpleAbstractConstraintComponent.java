@@ -64,14 +64,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren, Scope scope) {
+			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			Scope scope) {
 
 		return generateTransactionalValidationPlan(
 				connectionsGroup,
 				overrideTargetNode,
-				negatePlan,
-				negateChildren,
 				getFilterAttacher(),
 				scope
 		);
@@ -141,9 +139,10 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	abstract String getSparqlFilterExpression(String varName, boolean negated);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, PlanNodeProvider overrideTargetNode,
-			boolean negatePlan, boolean negateChildren, Function<PlanNode, FilterPlanNode> filterAttacher,
+			Function<PlanNode, FilterPlanNode> filterAttacher,
 			Scope scope) {
-		assert !negateChildren : "Node does not have children";
+
+		boolean negatePlan = false;
 
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -188,11 +187,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
 			} else {
 
-				PlanNode falseNode = filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
-				falseNode = new DebugPlanNode(falseNode, p -> {
-					assert p != null;
-				});
-				return falseNode;
+				return filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
 			}
 
 		}
@@ -294,7 +289,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())

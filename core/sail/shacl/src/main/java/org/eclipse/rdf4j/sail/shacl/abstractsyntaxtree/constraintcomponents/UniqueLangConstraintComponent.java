@@ -108,9 +108,9 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
-		assert !negateChildren : "There are no subplans!";
-		assert !negatePlan;
+			PlanNodeProvider overrideTargetNode, Scope scope) {
+//		assert !negateChildren : "There are no subplans!";
+//		assert !negatePlan;
 
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -188,7 +188,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())

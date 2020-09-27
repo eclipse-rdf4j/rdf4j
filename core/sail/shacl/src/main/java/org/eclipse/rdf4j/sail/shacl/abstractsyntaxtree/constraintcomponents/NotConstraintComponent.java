@@ -75,7 +75,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		// if (scope == Scope.nodeShape) {
 
@@ -83,15 +83,13 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, negatePlan, scope);
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, scope);
 		}
 
 		PlanNode planNode = not.generateTransactionalValidationPlan(
 				connectionsGroup,
 				logValidationPlans,
 				planNodeProvider,
-				negateChildren,
-				false,
 				scope
 		);
 
@@ -151,7 +149,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	 */
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
@@ -167,7 +165,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		}
 
-		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, negated, scope);
+		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, scope);
 
 		return new Unique(new UnionNode(allTargets, notTargets));
 	}

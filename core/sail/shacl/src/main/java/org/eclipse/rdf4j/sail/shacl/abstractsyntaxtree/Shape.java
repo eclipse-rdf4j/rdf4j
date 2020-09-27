@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -15,6 +16,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -46,7 +48,10 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.OrCo
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.PatternConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.XoneConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetClass;
@@ -301,13 +306,16 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 										connectionsGroup.getRdfsSubClassOfReasoner())
 								.getAllTargets(connectionsGroup,
 										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape),
-						false,
-						false, Scope.none);
+						Scope.none);
 			}
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
-			return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null, false,
-					false, Scope.none);
+			if (this.requiresEvaluation(connectionsGroup, Scope.none)) {
+				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null,
+						Scope.none);
+			} else
+				return new EmptyNode();
+
 		} else {
 			throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
 		}
@@ -325,6 +333,15 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	public boolean isDeactivated() {
 		return deactivated;
+	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
+		allTargetsPlan.receiveLogger(new ValidationExecutionLogger());
+		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = allTargetsPlan.iterator()) {
+			return iterator.hasNext();
+		}
 	}
 
 	public static class Factory {

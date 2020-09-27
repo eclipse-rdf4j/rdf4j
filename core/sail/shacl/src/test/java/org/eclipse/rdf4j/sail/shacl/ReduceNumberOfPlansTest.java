@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.junit.Test;
 
@@ -44,6 +45,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect = shaclSail.getShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 
 				assertEquals(0, collect.size());
@@ -56,6 +58,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 				assertEquals(2, collect2.size());
 
@@ -100,6 +103,7 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect1 = shaclSail.getShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 				assertEquals(1, collect1.size());
 
@@ -113,6 +117,8 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
+
 						.collect(Collectors.toList());
 				assertEquals(1, collect2.size());
 			}
@@ -123,6 +129,8 @@ public class ReduceNumberOfPlansTest {
 				List<PlanNode> collect3 = shaclSail.getShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
+
 						.collect(Collectors.toList());
 				assertEquals(2, collect3.size());
 			}
@@ -134,7 +142,7 @@ public class ReduceNumberOfPlansTest {
 
 	private void refreshAddedRemovedStatements(ShaclSailConnection connection) {
 
-		connection.fillAddedAndRemovedStatementRepositories();
+		connection.prepareValidation();
 
 	}
 

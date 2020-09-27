@@ -153,8 +153,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren, Scope scope) {
+			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			Scope scope) {
 
 		if (isDeactivated()) {
 			return new EmptyNode();
@@ -190,8 +190,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
-							negateChildren,
-							false, Scope.propertyShape);
+							Scope.propertyShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
 //				System.out.println(constraintComponent);
@@ -223,9 +222,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, Scope.propertyShape))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.propertyShape))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 

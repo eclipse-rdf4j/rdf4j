@@ -354,7 +354,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 	}
 
-	private void prepareValidation() {
+	void prepareValidation() {
 
 		if (!isValidationEnabled()) {
 			return;

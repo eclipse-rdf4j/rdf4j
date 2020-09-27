@@ -85,11 +85,11 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		PlanNode planNode = and.stream()
 				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
-						overrideTargetNode, negatePlan, negateChildren, scope))
+						overrideTargetNode, scope))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
@@ -102,9 +102,9 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode planNode = and.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, negated, scope))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, scope))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 

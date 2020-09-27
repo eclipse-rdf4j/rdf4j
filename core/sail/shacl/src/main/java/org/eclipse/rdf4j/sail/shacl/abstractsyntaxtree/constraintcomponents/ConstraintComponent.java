@@ -16,16 +16,18 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 			boolean negatePlan, boolean negateChildren, Scope scope);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode, boolean negatePlan,
-			boolean negateChildren, Scope scope);
+			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			Scope scope);
 
 	ValidationApproach getPreferedValidationApproach();
 
 	Set<ValidationApproach> getSupportedValidationApproaches();
 
+	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope);
+
 	SourceConstraintComponent getConstraintComponent();
 
-	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope);
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
 
 	enum Scope {
 		none,

@@ -43,7 +43,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		PlanNode target = getTargetChain()
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -80,7 +80,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		return new EmptyNode();
 	}
 

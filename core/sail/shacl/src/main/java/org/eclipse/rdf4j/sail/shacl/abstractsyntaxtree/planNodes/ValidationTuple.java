@@ -129,13 +129,13 @@ public class ValidationTuple {
 
 	public Value getActiveTarget() {
 		assert scope != null;
-		if ((!propertyShapeScopeWithValue && scope == ConstraintComponent.Scope.propertyShape)
-				|| scope == ConstraintComponent.Scope.nodeShape) {
+		if (!propertyShapeScopeWithValue || scope != ConstraintComponent.Scope.propertyShape) {
 			return chain.getLast();
 		}
 
-		assert propertyShapeScopeWithValue;
-		assert scope == ConstraintComponent.Scope.propertyShape;
+		if (chain.size() < 2) {
+			throw new AssertionError(chain.size());
+		}
 
 		Value value = chain.removeLast();
 		Value last = chain.getLast();

@@ -91,7 +91,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 		// if (scope == Scope.nodeShape) {
 
 		PlanNodeProvider planNodeProvider;
@@ -99,7 +99,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, negatePlan, scope), "",
+			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, scope), "",
 					p -> {
 						assert p != null;
 					});
@@ -110,8 +110,6 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						connectionsGroup,
 						logValidationPlans,
 						planNodeProvider,
-						negateChildren,
-						false,
 						scope
 				)
 				)
@@ -133,7 +131,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
@@ -150,7 +148,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		PlanNode planNode = or.stream()
-				.map(or -> or.getAllTargetsPlan(connectionsGroup, negated, scope))
+				.map(or -> or.getAllTargetsPlan(connectionsGroup, scope))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
