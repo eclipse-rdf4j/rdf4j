@@ -58,7 +58,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		String targetVarPrefix = "target_";
 
-		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix);
+		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix, connectionsGroup);
 
 		String query = complexQueryFragment.getQuery();
 
@@ -78,19 +78,22 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
-	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix) {
+	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, ConnectionsGroup connectionsGroup) {
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, Scope.propertyShape,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
 		Var targetVar = effectiveTarget.getTargetVar();
 
 		String pathQuery1 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value1")))
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value1"),
+						connectionsGroup.getRdfsSubClassOfReasoner()))
 				.get();
 
 		String pathQuery2 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value2")))
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value2"),
+						connectionsGroup.getRdfsSubClassOfReasoner()))
 				.get();
 
 		query += "\n FILTER(EXISTS{" +
@@ -110,7 +113,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		assert !negateChildren : "There are no subplans!";
 		assert !negatePlan;
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape);
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 		Optional<Path> path = getTargetChain().getPath();
 
 		if (!path.isPresent() || scope != Scope.propertyShape) {
@@ -125,7 +129,9 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
 					connectionsGroup.getBaseConnection(),
-					path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
+					path.get()
+							.getTargetQueryFragment(new Var("a"), new Var("c"),
+									connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -166,7 +172,9 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
 				connectionsGroup.getBaseConnection(),
-				path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
+				path.get()
+						.getTargetQueryFragment(new Var("a"), new Var("c"),
+								connectionsGroup.getRdfsSubClassOfReasoner()),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -183,7 +191,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));

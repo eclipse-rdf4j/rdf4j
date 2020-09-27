@@ -90,7 +90,8 @@ public class TargetObjectsOf extends Target {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		return targetObjectsOf.stream()
@@ -103,7 +104,7 @@ public class TargetObjectsOf extends Target {
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		String tempVar = "?" + UUID.randomUUID().toString().replace("-", "");

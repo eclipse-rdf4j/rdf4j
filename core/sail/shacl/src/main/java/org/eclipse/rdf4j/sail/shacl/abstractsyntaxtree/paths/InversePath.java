@@ -11,11 +11,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
@@ -53,14 +55,15 @@ public class InversePath extends Path {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		return Stream.of(new StatementPattern(object, new Var(inversePath.getId()), subject));
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
-		return inversePath.getTargetQueryFragment(object, subject);
+		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner);
 
 	}
 }

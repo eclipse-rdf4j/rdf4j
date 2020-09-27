@@ -9,6 +9,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -23,8 +24,10 @@ public class EffectiveTarget {
 
 	private final ArrayDeque<EffectiveTargetObject> chain;
 	private final EffectiveTargetObject optional;
+	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 
-	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional, String targetVarPrefix) {
+	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional, String targetVarPrefix,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		int index = 0;
 
 		this.chain = new ArrayDeque<>();
@@ -35,7 +38,8 @@ public class EffectiveTarget {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
 					new Var(targetVarPrefix + String.format("%010d", index++)),
 					targetable,
-					previous
+					previous,
+					rdfsSubClassOfReasoner
 			);
 			previous = effectiveTargetObject;
 			this.chain.addLast(effectiveTargetObject);
@@ -45,11 +49,14 @@ public class EffectiveTarget {
 			this.optional = new EffectiveTargetObject(
 					new Var(targetVarPrefix + String.format("%010d", index)),
 					optional,
-					previous
+					previous,
+					rdfsSubClassOfReasoner
 			);
 		} else {
 			this.optional = null;
 		}
+
+		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 	}
 
 	public Var getTargetVar() {
@@ -73,7 +80,7 @@ public class EffectiveTarget {
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
 			return new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
-		}, 100, direction, includePropertyShapeValues);
+		}, 100, direction, includePropertyShapeValues, rdfsSubClassOfReasoner);
 	}
 
 	private List<Var> getVars() {
@@ -85,26 +92,29 @@ public class EffectiveTarget {
 		final Var var;
 		final Targetable target;
 		final EffectiveTargetObject prev;
+		final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 
-		public EffectiveTargetObject(Var var, Targetable target, EffectiveTargetObject prev) {
+		public EffectiveTargetObject(Var var, Targetable target, EffectiveTargetObject prev,
+				RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 			this.var = var;
 			this.target = target;
 			this.prev = prev;
+			this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 		}
 
 		public Stream<StatementPattern> getStatementPatterns() {
 			if (prev == null) {
-				return target.getStatementPatterns(null, var);
+				return target.getStatementPatterns(null, var, rdfsSubClassOfReasoner);
 			} else {
-				return target.getStatementPatterns(prev.var, var);
+				return target.getStatementPatterns(prev.var, var, rdfsSubClassOfReasoner);
 			}
 		}
 
 		public String getQueryFragment() {
 			if (prev == null) {
-				return target.getTargetQueryFragment(null, var);
+				return target.getTargetQueryFragment(null, var, rdfsSubClassOfReasoner);
 			} else {
-				return target.getTargetQueryFragment(prev.var, var);
+				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
 			}
 		}
 	}

@@ -37,6 +37,11 @@ public class DebugPlanNode implements PlanNode {
 
 	}
 
+	public DebugPlanNode(PlanNode parent, Consumer<ValidationTuple> debugPoint) {
+		this(parent, (String) null);
+		this.debugPoint = debugPoint;
+	}
+
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
@@ -60,7 +65,9 @@ public class DebugPlanNode implements PlanNode {
 					debugPoint.accept(next);
 				}
 
-				validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
+				if (message != null) {
+					validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
+				}
 				return next;
 			}
 

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.slf4j.Logger;
@@ -57,12 +58,13 @@ public class BindSelect implements PlanNode {
 	private final EffectiveTarget.Extend direction;
 	private final boolean includePropertyShapeValues;
 	private final StackTraceElement[] stackTrace;
+	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BindSelect(SailConnection connection, String query, List<Var> vars, PlanNode source,
 			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction,
-			boolean includePropertyShapeValues) {
+			boolean includePropertyShapeValues, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		this.connection = connection;
 		this.mapper = mapper;
 		this.vars = vars;
@@ -78,6 +80,7 @@ public class BindSelect implements PlanNode {
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
 		this.stackTrace = Thread.currentThread().getStackTrace();
+		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 
 	}
 
@@ -140,7 +143,7 @@ public class BindSelect implements PlanNode {
 				bulk.add(next);
 
 				int targetChainSize;
-				if (includePropertyShapeValues) {
+				if (includePropertyShapeValues || next.getScope() == ConstraintComponent.Scope.nodeShape) {
 					targetChainSize = next.getFullChainSize();
 				} else {
 					targetChainSize = next.getTargetChain(includePropertyShapeValues).size();

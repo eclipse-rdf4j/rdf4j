@@ -45,7 +45,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 
-		PlanNode target = getTargetChain().getEffectiveTarget("_target", scope)
+		PlanNode target = getTargetChain()
+				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);
 
 		System.out.println(getTargetChain().getChain().stream().findFirst().get());
@@ -55,7 +56,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		});
 
 		if (overrideTargetNode != null) {
-			target = getTargetChain().getEffectiveTarget("_target", scope)
+			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
 							false);
 		}
@@ -65,7 +66,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 				target,
 				connectionsGroup.getBaseConnection(),
-				getTargetChain().getPath().get().getTargetQueryFragment(new Var("a"), new Var("c")),
+				getTargetChain().getPath()
+						.get()
+						.getTargetQueryFragment(new Var("a"), new Var("c"),
+								connectionsGroup.getRdfsSubClassOfReasoner()),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)

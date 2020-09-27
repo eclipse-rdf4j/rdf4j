@@ -195,8 +195,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new UnionNode(planNode, getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
-				.getPlanNode(connectionsGroup, Scope.nodeShape, true));
+		planNode = new UnionNode(planNode,
+				getTargetChain()
+						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getPlanNode(connectionsGroup, Scope.nodeShape, true));
 
 		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 

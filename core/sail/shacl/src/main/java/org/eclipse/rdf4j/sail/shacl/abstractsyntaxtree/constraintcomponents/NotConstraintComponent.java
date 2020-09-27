@@ -100,12 +100,14 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode != null) {
 			if (scope == Scope.propertyShape) {
-				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape)
+				allTargetsPlan = getTargetChain()
+						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
 								EffectiveTarget.Extend.right, false);
 				allTargetsPlan = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 			} else {
-				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", scope)
+				allTargetsPlan = getTargetChain()
+						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
 								false);
 			}
@@ -153,12 +155,14 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			allTargets = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
 		} else {
-			allTargets = getTargetChain().getEffectiveTarget("target_", scope)
+			allTargets = getTargetChain()
+					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, scope, true);
 
 		}

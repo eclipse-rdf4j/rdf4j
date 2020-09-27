@@ -56,7 +56,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope);
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
@@ -82,7 +83,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
-					path.getTargetQueryFragment(new Var("a"), new Var("c")),
+					path.getTargetQueryFragment(new Var("a"), new Var("c"),
+							connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -124,7 +126,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));

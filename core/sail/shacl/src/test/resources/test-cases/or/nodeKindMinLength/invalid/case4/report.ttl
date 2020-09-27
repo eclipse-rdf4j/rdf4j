@@ -14,24 +14,24 @@
       sh:resultPath ex:iriOrMinLength5String;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7am29ix1
+      sh:sourceShape _:node1ej7kb6ehx1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value [];
       sh:resultPath ex:iriOrMinLength5String;
       sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7am29ix1
+      sh:sourceShape _:node1ej7kb6ehx1
     ] .
 
-_:node1ej7am29ix1 a sh:PropertyShape;
+_:node1ej7kb6ehx1 a sh:PropertyShape;
   sh:path ex:iriOrMinLength5String;
   sh:or [
       rdf:first [ a sh:NodeShape;
           sh:nodeKind sh:IRI
         ];
-      rdf:rest (_:node1ej7am29ix5), (_:node1ej7am29ix5)
+      rdf:rest (_:node1ej7kb6ehx5), (_:node1ej7kb6ehx5)
     ] .
 
-_:node1ej7am29ix5 a sh:NodeShape;
+_:node1ej7kb6ehx5 a sh:NodeShape;
   sh:minLength 100 .

@@ -86,7 +86,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		String targetVarPrefix = "target_";
 		Var value = new Var("value");
 
-		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix, value, negatePlan);
+		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix, value, negatePlan,
+				connectionsGroup);
 
 		String query = complexQueryFragment.getQuery();
 		Var targetVar = complexQueryFragment.getTargetVar();
@@ -114,15 +115,18 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	}
 
-	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, Var value, boolean negated) {
+	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, Var value, boolean negated,
+			ConnectionsGroup connectionsGroup) {
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape);
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
 		Var targetVar = effectiveTarget.getTargetVar();
 
 		Optional<String> pathQuery = targetChain.getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value));
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+						connectionsGroup.getRdfsSubClassOfReasoner()));
 
 		if (pathQuery.isPresent()) {
 			query += "\n" + pathQuery.get();
@@ -142,7 +146,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			Scope scope) {
 		assert !negateChildren : "Node does not have children";
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope);
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 		Optional<Path> path = targetChain.getPath();
 
 		if (overrideTargetNode != null) {
@@ -162,7 +167,10 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
-						path.get().getTargetQueryFragment(new Var("a"), new Var("c")), false, null,
+						path.get()
+								.getTargetQueryFragment(new Var("a"), new Var("c"),
+										connectionsGroup.getRdfsSubClassOfReasoner()),
+						false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
 
@@ -232,7 +240,10 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 					effectiveTarget.getPlanNode(connectionsGroup, scope, false),
-					connectionsGroup.getBaseConnection(), path.get().getTargetQueryFragment(new Var("a"), new Var("c")),
+					connectionsGroup.getBaseConnection(),
+					path.get()
+							.getTargetQueryFragment(new Var("a"), new Var("c"),
+									connectionsGroup.getRdfsSubClassOfReasoner()),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
@@ -279,7 +290,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));

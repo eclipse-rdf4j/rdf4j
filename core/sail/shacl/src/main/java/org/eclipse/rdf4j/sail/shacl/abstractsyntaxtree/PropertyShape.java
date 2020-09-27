@@ -227,8 +227,11 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new UnionNode(planNode, getTargetChain().getEffectiveTarget("_target", Scope.propertyShape)
-				.getPlanNode(connectionsGroup, Scope.propertyShape, true));
+		planNode = new UnionNode(planNode,
+				getTargetChain()
+						.getEffectiveTarget("_target", Scope.propertyShape,
+								connectionsGroup.getRdfsSubClassOfReasoner())
+						.getPlanNode(connectionsGroup, Scope.propertyShape, true));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new TargetChainPopper(planNode);

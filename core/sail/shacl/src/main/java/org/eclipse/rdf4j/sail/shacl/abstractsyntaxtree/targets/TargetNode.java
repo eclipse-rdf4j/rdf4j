@@ -89,14 +89,15 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 		return Stream.empty();
 //		throw new ShaclUnsupportedException();
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert subject == null;
 
 		StringBuilder sb = new StringBuilder();

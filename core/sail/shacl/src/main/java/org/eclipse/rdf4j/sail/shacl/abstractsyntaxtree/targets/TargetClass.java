@@ -1,6 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -103,15 +105,29 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object) {
+	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
-		return targetClass.stream().map(t -> new StatementPattern(object, new Var(RDF.TYPE), new Var(t)));
+		return targetClass
+				.stream()
+				.map(rdfsSubClassOfReasoner::backwardsChain)
+				.flatMap(Collection::stream)
+				.distinct()
+				.map(t -> new StatementPattern(object, new Var(RDF.TYPE), new Var(t)));
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object) {
+	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
+
+		List<Resource> targetClass = this.targetClass
+				.stream()
+				.map(rdfsSubClassOfReasoner::backwardsChain)
+				.flatMap(Collection::stream)
+
+				.distinct()
+				.collect(Collectors.toList());
 
 		if (targetClass.size() == 1) {
 

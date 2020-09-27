@@ -49,7 +49,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, boolean negatePlan, boolean negateChildren, Scope scope) {
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("_target", scope);
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("_target", scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
 		Optional<Path> path = getTargetChain().getPath();
 
 		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
@@ -72,7 +73,10 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				mergeNode,
 				connectionsGroup.getBaseConnection(),
-				getTargetChain().getPath().get().getTargetQueryFragment(new Var("a"), new Var("c")),
+				getTargetChain().getPath()
+						.get()
+						.getTargetQueryFragment(new Var("a"), new Var("c"),
+								connectionsGroup.getRdfsSubClassOfReasoner()),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -87,7 +91,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			PlanNode allTargetsPlan = getTargetChain()
+					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			return new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
