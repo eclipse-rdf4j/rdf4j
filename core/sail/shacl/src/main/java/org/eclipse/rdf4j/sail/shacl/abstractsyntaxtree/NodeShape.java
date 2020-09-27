@@ -160,7 +160,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = new ShiftToPropertyShape(validationPlanNode);
+				validationPlanNode = new Unique(new ShiftToPropertyShape(validationPlanNode));
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {

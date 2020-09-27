@@ -296,9 +296,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
 						() -> Shape.this.getTargetChain()
-								.getEffectiveTarget("_target", Scope.nodeShape,
+								.getEffectiveTarget("_target",
+										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape,
 										connectionsGroup.getRdfsSubClassOfReasoner())
-								.getAllTargets(connectionsGroup, Scope.nodeShape),
+								.getAllTargets(connectionsGroup,
+										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape),
 						false,
 						false, Scope.none);
 			}

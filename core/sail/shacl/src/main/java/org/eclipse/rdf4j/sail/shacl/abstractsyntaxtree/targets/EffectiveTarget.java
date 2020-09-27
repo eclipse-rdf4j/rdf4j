@@ -120,8 +120,6 @@ public class EffectiveTarget {
 	}
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		assert chain.size() == 1 : "chain.size() = " + chain.size() + " but should be 1";
-
 		String query = chain.stream()
 				.map(EffectiveTargetObject::getQueryFragment)
 				.reduce((a, b) -> a + "\n" + b)
