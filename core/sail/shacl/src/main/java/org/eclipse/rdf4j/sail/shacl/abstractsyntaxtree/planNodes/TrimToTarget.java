@@ -3,7 +3,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 
 public class TrimToTarget implements PlanNode {
 

@@ -49,10 +49,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);
 
-		System.out.println(getTargetChain().getChain().stream().findFirst().get());
-
 		target = new DebugPlanNode(target, "", p -> {
-			System.out.println();
+			assert p != null;
 		});
 
 		if (overrideTargetNode != null) {

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
@@ -112,7 +111,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 					.getFalseNode(UnBufferedPlanNode.class);
 
 			falseNode = new DebugPlanNode(falseNode, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 
 			return falseNode;

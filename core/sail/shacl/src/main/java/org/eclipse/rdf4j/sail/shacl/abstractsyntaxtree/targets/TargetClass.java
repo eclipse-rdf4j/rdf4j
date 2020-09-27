@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;

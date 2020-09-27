@@ -393,7 +393,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.map(SingleCloseablePlanNode::new)
 
 					.map(planNode -> () -> {
-						System.out.println(planNode);
 
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);

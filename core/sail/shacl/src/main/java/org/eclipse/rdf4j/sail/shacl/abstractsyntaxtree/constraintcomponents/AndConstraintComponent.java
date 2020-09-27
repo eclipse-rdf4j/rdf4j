@@ -93,7 +93,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.orElse(new EmptyNode());
 
 		planNode = new DebugPlanNode(planNode, "", p -> {
-			System.out.println(p);
+			assert p != null;
 		});
 
 		return planNode;

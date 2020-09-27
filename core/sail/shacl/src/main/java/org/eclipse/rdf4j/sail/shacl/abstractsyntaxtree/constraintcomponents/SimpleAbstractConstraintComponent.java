@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -175,7 +174,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			}
 
 			planNode = new DebugPlanNode(planNode, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 
 			if (negatePlan) {
@@ -184,7 +183,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 				PlanNode falseNode = filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
 				falseNode = new DebugPlanNode(falseNode, "", p -> {
-					System.out.println();
+					assert p != null;
 				});
 				return falseNode;
 			}
@@ -230,7 +229,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup, discardedRight);
 			discardedRight = new DebugPlanNode(discardedRight, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 
 			typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup, scope,
@@ -249,7 +248,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, "", p -> {
-//				System.out.println(p);
+//				assert p != null;
 			});
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);

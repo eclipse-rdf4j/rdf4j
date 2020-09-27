@@ -194,7 +194,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
 //				System.out.println(constraintComponent);
 //				System.out.println(scope);
-//				System.out.println(p);
+//				assert p != null;
 			});
 
 			if (!(constraintComponent instanceof PropertyShape)) {
@@ -211,7 +211,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-//				System.out.println(p);
+//				assert p != null;
 			});
 
 			union = new UnionNode(union, validationPlanNode);

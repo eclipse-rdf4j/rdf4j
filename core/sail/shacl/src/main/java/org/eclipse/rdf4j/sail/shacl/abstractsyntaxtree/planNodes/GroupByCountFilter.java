@@ -67,8 +67,6 @@ public class GroupByCountFilter implements PlanNode {
 
 					}
 
-					System.out.println(next.toString() + " " + count);
-
 					if (!filter.apply(count)) {
 						this.next = null;
 					}

@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
@@ -150,7 +149,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 							Scope.nodeShape);
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 			if (!(constraintComponent instanceof PropertyShape) && produceValidationReports) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
@@ -164,7 +163,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			}
 
 			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 
 			union = new UnionNode(union,

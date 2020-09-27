@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
@@ -165,8 +164,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		mergeNode = new TrimToTarget(mergeNode);
 
 		PlanNode allRelevantTargets = new Unique(mergeNode);
-		allRelevantTargets = new DebugPlanNode(allRelevantTargets, "", t -> {
-			System.out.println();
+		allRelevantTargets = new DebugPlanNode(allRelevantTargets, "", p -> {
+			assert p != null;
 		});
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
@@ -181,8 +180,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		);
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
-		nonUniqueTargetLang = new DebugPlanNode(nonUniqueTargetLang, "", t -> {
-			System.out.println(t);
+		nonUniqueTargetLang = new DebugPlanNode(nonUniqueTargetLang, "", p -> {
+			assert p != null;
 		});
 		return new Unique(new TrimToTarget(nonUniqueTargetLang));
 

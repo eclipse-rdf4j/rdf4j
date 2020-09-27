@@ -100,7 +100,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		} else {
 			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, negatePlan, scope), "",
 					p -> {
-						System.out.println(p);
+						assert p != null;
 					});
 		}
 
@@ -116,7 +116,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				)
 				.map(p -> {
 					return (PlanNode) new DebugPlanNode(p, "", p1 -> {
-						System.out.println(p1);
+						assert p1 != null;
 					});
 				})
 				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
@@ -125,7 +125,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		PlanNode invalid = new Unique(orPlanNodes);
 
 		invalid = new DebugPlanNode(invalid, "", p -> {
-			System.out.println(p);
+			assert p != null;
 		});
 
 		return invalid;

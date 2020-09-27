@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
 import java.util.ArrayDeque;
-import java.util.Collection;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.SortedSet;

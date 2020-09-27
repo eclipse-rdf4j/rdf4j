@@ -15,7 +15,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
  * @author Håvard Ottestad

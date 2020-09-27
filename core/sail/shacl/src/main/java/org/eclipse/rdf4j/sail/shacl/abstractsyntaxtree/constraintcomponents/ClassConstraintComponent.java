@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredica
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
@@ -81,7 +80,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
 
 					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						System.out.println(p);
+						assert p != null;
 					});
 
 					deletedTypes = getTargetChain()
@@ -91,7 +90,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 									false);
 
 					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						System.out.println(p);
+						assert p != null;
 					});
 
 					deletedTypes = getTargetChain()
@@ -100,7 +99,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							.getTargetFilter(connectionsGroup, deletedTypes);
 
 					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						System.out.println(p);
+						assert p != null;
 					});
 
 					addedTargets = new UnionNode(addedTargets,
@@ -163,7 +162,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					addedTargets, false, ExternalPredicateObjectFilter.FilterOn.value);
 
 			falseNode = new DebugPlanNode(falseNode, "", p -> {
-				System.out.println(p);
+				assert p != null;
 			});
 
 			return falseNode;
