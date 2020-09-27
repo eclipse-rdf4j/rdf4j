@@ -13,15 +13,15 @@
       sh:resultPath ex:ssn;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej82ne1rx1
+      sh:sourceShape _:node1ej846qdix1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson2;
       sh:resultPath ex:ssn;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej82ne1rx1
+      sh:sourceShape _:node1ej846qdix1
     ] .
 
-_:node1ej82ne1rx1 a sh:PropertyShape;
+_:node1ej846qdix1 a sh:PropertyShape;
   sh:path ex:ssn;
   sh:minCount 2 .

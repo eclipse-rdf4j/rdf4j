@@ -68,6 +68,8 @@ import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import sun.security.provider.SHA;
+
 //@formatter:off
 
 /**
@@ -300,17 +302,19 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.MAX_INCLUSIVE,
 				SHACL.CLASS,
 				SHACL.TARGET_NODE,
-				SHACL.DEACTIVATED,
+//				SHACL.DEACTIVATED,
 				SHACL.TARGET_SUBJECTS_OF,
 				SHACL.IN,
 				SHACL.UNIQUE_LANG,
 				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF,
 				SHACL.HAS_VALUE,
-				SHACL.TARGET_PROP,
+//				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
-				DASH.hasValueIn,
-				RSX.targetShape);
+				SHACL.NODE,
+				DASH.hasValueIn
+//				RSX.targetShape
+		);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);

@@ -253,9 +253,9 @@ public class ValidationReportTest {
 					"      sh:resultSeverity sh:Violation;\n" +
 					"      sh:sourceShape [ a sh:PropertyShape;\n" +
 					"          sh:path ex:knows;\n" +
-					"          <http://datashapes.org/dash#hasValueIn> (ex:kate ex:mary ex:peter)\n" +
+					"          <http://datashapes.org/dash#hasValueIn> (ex:peter ex:mary ex:kate)\n" +
 					"        ]\n" +
-					"    ] ." + ""), "", RDFFormat.TURTLE);
+					"    ] .\n" + ""), "", RDFFormat.TURTLE);
 
 			assertTrue(Models.isomorphic(expected, actual));
 
