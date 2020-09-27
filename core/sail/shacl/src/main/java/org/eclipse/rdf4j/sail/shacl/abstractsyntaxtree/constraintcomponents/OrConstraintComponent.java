@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
@@ -32,16 +33,16 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
 
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache) {
+			Cache cache, ShaclSail shaclSail) {
 		super(id);
 		or = HelperTool.toList(connection, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache, false);
+						return NodeShape.getInstance(p, connection, cache, false, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, connection, cache);
+						return PropertyShape.getInstance(p, connection, cache, shaclSail);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})

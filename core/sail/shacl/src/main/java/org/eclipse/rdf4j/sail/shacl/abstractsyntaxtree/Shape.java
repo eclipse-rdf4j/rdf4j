@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Data
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.DisjointConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.EqualsConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.HasValueConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.HasValueInConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.InConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.LanguageInConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.LessThanConstraintComponent;
@@ -77,7 +78,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	public void populate(ShaclProperties properties, RepositoryConnection connection,
-			Cache cache) {
+			Cache cache, ShaclSail sail) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
@@ -126,20 +127,20 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, RepositoryConnection connection,
-			Cache cache) {
+			Cache cache, ShaclSail shaclSail) {
 
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
 		properties.getProperty()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(p, connection, cache))
+				.map(p -> PropertyShape.getInstance(p, connection, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getNode()
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache, true))
+				.map(p -> NodeShape.getInstance(p, connection, cache, true, shaclSail))
 				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
@@ -206,22 +207,22 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 		properties.getOr()
 				.stream()
-				.map(or -> new OrConstraintComponent(or, connection, cache))
+				.map(or -> new OrConstraintComponent(or, connection, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getXone()
 				.stream()
-				.map(xone -> new XoneConstraintComponent(xone, connection, cache))
+				.map(xone -> new XoneConstraintComponent(xone, connection, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getAnd()
 				.stream()
-				.map(and -> new AndConstraintComponent(and, connection, cache))
+				.map(and -> new AndConstraintComponent(and, connection, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getNot()
 				.stream()
-				.map(or -> new NotConstraintComponent(or, connection, cache))
+				.map(or -> new NotConstraintComponent(or, connection, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getClazz()
@@ -253,6 +254,13 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				.stream()
 				.map(LessThanOrEqualsConstraintComponent::new)
 				.forEach(constraintComponent::add);
+
+		if (shaclSail.isDashDataShapes()) {
+			properties.getHasValueIn()
+					.stream()
+					.map(hasValueIn -> new HasValueInConstraintComponent(hasValueIn, connection))
+					.forEach(constraintComponent::add);
+		}
 
 		return constraintComponent;
 	}
@@ -295,9 +303,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	public static class Factory {
 
-		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail sail) {
+		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail shaclSail) {
 
-			List<Shape> parsed = parse(connection);
+			List<Shape> parsed = parse(connection, shaclSail);
 			List<Shape> split = split(parsed);
 			calculateTargetChain(split);
 
@@ -349,7 +357,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			}).collect(Collectors.toList());
 		}
 
-		private static List<Shape> parse(RepositoryConnection connection) {
+		private static List<Shape> parse(RepositoryConnection connection, ShaclSail shaclSail) {
 			Cache cache = new Cache();
 
 			Set<Resource> resources = getTargetableShapes(connection);
@@ -358,9 +366,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					.map(r -> new ShaclProperties(r, connection))
 					.map(p -> {
 						if (p.getType() == SHACL.NODE_SHAPE) {
-							return NodeShape.getInstance(p, connection, cache, true);
+							return NodeShape.getInstance(p, connection, cache, true, shaclSail);
 						} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-							return PropertyShape.getInstance(p, connection, cache);
+							return PropertyShape.getInstance(p, connection, cache, shaclSail);
 						}
 						throw new IllegalStateException("Unknown shape type for " + p.getId());
 					})

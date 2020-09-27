@@ -10,20 +10,18 @@
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
-      sh:value ex:peter;
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:value "purple";
+      sh:resultPath ex:info;
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7v8ol7x1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:steve;
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7v8ol7x1
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:info;
+          sh:or ([ a sh:NodeShape;
+                <http://datashapes.org/dash#hasValueIn> ("blue")
+              ] [ a sh:NodeShape;
+                <http://datashapes.org/dash#hasValueIn> ("green")
+              ] [ a sh:NodeShape;
+                <http://datashapes.org/dash#hasValueIn> ("red")
+              ])
+        ]
     ] .
-
-_:node1ej7v8ol7x1 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:class ex:Person .

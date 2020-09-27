@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
@@ -23,16 +24,16 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> xone;
 
 	public XoneConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache) {
+			Cache cache, ShaclSail shaclSail) {
 		super(id);
 		xone = HelperTool.toList(connection, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache, false);
+						return NodeShape.getInstance(p, connection, cache, false, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, connection, cache);
+						return PropertyShape.getInstance(p, connection, cache, shaclSail);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})

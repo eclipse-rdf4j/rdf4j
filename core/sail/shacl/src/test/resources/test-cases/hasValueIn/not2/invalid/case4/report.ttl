@@ -9,12 +9,21 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:steve;
-      sh:sourceConstraintComponent sh:HasValueConstraintComponent;
+      sh:focusNode ex:validPerson1;
+      sh:value ex:validPerson1;
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:PersonShape
     ] .
 
 ex:PersonShape a sh:NodeShape;
-  sh:targetNode ex:steve;
-  <http://datashapes.org/dash#hasValueIn> (ex:peter ex:mary ex:kate) .
+  sh:targetClass ex:Person;
+  sh:not [ a sh:NodeShape;
+      sh:and ([ a sh:PropertyShape;
+            sh:path ex:knows;
+            <http://datashapes.org/dash#hasValueIn> (ex:peter ex:mary ex:kate)
+          ] [ a sh:PropertyShape;
+            sh:path ex:knows;
+            <http://datashapes.org/dash#hasValueIn> (ex:steve ex:mary ex:kate)
+          ])
+    ] .

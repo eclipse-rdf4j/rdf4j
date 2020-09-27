@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -55,12 +56,13 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		this.path = propertyShape.path;
 	}
 
-	public static PropertyShape getInstance(ShaclProperties properties, RepositoryConnection connection, Cache cache) {
+	public static PropertyShape getInstance(ShaclProperties properties, RepositoryConnection connection, Cache cache,
+			ShaclSail shaclSail) {
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new PropertyShape();
 			cache.put(properties.getId(), shape);
-			shape.populate(properties, connection, cache);
+			shape.populate(properties, connection, cache, shaclSail);
 		}
 
 		if (shape.constraintComponents.isEmpty()) {
@@ -72,8 +74,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	@Override
 	public void populate(ShaclProperties properties, RepositoryConnection connection,
-			Cache cache) {
-		super.populate(properties, connection, cache);
+			Cache cache, ShaclSail shaclSail) {
+		super.populate(properties, connection, cache, shaclSail);
 
 		this.path = Path.buildPath(connection, properties.getPath());
 
@@ -81,7 +83,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
-		constraintComponents = getConstraintComponents(properties, connection, cache);
+		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail);
 	}
 
 	@Override

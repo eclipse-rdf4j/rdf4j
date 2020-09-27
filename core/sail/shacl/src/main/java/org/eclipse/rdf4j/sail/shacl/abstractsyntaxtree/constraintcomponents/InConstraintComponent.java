@@ -1,6 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
@@ -25,7 +27,7 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	public InConstraintComponent(RepositoryConnection connection, Resource in) {
 		super(in);
-		this.in = new HashSet<>(HelperTool.toList(connection, in, Value.class));
+		this.in = Collections.unmodifiableSet(new LinkedHashSet<>(HelperTool.toList(connection, in, Value.class)));
 	}
 
 	public InConstraintComponent(InConstraintComponent inConstraintComponent) {
@@ -36,9 +38,7 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.IN, getId());
-		TreeSet<Value> values = new TreeSet<>(new ValueComparator());
-		values.addAll(in);
-		HelperTool.listToRdf(values, getId(), model);
+		HelperTool.listToRdf(in, getId(), model);
 	}
 
 	@Override

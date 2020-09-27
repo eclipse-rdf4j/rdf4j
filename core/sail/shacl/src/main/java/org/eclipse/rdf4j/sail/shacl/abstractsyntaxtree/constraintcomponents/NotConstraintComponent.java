@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
@@ -28,15 +29,15 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	Shape not;
 
 	public NotConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache) {
+			Cache cache, ShaclSail shaclSail) {
 		super(id);
 
 		ShaclProperties p = new ShaclProperties(id, connection);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			not = NodeShape.getInstance(p, connection, cache, false);
+			not = NodeShape.getInstance(p, connection, cache, false, shaclSail);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-			not = PropertyShape.getInstance(p, connection, cache);
+			not = PropertyShape.getInstance(p, connection, cache, shaclSail);
 		} else {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}

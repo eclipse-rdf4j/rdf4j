@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -42,13 +43,13 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	public static NodeShape getInstance(ShaclProperties properties,
-			RepositoryConnection connection, Cache cache, boolean produceValidationReports) {
+			RepositoryConnection connection, Cache cache, boolean produceValidationReports, ShaclSail shaclSail) {
 
 		Shape shape = cache.get(properties.getId());
 		if (shape == null) {
 			shape = new NodeShape(produceValidationReports);
 			cache.put(properties.getId(), shape);
-			shape.populate(properties, connection, cache);
+			shape.populate(properties, connection, cache, shaclSail);
 		}
 
 		return (NodeShape) shape;
@@ -56,8 +57,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 	@Override
 	public void populate(ShaclProperties properties, RepositoryConnection connection,
-			Cache cache) {
-		super.populate(properties, connection, cache);
+			Cache cache, ShaclSail shaclSail) {
+		super.populate(properties, connection, cache, shaclSail);
 
 		if (properties.getMinCount() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:MinCount in " + getId());
@@ -72,7 +73,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		 * Also not supported here is: - sh:lessThan - sh:lessThanOrEquals - sh:qualifiedValueShape
 		 */
 
-		constraintComponents = getConstraintComponents(properties, connection, cache);
+		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail);
 
 	}
 
