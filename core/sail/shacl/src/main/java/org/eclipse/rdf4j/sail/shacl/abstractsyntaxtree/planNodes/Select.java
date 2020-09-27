@@ -42,8 +42,8 @@ public class Select implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper,
-			String orderBy) {
+	public Select(SailConnection connection, String query, String orderBy,
+			Function<BindingSet, ValidationTuple> mapper) {
 		this.connection = connection;
 		this.mapper = mapper;
 		if (query.trim().equals("")) {

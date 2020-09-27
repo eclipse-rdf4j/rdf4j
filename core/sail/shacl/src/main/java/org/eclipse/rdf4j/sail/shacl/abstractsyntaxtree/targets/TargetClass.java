@@ -60,7 +60,7 @@ public class TargetClass extends Target {
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
 					new Select(connection, getQueryFragment("?a", "?c", null),
-							b -> new ValidationTuple(b.getValue("a"), scope, false), "?a"));
+							"?a", b -> new ValidationTuple(b.getValue("a"), scope, false)));
 		}
 
 		return new Unique(planNode);

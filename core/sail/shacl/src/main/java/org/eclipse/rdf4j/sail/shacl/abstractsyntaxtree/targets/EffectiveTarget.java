@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
@@ -116,6 +117,20 @@ public class EffectiveTarget {
 				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
 			}
 		}
+	}
+
+	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+		assert chain.size() == 1 : "chain.size() = " + chain.size() + " but should be 1";
+
+		String query = chain.stream()
+				.map(EffectiveTargetObject::getQueryFragment)
+				.reduce((a, b) -> a + "\n" + b)
+				.orElse("");
+
+		List<String> varNames = getVars().stream().map(Var::getName).collect(Collectors.toList());
+
+		return new Select(connectionsGroup.getBaseConnection(), query, null,
+				b -> new ValidationTuple(b, varNames, scope, false));
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,

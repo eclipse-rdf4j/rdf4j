@@ -293,8 +293,13 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, false, false,
 						Scope.none);
 			} else {
+
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
-						() -> Shape.this.getAllTargetsPlan(connectionsGroup, false, Scope.none), false,
+						() -> Shape.this.getTargetChain()
+								.getEffectiveTarget("_target", Scope.nodeShape,
+										connectionsGroup.getRdfsSubClassOfReasoner())
+								.getAllTargets(connectionsGroup, Scope.nodeShape),
+						false,
 						false, Scope.none);
 			}
 
@@ -305,6 +310,19 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
 		}
 
+	}
+
+	@Override
+	public SourceConstraintComponent getConstraintComponent() {
+		throw new ShaclUnsupportedException(this.getClass().getSimpleName());
+	}
+
+	public Severity getSeverity() {
+		return severity;
+	}
+
+	public boolean isDeactivated() {
+		return deactivated;
 	}
 
 	public static class Factory {
@@ -409,16 +427,4 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 	}
 
-	@Override
-	public SourceConstraintComponent getConstraintComponent() {
-		throw new ShaclUnsupportedException(this.getClass().getSimpleName());
-	}
-
-	public Severity getSeverity() {
-		return severity;
-	}
-
-	public boolean isDeactivated() {
-		return deactivated;
-	}
 }

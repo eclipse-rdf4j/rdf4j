@@ -91,7 +91,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		String query = complexQueryFragment.getQuery();
 		Var targetVar = complexQueryFragment.getTargetVar();
 
-		return new Select(connectionsGroup.getBaseConnection(), query, b -> {
+		return new Select(connectionsGroup.getBaseConnection(), query, null, b -> {
 
 			List<String> collect = b.getBindingNames()
 					.stream()
@@ -110,7 +110,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			return validationTuple;
 
-		}, null);
+		});
 
 	}
 
@@ -159,10 +159,17 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						false);
 
 			} else {
-				PlanNode temp = new DebugPlanNode(overrideTargetNode.getPlanNode(),
-						"SimpleAbstractConstraintComponent");
+				PlanNode temp = overrideTargetNode.getPlanNode();
+
+				temp = new DebugPlanNode(temp, (p) -> {
+					assert p != null;
+				});
 
 				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right, false);
+
+				temp = new DebugPlanNode(temp, (p) -> {
+					assert p != null;
+				});
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),

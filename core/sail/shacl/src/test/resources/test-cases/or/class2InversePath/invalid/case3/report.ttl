@@ -11,21 +11,21 @@
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson2;
       sh:value ex:d;
-      sh:resultPath _:node1ej80po3ax1;
+      sh:resultPath _:node1ej827fjix1;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:personShapeOr
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson5;
       sh:value ex:a;
-      sh:resultPath _:node1ej80po3ax1;
+      sh:resultPath _:node1ej827fjix1;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:personShapeOr
     ] .
 
 ex:personShapeOr a sh:PropertyShape;
-  sh:path _:node1ej80po3ax1;
+  sh:path _:node1ej827fjix1;
   sh:not [ a sh:NodeShape;
       sh:and [
           rdf:first [ a sh:NodeShape;
@@ -33,13 +33,13 @@ ex:personShapeOr a sh:PropertyShape;
                   sh:class ex:Person
                 ]
             ];
-          rdf:rest (_:node1ej80po3ax7), (_:node1ej80po3ax7)
+          rdf:rest (_:node1ej827fjix7), (_:node1ej827fjix7)
         ]
     ] .
 
-_:node1ej80po3ax1 sh:inversePath ex:inverseKnows .
+_:node1ej827fjix1 sh:inversePath ex:inverseKnows .
 
-_:node1ej80po3ax7 a sh:NodeShape;
+_:node1ej827fjix7 a sh:NodeShape;
   sh:not [ a sh:NodeShape;
       sh:class ex:Animal
     ] .

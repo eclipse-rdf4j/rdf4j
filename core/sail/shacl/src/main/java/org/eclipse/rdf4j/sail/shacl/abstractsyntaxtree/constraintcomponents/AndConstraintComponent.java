@@ -97,7 +97,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 			assert p != null;
 		});
 
-		return planNode;
+		return new Unique(planNode);
 
 	}
 

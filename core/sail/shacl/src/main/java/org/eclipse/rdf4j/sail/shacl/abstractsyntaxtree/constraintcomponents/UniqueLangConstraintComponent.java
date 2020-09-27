@@ -61,7 +61,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		String query = complexQueryFragment.getQuery();
 
-		return new Select(connectionsGroup.getBaseConnection(), query, b -> {
+		return new Select(connectionsGroup.getBaseConnection(), query, null, b -> {
 
 			List<String> targetVars = b.getBindingNames()
 					.stream()
@@ -73,7 +73,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 			return validationTuple;
 
-		}, null);
+		});
 
 	}
 
