@@ -103,7 +103,7 @@ public class HasValueInConstraintComponent extends AbstractConstraintComponent {
 			);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
-				return group.stream().map(ValidationTuple::getValue).noneMatch(v -> hasValueIn.contains(v));
+				return group.stream().map(ValidationTuple::getValue).noneMatch(hasValueIn::contains);
 			});
 
 			return new Unique(new TrimToTarget(invalidTargets));
@@ -123,7 +123,7 @@ public class HasValueInConstraintComponent extends AbstractConstraintComponent {
 			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn)
 					.getFalseNode(UnBufferedPlanNode.class);
 
-			falseNode = new DebugPlanNode(falseNode, "", p -> {
+			falseNode = new DebugPlanNode(falseNode, p -> {
 				assert p != null;
 			});
 

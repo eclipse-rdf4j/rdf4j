@@ -164,7 +164,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		mergeNode = new TrimToTarget(mergeNode);
 
 		PlanNode allRelevantTargets = new Unique(mergeNode);
-		allRelevantTargets = new DebugPlanNode(allRelevantTargets, "", p -> {
+		allRelevantTargets = new DebugPlanNode(allRelevantTargets, p -> {
 			assert p != null;
 		});
 
@@ -180,7 +180,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		);
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
-		nonUniqueTargetLang = new DebugPlanNode(nonUniqueTargetLang, "", p -> {
+		nonUniqueTargetLang = new DebugPlanNode(nonUniqueTargetLang, p -> {
 			assert p != null;
 		});
 		return new Unique(new TrimToTarget(nonUniqueTargetLang));

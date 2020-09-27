@@ -125,7 +125,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode invalid = new Unique(orPlanNodes);
 
-		invalid = new DebugPlanNode(invalid, "", p -> {
+		invalid = new DebugPlanNode(invalid, p -> {
 			assert p != null;
 		});
 

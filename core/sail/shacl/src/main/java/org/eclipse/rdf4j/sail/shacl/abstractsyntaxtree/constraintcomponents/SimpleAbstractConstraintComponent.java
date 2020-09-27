@@ -173,7 +173,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
 
-			planNode = new DebugPlanNode(planNode, "", p -> {
+			planNode = new DebugPlanNode(planNode, p -> {
 				assert p != null;
 			});
 
@@ -182,7 +182,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			} else {
 
 				PlanNode falseNode = filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
-				falseNode = new DebugPlanNode(falseNode, "", p -> {
+				falseNode = new DebugPlanNode(falseNode, p -> {
 					assert p != null;
 				});
 				return falseNode;
@@ -228,7 +228,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
 			PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup, discardedRight);
-			discardedRight = new DebugPlanNode(discardedRight, "", p -> {
+			discardedRight = new DebugPlanNode(discardedRight, p -> {
 				assert p != null;
 			});
 
@@ -247,7 +247,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
-			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, "", p -> {
+			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, p -> {
 //				assert p != null;
 			});
 

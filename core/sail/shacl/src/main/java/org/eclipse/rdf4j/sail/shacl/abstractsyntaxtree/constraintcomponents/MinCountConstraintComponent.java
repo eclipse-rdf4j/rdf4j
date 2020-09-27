@@ -49,7 +49,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);
 
-		target = new DebugPlanNode(target, "", p -> {
+		target = new DebugPlanNode(target, p -> {
 			assert p != null;
 		});
 

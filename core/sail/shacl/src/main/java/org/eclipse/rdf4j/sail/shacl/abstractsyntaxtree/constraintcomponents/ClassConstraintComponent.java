@@ -161,7 +161,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					RDF.TYPE, Collections.singleton(clazz),
 					addedTargets, false, ExternalPredicateObjectFilter.FilterOn.value);
 
-			falseNode = new DebugPlanNode(falseNode, "", p -> {
+			falseNode = new DebugPlanNode(falseNode, p -> {
 				assert p != null;
 			});
 

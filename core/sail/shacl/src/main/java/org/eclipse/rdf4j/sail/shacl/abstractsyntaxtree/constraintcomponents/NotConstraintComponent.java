@@ -116,12 +116,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			allTargetsPlan = planNodeProvider.getPlanNode();
 		}
 
-		allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> {
+		allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> {
 			assert p != null;
 		});
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
-		invalid = new DebugPlanNode(invalid, "", p -> {
+		invalid = new DebugPlanNode(invalid, p -> {
 			assert p != null;
 		});
 
@@ -135,7 +135,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	 *
 	 * PlanNode allTargetsPlan = targetProvider.getPlanNode();
 	 *
-	 * allTargetsPlan = new DebugPlanNode(allTargetsPlan, "", p -> { System.out.println("HERE!" + p); });
+	 * allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> { System.out.println("HERE!" + p); });
 	 *
 	 * PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, targetProvider,
 	 * negateChildren, false, scope);
@@ -144,7 +144,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	 *
 	 * PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
 	 *
-	 * discardedLeft = new DebugPlanNode(discardedLeft, "", p -> { System.out.println(); });
+	 * discardedLeft = new DebugPlanNode(discardedLeft, p -> { System.out.println(); });
 	 *
 	 * return discardedLeft;
 	 *

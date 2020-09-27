@@ -110,7 +110,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
 					.getFalseNode(UnBufferedPlanNode.class);
 
-			falseNode = new DebugPlanNode(falseNode, "", p -> {
+			falseNode = new DebugPlanNode(falseNode, p -> {
 				assert p != null;
 			});
 

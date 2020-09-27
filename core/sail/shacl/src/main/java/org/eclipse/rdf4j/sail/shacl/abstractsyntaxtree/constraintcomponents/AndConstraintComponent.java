@@ -93,7 +93,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new DebugPlanNode(planNode, "", p -> {
+		planNode = new DebugPlanNode(planNode, p -> {
 			assert p != null;
 		});
 
