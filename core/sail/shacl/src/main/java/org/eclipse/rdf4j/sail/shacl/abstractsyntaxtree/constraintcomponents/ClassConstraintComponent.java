@@ -153,6 +153,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
+			// removed type statements that match clazz could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
@@ -163,18 +164,45 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
 			}
 
+			// added type statements that match clazz could affect sh:not
+			if (connectionsGroup.getStats().hasAdded()) {
+				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
+						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+				addedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+						.getTargetFilter(connectionsGroup, addedTypes);
+				addedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+						.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+				allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
+			}
+
 			return new Unique(new Sort(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan))));
 		}
+		PlanNode allTargetsPlan = new EmptyNode();
 
+		// removed type statements that match clazz could affect sh:or
 		if (connectionsGroup.getStats().hasRemoved()) {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
 					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
 			deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.getTargetFilter(connectionsGroup, deletedTypes);
-			return getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+			deletedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
 					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+			allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
+
 		}
 
-		return new EmptyNode();
+		// added type statements that match clazz could affect sh:not
+		if (connectionsGroup.getStats().hasAdded()) {
+			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
+					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+			addedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.getTargetFilter(connectionsGroup, addedTypes);
+			addedTypes = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape)
+					.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+			allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
+
+		}
+
+		return new Unique(allTargetsPlan);
 	}
 }

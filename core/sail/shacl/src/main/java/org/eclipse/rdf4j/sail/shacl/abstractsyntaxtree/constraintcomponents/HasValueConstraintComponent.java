@@ -73,6 +73,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
 				addedTargets = new UnionNode(addedByPath, addedTargets);
 				addedTargets = new Unique(addedTargets);
