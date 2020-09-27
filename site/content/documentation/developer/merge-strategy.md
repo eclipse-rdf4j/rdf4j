@@ -3,15 +3,15 @@ title: "RDF4J merge strategy"
 toc: true
 ---
 
-RDF4J values a clean, linear commit history on our main branches. To achieve this, we default to using [Squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits) as our merge strategy for all new features, improvements, or bug fixes. 
+RDF4J values a clean, linear commit history on our main branches. To achieve this, we default to using [Squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits) as our merge strategy for all new features, improvements, or bug fixes.
 <!--more-->
 
 See also: [developer workflow](/documentation/developer/workflow/)
 
-# Self-contained changes, pull requests, and commits
+## Self-contained changes, pull requests, and commits
 
 We define a *self-contained change* as a change that addresses a single issue,
-addresses it completely, and does not also address other issues. 
+addresses it completely, and does not also address other issues.
 
 We expect every pull request to be a self-contained change. Note that that does
 not mean that a pull request can only contain a single commit: it can have
@@ -21,11 +21,11 @@ If a pull request is properly self-contained, merging it using squash and merge
 will result in a single, self-contained commit on the main branch that
 completely addresses a single issue.
 
-## Commit messages
+### Commit messages
 
 We prefer every commit message to be descriptive: it should start with the
 github issue number to which it relates, then have a short one line description
-that details the specific change. 
+that details the specific change.
 
 Examples of good commit messages:
 
@@ -49,9 +49,9 @@ a single commit anyway. We still prefer meaningful commits because:
 That said, if occassionally a less "perfect" commit message slips through, that's
 fine. We're all human.
 
-And oh yeah: don't forget to [sign off your commits](/documentation/developer/workflow/#patch-requests)! 
+And oh yeah: don't forget to [sign off your commits](/documentation/developer/workflow/#patch-requests)!
 
-# Motivation 
+## Motivation
 
 We use squash and merge because we value a clean, linear history over a more
 detailed, accurate history for our main branches. There are several reasons we
@@ -74,7 +74,7 @@ For an excellent in-depth discussion of the advantages of using squash and
 merge, we recommend reading this blog article: [Two Years of squash
 merge](https://blog.dnsimple.com/2019/01/two-years-of-squash-merge/).
 
-# Exceptions
+## Exceptions
 
 There is one standard exception to the rule: pull requests that involve
 bringing our main branches (`master` and `develop`) in sync with each other use

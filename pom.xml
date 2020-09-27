@@ -7,7 +7,7 @@
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
-	<url>https://rdf4j.eclipse.org/</url>
+	<url>https://rdf4j.org/</url>
 	<inceptionYear>2015</inceptionYear>
 	<organization>
 		<name>Eclipse Foundation</name>
@@ -17,7 +17,7 @@
 		<developer>
 			<id>jeenbroekstra</id>
 			<name>Jeen Broekstra</name>
-			<email>jeen.broekstra@gmail.com</email>
+			<email>jeen@fastmail.com</email>
 			<timezone>GMT+10</timezone>
 		</developer>
 		<developer>
@@ -297,7 +297,7 @@
 		<httpclient.version>4.5.10</httpclient.version>
 		<httpcore.version>4.4.12</httpcore.version>
 		<jackson.version>2.10.4</jackson.version>
-		<jsonldjava.version>0.13.0</jsonldjava.version>
+		<jsonldjava.version>0.13.2</jsonldjava.version>
 		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<lucene.version>7.7.2</lucene.version>

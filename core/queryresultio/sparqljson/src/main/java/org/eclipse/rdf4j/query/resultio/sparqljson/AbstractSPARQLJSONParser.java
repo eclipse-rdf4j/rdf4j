@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.OBJECT;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.PREDICATE;
+import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.SUBJECT;
 import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE_STARDOG;
 
 import java.io.IOException;
@@ -17,6 +20,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -331,28 +336,23 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			}
 			String fieldName = jp.getCurrentName();
 
-			// move to the value token
-			jp.nextToken();
-
 			// set the appropriate state variable
 			if (TYPE.equals(fieldName)) {
-				type = jp.getText();
+				type = jp.nextTextValue();
 				if (TRIPLE_STARDOG.equals(type)) {
-					// Stardog RDF* serialization dialect is slightly different, in that it doesn't use a value
-					// property.
-					fieldName = jp.getCurrentName();
-					jp.nextToken();
-					triple = parseTripleValue(jp, fieldName);
+					// Stardog RDF* serialization dialect does not wrap the triple in a value object
+					triple = parseStardogTripleValue(jp, type);
+					// avoid reading away the next end-of-object token by jumping out of the loop.
+					break;
 				}
 			} else if (XMLLANG.equals(fieldName)) {
-				lang = jp.getText();
+				lang = jp.nextTextValue();
 			} else if (DATATYPE.equals(fieldName)) {
-				datatype = jp.getText();
+				datatype = jp.nextTextValue();
 			} else if (VALUE.equals(fieldName)) {
-				if (jp.getCurrentToken() == JsonToken.START_OBJECT) {
-					jp.nextToken();
+				if (jp.nextToken() == JsonToken.START_OBJECT) {
 					triple = parseTripleValue(jp, fieldName);
-					if (jp.nextToken() != JsonToken.END_OBJECT) {
+					if (jp.getCurrentToken() != JsonToken.END_OBJECT) {
 						throw new QueryResultParseException("Unexpected token: " + jp.getCurrentName(),
 								jp.getCurrentLocation().getLineNr(),
 								jp.getCurrentLocation().getColumnNr());
@@ -367,12 +367,64 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 
 			}
 		}
-
 		if (triple != null && checkTripleType(jp, type)) {
 			return triple;
 		}
 
 		return parseValue(type, value, lang, datatype);
+	}
+
+	private Triple parseStardogTripleValue(JsonParser jp, String fieldName) throws IOException {
+		Value subject = null, predicate = null, object = null;
+
+		while (jp.nextToken() != JsonToken.END_OBJECT) {
+			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {
+				throw new QueryResultParseException("Did not find triple attribute in triple value",
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
+			}
+			String posName = jp.getCurrentName();
+			if (SUBJECT.equals(posName)) {
+				if (subject != null) {
+					throw new QueryResultParseException(
+							posName + " field encountered twice in triple value: ",
+							jp.getCurrentLocation().getLineNr(),
+							jp.getCurrentLocation().getColumnNr());
+				}
+				subject = parseValue(jp, fieldName + ":" + posName);
+			} else if (PREDICATE.equals(posName)) {
+				if (predicate != null) {
+					throw new QueryResultParseException(
+							posName + " field encountered twice in triple value: ",
+							jp.getCurrentLocation().getLineNr(),
+							jp.getCurrentLocation().getColumnNr());
+				}
+				predicate = parseValue(jp, fieldName + ":" + posName);
+			} else if (OBJECT.equals(posName)) {
+				if (object != null) {
+					throw new QueryResultParseException(
+							posName + " field encountered twice in triple value: ",
+							jp.getCurrentLocation().getLineNr(),
+							jp.getCurrentLocation().getColumnNr());
+				}
+				object = parseValue(jp, fieldName + ":" + posName);
+			} else if ("g".equals(posName)) {
+				// silently ignore named graph field in Stardog dialect
+				parseValue(jp, fieldName + ":" + posName);
+			} else {
+				throw new QueryResultParseException("Unexpected field name in triple value: " + posName,
+						jp.getCurrentLocation().getLineNr(),
+						jp.getCurrentLocation().getColumnNr());
+			}
+		}
+
+		if (subject instanceof Resource && predicate instanceof IRI && object != null) {
+			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+		} else {
+			throw new QueryResultParseException("Incomplete or invalid triple value",
+					jp.getCurrentLocation().getLineNr(),
+					jp.getCurrentLocation().getColumnNr());
+		}
 	}
 
 	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
