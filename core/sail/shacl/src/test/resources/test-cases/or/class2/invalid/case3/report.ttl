@@ -33,11 +33,11 @@ ex:personShapeOr a sh:PropertyShape;
                   sh:class ex:Person
                 ]
             ];
-          rdf:rest (_:node1ej7v93r8x6), (_:node1ej7v93r8x6)
+          rdf:rest (_:node1ej80pnrox6), (_:node1ej80pnrox6)
         ]
     ] .
 
-_:node1ej7v93r8x6 a sh:NodeShape;
+_:node1ej80pnrox6 a sh:NodeShape;
   sh:not [ a sh:NodeShape;
       sh:class ex:Animal
     ] .

@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Exportable;
@@ -18,6 +20,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 			boolean negateChildren, Scope scope);
 
 	ValidationApproach getPreferedValidationApproach();
+
+	Set<ValidationApproach> getSupportedValidationApproaches();
 
 	SourceConstraintComponent getConstraintComponent();
 

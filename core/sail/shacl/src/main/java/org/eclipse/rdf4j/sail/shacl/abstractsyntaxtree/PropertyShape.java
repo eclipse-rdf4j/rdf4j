@@ -256,6 +256,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				.orElse(ValidationApproach.Transactional);
 	}
 
+	@Override
+	public Set<ValidationApproach> getSupportedValidationApproaches() {
+		return constraintComponents.stream()
+				.map(ConstraintComponent::getSupportedValidationApproaches)
+				.flatMap(Set::stream)
+				.collect(Collectors.toSet());
+	}
+
 	public Path getPath() {
 		return path;
 	}

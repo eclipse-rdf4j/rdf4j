@@ -34,7 +34,6 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel));
 	}
 
-	@Ignore
 	@Test
 	public void testRevalidation() {
 		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel));

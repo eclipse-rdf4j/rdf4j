@@ -183,6 +183,14 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
+	public Set<ValidationApproach> getSupportedValidationApproaches() {
+		return constraintComponents.stream()
+				.map(ConstraintComponent::getSupportedValidationApproaches)
+				.flatMap(Set::stream)
+				.collect(Collectors.toSet());
+	}
+
+	@Override
 	public SourceConstraintComponent getConstraintComponent() {
 		return SourceConstraintComponent.NodeConstraintComponent;
 	}

@@ -1,5 +1,10 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
@@ -57,6 +62,11 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	@Override
 	public ValidationApproach getPreferedValidationApproach() {
 		return ValidationApproach.Transactional;
+	}
+
+	@Override
+	public Set<ValidationApproach> getSupportedValidationApproaches() {
+		return new HashSet<>(Collections.singletonList(ValidationApproach.Transactional));
 	}
 
 	@Override
