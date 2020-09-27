@@ -207,7 +207,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
 			}
 
-			return new Unique(new Sort(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan))));
+			return new Unique(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan)));
 		}
 		PlanNode allTargetsPlan = new EmptyNode();
 

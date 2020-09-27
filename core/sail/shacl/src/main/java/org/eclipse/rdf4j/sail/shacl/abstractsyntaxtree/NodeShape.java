@@ -204,7 +204,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		if (scope != Scope.nodeShape) {
 			planNode = new ShiftToPropertyShape(planNode);
-			planNode = new Sort(planNode);
 		}
 
 		planNode = new Unique(planNode);

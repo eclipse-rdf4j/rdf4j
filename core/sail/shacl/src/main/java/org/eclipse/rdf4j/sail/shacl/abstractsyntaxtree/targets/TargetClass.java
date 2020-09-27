@@ -56,8 +56,8 @@ public class TargetClass extends Target {
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = connectionsGroup
-					.getCachedNodeFor(new Sort(new UnorderedSelect(connection, null,
-							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false))));
+					.getCachedNodeFor(new UnorderedSelect(connection, null,
+							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false)));
 		} else {
 			planNode = connectionsGroup.getCachedNodeFor(
 					new Select(connection, getQueryFragment("?a", "?c", null),

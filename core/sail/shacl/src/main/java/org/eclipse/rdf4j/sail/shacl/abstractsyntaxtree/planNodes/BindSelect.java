@@ -331,7 +331,7 @@ public class BindSelect implements PlanNode {
 
 	@Override
 	public boolean producesSorted() {
-		return true;
+		return false;
 	}
 
 	@Override

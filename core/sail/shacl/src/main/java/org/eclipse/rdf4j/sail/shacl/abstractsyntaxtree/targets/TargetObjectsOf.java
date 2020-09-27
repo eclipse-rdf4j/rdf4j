@@ -61,8 +61,8 @@ public class TargetObjectsOf extends Target {
 		PlanNode planNode = targetObjectsOf.stream()
 				.map(predicate -> {
 					return connectionsGroup
-							.getCachedNodeFor(new Sort(new UnorderedSelect(connection, null,
-									predicate, null, s -> new ValidationTuple(s.getObject(), scope, false))));
+							.getCachedNodeFor(new UnorderedSelect(connection, null,
+									predicate, null, s -> new ValidationTuple(s.getObject(), scope, false)));
 				})
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());

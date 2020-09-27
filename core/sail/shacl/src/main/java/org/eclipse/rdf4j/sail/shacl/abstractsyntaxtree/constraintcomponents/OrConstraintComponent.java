@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EqualsJoinValue
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Sort;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
@@ -141,7 +140,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())

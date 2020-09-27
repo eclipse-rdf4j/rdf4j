@@ -104,7 +104,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
 								EffectiveTarget.Extend.right, false);
-				allTargetsPlan = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+				allTargetsPlan = new Unique(new ShiftToPropertyShape(allTargetsPlan));
 			} else {
 				allTargetsPlan = getTargetChain()
 						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -159,7 +159,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new Unique(new Sort(new ShiftToPropertyShape(allTargetsPlan)));
+			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())

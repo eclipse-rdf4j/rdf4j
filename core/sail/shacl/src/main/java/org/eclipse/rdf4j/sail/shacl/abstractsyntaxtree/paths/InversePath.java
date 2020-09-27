@@ -44,14 +44,18 @@ public class InversePath extends Path {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
-		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
-				(IRI) inversePath.getId(), null,
-				s -> new ValidationTuple(s.getObject(), s.getSubject(), ConstraintComponent.Scope.propertyShape, true));
+
+		PlanNode added = inversePath.getAdded(connectionsGroup, null);
+		added = new TupleMapper(added, t -> {
+			return new ValidationTuple(t.getValue(), t.getActiveTarget(), ConstraintComponent.Scope.propertyShape,
+					true);
+		});
+
 		if (planNodeWrapper != null) {
-			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
+			added = planNodeWrapper.apply(added);
 		}
 
-		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+		return connectionsGroup.getCachedNodeFor(added);
 	}
 
 	@Override

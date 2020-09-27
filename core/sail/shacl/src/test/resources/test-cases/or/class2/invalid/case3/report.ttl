@@ -9,35 +9,35 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:peter;
+      sh:focusNode ex:validPerson2;
+      sh:value ex:d;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7lf2gux1
+      sh:sourceShape ex:personShapeOr
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:steve;
+      sh:focusNode ex:validPerson5;
+      sh:value ex:a;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ej7lf2gux1
+      sh:sourceShape ex:personShapeOr
     ] .
 
-_:node1ej7lf2gux1 a sh:PropertyShape;
+ex:personShapeOr a sh:PropertyShape;
   sh:path ex:knows;
   sh:not [ a sh:NodeShape;
-      sh:or [
+      sh:and [
           rdf:first [ a sh:NodeShape;
               sh:not [ a sh:NodeShape;
                   sh:class ex:Person
                 ]
             ];
-          rdf:rest (_:node1ej7lf2gux7), (_:node1ej7lf2gux7)
+          rdf:rest (_:node1ej7lfec7x6), (_:node1ej7lfec7x6)
         ]
     ] .
 
-_:node1ej7lf2gux7 a sh:NodeShape;
+_:node1ej7lfec7x6 a sh:NodeShape;
   sh:not [ a sh:NodeShape;
-      sh:class ex:Human
+      sh:class ex:Animal
     ] .

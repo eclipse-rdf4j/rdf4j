@@ -35,11 +35,12 @@ public class SimplePath extends Path {
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
 		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, predicate, null,
 				s -> new ValidationTuple(s.getSubject(), s.getObject(), ConstraintComponent.Scope.propertyShape, true));
+
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);
 		}
 
-		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+		return connectionsGroup.getCachedNodeFor(unorderedSelect);
 	}
 
 	@Override
