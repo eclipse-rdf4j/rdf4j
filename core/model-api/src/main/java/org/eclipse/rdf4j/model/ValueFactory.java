@@ -1,10 +1,10 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) ${year} Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
 package org.eclipse.rdf4j.model;
 
 import java.math.BigDecimal;
@@ -12,9 +12,6 @@ import java.math.BigInteger;
 import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
-
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
@@ -30,7 +27,7 @@ public interface ValueFactory {
 	 *
 	 * @param iri A string-representation of a IRI.
 	 * @return An object representing the IRI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
 	 */
 	public IRI createIRI(String iri);
 
@@ -39,7 +36,7 @@ public interface ValueFactory {
 	 *
 	 * @param uri A string-representation of a URI.
 	 * @return An object representing the URI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
 	 * @deprecated Use {{@link #createIRI(String)} instead.
 	 */
 	@Deprecated
@@ -66,7 +63,7 @@ public interface ValueFactory {
 	 * @param namespace The IRI's namespace.
 	 * @param localName The IRI's local name.
 	 * @return An object representing the URI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
 	 * @deprecated Use {@link #createIRI(String, String)} instead.
 	 */
 	@Deprecated
