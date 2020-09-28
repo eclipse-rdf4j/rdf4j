@@ -5,11 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.model;
+package org.eclipse.rdf4j.model.impl;
 
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.ModelFactory;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.ModelCollectionTest;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 import com.google.common.collect.testing.SampleElements;
