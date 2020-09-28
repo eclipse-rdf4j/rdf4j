@@ -91,7 +91,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
-	 * object must be {@link XSD#STRING}.
+	 * object must be <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
 	 */
@@ -99,7 +99,8 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label and language attribute. The return value of
-	 * {@link Literal#getDatatype()} for the returned object must be {@link RDF#LANGSTRING}.
+	 * {@link Literal#getDatatype()} for the returned object must be
+	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>.
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param language The literal's language attribute, must not be <tt>null</tt>.

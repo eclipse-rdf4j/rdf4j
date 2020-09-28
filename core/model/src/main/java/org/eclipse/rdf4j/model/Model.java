@@ -17,12 +17,11 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 /**
  * An RDF Model, represented as a {@link java.util.Set} of {@link Statement}s with predictable iteration order.
  * <p>
- * Additional utility functionality for working with Model objects is available in the
- * {@link org.eclipse.rdf4j.model.util.Models Models} utility class.
+ * Additional utility functionality for working with {@code Model} objects is available in the
+ * {@code org.eclipse.rdf4j.model.util.Models} utility class.
  *
  * @author James Leigh
  * @author Jeen Broekstra
- * @see org.eclipse.rdf4j.model.util.Models the Models utility class
  */
 public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 

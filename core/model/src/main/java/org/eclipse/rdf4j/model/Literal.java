@@ -13,9 +13,6 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
-
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  *
@@ -40,8 +37,9 @@ public interface Literal extends Value {
 
 	/**
 	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
-	 * {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this method must return
-	 * {@link XSD#STRING}.
+	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>. If no datatype was
+	 * assigned to this literal by the creator, then this method must return
+	 * <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
 	 * @return The datatype for this literal.
 	 */
@@ -52,7 +50,7 @@ public interface Literal extends Value {
 	 *
 	 * @param other The object to compare this literal to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
-	 *         and datatypes are equal.
+	 * and datatypes are equal.
 	 */
 	@Override
 	public boolean equals(Object other);
@@ -71,7 +69,7 @@ public interface Literal extends Value {
 	 *
 	 * @return The <tt>byte value of the literal.
 	 * &#64;throws NumberFormatException
-	 *         If the literal cannot be represented by a <tt>byte</tt>.
+	 * If the literal cannot be represented by a <tt>byte</tt>.
 	 */
 	public byte byteValue();
 

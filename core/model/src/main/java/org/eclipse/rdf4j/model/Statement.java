@@ -14,8 +14,9 @@ import org.eclipse.rdf4j.model.util.Statements;
 /**
  * An RDF statement, with optional associated context. A statement can have an associated context in specific cases, for
  * example when fetched from a repository.
- *
- * @see Statements
+ * <p>
+ * Additional utility functionality for working with {@code Statement} objects is available in the
+ * {@code org.eclipse.rdf4j.model.util.Statements} utility class.
  */
 public interface Statement extends Serializable {
 
