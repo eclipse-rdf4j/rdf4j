@@ -45,11 +45,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ValueComparatorBenchmark {
 
@@ -69,12 +69,7 @@ public class ValueComparatorBenchmark {
 
 			subjects = parse.subjects().stream().limit(1000).collect(Collectors.toList());
 			predicates = parse.predicates().stream().limit(1000).collect(Collectors.toList());
-			literals = parse.objects()
-					.stream()
-					.filter(o -> !(o instanceof IRI))
-					.filter(o -> !(o instanceof BNode))
-					.limit(1000)
-					.collect(Collectors.toList());
+			literals = parse.objects().stream().limit(1000).collect(Collectors.toList());
 
 			manyPointerEquals = new ArrayList<>();
 
@@ -114,14 +109,14 @@ public class ValueComparatorBenchmark {
 	}
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.sortLiterals")
+		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.*")
 				.build();
 
 		new Runner(opt).run();
 	}
 
 	@Benchmark
-	public int sortSubjects() throws Exception {
+	public int sortSubjects() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -135,7 +130,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortPredicates() throws Exception {
+	public int sortPredicates() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -149,7 +144,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortLiterals() throws Exception {
+	public int sortLiterals() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -163,7 +158,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortManyPointerEquals() throws Exception {
+	public int sortManyPointerEquals() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -177,7 +172,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortManyDeepEquals() throws Exception {
+	public int sortManyDeepEquals() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
