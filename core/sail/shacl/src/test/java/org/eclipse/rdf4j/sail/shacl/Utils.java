@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class Utils {
 
 	public static void loadShapeData(ShaclSail sail, String resourceName) throws IOException {
+		sail.init();
 		sail.disableValidation();
 		Model shapes;
 		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
@@ -54,31 +55,25 @@ public class Utils {
 	}
 
 	public static void loadShapeData(SailRepository repo, String resourceName) throws IOException {
-		((ShaclSail) repo.getSail()).disableValidation();
 
 		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
 
 			try (RepositoryConnection conn = repo.getConnection()) {
-				conn.begin(IsolationLevels.NONE);
+				conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 				conn.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 				conn.commit();
 			}
 		}
-		((ShaclSail) repo.getSail()).enableValidation();
 	}
 
 	public static void loadShapeData(SailRepository repo, URL resourceName)
 			throws RDF4JException, UnsupportedRDFormatException, IOException {
-		((ShaclSail) repo.getSail()).disableValidation();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.begin();
+			conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 			conn.add(resourceName, resourceName.toString(), RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
 			conn.commit();
 		}
-		((ShaclSail) repo.getSail()).enableValidation();
-
 	}
 
 	public static SailRepository getInitializedShaclRepository(String shapeData,
@@ -86,21 +81,18 @@ public class Utils {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
 		SailRepository repo = new SailRepository(sail);
-		repo.init();
 		Utils.loadShapeData(repo, shapeData);
 		return repo;
 	}
 
 	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
-		sail.init();
 		Utils.loadShapeData(sail, shapeData);
 		return sail;
 	}
 
 	public static Sail getInitializedShaclSail(NotifyingSail baseSail, String shaclFileName) throws IOException {
 		ShaclSail sail = new ShaclSail(baseSail);
-		sail.init();
 		Utils.loadShapeData(sail, shaclFileName);
 		return sail;
 	}
@@ -129,23 +121,17 @@ public class Utils {
 	}
 
 	public static void loadInitialData(SailRepository repo, String resourceName) throws IOException {
-		((ShaclSail) repo.getSail()).disableValidation();
 
-		try {
-			try (InputStream initialData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
-
-				if (initialData == null) {
-					return;
-				}
-
-				try (RepositoryConnection conn = repo.getConnection()) {
-					conn.begin(IsolationLevels.NONE);
-					conn.add(initialData, "", RDFFormat.TURTLE);
-					conn.commit();
-				}
+		try (InputStream initialData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+			if (initialData == null) {
+				return;
 			}
-		} finally {
-			((ShaclSail) repo.getSail()).enableValidation();
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+				conn.add(initialData, "", RDFFormat.TURTLE);
+				conn.commit();
+			}
 		}
 
 	}

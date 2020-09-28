@@ -9,20 +9,8 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:and (
-	        [
+	sh:property [
+	        sh:path ex:knows ;
+                sh:and( [sh:hasValue ex:peter] [sh:hasValue ex:steve] ) ;
 
-	                sh:path ex:knows ;
-	                sh:hasValue ex:peter ;
-
-	        ]
-
-	        [
-
-	                sh:path ex:knows ;
-	                sh:hasValue ex:steve ;
-
-	        ]
-
-	 ) .
-
+	].

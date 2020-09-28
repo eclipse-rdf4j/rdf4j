@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -22,9 +23,8 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.NamespaceImpl;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
@@ -41,6 +41,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Custom tests for Turtle Parser
@@ -62,12 +64,14 @@ public class CustomTurtleParserTest {
 
 	private StatementCollector statementCollector;
 
+	private final Logger logger = LoggerFactory.getLogger(getClass());
+
 	/**
 	 * @throws java.lang.Exception
 	 */
 	@Before
 	public void setUp() throws Exception {
-		vf = ValueFactoryImpl.getInstance();
+		vf = SimpleValueFactory.getInstance();
 		settingsNoVerifyLangTag = new ParserConfig();
 		settingsNoVerifyLangTag.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);
 		errors = new ParseErrorCollector();
@@ -175,15 +179,13 @@ public class CustomTurtleParserTest {
 
 		String str = out.toString();
 
-		System.err.println(str);
-
 		assertTrue("okLiteralString not found", str.contains(okLiteralString));
 		assertTrue("errLiteralString not found", str.contains(errLiteralString));
 	}
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertEquals(13, parser.getSupportedSettings().size());
+		assertThat(parser.getSupportedSettings()).hasSize(14);
 	}
 
 	@Test
@@ -242,7 +244,7 @@ public class CustomTurtleParserTest {
 		Model model = Rio.parse(new StringReader("<urn:a> a _:c2; a <urn:b> ."), "", RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), RDF.TYPE, vf.createURI("urn:b")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
 	}
 
 	@Test
@@ -250,7 +252,7 @@ public class CustomTurtleParserTest {
 		Model model = Rio.parse(new StringReader("<urn:a> a _:c2;a <urn:b> ."), "", RDFFormat.TURTLE);
 
 		assertEquals(2, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), RDF.TYPE, vf.createURI("urn:b")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
 	}
 
 	@Test
@@ -294,7 +296,7 @@ public class CustomTurtleParserTest {
 					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
-			System.out.println(e.getMessage());
+			logger.debug(e.getMessage(), e);
 			assertTrue(e.getMessage().contains("Object for statement missing"));
 		}
 	}
@@ -307,7 +309,7 @@ public class CustomTurtleParserTest {
 					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
-			System.out.println(e.getMessage());
+			logger.debug(e.getMessage(), e);
 			assertTrue(e.getMessage()
 					.contains("Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
 		}
@@ -321,7 +323,7 @@ public class CustomTurtleParserTest {
 					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
-			System.out.println(e.getMessage());
+			logger.debug(e.getMessage(), e);
 			assertTrue(e.getMessage().contains("Expected an RDF value here, found ';'"));
 		}
 	}
@@ -334,7 +336,7 @@ public class CustomTurtleParserTest {
 					"", RDFFormat.TURTLE);
 			fail("Did not receive an exception");
 		} catch (RDFParseException e) {
-			System.out.println(e.getMessage());
+			logger.debug(e.getMessage(), e);
 			assertTrue(e.getMessage().contains("Expected an RDF value here, found ';'"));
 		}
 	}
@@ -394,7 +396,7 @@ public class CustomTurtleParserTest {
 		Model model = Rio.parse(new StringReader("<urn:a> skos:broader <urn:b>."), "", RDFFormat.TURTLE);
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), SKOS.BROADER, vf.createURI("urn:b")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), SKOS.BROADER, vf.createIRI("urn:b")));
 	}
 
 	@Test
@@ -402,13 +404,13 @@ public class CustomTurtleParserTest {
 		ParserConfig aConfig = new ParserConfig();
 
 		aConfig.set(BasicParserSettings.NAMESPACES,
-				Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
+				Collections.<Namespace>singleton(new SimpleNamespace("foo", SKOS.NAMESPACE)));
 
 		Model model = Rio.parse(new StringReader("<urn:a> foo:broader <urn:b>."), "", RDFFormat.TURTLE, aConfig, vf,
 				new ParseErrorLogger());
 
 		assertEquals(1, model.size());
-		assertTrue(model.contains(vf.createURI("urn:a"), SKOS.BROADER, vf.createURI("urn:b")));
+		assertTrue(model.contains(vf.createIRI("urn:a"), SKOS.BROADER, vf.createIRI("urn:b")));
 	}
 
 	@Test
@@ -416,7 +418,7 @@ public class CustomTurtleParserTest {
 		ParserConfig aConfig = new ParserConfig();
 
 		aConfig.set(BasicParserSettings.NAMESPACES,
-				Collections.<Namespace>singleton(new NamespaceImpl("foo", SKOS.NAMESPACE)));
+				Collections.<Namespace>singleton(new SimpleNamespace("foo", SKOS.NAMESPACE)));
 
 		Model model = Rio.parse(new StringReader("@prefix skos : <urn:not_skos:> ." + "<urn:a> skos:broader <urn:b>."),
 				"", RDFFormat.TURTLE, aConfig, vf, new ParseErrorLogger());

@@ -12,11 +12,11 @@ import java.io.File;
 import java.io.IOException;
 import java.math.RoundingMode;
 import java.util.Arrays;
-import java.util.Map;
 
-import org.apache.commons.collections4.map.ReferenceMap;
 import org.eclipse.rdf4j.common.io.NioFile;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.common.math.LongMath;
 
 /**
@@ -61,10 +61,9 @@ public class IDFile implements Closeable {
 
 	private final boolean forceSync;
 
-	// ReferenceMap keeps a soft reference to the cache line (Long[]) which means that it will be GCed if we run low on
-	// memory. This is not synchronized and we choose to synchronize in the code instead of synchronizing the whole map
-	// because this allows us to synchronize multiple operations together.
-	private final Map<Integer, Long[]> cache = new ReferenceMap<>();
+	// A cache for lines read from the file index. This cache is unlimited size and uses soft values to allow GC of
+	// unreferenced lines when under memory pressure.
+	private final Cache<Integer, Long[]> cache = CacheBuilder.newBuilder().softValues().build();
 
 	// We choose a cacheLineSize of 4KB since this is a typical file system block size.
 	private final int blockSize = 4 * 1024; // 4KB
@@ -214,7 +213,7 @@ public class IDFile implements Closeable {
 
 			synchronized (this) {
 				// we try not to overwrite an existing cache line
-				if (!cache.containsKey(cacheLineLookupIndex)) {
+				if (cache.getIfPresent(cacheLineLookupIndex) == null) {
 					cache.put(cacheLookupIndex, cacheLine);
 				}
 				gcReducingCache = cacheLine;
@@ -267,7 +266,7 @@ public class IDFile implements Closeable {
 		if (cacheLookupIndex == gcReducingCacheIndex) {
 			return gcReducingCache;
 		} else {
-			return cache.get(cacheLookupIndex);
+			return cache.getIfPresent(cacheLookupIndex);
 		}
 	}
 
@@ -290,7 +289,7 @@ public class IDFile implements Closeable {
 	}
 
 	synchronized public void clearCache() {
-		cache.clear();
+		cache.invalidateAll();
 		gcReducingCacheIndex = -1;
 		gcReducingCache = null;
 	}

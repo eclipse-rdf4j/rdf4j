@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
@@ -70,33 +71,69 @@ public class HasValuePropertyShape extends PathPropertyShape {
 		// TODO - these plans are generally slow because they generate a lot of SPARQL queries and also they don't
 		// optimize for the case when everything already valid in the added statements.
 
-		if (getPath() == null) {
-			PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
-			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-			}
+		if (!hasOwnPath()) {
+			if (getPath() == null) {
+				PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+				if (overrideTargetNode != null) {
+					addedTargets = overrideTargetNode.getPlanNode();
+				}
 
-			PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
-				List<Value> line = t.getLine();
-				t.getLine().add(line.get(0));
-				return t;
-			});
+				PlanNode invalidTargets = new TupleMapper(addedTargets, t -> {
+					List<Value> line = t.getLine();
+					t.getLine().add(line.get(0));
+					return t;
+				});
 
-			if (negateThisPlan) {
-				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue)))
-						.getTrueNode(UnBufferedPlanNode.class);
+				if (negateThisPlan) {
+					invalidTargets = new ValueInFilter(invalidTargets,
+							new HashSet<>(Collections.singletonList(hasValue)))
+									.getTrueNode(UnBufferedPlanNode.class);
+				} else {
+					invalidTargets = new ValueInFilter(invalidTargets,
+							new HashSet<>(Collections.singletonList(hasValue)))
+									.getFalseNode(UnBufferedPlanNode.class);
+				}
+
+				if (printPlans) {
+					String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
+					logger.info(planAsGraphvizDot);
+				}
+
+				return new EnrichWithShape(invalidTargets, this);
+
 			} else {
-				invalidTargets = new ValueInFilter(invalidTargets, new HashSet<>(Collections.singletonList(hasValue)))
-						.getFalseNode(UnBufferedPlanNode.class);
+
+				PlanNode addedTargets = nodeShape.getPlanAddedStatements(connectionsGroup, null);
+				PlanNode addedByPath = getPath().getPlanAddedStatements(connectionsGroup, null);
+				addedTargets = new UnionNode(new TrimTuple(addedByPath, 0, 1), addedTargets);
+				addedTargets = new Unique(addedTargets);
+
+				addedTargets = nodeShape.getTargetFilter(connectionsGroup, addedTargets);
+
+				if (overrideTargetNode != null) {
+					addedTargets = overrideTargetNode.getPlanNode();
+				}
+
+				PlanNode joined = new BulkedExternalInnerJoin(addedTargets, connectionsGroup.getBaseConnection(),
+						getPath().getQuery("?a", "?c", null), false, null, "?a", "?c");
+
+				PlanNode invalidTargets;
+				if (negateThisPlan) {
+					invalidTargets = new ValueInFilter(joined, new HashSet<>(Collections.singletonList(hasValue)))
+							.getTrueNode(UnBufferedPlanNode.class);
+				} else {
+					invalidTargets = new ValueInFilter(joined, new HashSet<>(Collections.singletonList(hasValue)))
+							.getFalseNode(UnBufferedPlanNode.class);
+				}
+
+				if (printPlans) {
+					String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
+					logger.info(planAsGraphvizDot);
+				}
+
+				return new EnrichWithShape(invalidTargets, this);
+
 			}
-
-			if (printPlans) {
-				String planAsGraphvizDot = getPlanAsGraphvizDot(invalidTargets, connectionsGroup);
-				logger.info(planAsGraphvizDot);
-			}
-
-			return new EnrichWithShape(invalidTargets, this);
-
 		}
 
 		if (overrideTargetNode != null) {
@@ -206,14 +243,27 @@ public class HasValuePropertyShape extends PathPropertyShape {
 
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
-		String objectVar = "?hasValue_" + UUID.randomUUID().toString().replace("-", "");
 
-		if (hasValue instanceof IRI) {
-			return "BIND(<" + hasValue + "> as " + objectVar + ")\n" + getPath().getQuery(targetVar, objectVar, null);
-		}
-		if (hasValue instanceof Literal) {
-			return "BIND(" + hasValue.toString() + " as " + objectVar + ")\n"
-					+ getPath().getQuery(targetVar, objectVar, null);
+		if (hasOwnPath()) {
+			String objectVar = "?hasValue_" + UUID.randomUUID().toString().replace("-", "");
+
+			if (hasValue instanceof IRI) {
+				return "BIND(<" + hasValue + "> as " + objectVar + ")\n"
+						+ getPath().getQuery(targetVar, objectVar, null);
+			}
+			if (hasValue instanceof Literal) {
+				return "BIND(" + hasValue.toString() + " as " + objectVar + ")\n"
+						+ getPath().getQuery(targetVar, objectVar, null);
+			}
+		} else {
+
+			if (hasValue instanceof IRI) {
+				return targetVar + " = <" + hasValue + ">";
+			}
+			if (hasValue instanceof Literal) {
+				return targetVar + " = " + hasValue.toString();
+
+			}
 		}
 
 		throw new UnsupportedOperationException(

@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
@@ -230,6 +232,12 @@ public class OrPropertyShape extends PathPropertyShape {
 		return or.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
 	}
 
+	public boolean childrenHasOwnPathRecursive() {
+		return or.stream()
+				.flatMap(a -> a.stream().map(PathPropertyShape::childrenHasOwnPathRecursive))
+				.anyMatch(a -> a);
+	}
+
 	private PlanNode unionAll(List<PlanNode> planNodes) {
 		return new Unique(new UnionNode(planNodes.toArray(new PlanNode[0])));
 	}
@@ -299,12 +307,54 @@ public class OrPropertyShape extends PathPropertyShape {
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
 
-		return or.stream()
-				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
-				.filter(Optional::isPresent)
-				.map(Optional::get)
-				.collect(Collectors.joining("\n} UNION {\n#VALUES_INJECTION_POINT#\n", "{\n#VALUES_INJECTION_POINT#\n",
-						"\n}"));
+		if (hasOwnPath()) {
+			// within property shape
+			String objectVariable = randomVariable();
+			String pathQuery1 = getPath().getQuery(targetVar, objectVariable, null);
+
+			String collect = or.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(objectVariable))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) || ( ", "( ",
+							" )"));
+
+			String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+					+ "\n\tFILTER(!(" + collect + "))\n})";
+
+			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
+
+			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+					+ randomVariable() + " "
+					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n})\n}";
+
+			return query;
+		} else if (!childrenHasOwnPathRecursive()) {
+
+			return or.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) || ( ", "( ",
+							" )"));
+		} else {
+			// within node shape
+			return or.stream()
+					.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.map(s -> s.replaceAll("(?m)^", "\t"))
+					.collect(
+							Collectors.joining("\n} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"\n}"));
+		}
 
 	}
 

@@ -2,8 +2,9 @@
 title: "The RDF4J REST API"
 toc: true
 weight: 1
+autonumbering: true
 ---
-The RDF4J server REST API is a HTTP Protocol that covers a fully compliant implementation of the [SPARQL 1.1 Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-protocol/). This ensures that RDF4J server functions as a fully standards-compliant **SPARQL endpoint**. 
+The RDF4J server REST API is a HTTP Protocol that covers a fully compliant implementation of the [SPARQL 1.1 Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-protocol/). This ensures that RDF4J server functions as a fully standards-compliant **SPARQL endpoint**.
 <!--more-->
 The current version of the API additionally supports the [SPARQL 1.1 Graph Store HTTP Protocol W3C Recommendation](https://www.w3.org/TR/sparql11-http-rdf-update/). The RDF4J REST API extends the W3C standards in several aspects, the most important of which is that it supports a full database transaction mechanism.
 
@@ -16,7 +17,7 @@ The following is an overview of the resources that are available from RDF4J serv
        /repositories     : overview of available repositories (GET)
           /<REP_ID>      : query evaluation and administration tasks on a repository
                            (GET/POST/PUT/DELETE)
-           /config       : repository configuration (GET/POST) 
+           /config       : repository configuration (GET/POST)
            /statements   : repository statements (GET/POST/PUT/DELETE)
            /contexts     : context overview (GET)
            /size         : # statements in repository (GET)
@@ -30,7 +31,7 @@ The following is an overview of the resources that are available from RDF4J serv
            /transactions : starting point for creating transactions on the current repository (POST)
                /<TXN_ID> : a specific transaction which can be updated (PUT/DELETE)
 
-# Protocol version
+## Protocol version
 
 The version of the protocol that the server uses to communicate over HTTP is available at: `<RDF4J_URL>/protocol`. The version described by this chapter is "10".
 
@@ -38,15 +39,15 @@ Supported methods on this URL are:
 
 - `GET`: Gets the protocol version string, e.g. “1”, “2”, etc.
 
-## Version 10
+### Version 10
 
 New in RDF4J release 3.1.0.
 
 - repository configuration / retrieval endpoint at `/repositories/<REP_ID>/config`.
 - modified behavior of PUT on `/repositories/<REP_ID>`.
 
-## Request examples
-### Fetch the protocol version
+### Request examples
+#### Fetch the protocol version
 
 Request:
 
@@ -61,7 +62,7 @@ Response:
 
     4
 
-# Repository list
+## Repository list
 
 An overview of the repositories that are available on a server can be retrieved from `<RDF4J_URL>/repositories`.
 
@@ -73,8 +74,8 @@ Request headers:
 
 - `Accept`: Relevant values are the MIME types of supported variable binding formats.
 
-## Request examples
-### Fetch the repository list
+### Request examples
+#### Fetch the repository list
 
 Request:
 
@@ -117,7 +118,7 @@ Response:
       </results>
     </sparql>
 
-# Repository queries
+## Repository queries
 
 Queries on a specific repository with ID `<ID>` can be evaluated by sending requests to: `<RDF4J_URL>/repositories/<ID>`. This resource represents a SPARQL query endpoint. Both `GET` and `POST` methods are supported. The `GET` method is preferred as it adheres to the REST architectural style. The `POST` method should be used in cases where the length of the (URL-encoded) query exceeds practicable limits of proxies, servers, etc. In case a `POST` request is used, the query parameters should be sent to the server as www-form-urlencoded data.
 
@@ -137,8 +138,8 @@ Request headers:
 - `Accept`: Relevant values are the MIME types of supported RDF formats for graph queries, the MIME types of supported variable binding formats for tuple queries, and the MIME types of supported boolean result formats for boolean queries.
 - `Content-Type`: specifies the mediatype of a POST request body. Possible values are “application/x-www-form-urlencoded” (for a SPARQL query or update encoded as a form parameter), “application/sparql-query” (for an unencoded SPARQL query string) or “application/sparql-update” (for an unencoded SPARQL update string).
 
-## Request examples
-### Evaluate a SeRQL-select query on repository “mem-ref”
+### Request examples
+#### Evaluate a SeRQL-select query on repository “mem-ref”
 
 Request:
 
@@ -165,7 +166,7 @@ Response:
       </results>
     </sparql>
 
-### Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request
+#### Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request
 
 Request:
 
@@ -185,8 +186,8 @@ Response:
     <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     </rdf:RDF>
 
-### Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request and form encoding
- 
+#### Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request and form encoding
+
 Request:
 
     POST /rdf4j-server/repositories/mem-rdf HTTP/1.1
@@ -205,7 +206,7 @@ Response:
     <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     </rdf:RDF>
 
-### Evaluate a SPARQL-ask query on repository “mem-ref”
+#### Evaluate a SPARQL-ask query on repository “mem-ref”
 
 Request:
 
@@ -220,7 +221,7 @@ Response:
 
     true
 
-# Repository creation
+## Repository creation
 
 A new repository with ID `<ID>` can be created on the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `PUT` method should be used for this.
 
@@ -248,14 +249,14 @@ An example payload, containing a repository configuration for an in-memory store
    ].
 ```
 
-# Repository removal
+## Repository removal
 
 A specific repository with ID `<ID>` can be deleted from the server by sending requests to: `<RDF4J_URL>/repositories/<ID>`. The `DELETE` method should be used for this, and the request accepts no parameters.
 
 Care should be taken with the use of this method: the result of this operation is the complete removal of the repository from the server, including its configuration settings and (if present) data directory.
 
-## Request examples
-### Remove the “mem-rdf” repository
+### Request examples
+#### Remove the “mem-rdf” repository
 
 Request:
 
@@ -266,9 +267,9 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-# Repository configuration
+## Repository configuration
 
-(new in RDF4J 3.1.0) 
+(new in RDF4J 3.1.0)
 
 The configuration for a specific repositroy with ID `<ID>` is available at: `<RDF4J_URL>/repositories/<ID>/config`.
 
@@ -282,7 +283,7 @@ Request headers:
 -    `Accept`: Relevant values for GET requests are the MIME types of supported RDF formats.
 -    `Content-Type`: Must specify the encoding of any request data that is sent to a server. Relevant values are the MIME types of supported RDF formats.
 
-The payload supplied with POST request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. The Server will attempt to reconfigure the existing repository with the supplied configuration data. 
+The payload supplied with POST request is expected to contain an RDF document, containing an RDF-serialized form of a repository configuration. The Server will attempt to reconfigure the existing repository with the supplied configuration data.
 
 An example payload, containing a repository configuration for an in-memory store:
 
@@ -306,7 +307,7 @@ An example payload, containing a repository configuration for an in-memory store
    ].
 ```
 
-# Repository statements
+## Repository statements
 
 The statements for a specific repository with ID `<ID>` are available at: `<RDF4J_URL>/repositories/<ID>/statements`
 
@@ -340,8 +341,8 @@ Request headers:
 -    `Accept`: Relevant values for GET requests are the MIME types of supported RDF formats.
 -    `Content-Type`: Must specify the encoding of any request data that is sent to a server. Relevant values are the MIME types of supported RDF formats, `application/x-rdftransaction` for a transaction document and `application/x-www-form-urlencoded` in case the parameters are encoded in the request body (as opposed to the being part of the request URL).
 
-## Request examples
-### Fetch all statements from repository “mem-rdf”
+### Request examples
+#### Fetch all statements from repository “mem-rdf”
 
 Request:
 
@@ -356,7 +357,7 @@ Response:
 
     [RDF/XML ENCODED RDF DATA]
 
-### Fetch all statements from a specific context in repository “mem-rdf”
+#### Fetch all statements from a specific context in repository “mem-rdf”
 
 Request:
 
@@ -371,7 +372,7 @@ Response:
 
     [RDF/XML ENCODED RDF DATA]
 
-### Remove all statements from the “mem-rdf” repository
+#### Remove all statements from the “mem-rdf” repository
 
 Request:
 
@@ -382,7 +383,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Add data to the “mem-rdf” repository
+#### Add data to the “mem-rdf” repository
 
 Request:
 
@@ -396,7 +397,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Add data to the “mem-rdf” repository, replacing any and all existing data
+#### Add data to the “mem-rdf” repository, replacing any and all existing data
 
 Request:
 
@@ -410,7 +411,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Add data to a specific context in the “mem-rdf” repository, replacing any data that is currently in this context
+#### Add data to a specific context in the “mem-rdf” repository, replacing any data that is currently in this context
 
 Request:
 
@@ -424,7 +425,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Add statements without a context to the “mem-rdf” repository, ignoring any context information that is encoded in the supplied data
+#### Add statements without a context to the “mem-rdf” repository, ignoring any context information that is encoded in the supplied data
 
 Request:
 
@@ -438,7 +439,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Perform update described in a SPARQL 1.1 Update string
+#### Perform update described in a SPARQL 1.1 Update string
 
 Request:
 
@@ -452,7 +453,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Perform updates described in a transaction document and treat it as a single transaction
+#### Perform updates described in a transaction document and treat it as a single transaction
 
 Request:
 
@@ -466,7 +467,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-# Repository size
+## Repository size
 
 The repository size (defined as the number of statements it contains) is available at: `<RDF4J_URL>/repositories/<ID>/size`.
 
@@ -478,8 +479,8 @@ Parameters:
 
 -    `context` (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value `null` which represents all context-less statements. If multiple `context` parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.
 
-## Request examples
-### Get the size of repository ‘mem-rdf’
+### Request examples
+#### Get the size of repository ‘mem-rdf’
 
 Request
 
@@ -493,7 +494,7 @@ Response:
 
     123456
 
-### Get the size of a specific context in repository ‘mem-rdf’
+#### Get the size of a specific context in repository ‘mem-rdf’
 
 Request
 
@@ -507,7 +508,7 @@ Response:
 
     4321
 
-# Context list
+## Context list
 
 A list of resources that are used as context identifiers in a repository with ID `<ID>` is available at: `<RDF4J_URL>/repositories/<ID>/contexts`
 
@@ -519,8 +520,8 @@ Request headers:
 
  -  `Accept`: Relevant values are the MIME types of supported variable binding formats.
 
-## Request examples
-### Fetch all context identifiers from repository “mem-rdf”
+### Request examples
+#### Fetch all context identifiers from repository “mem-rdf”
 
 Request:
 
@@ -547,7 +548,7 @@ Response:
       </results>
     </sparql>
 
-# Namespace declaration lists
+## Namespace declaration lists
 
 Namespace declaration lists for a repository with ID `<ID>` are available at:`<RDF4J_URL>/repositories/<ID>/namespaces`.
 
@@ -560,8 +561,8 @@ Request headers:
 
 - `Accept`: Relevant values for GET requests are the MIME types of supported variable binding formats.
 
-## Request examples
-### Fetch all namespace declaration info
+### Request examples
+#### Fetch all namespace declaration info
 
 Request
 
@@ -592,7 +593,7 @@ Response:
       </results>
     </sparql>
 
-### Remove all namespace declarations from the repository
+#### Remove all namespace declarations from the repository
 
 Request:
 
@@ -603,7 +604,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-# Namespace declarations
+## Namespace declarations
 
 Namespace declarations with prefix `<PREFIX>` for a repository with ID `<ID>` are available at: `<RDF4J_URL>/repositories/<ID>/namespaces/<PREFIX>`.
 
@@ -613,8 +614,8 @@ Supported methods on this URL are:
 - `PUT`: Defines or updates a namespace declaration, mapping the prefix to the namespace that is supplied in plain text in the request body.
 - `DELETE`: Removes a namespace declaration.
 
-## Request examples
-### Get the namespace for prefix ‘rdf’
+### Request examples
+#### Get the namespace for prefix ‘rdf’
 
 Request
 
@@ -628,7 +629,7 @@ Response:
 
     http://www.w3.org/1999/02/22-rdf-syntax-ns#
 
-### Set the namespace for a specific prefix
+#### Set the namespace for a specific prefix
 
 Request:
 
@@ -642,7 +643,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Remove the namespace for a specific prefix
+#### Remove the namespace for a specific prefix
 
 Request:
 
@@ -653,7 +654,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-# Graph Store support
+## Graph Store support
 
 The SPARQL 1.1 Graph Store HTTP Protocol is supported on a per-repository basis. The functionality is accessible at `<RDF4J_URL>/repositories/<ID>/rdf-graphs/service` (for indirectly referenced named graphs), and `<RDF4J_URL>/repositories/<ID>/rdf-graphs/<NAME>` (for directly referenced named graphs). A request on a directly referenced named graph entails that the request URL itself is used as the named graph identifier in the repository.
 
@@ -676,8 +677,8 @@ For requests on indirectly referenced graphs, the following parameters are suppo
 
 Each request on an indirectly referenced graph needs to specify precisely one of the above parameters.
 
-## Request examples
-### Fetch all statements from a directly referenced named graph in repository “mem-rdf”
+### Request examples
+#### Fetch all statements from a directly referenced named graph in repository “mem-rdf”
 
 Request:
 
@@ -692,7 +693,7 @@ Response:
 
     [RDF/XML ENCODED RDF DATA]
 
-### Fetch all statements from an indirectly referenced named graph in repository “mem-rdf”
+#### Fetch all statements from an indirectly referenced named graph in repository “mem-rdf”
 
 Request:
 
@@ -707,7 +708,7 @@ Response:
 
     [RDF/XML ENCODED RDF DATA]
 
-### Fetch all statements from the default graph in repository “mem-rdf”
+#### Fetch all statements from the default graph in repository “mem-rdf”
 
 Request:
 
@@ -722,7 +723,7 @@ Response:
 
     [RDF/XML ENCODED RDF DATA]
 
-### Add statements to a directly referenced named graph in the “mem-rdf” repository
+#### Add statements to a directly referenced named graph in the “mem-rdf” repository
 
 Request:
 
@@ -736,7 +737,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-### Clear a directly referenced named graph in the “mem-rdf” repository
+#### Clear a directly referenced named graph in the “mem-rdf” repository
 
 Request:
 
@@ -747,7 +748,7 @@ Response:
 
     HTTP/1.1 204 NO CONTENT
 
-# Starting transactions
+## Starting transactions
 
 Rdf4j supports a RESTful implementation of a transactional protocol, by means of treating the transaction itself as a new resource that can be updated with consecutive operations.
 
@@ -759,8 +760,8 @@ Parameters:
 
 - `isolation-level` (optional): specifies the transaction isolation level to be used for this transaction. Possible values are store-extensible, the default set of levels includes `NONE`, `READ_UNCOMMITTED`, `READ_COMMITTED`, `SNAPSHOT_READ`, `SNAPSHOT`,  and `SERIALIZABLE`.  Note that an RDF4J store implementation is not guaranteed to support all possible isolation levels. If no isolation level is specified, the default isolation level for the store will be used.
 
-## Request examples
-### Starting a new transaction
+### Request examples
+#### Starting a new transaction
 
 Request:
 
@@ -772,7 +773,7 @@ Response:
 
     Location: /rdf4j-server/repositories/<ID>/transactions/64a5937f-c112-d014-a044-f0123b93 HTTP/1.1
 
-# Transaction operations
+## Transaction operations
 
 Transaction operations are carried out on URIs of the form `<RDF4J_URL>/repositories/<ID>/transactions/<TXN_ID>`. The full URI is the exact value of the Location header as returned by the request to start a transaction.
 
@@ -787,11 +788,11 @@ Parameters:
 
 Other parameters depend on the type of action being performed.
 
-## The ADD operation
+### The ADD operation
 
 The `ADD` operation expects a parsable RDF document in the request body. It adds the contents of this document as part of the current transaction.
 
-### Request example: adding a Turtle document
+#### Request example: adding a Turtle document
 
 Request:
 
@@ -804,13 +805,13 @@ Response:
 
     HTTP/1.1 200 OK
 
-## The DELETE operation
+### The DELETE operation
 
 The `DELETE` operation expects a parsable RDF document in the request body. It removes the contents of this document as part of the current transaction.
 
 Any RDF statement in the parsed document that uses the special URI reference `http://www.openrdf.org/schema/sesame#wildcard` as either a subject, predicate, or object, is treated as a wildcard statement: the special URI reference is treated as a wildcard value and all statements matching the pattern thus formed are removed.
 
-### Request example: remove three specific RDF statements
+#### Request example: remove three specific RDF statements
 
 Request:
 
@@ -825,7 +826,7 @@ Response:
 
     HTTP/1.1 200 OK
 
-### Request example: remove all statements with property urn:lastName
+#### Request example: remove all statements with property urn:lastName
 
 Request:
 
@@ -841,7 +842,7 @@ Response:
 
     HTTP/1.1 200 OK
 
-### Request example: remove all statements in context urn:context1
+#### Request example: remove all statements in context urn:context1
 
 Request:
 
@@ -858,7 +859,7 @@ Response:
 
     HTTP/1.1 200 OK
 
-## The GET operation
+### The GET operation
 
 The `GET` operation retrieves statements from the repository as part of the current transaction, and returns the result as an RDF document.
 
@@ -870,7 +871,7 @@ Parameters:
 - `context` (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value `null` which represents all context-less statements. If multiple `context` parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.
 - `infer` (optional): Specifies whether inferred statements should be included in the result of `GET` requests. Inferred statements are included by default. Specifying any value other than `true` (ignoring case) restricts the request to explicit statements only.
 
-### Request example: get all Statements about George
+#### Request example: get all Statements about George
 
 Request:
 
@@ -885,7 +886,7 @@ Response:
     <urn:george> <urn:firstName> "George" .
     <urn:george> <urn:lastName> "Harrisson" .
 
-## The QUERY operation
+### The QUERY operation
 
 The `QUERY` operation executes a SPARQL or SeRQL query on the repository as part of the current transaction, and returns the result as an RDF document.
 
@@ -899,7 +900,7 @@ Request Headers:
 
 - `Accept`: Relevant values are the MIME types of supported RDF formats for graph queries, the MIME types of supported variable binding formats for tuple queries, and the MIME types of supported boolean result formats for boolean queries.
 
-## The SIZE operation
+### The SIZE operation
 
 The `SIZE` operation retrieves the number of (explicit) statements present in the repository, as part of the current transaction.
 
@@ -907,7 +908,7 @@ Parameters:
 
 - `context` (optional): If specified, restricts the operation to one or more specific contexts in the repository. The value of this parameter is either an N-Triples encoded URI or bnode ID, or the special value `null` which represents all context-less statements. If multiple `context` parameters are specified, the request will operate on the union of all specified contexts. The operation is executed on all statements that are in the repository if no context is specified.
 
-### Example request: retrieve current size of repository
+#### Example request: retrieve current size of repository
 
 Request:
 
@@ -920,7 +921,7 @@ Response:
 
     4000
 
-## The UPDATE operation
+### The UPDATE operation
 
 The `UPDATE` operation executes a SPARQL update query on the repository as part of the current transaction.
 
@@ -938,7 +939,7 @@ Optionally, an update operation can specify a custom dataset on which the Update
 - `remove-graph-uri` (optional): one or more named graph URIs to be used as the default graph(s) for removing statements
 - `insert-graph-uri` (optional): one or more named graph URIs to be used as the default graph(s) for inserting statements
 
-### Example request: execute SPARQL INSERT update
+#### Example request: execute SPARQL INSERT update
 
 Request:
 
@@ -951,13 +952,13 @@ Response:
 
     HTTP/1.1 201 No Content
 
-## The COMMIT operation
+### The COMMIT operation
 
 The `COMMIT` operation signals to finalize and commit the current transaction. After this has been successfully executed, all modifications done by this transaction will be final and the general repository state will reflect the changes.
 
 Executing a commit ends the transaction: after commit, further operations on the same transaction will result in an error.
 
-### Example: execute COMMIT
+#### Example: execute COMMIT
 
 Request:
 
@@ -967,11 +968,11 @@ Response:
 
     HTTP/1.1 200 OK
 
-## Aborting a transaction by executing a DELETE
+### Aborting a transaction by executing a DELETE
 
 An active transaction can be aborted by means of a HTTP `DELETE` request on the transaction resource. This will execute a transaction rollback on the repository and will close the transacion. After executing a `DELETE`, further operations on the same transaction will result in an error.
 
-### Example: rollback transaction by means of a HTTP DELETE
+#### Example: rollback transaction by means of a HTTP DELETE
 
 Request:
 
@@ -981,11 +982,11 @@ Response:
 
     HTTP/1.1 201 No Content
 
-# Content types
+## Content types
 
 The following tables summarizes the MIME types for various document formats that are relevant to this protocol.
 
-## MIME types for RDF formats
+### MIME types for RDF formats
 
 | Format           | MIME type                |
 |------------------|--------------------------|
@@ -1000,7 +1001,7 @@ The following tables summarizes the MIME types for various document formats that
 | TriG             | application/x-trig       |
 | RDF4J Binary RDF | application/x-binary-rdf |
 
-## MIME types for variable binding formats
+### MIME types for variable binding formats
 
 | Format                    | MIME type                              |
 |---------------------------|----------------------------------------|
@@ -1008,7 +1009,7 @@ The following tables summarizes the MIME types for various document formats that
 | SPARQL Query Results JSON | application/sparq-results+json         |
 | Binary Results Format     | application/x-binary-rdf-results-table |
 
-## MIME types for boolean result formats
+### MIME types for boolean result formats
 
 | Format                    | MIME type                      |
 |---------------------------|--------------------------------|
