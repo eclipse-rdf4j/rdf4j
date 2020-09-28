@@ -9,8 +9,6 @@ package org.eclipse.rdf4j.model;
 
 import java.io.Serializable;
 
-import org.eclipse.rdf4j.model.util.Statements;
-
 /**
  * An RDF statement, with optional associated context. A statement can have an associated context in specific cases, for
  * example when fetched from a repository.
@@ -53,7 +51,7 @@ public interface Statement extends Serializable {
 	 *
 	 * @param other The object to compare this statement to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link Statement} and if their subjects, predicates,
-	 *         objects and contexts are equal.
+	 * objects and contexts are equal.
 	 */
 	@Override
 	public boolean equals(Object other);
