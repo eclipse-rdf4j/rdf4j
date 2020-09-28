@@ -58,15 +58,17 @@ public enum XmlDatatype {
 	UNSIGNED_BYTE(XSD.UNSIGNED_BYTE, false, false, true, true, true, false, false),
 	YEARMONTHDURATION(XSD.YEARMONTHDURATION, false, true, false, true, false, false, false);
 
-	IRI iri;
-	boolean primitive;
-	private boolean duration;
-	private boolean integer;
-	private boolean derived;
-	private boolean decimal;
-	private boolean floatingPoint;
-	private boolean calendar;
-	private final HashMap<XmlDatatype, Integer> valueComparatorLookup;
+	private final IRI iri;
+	private final boolean primitive;
+	private final boolean duration;
+	private final boolean integer;
+	private final boolean derived;
+	private final boolean decimal;
+	private final boolean floatingPoint;
+	private final boolean calendar;
+
+	// a lookup table so we don't need to use IRI comparison when comparing two datatypes
+	private HashMap<XmlDatatype, Integer> valueComparatorLookup;
 
 	XmlDatatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
 			boolean floatingPoint, boolean calendar) {
@@ -78,7 +80,6 @@ public enum XmlDatatype {
 		this.decimal = decimal;
 		this.floatingPoint = floatingPoint;
 		this.calendar = calendar;
-		this.valueComparatorLookup = new HashMap<XmlDatatype, Integer>();
 	}
 
 	/**
@@ -196,7 +197,7 @@ public enum XmlDatatype {
 	}
 
 	public int valueComparatorTo(XmlDatatype compareTo) {
-		if (valueComparatorLookup.isEmpty()) {
+		if (valueComparatorLookup == null) {
 			createLookupTable();
 		}
 
@@ -204,6 +205,8 @@ public enum XmlDatatype {
 	}
 
 	private void createLookupTable() {
+		HashMap<XmlDatatype, Integer> valueComparatorLookup = new HashMap<>();
+
 		if (this == DURATION) {
 			valueComparatorLookup.put(DURATION, 0);
 			valueComparatorLookup.put(DATETIME, 20);
@@ -2461,5 +2464,7 @@ public enum XmlDatatype {
 			valueComparatorLookup.put(UNSIGNED_BYTE, 4);
 			valueComparatorLookup.put(YEARMONTHDURATION, 0);
 		}
+
+		this.valueComparatorLookup = valueComparatorLookup;
 	}
 }
