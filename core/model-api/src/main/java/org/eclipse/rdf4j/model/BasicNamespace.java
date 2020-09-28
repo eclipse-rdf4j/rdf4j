@@ -17,7 +17,7 @@ class BasicNamespace implements Namespace {
 	 * Sorts namespaces first by {@linkplain #getPrefix() prefix} and then by {@linkplain #getName()} () name};
 	 * {@code null} values are sorted before other values.
 	 */
-	private static final Comparator<Namespace> COMPARATOR = Comparator.nullsFirst(
+	static final Comparator<Namespace> COMPARATOR = Comparator.nullsFirst(
 			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
 	);
 

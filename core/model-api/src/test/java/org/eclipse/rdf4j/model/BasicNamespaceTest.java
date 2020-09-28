@@ -53,6 +53,11 @@ public class BasicNamespaceTest {
 				return x.getName();
 			}
 
+			@Override
+			public int compareTo(Namespace o) {
+				return BasicNamespace.COMPARATOR.compare(this, o);
+			}
+
 		});
 
 		assertThat(x).isNotEqualTo(null);
