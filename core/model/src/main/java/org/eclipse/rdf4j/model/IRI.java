@@ -20,7 +20,7 @@ package org.eclipse.rdf4j.model;
  * <li>If this fails, split after the last occurrence of the '/' character,
  * <li>If this fails, split after the last occurrence of the ':' character.
  * </ul>
- * The last step should never fail as every legal (full) IRI contains at least one ':' character to seperate the scheme
+ * The last step should never fail as every legal (full) IRI contains at least one ':' character to separate the scheme
  * from the rest of the IRI. The implementation should check this upon object creation.
  *
  * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>

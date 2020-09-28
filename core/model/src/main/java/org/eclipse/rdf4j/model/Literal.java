@@ -67,7 +67,7 @@ public interface Literal extends Value {
 	/**
 	 * Returns the <tt>byte</tt> value of this literal.
 	 *
-	 * @return The <tt>byte value of the literal.
+	 * @return The <tt>byte</tt> value of the literal.
 	 * &#64;throws NumberFormatException
 	 * If the literal cannot be represented by a <tt>byte</tt>.
 	 */

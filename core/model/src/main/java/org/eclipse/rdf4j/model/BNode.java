@@ -17,7 +17,7 @@ package org.eclipse.rdf4j.model;
 public interface BNode extends Resource {
 
 	/**
-	 * retrieves this blank node's identifier.
+	 * Retrieves this blank node's identifier.
 	 *
 	 * @return A blank node identifier.
 	 */
@@ -28,7 +28,7 @@ public interface BNode extends Resource {
 	 *
 	 * @param o The object to compare this blank node to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal, <tt>false</tt>
-	 *         otherwise.
+	 * otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);
@@ -40,4 +40,5 @@ public interface BNode extends Resource {
 	 */
 	@Override
 	public int hashCode();
+
 }
