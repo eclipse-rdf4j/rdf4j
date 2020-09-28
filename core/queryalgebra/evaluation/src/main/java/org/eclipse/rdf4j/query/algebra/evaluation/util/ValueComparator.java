@@ -214,7 +214,7 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype.isNumericDatatype()) {
 			if (rightDatatype.isNumericDatatype()) {
 				// both are numeric datatypes
-				return leftDatatype.valueComparatorTo(rightDatatype);
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
 			} else {
 				return -1;
 			}
@@ -223,7 +223,7 @@ public class ValueComparator implements Comparator<Value> {
 		} else if (leftDatatype.isCalendarDatatype()) {
 			if (rightDatatype.isCalendarDatatype()) {
 				// both are calendar datatype
-				return leftDatatype.valueComparatorTo(rightDatatype);
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
 			} else {
 				return -1;
 			}
@@ -231,7 +231,7 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		} else {
 			// incompatible or unordered datatype
-			return leftDatatype.valueComparatorTo(rightDatatype);
+			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
 		}
 	}
 
