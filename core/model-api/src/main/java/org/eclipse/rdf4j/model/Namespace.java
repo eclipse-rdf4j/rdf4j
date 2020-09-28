@@ -16,17 +16,6 @@ import java.util.Comparator;
 public interface Namespace extends Serializable, Comparable<Namespace> {
 
 	/**
-	 * The default comparator for namespaces.
-	 *
-	 * <p>Sorts namespaces first by {@linkplain #getPrefix() prefix} and then by {@linkplain #getName()} () name};
-	 * {@code null} values are sorted before other values.</p>
-	 */
-	static final Comparator<Namespace> COMPARATOR=Comparator.nullsFirst(
-			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
-	);
-
-
-	/**
 	 * Gets the prefix of the current namespace. The default namespace is represented by an empty prefix string.
 	 *
 	 * @return prefix of namespace, or an empty string in case of the default namespace.
@@ -39,17 +28,5 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 * @return name of namespace
 	 */
 	public String getName();
-
-
-	/**
-	 * @inheritDoc
-	 *
-	 * <p>The default implementation compares this namespace with the reference namespace using the
-	 * {@linkplain #COMPARATOR default namespace comparator}.</p>
-	 */
-	@Override
-	default int compareTo(Namespace o) {
-		return COMPARATOR.compare(this, o);
-	}
 
 }

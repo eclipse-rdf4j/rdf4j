@@ -8,22 +8,28 @@
 
 package org.eclipse.rdf4j.model;
 
+import java.util.Comparator;
 import java.util.Objects;
 
 class BasicNamespace implements Namespace {
 
-	private static final long serialVersionUID = -5858783508210775531L;
+	/**
+	 * Sorts namespaces first by {@linkplain #getPrefix() prefix} and then by {@linkplain #getName()} () name};
+	 * {@code null} values are sorted before other values.
+	 */
+	private static final Comparator<Namespace> COMPARATOR = Comparator.nullsFirst(
+			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
+	);
 
+	private static final long serialVersionUID = -5858783508210775531L;
 
 	private final String prefix;
 	private final String name;
-
 
 	BasicNamespace(String prefix, String name) {
 		this.prefix = prefix;
 		this.name = name;
 	}
-
 
 	@Override
 	public String getPrefix() {
@@ -35,6 +41,10 @@ class BasicNamespace implements Namespace {
 		return name;
 	}
 
+	@Override
+	public int compareTo(Namespace o) {
+		return COMPARATOR.compare(this, o);
+	}
 
 	@Override
 	public boolean equals(final Object object) {
