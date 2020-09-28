@@ -13,7 +13,7 @@ Hacktoberfest is a yearly event, a celebration of open source software, put toge
 
 <!--more-->
 
-The idea is that you contribute to an open source project, any open source project, by submitting a Pull Request (PR) to that project. If your PRs are accepted, you can win a very snazzy T-shirt, or if you prefer you can opt to plant a tree instead. See the [Hactoberfest sign up page](https://hacktoberfest.digitalocean.com/) for more details.
+The idea is that you contribute to an open source project, any open source project, by submitting a Pull Request (PR) to that project. By submitting several useful PRs before the end of October, you can earn a very snazzy T-shirt, or if you prefer you can opt to plant a tree instead. See the [Hactoberfest sign up page](https://hacktoberfest.digitalocean.com/) for more details.
 
 Of course we hope that you'll pick [RDF4J](https://github.com/eclipse/rdf4j) to submit some cool improvements to! We've labeled several issues in our backlog with the ['hacktoberfest' label](https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+is%3Aopen+label%3Ahacktoberfest) to make them easy to find, but of course you're welcome to work on other improvements too. To help you get going we also have some [contributor guidelines](https://github.com/eclipse/rdf4j#keen-to-contribute) written up. We're looking for people of all skill levels and all backgrounds, and you can contribute by writing bug fixes or new features, by writing documentation, improving our website layout, or by improving our test coverage, and anything else that will be useful to RDF4J users. Come join us! If you have any questions, [get in touch](/support).
 <br clear=all>
