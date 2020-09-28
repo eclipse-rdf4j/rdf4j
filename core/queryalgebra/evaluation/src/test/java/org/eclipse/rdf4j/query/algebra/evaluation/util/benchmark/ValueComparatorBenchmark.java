@@ -69,7 +69,12 @@ public class ValueComparatorBenchmark {
 
 			subjects = parse.subjects().stream().limit(1000).collect(Collectors.toList());
 			predicates = parse.predicates().stream().limit(1000).collect(Collectors.toList());
-			literals = parse.objects().stream().filter(o -> ! (o instanceof IRI)).filter(o -> ! (o instanceof BNode)).limit(1000).collect(Collectors.toList());
+			literals = parse.objects()
+					.stream()
+					.filter(o -> !(o instanceof IRI))
+					.filter(o -> !(o instanceof BNode))
+					.limit(1000)
+					.collect(Collectors.toList());
 
 			manyPointerEquals = new ArrayList<>();
 

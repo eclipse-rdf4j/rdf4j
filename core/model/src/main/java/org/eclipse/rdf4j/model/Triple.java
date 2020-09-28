@@ -40,4 +40,24 @@ public interface Triple extends Resource {
 	 * @return The triple's object.
 	 */
 	Value getObject();
+
+	@Override
+	default boolean isBnode() {
+		return false;
+	}
+
+	@Override
+	default boolean isIRI() {
+		return false;
+	}
+
+	@Override
+	default boolean isLiteral() {
+		return false;
+	}
+
+	@Override
+	default boolean isTriple() {
+		return true;
+	}
 }

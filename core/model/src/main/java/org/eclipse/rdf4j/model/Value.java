@@ -19,4 +19,20 @@ public interface Value extends Serializable {
 	 * {@link IRI}'s URI or a {@link BNode}'s ID.
 	 */
 	public String stringValue();
+
+	default boolean isBnode() {
+		return this instanceof BNode;
+	}
+
+	default boolean isIRI() {
+		return this instanceof IRI;
+	}
+
+	default boolean isLiteral() {
+		return this instanceof Literal;
+	}
+
+	default boolean isTriple() {
+		return this instanceof Triple;
+	}
 }

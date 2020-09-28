@@ -154,4 +154,24 @@ public interface Literal extends Value {
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
 	public XMLGregorianCalendar calendarValue();
+
+	@Override
+	default boolean isBnode() {
+		return false;
+	}
+
+	@Override
+	default boolean isIRI() {
+		return false;
+	}
+
+	@Override
+	default boolean isLiteral() {
+		return true;
+	}
+
+	@Override
+	default boolean isTriple() {
+		return false;
+	}
 }

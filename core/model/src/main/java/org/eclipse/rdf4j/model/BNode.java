@@ -40,4 +40,24 @@ public interface BNode extends Resource {
 	 */
 	@Override
 	public int hashCode();
+
+	@Override
+	default boolean isBnode() {
+		return true;
+	}
+
+	@Override
+	default boolean isIRI() {
+		return false;
+	}
+
+	@Override
+	default boolean isLiteral() {
+		return false;
+	}
+
+	@Override
+	default boolean isTriple() {
+		return false;
+	}
 }

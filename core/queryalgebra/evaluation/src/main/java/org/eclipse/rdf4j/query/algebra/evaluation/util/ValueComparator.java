@@ -47,8 +47,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 2. Blank nodes
-		boolean b1 = o1 instanceof BNode;
-		boolean b2 = o2 instanceof BNode;
+		boolean b1 = o1.isBnode();
+		boolean b2 = o2.isBnode();
 		if (b1 && b2) {
 			return compareBNodes((BNode) o1, (BNode) o2);
 		}
@@ -60,8 +60,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 3. IRIs
-		boolean iri1 = o1 instanceof IRI;
-		boolean iri2 = o2 instanceof IRI;
+		boolean iri1 = o1.isIRI();
+		boolean iri2 = o2.isIRI();
 		if (iri1 && iri2) {
 			return compareURIs((IRI) o1, (IRI) o2);
 		}
@@ -73,8 +73,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 4. Literals
-		boolean l1 = o1 instanceof Literal;
-		boolean l2 = o2 instanceof Literal;
+		boolean l1 = o1.isLiteral();
+		boolean l2 = o2.isLiteral();
 		if (l1 && l2) {
 			return compareLiterals((Literal) o1, (Literal) o2);
 		}
@@ -215,7 +215,7 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype.isNumericDatatype()) {
 			if (rightDatatype.isNumericDatatype()) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+				return leftDatatype.compareTo(rightDatatype);
 			} else {
 				return -1;
 			}
@@ -223,16 +223,16 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		} else if (leftDatatype.isCalendarDatatype()) {
 			if (rightDatatype.isCalendarDatatype()) {
-				// both are calendar datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+				// both are calendar datatype
+				return leftDatatype.compareTo(rightDatatype);
 			} else {
 				return -1;
 			}
 		} else if (rightDatatype.isCalendarDatatype()) {
 			return 1;
 		} else {
-			// incompatible or unordered datatypes
-			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			// incompatible or unordered datatype
+			return leftDatatype.compareTo(rightDatatype);
 		}
 	}
 
