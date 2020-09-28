@@ -169,14 +169,11 @@ public class QueryEvaluationUtil {
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
 			compareResult = leftLit.getLabel().compareTo(rightLit.getLabel());
 		} else if ((!leftLangLit && !rightLangLit) || commonDatatype != null) {
-			if (commonDatatype == null) {
-				if (leftDatatype.equals(rightDatatype)) {
+			if (commonDatatype == null && (leftXmlDatatype != null && rightXmlDatatype != null)) {
+				if (leftXmlDatatype == rightXmlDatatype || leftDatatype.equals(rightDatatype)) {
 					commonDatatype = leftDatatype;
-				} else if (leftXmlDatatype.isNumericDatatype()
-						&& rightXmlDatatype.isNumericDatatype()) {
-					// left and right arguments have different datatypes, try to find
-					// a
-					// more general, shared datatype
+				} else if (leftXmlDatatype.isNumericDatatype() && rightXmlDatatype.isNumericDatatype()) {
+					// left and right arguments have different datatypes, try to find a more general, shared datatype
 					if (leftXmlDatatype == XmlDatatype.DOUBLE || rightXmlDatatype == XmlDatatype.DOUBLE) {
 						commonDatatype = XSD.DOUBLE;
 					} else if (leftXmlDatatype == XmlDatatype.FLOAT || rightXmlDatatype == XmlDatatype.FLOAT) {
@@ -186,12 +183,10 @@ public class QueryEvaluationUtil {
 					} else {
 						commonDatatype = XSD.INTEGER;
 					}
-				} else if (!strict && leftXmlDatatype.isCalendarDatatype()
-						&& rightXmlDatatype.isCalendarDatatype()) {
+				} else if (!strict && leftXmlDatatype.isCalendarDatatype() && rightXmlDatatype.isCalendarDatatype()) {
 					// We're not running in strict eval mode so we use extended datatype comparsion.
 					commonDatatype = XSD.DATETIME;
-				} else if (!strict && leftXmlDatatype.isDurationDatatype()
-						&& rightXmlDatatype.isDurationDatatype()) {
+				} else if (!strict && leftXmlDatatype.isDurationDatatype() && rightXmlDatatype.isDurationDatatype()) {
 					commonDatatype = XSD.DURATION;
 				}
 			}
