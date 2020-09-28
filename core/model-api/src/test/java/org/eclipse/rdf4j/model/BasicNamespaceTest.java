@@ -25,11 +25,11 @@ public class BasicNamespaceTest {
 
 		assertThat(x).as("nulls first").isGreaterThan(null);
 
-		assertThat(x).as ("less by prefix").isLessThan(y);
-		assertThat(y).as ("greater by prefix").isGreaterThan(x);
+		assertThat(x).as("less by prefix").isLessThan(y);
+		assertThat(y).as("greater by prefix").isGreaterThan(x);
 
-		assertThat(y).as ("less by name").isLessThan(z);
-		assertThat(z).as ("greater by name").isGreaterThan(y);
+		assertThat(y).as("less by name").isLessThan(z);
+		assertThat(z).as("greater by name").isGreaterThan(y);
 
 	}
 
@@ -44,10 +44,14 @@ public class BasicNamespaceTest {
 		assertThat(x).as("different class").isEqualTo(new Namespace() {
 
 			@Override
-			public String getPrefix() { return x.getPrefix(); }
+			public String getPrefix() {
+				return x.getPrefix();
+			}
 
 			@Override
-			public String getName() { return x.getName(); }
+			public String getName() {
+				return x.getName();
+			}
 
 		});
 

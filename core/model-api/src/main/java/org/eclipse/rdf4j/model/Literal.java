@@ -50,7 +50,7 @@ public interface Literal extends Value {
 	 *
 	 * @param other The object to compare this literal to.
 	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
-	 * and datatypes are equal.
+	 *         and datatypes are equal.
 	 */
 	@Override
 	public boolean equals(Object other);
@@ -68,8 +68,7 @@ public interface Literal extends Value {
 	 * Returns the <tt>byte</tt> value of this literal.
 	 *
 	 * @return The <tt>byte</tt> value of the literal.
-	 * &#64;throws NumberFormatException
-	 * If the literal cannot be represented by a <tt>byte</tt>.
+	 * @throws NumberFormatException If the literal cannot be represented by a <tt>byte</tt>.
 	 */
 	public byte byteValue();
 
