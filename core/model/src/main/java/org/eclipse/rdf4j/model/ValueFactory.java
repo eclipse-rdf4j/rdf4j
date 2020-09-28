@@ -111,8 +111,9 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
-	 *                 literal.
+	 * @param datatype The literal's datatype. If it is null, the datatype
+	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to
+	 *                 this literal.
 	 */
 	public Literal createLiteral(String label, IRI datatype);
 
@@ -120,8 +121,9 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
-	 *                 literal.
+	 * @param datatype The literal's datatype. If it is null, the datatype
+	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to
+	 *                 this literal.
 	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
 	 */
 	@Deprecated
