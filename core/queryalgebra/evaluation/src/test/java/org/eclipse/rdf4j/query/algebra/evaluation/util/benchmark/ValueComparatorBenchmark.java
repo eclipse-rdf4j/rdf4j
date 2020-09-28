@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -55,7 +54,7 @@ public class ValueComparatorBenchmark {
 
 	List<Value> subjects;
 	List<Value> predicates;
-	List<Value> literals;
+	List<Value> objects;
 	List<Value> manyPointerEquals;
 	List<Value> manyDeepEquals;
 
@@ -69,13 +68,13 @@ public class ValueComparatorBenchmark {
 
 			subjects = parse.subjects().stream().limit(1000).collect(Collectors.toList());
 			predicates = parse.predicates().stream().limit(1000).collect(Collectors.toList());
-			literals = parse.objects().stream().limit(1000).collect(Collectors.toList());
+			objects = parse.objects().stream().limit(1000).collect(Collectors.toList());
 
 			manyPointerEquals = new ArrayList<>();
 
 			manyPointerEquals.addAll(subjects);
 			manyPointerEquals.addAll(predicates);
-			manyPointerEquals.addAll(literals);
+			manyPointerEquals.addAll(objects);
 
 			Collections.shuffle(manyPointerEquals, new Random(468202874));
 			manyPointerEquals = manyPointerEquals.subList(0, 100);
@@ -144,12 +143,12 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortLiterals() {
+	public int sortObjects() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
-		for (Value v1 : literals) {
-			for (Value v2 : literals) {
+		for (Value v1 : objects) {
+			for (Value v2 : objects) {
 				compare += valueComparator.compare(v1, v2);
 			}
 		}
