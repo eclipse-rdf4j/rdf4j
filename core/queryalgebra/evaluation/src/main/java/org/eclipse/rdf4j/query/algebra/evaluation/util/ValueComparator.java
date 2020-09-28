@@ -143,11 +143,10 @@ public class ValueComparator implements Comparator<Value> {
 
 				if (leftXmlDatatype != null && rightXmlDatatype != null) {
 					result = compareDatatypes(leftXmlDatatype, rightXmlDatatype);
-
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);
-
 				}
+
 			} else {
 				result = 1;
 			}
