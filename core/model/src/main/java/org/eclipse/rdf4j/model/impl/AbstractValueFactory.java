@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -100,7 +100,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XmlDatatypeEnum.STRING);
+		return new SimpleLiteral(value, XmlDatatype.STRING);
 	}
 
 	@Override
@@ -162,7 +162,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XmlDatatypeEnum.BYTE);
+		return createIntegerLiteral(value, XmlDatatype.BYTE);
 	}
 
 	/**
@@ -170,7 +170,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XmlDatatypeEnum.SHORT);
+		return createIntegerLiteral(value, XmlDatatype.SHORT);
 	}
 
 	/**
@@ -178,7 +178,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XmlDatatypeEnum.INT);
+		return createIntegerLiteral(value, XmlDatatype.INT);
 	}
 
 	/**
@@ -186,7 +186,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XmlDatatypeEnum.LONG);
+		return createIntegerLiteral(value, XmlDatatype.LONG);
 	}
 
 	/**
@@ -196,7 +196,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
-	protected Literal createIntegerLiteral(Number value, XmlDatatypeEnum datatype) {
+	protected Literal createIntegerLiteral(Number value, XmlDatatype datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
@@ -205,7 +205,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XmlDatatypeEnum.FLOAT);
+		return createFPLiteral(value, XmlDatatype.FLOAT);
 	}
 
 	/**
@@ -213,7 +213,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XmlDatatypeEnum.DOUBLE);
+		return createFPLiteral(value, XmlDatatype.DOUBLE);
 	}
 
 	@Override
@@ -233,7 +233,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
-	protected Literal createFPLiteral(Number value, XmlDatatypeEnum datatype) {
+	protected Literal createFPLiteral(Number value, XmlDatatype datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
@@ -250,7 +250,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
-	protected Literal createNumericLiteral(Number number, XmlDatatypeEnum datatype) {
+	protected Literal createNumericLiteral(Number number, XmlDatatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}

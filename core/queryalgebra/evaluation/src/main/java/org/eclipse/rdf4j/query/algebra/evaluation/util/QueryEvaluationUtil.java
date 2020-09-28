@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import java.util.Optional;
-
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -17,7 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
@@ -353,9 +351,9 @@ public class QueryEvaluationUtil {
 	public static boolean isPlainLiteral(Value v) {
 		if (v instanceof Literal) {
 			Literal l = (Literal) v;
-			XmlDatatypeEnum xmlDatatypeEnum = l.getXmlDatatypeEnum();
-			if (xmlDatatypeEnum != null) {
-				return xmlDatatypeEnum == XmlDatatypeEnum.STRING;
+			XmlDatatype xmlDatatype = l.getXmlDatatypeEnum();
+			if (xmlDatatype != null) {
+				return xmlDatatype == XmlDatatype.STRING;
 			}
 
 			return (l.getDatatype().equals(XSD.STRING));

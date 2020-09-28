@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -31,7 +31,7 @@ public class NumericLiteral extends SimpleLiteral {
 		this.number = number;
 	}
 
-	protected NumericLiteral(Number number, XmlDatatypeEnum datatype) {
+	protected NumericLiteral(Number number, XmlDatatype datatype) {
 		super(XMLDatatypeUtil.toString(number), datatype);
 		this.number = number;
 	}

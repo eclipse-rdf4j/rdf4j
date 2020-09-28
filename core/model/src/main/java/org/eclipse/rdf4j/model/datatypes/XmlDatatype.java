@@ -1,8 +1,6 @@
 package org.eclipse.rdf4j.model.datatypes;
 
 import java.util.HashMap;
-import java.util.Optional;
-import java.util.Set;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -10,9 +8,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
-import com.google.common.collect.Sets;
-
-public enum XmlDatatypeEnum {
+public enum XmlDatatype {
 
 	DURATION(XSD.DURATION, true, true, false, false, false, false, false),
 	DATETIME(XSD.DATETIME, true, false, false, false, false, false, true),
@@ -71,12 +67,12 @@ public enum XmlDatatypeEnum {
 	private boolean floatingPoint;
 	private boolean calendar;
 
-	XmlDatatypeEnum(IRI iri) {
+	XmlDatatype(IRI iri) {
 		this.iri = iri;
 	}
 
-	XmlDatatypeEnum(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
-			boolean floatingPoint, boolean calendar) {
+	XmlDatatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
+				boolean floatingPoint, boolean calendar) {
 		this.iri = iri;
 		this.primitive = primitive;
 		this.duration = duration;
@@ -90,7 +86,6 @@ public enum XmlDatatypeEnum {
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
 	 *
-	 * @param datatype
 	 * @return true if the datatype is a primitive type
 	 */
 	public boolean isPrimitiveDatatype() {
@@ -100,7 +95,6 @@ public enum XmlDatatypeEnum {
 	/**
 	 * Checks whether the supplied datatype is a derived XML Schema datatype.
 	 *
-	 * @param datatype
 	 * @return true if the datatype is a derived type
 	 */
 	public boolean isDerivedDatatype() {
@@ -110,7 +104,6 @@ public enum XmlDatatypeEnum {
 	/**
 	 * Checks whether the supplied datatype is a built-in XML Schema datatype.
 	 *
-	 * @param datatype
 	 * @return true if it is a primitive or derived XML Schema type
 	 */
 	public boolean isBuiltInDatatype() {
@@ -121,7 +114,6 @@ public enum XmlDatatypeEnum {
 	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
 	 * xsd:decimal or one of the datatypes derived from xsd:decimal.
 	 *
-	 * @param datatype
 	 * @return true of it is a decimal or floating point type
 	 */
 	public boolean isNumericDatatype() {
@@ -132,7 +124,6 @@ public enum XmlDatatypeEnum {
 	 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
 	 * from xsd:decimal.
 	 *
-	 * @param datatype
 	 * @return true if it is a decimal datatype
 	 */
 	public boolean isDecimalDatatype() {
@@ -143,7 +134,6 @@ public enum XmlDatatypeEnum {
 	 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
 	 * from xsd:integer.
 	 *
-	 * @param datatype
 	 * @return true if it is an integer type
 	 */
 	public boolean isIntegerDatatype() {
@@ -153,7 +143,6 @@ public enum XmlDatatypeEnum {
 	/**
 	 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
 	 *
-	 * @param datatype
 	 * @return true if it is a floating point type
 	 */
 	public boolean isFloatingPointDatatype() {
@@ -165,7 +154,6 @@ public enum XmlDatatypeEnum {
 	 * xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates and/or times.
 	 *
 	 * @see XMLGregorianCalendar
-	 * @param datatype
 	 * @return true if it is a calendar type
 	 */
 	public boolean isCalendarDatatype() {
@@ -177,7 +165,6 @@ public enum XmlDatatypeEnum {
 	 * are the datatypes that represents durations.
 	 *
 	 * @see Duration
-	 * @param datatype
 	 * @return true if it is a duration type
 	 */
 	public boolean isDurationDatatype() {
@@ -188,22 +175,21 @@ public enum XmlDatatypeEnum {
 	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other
 	 * using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
 	 *
-	 * @param datatype
 	 * @return true if the datatype is ordered
 	 */
 	public boolean isOrderedDatatype() {
 		return isNumericDatatype() || isCalendarDatatype();
 	}
 
-	static HashMap<IRI, XmlDatatypeEnum> reverseLookup = new HashMap<>();
+	static HashMap<IRI, XmlDatatype> reverseLookup = new HashMap<>();
 
 	static {
-		for (XmlDatatypeEnum value : XmlDatatypeEnum.values()) {
+		for (XmlDatatype value : XmlDatatype.values()) {
 			reverseLookup.put(value.iri, value);
 		}
 	}
 
-	public static XmlDatatypeEnum from(IRI datatype) {
+	public static XmlDatatype from(IRI datatype) {
 		return reverseLookup.get(datatype);
 	}
 

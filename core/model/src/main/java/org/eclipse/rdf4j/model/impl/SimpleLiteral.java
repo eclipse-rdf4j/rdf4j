@@ -17,7 +17,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatypeEnum;
+import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -56,7 +56,7 @@ public class SimpleLiteral implements Literal {
 	private IRI datatype;
 
 	private boolean xmlDatatypeCached;
-	private XmlDatatypeEnum xmlDatatype;
+	private XmlDatatype xmlDatatype;
 
 	/*--------------*
 	 * Constructors *
@@ -97,17 +97,17 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XmlDatatypeEnum.STRING);
+			setDatatype(XmlDatatype.STRING);
 		} else
 			setDatatype(datatype);
 	}
 
-	protected SimpleLiteral(String label, XmlDatatypeEnum datatype) {
+	protected SimpleLiteral(String label, XmlDatatype datatype) {
 		setLabel(label);
 		if (RDF.LANGSTRING.equals(datatype.getIri())) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XmlDatatypeEnum.STRING);
+			setDatatype(XmlDatatype.STRING);
 		} else
 			setDatatype(datatype);
 
@@ -145,7 +145,7 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
-	protected void setDatatype(XmlDatatypeEnum datatype) {
+	protected void setDatatype(XmlDatatype datatype) {
 		this.datatype = datatype.getIri();
 		this.xmlDatatypeCached = true;
 		this.xmlDatatype = datatype;
@@ -157,9 +157,9 @@ public class SimpleLiteral implements Literal {
 	}
 
 	@Override
-	public XmlDatatypeEnum getXmlDatatypeEnum() {
+	public XmlDatatype getXmlDatatypeEnum() {
 		if (!xmlDatatypeCached) {
-			xmlDatatype = XmlDatatypeEnum.from(datatype);
+			xmlDatatype = XmlDatatype.from(datatype);
 			xmlDatatypeCached = true;
 		}
 		return xmlDatatype;
