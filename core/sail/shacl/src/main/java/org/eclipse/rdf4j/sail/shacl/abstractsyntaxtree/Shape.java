@@ -14,6 +14,8 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -52,6 +54,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.DashAllObjects;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.DashAllSubjects;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.Target;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetClass;
@@ -83,7 +87,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	public void populate(ShaclProperties properties, RepositoryConnection connection,
-			Cache cache, ShaclSail sail) {
+			Cache cache, ShaclSail shaclSail) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
@@ -99,6 +103,26 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 		if (!properties.getTargetSubjectsOf().isEmpty()) {
 			target.add(new TargetSubjectsOf(properties.getTargetSubjectsOf()));
+		}
+
+		if (!properties.getTarget().isEmpty()) {
+			properties.getTarget()
+					.forEach(target -> {
+//									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
+//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
+//												shaclProperties.isDeactivated(), target));
+//									}
+						if (shaclSail.isDashDataShapes() && connection.hasStatement(target,
+								RDF.TYPE, DASH.AllObjectsTarget, true)) {
+							this.target.add(new DashAllObjects(target));
+						}
+						if (shaclSail.isDashDataShapes() && connection.hasStatement(target,
+								RDF.TYPE, DASH.AllSubjectsTarget, true)) {
+							this.target.add(new DashAllSubjects(target));
+						}
+
+					});
+
 		}
 
 	}
@@ -313,8 +337,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			if (this.requiresEvaluation(connectionsGroup, Scope.none)) {
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null,
 						Scope.none);
-			} else
+			} else {
 				return new EmptyNode();
+			}
 
 		} else {
 			throw new ShaclUnsupportedException("Unkown validation approach: " + validationApproach);
@@ -430,15 +455,18 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 						try (Stream<Statement> TARGET_OBJECTS_OF = connection
 								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
 								.stream()) {
+							try (Stream<Statement> TARGET = connection
+									.getStatements(null, SHACL.TARGET_PROP, null, true)
+									.stream()) {
 
-							collect = Stream
-									.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF)
-									.reduce(Stream::concat)
-									.get()
-									.map(Statement::getSubject)
-									.collect(Collectors.toSet());
+								collect = Stream
+										.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF, TARGET)
+										.reduce(Stream::concat)
+										.get()
+										.map(Statement::getSubject)
+										.collect(Collectors.toSet());
+							}
 						}
-
 					}
 				}
 			}

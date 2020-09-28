@@ -81,8 +81,8 @@ abstract public class AbstractShaclTest {
 	private static final List<String> testCasePaths = Stream.of(
 
 		"test-cases/and-or/datatypeNodeShape",
-//		"test-cases/class/allObjects",
-//		"test-cases/class/allSubjects",
+		"test-cases/class/allObjects",
+		"test-cases/class/allSubjects",
 		"test-cases/class/and",
 		"test-cases/class/and2",
 //		"test-cases/class/complexTargetShape",
@@ -103,7 +103,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/complex/dcat",
 //		"test-cases/complex/foaf",
 //		"test-cases/complex/sparqlTarget",
-//		"test-cases/datatype/allObjects",
+		"test-cases/datatype/allObjects",
 		"test-cases/datatype/not",
 		"test-cases/datatype/notNodeShape",
 		"test-cases/datatype/notNodeShapeAnd",

@@ -11,14 +11,14 @@
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:norway;
-      sh:resultPath _:node1ej8hu8eux1;
+      sh:resultPath _:node1ejb4kudix1;
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:personShapeOr
     ] .
 
 ex:personShapeOr a sh:PropertyShape;
-  sh:path _:node1ej8hu8eux1;
+  sh:path _:node1ejb4kudix1;
   sh:not [ a sh:NodeShape;
       sh:and ([ a sh:NodeShape;
             sh:not [ a sh:NodeShape;
@@ -31,4 +31,4 @@ ex:personShapeOr a sh:PropertyShape;
           ])
     ] .
 
-_:node1ej8hu8eux1 sh:inversePath ex:inverseKnows .
+_:node1ejb4kudix1 sh:inversePath ex:inverseKnows .

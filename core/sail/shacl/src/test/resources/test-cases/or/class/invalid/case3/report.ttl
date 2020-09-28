@@ -30,8 +30,8 @@ ex:personShapeOr a sh:PropertyShape;
       rdf:first [ a sh:NodeShape;
           sh:class ex:Person
         ];
-      rdf:rest (_:node1ej8hu7g3x4), (_:node1ej8hu7g3x4)
+      rdf:rest (_:node1ejb4ktc2x4), (_:node1ejb4ktc2x4)
     ] .
 
-_:node1ej8hu7g3x4 a sh:NodeShape;
+_:node1ejb4ktc2x4 a sh:NodeShape;
   sh:class ex:Animal .

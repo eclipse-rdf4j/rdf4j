@@ -437,4 +437,5 @@ public class ShaclProperties {
 	public List<Resource> getHasValueIn() {
 		return hasValueIn;
 	}
+
 }
