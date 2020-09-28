@@ -108,7 +108,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.*")
+		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.sortObjects")
 				.build();
 
 		new Runner(opt).run();
