@@ -46,7 +46,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	public Var(Value value) {
-		this(UUID.randomUUID() + "_anon");
+		this(UUID.randomUUID().toString().replace("-", "") + "_anon");
+		setAnonymous(true);
 		setValue(value);
 	}
 
