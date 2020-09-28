@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -54,7 +55,7 @@ public class ValueComparatorBenchmark {
 
 	List<Value> subjects;
 	List<Value> predicates;
-	List<Value> objects;
+	List<Value> literals;
 	List<Value> manyPointerEquals;
 	List<Value> manyDeepEquals;
 
@@ -68,13 +69,13 @@ public class ValueComparatorBenchmark {
 
 			subjects = parse.subjects().stream().limit(1000).collect(Collectors.toList());
 			predicates = parse.predicates().stream().limit(1000).collect(Collectors.toList());
-			objects = parse.objects().stream().limit(1000).collect(Collectors.toList());
+			literals = parse.objects().stream().filter(o -> ! (o instanceof IRI)).filter(o -> ! (o instanceof BNode)).limit(1000).collect(Collectors.toList());
 
 			manyPointerEquals = new ArrayList<>();
 
 			manyPointerEquals.addAll(subjects);
 			manyPointerEquals.addAll(predicates);
-			manyPointerEquals.addAll(objects);
+			manyPointerEquals.addAll(literals);
 
 			Collections.shuffle(manyPointerEquals, new Random(468202874));
 			manyPointerEquals = manyPointerEquals.subList(0, 100);
@@ -108,7 +109,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.*")
+		Options opt = new OptionsBuilder().include("ValueComparatorBenchmark.sortLiterals")
 				.build();
 
 		new Runner(opt).run();
@@ -143,12 +144,12 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortObjects() throws Exception {
+	public int sortLiterals() throws Exception {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
-		for (Value v1 : objects) {
-			for (Value v2 : objects) {
+		for (Value v1 : literals) {
+			for (Value v2 : literals) {
 				compare += valueComparator.compare(v1, v2);
 			}
 		}
