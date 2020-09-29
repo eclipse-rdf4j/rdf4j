@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.model.Namespace;
 
 public abstract class AbstractNamespace implements Namespace {
 
+	private static final long serialVersionUID=1915019376191661835L;
+
 	/**
 	 * Sorts namespaces first by {@linkplain #getPrefix() prefix} and then by {@linkplain #getName()} () name};
 	 * {@code null} values are sorted before other values.
