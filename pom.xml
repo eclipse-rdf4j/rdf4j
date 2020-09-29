@@ -305,7 +305,7 @@
 		<elasticsearch.version>6.8.8</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>
 		<jetty.version>9.4.24.v20191120</jetty.version>
-		<spring.version>5.2.4.RELEASE</spring.version>
+		<spring.version>5.2.9.RELEASE</spring.version>
 		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 	</properties>
