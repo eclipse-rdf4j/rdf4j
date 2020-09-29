@@ -28,6 +28,10 @@ public interface Value extends Serializable {
 		return this instanceof IRI;
 	}
 
+	default boolean isResource() {
+		return this instanceof Resource;
+	}
+
 	default boolean isLiteral() {
 		return this instanceof Literal;
 	}

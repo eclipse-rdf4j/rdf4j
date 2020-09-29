@@ -173,4 +173,9 @@ public interface Literal extends Value {
 	default boolean isTriple() {
 		return false;
 	}
+
+	@Override
+	default boolean isResource() {
+		return false;
+	}
 }
