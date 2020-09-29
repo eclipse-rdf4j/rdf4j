@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractTriple;
 
 /**
  * A simple default implementation of the {@link Triple} interface.
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
  * @author Pavel Mihaylov
  * @see SimpleValueFactory
  */
-public class SimpleTriple implements Triple {
+public class SimpleTriple extends AbstractTriple {
 
 	/**
 	 * The triple's subject.
@@ -46,12 +47,13 @@ public class SimpleTriple implements Triple {
 	 * @param subject   The triple's subject, must not be <tt>null</tt>.
 	 * @param predicate The triple's predicate, must not be <tt>null</tt>.
 	 * @param object    The triple's object, must not be <tt>null</tt>.
-	 * @see {@link SimpleValueFactory#createTriple(Resource, IRI, Value)
+	 *
+	 * @see SimpleValueFactory#createTriple(Resource, IRI, Value)
 	 */
 	protected SimpleTriple(Resource subject, IRI predicate, Value object) {
-		this.subject = Objects.requireNonNull(subject, "subject must not be null");
-		this.predicate = Objects.requireNonNull(predicate, "predicate must not be null");
-		this.object = Objects.requireNonNull(object, "object must not be null");
+		this.subject=Objects.requireNonNull(subject, "subject must not be null");
+		this.predicate=Objects.requireNonNull(predicate, "predicate must not be null");
+		this.object=Objects.requireNonNull(object, "object must not be null");
 	}
 
 	@Override
@@ -69,41 +71,4 @@ public class SimpleTriple implements Triple {
 		return object;
 	}
 
-	@Override
-	public String stringValue() {
-		StringBuilder sb = new StringBuilder(256);
-
-		sb.append("<<");
-		sb.append(getSubject());
-		sb.append(" ");
-		sb.append(getPredicate());
-		sb.append(" ");
-		sb.append(getObject());
-		sb.append(">>");
-
-		return sb.toString();
-	}
-
-	@Override
-	public String toString() {
-		return stringValue();
-	}
-
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o instanceof Triple) {
-			Triple that = (Triple) o;
-			return Objects.equals(subject, that.getSubject()) && Objects.equals(predicate, that.getPredicate())
-					&& Objects.equals(object, that.getObject());
-		}
-		return false;
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(subject, predicate, object);
-	}
 }

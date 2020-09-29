@@ -16,8 +16,8 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -27,13 +27,13 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * @author Arjohn Kampman
  * @author David Huynh
  */
-public class SimpleLiteral implements Literal {
+public class SimpleLiteral extends AbstractLiteral {
 
 	/*-----------*
 	 * Constants *
 	 *-----------*/
 
-	private static final long serialVersionUID = -1649571784782592271L;
+	private static final long serialVersionUID=-1649571784782592271L;
 
 	/*-----------*
 	 * Variables *
@@ -93,7 +93,7 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XSD.STRING;
+			datatype=XSD.STRING;
 		}
 		setDatatype(datatype);
 	}
@@ -104,7 +104,7 @@ public class SimpleLiteral implements Literal {
 
 	protected void setLabel(String label) {
 		Objects.requireNonNull(label, "Literal label cannot be null");
-		this.label = label;
+		this.label=label;
 	}
 
 	@Override
@@ -117,7 +117,7 @@ public class SimpleLiteral implements Literal {
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
-		this.language = language;
+		this.language=language;
 		setDatatype(RDF.LANGSTRING);
 	}
 
@@ -127,7 +127,7 @@ public class SimpleLiteral implements Literal {
 	}
 
 	protected void setDatatype(IRI datatype) {
-		this.datatype = datatype;
+		this.datatype=datatype;
 	}
 
 	@Override
@@ -135,123 +135,55 @@ public class SimpleLiteral implements Literal {
 		return datatype;
 	}
 
-	// Overrides Object.equals(Object), implements Literal.equals(Object)
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-
-		if (o instanceof Literal) {
-			Literal other = (Literal) o;
-
-			// Compare labels
-			if (!label.equals(other.getLabel())) {
-				return false;
-			}
-
-			// Compare datatypes
-			if (!datatype.equals(other.getDatatype())) {
-				return false;
-			}
-
-			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
-				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
-			}
-			// If only one has a language, then return false
-			else if (getLanguage().isPresent() || other.getLanguage().isPresent()) {
-				return false;
-			}
-
-			return true;
-		}
-
-		return false;
-	}
-
-	// overrides Object.hashCode(), implements Literal.hashCode()
-	@Override
-	public int hashCode() {
-		return label.hashCode();
-	}
-
-	/**
-	 * Returns the label of the literal with its language or datatype. Note that this method does not escape the quoted
-	 * label.
-	 *
-	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(org.eclipse.rdf4j.model.Literal)
-	 */
-	@Override
-	public String toString() {
-		if (Literals.isLanguageLiteral(this)) {
-			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);
-			sb.append('"').append(label).append('"');
-			sb.append('@').append(language);
-			return sb.toString();
-		} else if (XSD.STRING.equals(datatype) || datatype == null) {
-			StringBuilder sb = new StringBuilder(label.length() + 2);
-			sb.append('"').append(label).append('"');
-			return sb.toString();
-		} else {
-			StringBuilder sb = new StringBuilder(label.length() + datatype.stringValue().length() + 6);
-			sb.append('"').append(label).append('"');
-			sb.append("^^<").append(datatype.toString()).append(">");
-			return sb.toString();
-		}
-	}
-
-	@Override
-	public String stringValue() {
-		return label;
-	}
 
 	@Override
 	public boolean booleanValue() {
-		return XMLDatatypeUtil.parseBoolean(getLabel());
+		return XMLDatatypeUtil.parseBoolean(label);
 	}
 
 	@Override
 	public byte byteValue() {
-		return XMLDatatypeUtil.parseByte(getLabel());
+		return XMLDatatypeUtil.parseByte(label);
 	}
 
 	@Override
 	public short shortValue() {
-		return XMLDatatypeUtil.parseShort(getLabel());
+		return XMLDatatypeUtil.parseShort(label);
 	}
 
 	@Override
 	public int intValue() {
-		return XMLDatatypeUtil.parseInt(getLabel());
+		return XMLDatatypeUtil.parseInt(label);
 	}
 
 	@Override
 	public long longValue() {
-		return XMLDatatypeUtil.parseLong(getLabel());
+		return XMLDatatypeUtil.parseLong(label);
 	}
 
 	@Override
 	public float floatValue() {
-		return XMLDatatypeUtil.parseFloat(getLabel());
+		return XMLDatatypeUtil.parseFloat(label);
 	}
 
 	@Override
 	public double doubleValue() {
-		return XMLDatatypeUtil.parseDouble(getLabel());
+		return XMLDatatypeUtil.parseDouble(label);
 	}
 
 	@Override
 	public BigInteger integerValue() {
-		return XMLDatatypeUtil.parseInteger(getLabel());
+		return XMLDatatypeUtil.parseInteger(label);
 	}
 
 	@Override
 	public BigDecimal decimalValue() {
-		return XMLDatatypeUtil.parseDecimal(getLabel());
+		return XMLDatatypeUtil.parseDecimal(label);
 	}
 
 	@Override
 	public XMLGregorianCalendar calendarValue() {
-		return XMLDatatypeUtil.parseCalendar(getLabel());
+		return XMLDatatypeUtil.parseCalendar(label);
 	}
+
 }
