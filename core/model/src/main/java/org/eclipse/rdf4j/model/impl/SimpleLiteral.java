@@ -54,7 +54,9 @@ public class SimpleLiteral implements Literal {
 	 */
 	private IRI datatype;
 
-	private boolean xsdDatatypeCached;
+	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
+	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
+	// race conditions, since calculating this value multiple times must lead to the same effective result.
 	private Optional<XSD.Datatype> xsdDatatype;
 
 	/*--------------*
@@ -148,7 +150,6 @@ public class SimpleLiteral implements Literal {
 
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		this.xsdDatatypeCached = true;
 		this.xsdDatatype = Optional.of(datatype);
 	}
 
@@ -159,9 +160,9 @@ public class SimpleLiteral implements Literal {
 
 	@Override
 	public Optional<XSD.Datatype> getXsdDatatype() {
-		if (!xsdDatatypeCached) {
+		// we are caching the optional value, so null means that we haven't cached anything yet
+		if (xsdDatatype == null) {
 			xsdDatatype = XSD.Datatype.from(datatype);
-			xsdDatatypeCached = true;
 		}
 		return xsdDatatype;
 	}
