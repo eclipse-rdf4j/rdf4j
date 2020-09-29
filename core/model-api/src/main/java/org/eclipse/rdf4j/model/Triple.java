@@ -41,4 +41,5 @@ public interface Triple extends Resource {
 	 * @return The triple's object.
 	 */
 	Value getObject();
+
 }

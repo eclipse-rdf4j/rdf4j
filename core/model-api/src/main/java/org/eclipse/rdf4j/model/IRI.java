@@ -23,34 +23,28 @@ package org.eclipse.rdf4j.model;
  * The last step should never fail as every legal (full) IRI contains at least one ':' character to separate the scheme
  * from the rest of the IRI. The implementation should check this upon object creation.
  *
- * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  * @author Jeen Broekstra
+ * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  */
 @SuppressWarnings("deprecation")
 public interface IRI extends URI, Resource {
 
 	/**
-	 * Returns the String-representation of this IRI.
+	 * Gets the namespace part of this IRI.
+	 * <p>
+	 * The namespace is defined as per the algorithm described in the class documentation.
 	 *
-	 * @return The String-representation of this IRI.
-	 */
-	@Override
-	public String toString();
-
-	/**
-	 * Gets the namespace part of this IRI. The namespace is defined as per the algorithm described in the class
-	 * documentation.
-	 *
-	 * @return The IRI's namespace.
+	 * @return the namespace of this IRI
 	 */
 	@Override
 	public String getNamespace();
 
 	/**
-	 * Gets the local name part of this IRI. The local name is defined as per the algorithm described in the class
-	 * documentation.
+	 * Gets the local name part of this IRI.
+	 * <p>
+	 * The local name is defined as per the algorithm described in the class documentation.
 	 *
-	 * @return The IRI's local name.
+	 * @return the local name of this IRI
 	 */
 	@Override
 	public String getLocalName();
@@ -59,17 +53,19 @@ public interface IRI extends URI, Resource {
 	 * Compares a IRI object to another object.
 	 *
 	 * @param o The object to compare this IRI to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link IRI} and their String-representations are
-	 *         equal, <tt>false</tt> otherwise.
+	 *
+	 * @return <tt>true</tt> if the other object is an instance of {@code IRI} and their
+	 * {@linkplain #stringValue() string values} are equal, <tt>false</tt> otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of an IRI is defined as the hash code of its String-representation: <tt>toString().hashCode</tt>.
+	 * The hash code of an IRI is defined as the hash code of its string value: <tt>stringValue().hashCode</tt>.
 	 *
-	 * @return A hash code for the IRI.
+	 * @return a hash code for this IRI
 	 */
 	@Override
 	public int hashCode();
+
 }

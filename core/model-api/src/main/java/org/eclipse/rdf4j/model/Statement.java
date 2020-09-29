@@ -50,7 +50,7 @@ public interface Statement extends Serializable {
 	 * Compares a statement object to another object.
 	 *
 	 * @param other The object to compare this statement to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Statement} and if their subjects, predicates,
+	 * @return <tt>true</tt> if the other object is an instance of {@code Statement} and if their subjects, predicates,
 	 *         objects and contexts are equal.
 	 */
 	@Override
@@ -63,4 +63,5 @@ public interface Statement extends Serializable {
 	 */
 	@Override
 	public int hashCode();
+
 }

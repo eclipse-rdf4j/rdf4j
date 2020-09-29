@@ -274,4 +274,5 @@ public interface ValueFactory {
 	default Triple createTriple(Resource subject, IRI predicate, Value object) {
 		throw new UnsupportedOperationException();
 	}
+
 }

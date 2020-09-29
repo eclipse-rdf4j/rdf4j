@@ -27,14 +27,14 @@ public interface BNode extends Resource {
 	 * Compares a blank node object to another object.
 	 *
 	 * @param o The object to compare this blank node to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal, <tt>false</tt>
+	 * @return <tt>true</tt> if the other object is an instance of {@code BNode} and their IDs are equal, <tt>false</tt>
 	 *         otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);
 
 	/**
-	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>id.hashCode()</tt>.
+	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>getID().hashCode()</tt>.
 	 *
 	 * @return A hash code for the blank node.
 	 */

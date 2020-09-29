@@ -46,23 +46,12 @@ public interface Literal extends Value {
 	public IRI getDatatype();
 
 	/**
-	 * Compares a literal object to another object.
+	 * Returns the <tt>boolean</tt> value of this literal.
 	 *
-	 * @param other The object to compare this literal to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
-	 *         and datatypes are equal.
+	 * @return The <tt>long</tt> value of the literal.
+	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
 	 */
-	@Override
-	public boolean equals(Object other);
-
-	/**
-	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
-	 * <tt>label.hashCode()</tt>.
-	 *
-	 * @return A hash code for the literal.
-	 */
-	@Override
-	public int hashCode();
+	public boolean booleanValue();
 
 	/**
 	 * Returns the <tt>byte</tt> value of this literal.
@@ -129,14 +118,6 @@ public interface Literal extends Value {
 	public double doubleValue();
 
 	/**
-	 * Returns the <tt>boolean</tt> value of this literal.
-	 *
-	 * @return The <tt>long</tt> value of the literal.
-	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
-	 */
-	public boolean booleanValue();
-
-	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
 	 * literals whose label conforms to the syntax of the following <a href="http://www.w3.org/TR/xmlschema-2/">XML
 	 * Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>, <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>,
@@ -146,4 +127,24 @@ public interface Literal extends Value {
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
 	public XMLGregorianCalendar calendarValue();
+
+	/**
+	 * Compares a literal object to another object.
+	 *
+	 * @param other The object to compare this literal to.
+	 * @return <tt>true</tt> if the other object is an instance of {@code Literal} and if their labels, language tags
+	 *         and datatypes are equal.
+	 */
+	@Override
+	public boolean equals(Object other);
+
+	/**
+	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
+	 * <tt>getLabel().hashCode()</tt>.
+	 *
+	 * @return A hash code for the literal.
+	 */
+	@Override
+	public int hashCode();
+
 }

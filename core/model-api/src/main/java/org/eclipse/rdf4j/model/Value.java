@@ -19,4 +19,5 @@ public interface Value extends Serializable {
 	 * {@link IRI}'s URI or a {@link BNode}'s ID.
 	 */
 	public String stringValue();
+
 }
