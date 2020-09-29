@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
+import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -138,11 +138,11 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				XmlDatatype leftXmlDatatype = leftLit.getXmlDatatypeEnum();
-				XmlDatatype rightXmlDatatype = rightLit.getXmlDatatypeEnum();
+				Optional<XsdDatatype> leftXmlDatatype = leftLit.getXsdDatatype();
+				Optional<XsdDatatype> rightXmlDatatype = rightLit.getXsdDatatype();
 
-				if (leftXmlDatatype != null && rightXmlDatatype != null) {
-					result = compareDatatypes(leftXmlDatatype, rightXmlDatatype);
+				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
+					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);
 				}
@@ -210,7 +210,7 @@ public class ValueComparator implements Comparator<Value> {
 		}
 	}
 
-	private int compareDatatypes(XmlDatatype leftDatatype, XmlDatatype rightDatatype) {
+	private int compareDatatypes(XsdDatatype leftDatatype, XsdDatatype rightDatatype) {
 		if (leftDatatype.isNumericDatatype()) {
 			if (rightDatatype.isNumericDatatype()) {
 				// both are numeric datatypes

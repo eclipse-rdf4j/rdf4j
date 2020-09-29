@@ -1,8 +1,7 @@
 package org.eclipse.rdf4j.model.datatypes;
 
 import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.Map;
+import java.util.Optional;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -10,7 +9,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
-public enum XmlDatatype {
+public enum XsdDatatype {
 
 	DURATION(XSD.DURATION, true, true, false, false, false, false, false),
 	DATETIME(XSD.DATETIME, true, false, false, false, false, false, true),
@@ -69,7 +68,7 @@ public enum XmlDatatype {
 	private final boolean floatingPoint;
 	private final boolean calendar;
 
-	XmlDatatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
+	XsdDatatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
 			boolean floatingPoint, boolean calendar) {
 		this.iri = iri;
 		this.primitive = primitive;
@@ -179,16 +178,16 @@ public enum XmlDatatype {
 		return isNumericDatatype() || isCalendarDatatype();
 	}
 
-	static HashMap<IRI, XmlDatatype> reverseLookup = new HashMap<>();
+	static HashMap<IRI, Optional<XsdDatatype>> reverseLookup = new HashMap<>();
 
 	static {
-		for (XmlDatatype value : XmlDatatype.values()) {
-			reverseLookup.put(value.iri, value);
+		for (XsdDatatype value : XsdDatatype.values()) {
+			reverseLookup.put(value.iri, Optional.of(value));
 		}
 	}
 
-	public static XmlDatatype from(IRI datatype) {
-		return reverseLookup.get(datatype);
+	public static Optional<XsdDatatype> from(IRI datatype) {
+		return reverseLookup.getOrDefault(datatype, Optional.empty());
 	}
 
 	public IRI getIri() {

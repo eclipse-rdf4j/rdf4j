@@ -13,7 +13,7 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
+import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -30,14 +30,14 @@ public interface Literal extends Value {
 	 *
 	 * @return The literal's label.
 	 */
-	public String getLabel();
+	String getLabel();
 
 	/**
 	 * Gets the language tag for this literal, normalized to lower case.
 	 *
 	 * @return The language tag for this literal, or {@link Optional#empty()} if it doesn't have one.
 	 */
-	public Optional<String> getLanguage();
+	Optional<String> getLanguage();
 
 	/**
 	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
@@ -46,10 +46,10 @@ public interface Literal extends Value {
 	 *
 	 * @return The datatype for this literal.
 	 */
-	public IRI getDatatype();
+	IRI getDatatype();
 
-	default public XmlDatatype getXmlDatatypeEnum() {
-		return null;
+	default Optional<XsdDatatype> getXsdDatatype() {
+		return Optional.empty();
 	}
 
 	/**
@@ -60,7 +60,7 @@ public interface Literal extends Value {
 	 *         and datatypes are equal.
 	 */
 	@Override
-	public boolean equals(Object other);
+	boolean equals(Object other);
 
 	/**
 	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
@@ -69,7 +69,7 @@ public interface Literal extends Value {
 	 * @return A hash code for the literal.
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
 
 	/**
 	 * Returns the <tt>byte</tt> value of this literal.
@@ -78,7 +78,7 @@ public interface Literal extends Value {
 	 * &#64;throws NumberFormatException
 	 *         If the literal cannot be represented by a <tt>byte</tt>.
 	 */
-	public byte byteValue();
+	byte byteValue();
 
 	/**
 	 * Returns the <tt>short</tt> value of this literal.
@@ -86,7 +86,7 @@ public interface Literal extends Value {
 	 * @return The <tt>short</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>short</tt>.
 	 */
-	public short shortValue();
+	short shortValue();
 
 	/**
 	 * Returns the <tt>int</tt> value of this literal.
@@ -94,7 +94,7 @@ public interface Literal extends Value {
 	 * @return The <tt>int</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>int</tt>.
 	 */
-	public int intValue();
+	int intValue();
 
 	/**
 	 * Returns the <tt>long</tt> value of this literal.
@@ -102,7 +102,7 @@ public interface Literal extends Value {
 	 * @return The <tt>long</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by to a <tt>long</tt> .
 	 */
-	public long longValue();
+	long longValue();
 
 	/**
 	 * Returns the integer value of this literal.
@@ -110,7 +110,7 @@ public interface Literal extends Value {
 	 * @return The integer value of the literal.
 	 * @throws NumberFormatException If the literal's label is not a valid integer.
 	 */
-	public BigInteger integerValue();
+	BigInteger integerValue();
 
 	/**
 	 * Returns the decimal value of this literal.
@@ -118,7 +118,7 @@ public interface Literal extends Value {
 	 * @return The decimal value of the literal.
 	 * @throws NumberFormatException If the literal's label is not a valid decimal.
 	 */
-	public BigDecimal decimalValue();
+	BigDecimal decimalValue();
 
 	/**
 	 * Returns the <tt>float</tt> value of this literal.
@@ -126,7 +126,7 @@ public interface Literal extends Value {
 	 * @return The <tt>float</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>float</tt>.
 	 */
-	public float floatValue();
+	float floatValue();
 
 	/**
 	 * Returns the <tt>double</tt> value of this literal.
@@ -134,7 +134,7 @@ public interface Literal extends Value {
 	 * @return The <tt>double</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>double</tt>.
 	 */
-	public double doubleValue();
+	double doubleValue();
 
 	/**
 	 * Returns the <tt>boolean</tt> value of this literal.
@@ -142,7 +142,7 @@ public interface Literal extends Value {
 	 * @return The <tt>long</tt> value of the literal.
 	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
 	 */
-	public boolean booleanValue();
+	boolean booleanValue();
 
 	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
@@ -153,7 +153,7 @@ public interface Literal extends Value {
 	 * @return The calendar value of the literal.
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
-	public XMLGregorianCalendar calendarValue();
+	XMLGregorianCalendar calendarValue();
 
 	@Override
 	default boolean isBnode() {

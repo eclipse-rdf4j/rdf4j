@@ -17,7 +17,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XmlDatatype;
+import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -55,8 +55,8 @@ public class SimpleLiteral implements Literal {
 	 */
 	private IRI datatype;
 
-	private boolean xmlDatatypeCached;
-	private XmlDatatype xmlDatatype;
+	private boolean xsdDatatypeCached;
+	private Optional<XsdDatatype> xsdDatatype;
 
 	/*--------------*
 	 * Constructors *
@@ -97,19 +97,21 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XmlDatatype.STRING);
-		} else
+			setDatatype(XsdDatatype.STRING);
+		} else {
 			setDatatype(datatype);
+		}
 	}
 
-	protected SimpleLiteral(String label, XmlDatatype datatype) {
+	protected SimpleLiteral(String label, XsdDatatype datatype) {
 		setLabel(label);
 		if (RDF.LANGSTRING.equals(datatype.getIri())) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XmlDatatype.STRING);
-		} else
+			setDatatype(XsdDatatype.STRING);
+		} else {
 			setDatatype(datatype);
+		}
 
 	}
 
@@ -145,10 +147,10 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
-	protected void setDatatype(XmlDatatype datatype) {
+	protected void setDatatype(XsdDatatype datatype) {
 		this.datatype = datatype.getIri();
-		this.xmlDatatypeCached = true;
-		this.xmlDatatype = datatype;
+		this.xsdDatatypeCached = true;
+		this.xsdDatatype = Optional.of(datatype);
 	}
 
 	@Override
@@ -157,12 +159,12 @@ public class SimpleLiteral implements Literal {
 	}
 
 	@Override
-	public XmlDatatype getXmlDatatypeEnum() {
-		if (!xmlDatatypeCached) {
-			xmlDatatype = XmlDatatype.from(datatype);
-			xmlDatatypeCached = true;
+	public Optional<XsdDatatype> getXsdDatatype() {
+		if (!xsdDatatypeCached) {
+			xsdDatatype = XsdDatatype.from(datatype);
+			xsdDatatypeCached = true;
 		}
-		return xmlDatatype;
+		return xsdDatatype;
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -189,11 +191,8 @@ public class SimpleLiteral implements Literal {
 				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
 			}
 			// If only one has a language, then return false
-			else if (getLanguage().isPresent() || other.getLanguage().isPresent()) {
-				return false;
-			}
-
-			return true;
+			else
+				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
 		}
 
 		return false;
