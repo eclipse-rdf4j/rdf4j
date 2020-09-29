@@ -56,8 +56,9 @@ public class SimpleLiteral implements Literal {
 
 	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
 	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
-	// race conditions, since calculating this value multiple times must lead to the same effective result.
-	private Optional<XSD.Datatype> xsdDatatype;
+	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
+	// only used to stop this field from be serialised.
+	transient private Optional<XSD.Datatype> xsdDatatype;
 
 	/*--------------*
 	 * Constructors *
