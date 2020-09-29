@@ -1,5 +1,5 @@
-/*****************************************************************************
- * Copyright (c) ${year} Eclipse RDF4J contributors.
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -12,14 +12,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.Test;
 
-public class BasicNamespaceTest {
+/**
+ * Abstract Namespace test suite.
+ */
+public abstract class NamespaceTest {
+
+	/**
+	 * Creates a test namespace instance.
+	 *
+	 * @param prefix the prefix of the namespace
+	 * @param name the name IRI of the namespace
+	 *
+	 * @return a new instance of the concrete namespace class under test
+	 */
+	protected abstract Namespace namespace(final String prefix, final String name);
+
 
 	@Test
 	public void compareTo() {
 
-		final Namespace x = new BasicNamespace("com", "http://example.org/x");
-		final Namespace y = new BasicNamespace("org", "http://example.org/y");
-		final Namespace z = new BasicNamespace("org", "http://example.org/z");
+		final Namespace x=namespace("com", "http://example.org/x");
+		final Namespace y=namespace("org", "http://example.org/y");
+		final Namespace z=namespace("org", "http://example.org/z");
 
 		assertThat(x).isEqualByComparingTo(x);
 
@@ -36,29 +50,11 @@ public class BasicNamespaceTest {
 	@Test
 	public void testEquals() {
 
-		final Namespace x = new BasicNamespace("com", "http://example.org/x");
-		final Namespace y = new BasicNamespace("org", "http://example.org/y");
+		final Namespace x=namespace("com", "http://example.org/x");
+		final Namespace y=namespace("org", "http://example.org/y");
 
-		assertThat(x).as("same class").isEqualTo(x);
-
-		assertThat(x).as("different class").isEqualTo(new Namespace() {
-
-			@Override
-			public String getPrefix() {
-				return x.getPrefix();
-			}
-
-			@Override
-			public String getName() {
-				return x.getName();
-			}
-
-			@Override
-			public int compareTo(Namespace o) {
-				return BasicNamespace.COMPARATOR.compare(this, o);
-			}
-
-		});
+		assertThat(x).as("same object").isEqualTo(x);
+		assertThat(x).as("same class").isEqualTo(namespace(x.getPrefix(), x.getName()));
 
 		assertThat(x).isNotEqualTo(null);
 		assertThat(x).isNotEqualTo(new Object());
