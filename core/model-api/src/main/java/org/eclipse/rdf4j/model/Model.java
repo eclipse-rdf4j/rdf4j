@@ -43,7 +43,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	public default Namespace setNamespace(String prefix, String name) {
 		Optional<? extends Namespace> result = getNamespace(prefix);
 		if (!result.isPresent() || !result.get().getName().equals(name)) {
-			result = Optional.of(new BasicNamespace(prefix, name));
+			result = Optional.of(new ModelNamespace(prefix, name));
 			setNamespace(result.get());
 		}
 		return result.get();
