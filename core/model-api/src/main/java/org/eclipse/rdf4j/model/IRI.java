@@ -54,8 +54,8 @@ public interface IRI extends URI, Resource {
 	 *
 	 * @param o The object to compare this IRI to.
 	 *
-	 * @return <tt>true</tt> if the other object is an instance of {@code IRI} and their
-	 * {@linkplain #stringValue() string values} are equal, <tt>false</tt> otherwise.
+	 * @return <tt>true</tt> if the other object is an instance of {@code IRI} and their {@linkplain #stringValue()
+	 *         string values} are equal, <tt>false</tt> otherwise.
 	 */
 	@Override
 	public boolean equals(Object o);

@@ -19,22 +19,21 @@ public class AbstractBNodeTest extends BNodeTest {
 		return new TestBNode(id);
 	}
 
-
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	private static final class TestBNode extends AbstractBNode {
 
-		private static final long serialVersionUID=-617790782100827067L;
+		private static final long serialVersionUID = -617790782100827067L;
 
 		private final String id;
 
 		TestBNode(String id) {
 
-			if ( id == null ) {
+			if (id == null) {
 				throw new NullPointerException("null id");
 			}
 
-			this.id=id;
+			this.id = id;
 		}
 
 		@Override

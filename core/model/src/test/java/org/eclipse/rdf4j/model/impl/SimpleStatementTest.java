@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.*;
 public class SimpleStatementTest extends StatementTest {
 	@Override
 	protected Statement statement(Resource subject, IRI predicate, Value object, Resource context) {
-			return new ContextStatement(subject, predicate, object, context);
+		return new ContextStatement(subject, predicate, object, context);
 	}
 
 	@Override

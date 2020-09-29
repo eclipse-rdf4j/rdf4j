@@ -17,7 +17,9 @@ public class SimpleBNodeTest extends BNodeTest {
 	@Override
 	protected BNode bnode(String id) {
 
-		if ( id == null ) { throw new NullPointerException("null id"); } // ;( patch missing checks
+		if (id == null) {
+			throw new NullPointerException("null id");
+		} // ;( patch missing checks
 
 		return new SimpleBNode(id);
 	}

@@ -23,12 +23,11 @@ public class AbstractStatementTest extends StatementTest {
 		return new TestIRI(iri);
 	}
 
-
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	private static class TestStatement extends AbstractStatement {
 
-		private static final long serialVersionUID=-4116676621136121342L;
+		private static final long serialVersionUID = -4116676621136121342L;
 
 		private final Resource subject;
 		private final IRI predicate;
@@ -37,22 +36,22 @@ public class AbstractStatementTest extends StatementTest {
 
 		TestStatement(Resource subject, IRI predicate, Value object, Resource context) {
 
-			if ( subject == null ) {
+			if (subject == null) {
 				throw new NullPointerException("null subject");
 			}
 
-			if ( predicate == null ) {
+			if (predicate == null) {
 				throw new NullPointerException("null predicate");
 			}
 
-			if ( object == null ) {
+			if (object == null) {
 				throw new NullPointerException("null object");
 			}
 
-			this.subject=subject;
-			this.predicate=predicate;
-			this.object=object;
-			this.context=context;
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
 		}
 
 		@Override

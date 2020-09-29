@@ -40,16 +40,15 @@ public abstract class StatementTest {
 	 */
 	protected abstract IRI iri(final String iri);
 
-
 	@Test
 	public final void testConstructor() {
 
-		final Resource subject=iri("http://example.org/subject");
-		final IRI predicate=iri("http://example.org/predicate");
-		final Value object=iri("http://example.org/object");
-		final Resource context=iri("http://example.org/context");
+		final Resource subject = iri("http://example.org/subject");
+		final IRI predicate = iri("http://example.org/predicate");
+		final Value object = iri("http://example.org/object");
+		final Resource context = iri("http://example.org/context");
 
-		final Statement statement=statement(subject, predicate, object, context);
+		final Statement statement = statement(subject, predicate, object, context);
 
 		assertThat(statement.getSubject()).isEqualTo(subject);
 		assertThat(statement.getPredicate()).isEqualTo(predicate);
@@ -64,20 +63,20 @@ public abstract class StatementTest {
 
 	}
 
-
 	@Ignore("undefined rules")
 	@Test
-	public void testStringValue() {}
+	public void testStringValue() {
+	}
 
 	@Test
 	public void testEquals() {
 
-		final Resource subject=iri("http://example.org/subject");
-		final IRI predicate=iri("http://example.org/predicate");
-		final Value object=iri("http://example.org/object");
-		final Resource context=iri("http://example.org/context");
+		final Resource subject = iri("http://example.org/subject");
+		final IRI predicate = iri("http://example.org/predicate");
+		final Value object = iri("http://example.org/object");
+		final Resource context = iri("http://example.org/context");
 
-		final Statement statement=statement(subject, predicate, object, context);
+		final Statement statement = statement(subject, predicate, object, context);
 
 		assertThat(statement).isEqualTo(statement);
 		assertThat(statement).isEqualTo(statement(
@@ -87,7 +86,7 @@ public abstract class StatementTest {
 		assertThat(statement).isNotEqualTo(null);
 		assertThat(statement).isNotEqualTo(new Object());
 
-		final IRI other=iri("http://example.org/other");
+		final IRI other = iri("http://example.org/other");
 
 		assertThat(statement).isNotEqualTo(statement(
 				other, statement.getPredicate(), statement.getObject(), statement.getContext()
@@ -108,6 +107,7 @@ public abstract class StatementTest {
 
 	@Ignore("undefined rules")
 	@Test
-	public void testHashCode() {}
+	public void testHashCode() {
+	}
 
 }

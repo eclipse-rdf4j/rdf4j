@@ -33,7 +33,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * Constants *
 	 *-----------*/
 
-	private static final long serialVersionUID=-1649571784782592271L;
+	private static final long serialVersionUID = -1649571784782592271L;
 
 	/*-----------*
 	 * Variables *
@@ -93,7 +93,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype=XSD.STRING;
+			datatype = XSD.STRING;
 		}
 		setDatatype(datatype);
 	}
@@ -104,7 +104,7 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected void setLabel(String label) {
 		Objects.requireNonNull(label, "Literal label cannot be null");
-		this.label=label;
+		this.label = label;
 	}
 
 	@Override
@@ -117,7 +117,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
-		this.language=language;
+		this.language = language;
 		setDatatype(RDF.LANGSTRING);
 	}
 
@@ -127,14 +127,13 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	protected void setDatatype(IRI datatype) {
-		this.datatype=datatype;
+		this.datatype = datatype;
 	}
 
 	@Override
 	public IRI getDatatype() {
 		return datatype;
 	}
-
 
 	@Override
 	public boolean booleanValue() {

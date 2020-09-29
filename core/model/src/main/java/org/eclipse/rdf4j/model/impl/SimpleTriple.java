@@ -51,9 +51,9 @@ public class SimpleTriple extends AbstractTriple {
 	 * @see SimpleValueFactory#createTriple(Resource, IRI, Value)
 	 */
 	protected SimpleTriple(Resource subject, IRI predicate, Value object) {
-		this.subject=Objects.requireNonNull(subject, "subject must not be null");
-		this.predicate=Objects.requireNonNull(predicate, "predicate must not be null");
-		this.object=Objects.requireNonNull(object, "object must not be null");
+		this.subject = Objects.requireNonNull(subject, "subject must not be null");
+		this.predicate = Objects.requireNonNull(predicate, "predicate must not be null");
+		this.object = Objects.requireNonNull(object, "object must not be null");
 	}
 
 	@Override

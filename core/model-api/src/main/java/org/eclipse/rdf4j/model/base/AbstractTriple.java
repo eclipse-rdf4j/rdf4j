@@ -17,7 +17,7 @@ public abstract class AbstractTriple implements Triple {
 
 	@Override
 	public String stringValue() {
-		return "<<"+getSubject()+" "+getPredicate()+" "+getObject()+">>";
+		return "<<" + getSubject() + " " + getPredicate() + " " + getObject() + ">>";
 	}
 
 	@Override
@@ -28,17 +28,17 @@ public abstract class AbstractTriple implements Triple {
 		// so these are checked last.
 
 		return this == o || o instanceof Triple
-				&& Objects.equals(getObject(), ((Triple)o).getObject())
-				&& Objects.equals(getSubject(), ((Triple)o).getSubject())
-				&& Objects.equals(getPredicate(), ((Triple)o).getPredicate());
+				&& Objects.equals(getObject(), ((Triple) o).getObject())
+				&& Objects.equals(getSubject(), ((Triple) o).getSubject())
+				&& Objects.equals(getPredicate(), ((Triple) o).getPredicate());
 	}
-
 
 	@Override
 	public int hashCode() {
 		return Objects.hashCode(getSubject())
 				^ Objects.hashCode(getPredicate())
-				^ Objects.hashCode(getObject());	}
+				^ Objects.hashCode(getObject());
+	}
 
 	@Override
 	public String toString() {

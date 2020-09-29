@@ -18,17 +18,16 @@ public final class AbstractNamespaceTest extends NamespaceTest {
 		return new TestNamespace(prefix, name);
 	}
 
-
 	private static final class TestNamespace extends AbstractNamespace {
 
-		private static final long serialVersionUID=-6325162028110821008L;
+		private static final long serialVersionUID = -6325162028110821008L;
 
 		private final String prefix;
 		private final String name;
 
 		private TestNamespace(String prefix, String name) {
-			this.prefix=prefix;
-			this.name=name;
+			this.prefix = prefix;
+			this.name = name;
 		}
 
 		@Override

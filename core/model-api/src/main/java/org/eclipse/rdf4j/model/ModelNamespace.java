@@ -12,20 +12,24 @@ import org.eclipse.rdf4j.model.base.AbstractNamespace;
 
 class ModelNamespace extends AbstractNamespace {
 
-	private static final long serialVersionUID=-6677122398220985317L;
+	private static final long serialVersionUID = -6677122398220985317L;
 
 	private final String prefix;
 	private final String name;
 
-	 ModelNamespace(String prefix, String name) {
-		this.prefix=prefix;
-		this.name=name;
+	ModelNamespace(String prefix, String name) {
+		this.prefix = prefix;
+		this.name = name;
 	}
 
 	@Override
-	public String getPrefix() { return prefix; }
+	public String getPrefix() {
+		return prefix;
+	}
 
 	@Override
-	public String getName() { return name; }
+	public String getName() {
+		return name;
+	}
 
 }

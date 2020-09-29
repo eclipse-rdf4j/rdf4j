@@ -43,7 +43,7 @@ public abstract class AbstractNamespace implements Namespace {
 
 	@Override
 	public String toString() {
-		return getPrefix()+" :: "+getName();
+		return getPrefix() + " :: " + getName();
 	}
 
 }

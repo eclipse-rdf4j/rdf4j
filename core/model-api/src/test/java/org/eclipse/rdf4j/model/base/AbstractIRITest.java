@@ -20,26 +20,31 @@ public class AbstractIRITest extends IRITest {
 		return new TestIRI(namespace, localname);
 	}
 
-
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static final class TestIRI extends AbstractIRI {
 
-		private static final long serialVersionUID=5909565726259853948L;
+		private static final long serialVersionUID = 5909565726259853948L;
 
 		private static int split(String iri) {
 
-			final int hash=iri.indexOf('#');
+			final int hash = iri.indexOf('#');
 
-			if ( hash >= 0 ) { return hash; } else {
+			if (hash >= 0) {
+				return hash;
+			} else {
 
-				final int slash=iri.lastIndexOf('/');
+				final int slash = iri.lastIndexOf('/');
 
-				if ( slash >= 0 ) { return slash; } else {
+				if (slash >= 0) {
+					return slash;
+				} else {
 
-					final int colon=iri.lastIndexOf(':');
+					final int colon = iri.lastIndexOf(':');
 
-					if ( colon >= 0 ) { return colon; } else {
+					if (colon >= 0) {
+						return colon;
+					} else {
 
 						throw new IllegalArgumentException("missing colon in absolute IRI");
 					}
@@ -55,28 +60,28 @@ public class AbstractIRITest extends IRITest {
 
 		TestIRI(String iri) {
 
-			if ( iri == null ) {
+			if (iri == null) {
 				throw new NullPointerException("null iri");
 			}
 
-			final int split=split(iri);
+			final int split = split(iri);
 
-			this.namespace=iri.substring(0, split+1);
-			this.localname=iri.substring(split+1);
+			this.namespace = iri.substring(0, split + 1);
+			this.localname = iri.substring(split + 1);
 		}
 
 		TestIRI(String namespace, String localname) {
 
-			if ( namespace == null ) {
+			if (namespace == null) {
 				throw new NullPointerException("null namespace");
 			}
 
-			if ( localname == null ) {
+			if (localname == null) {
 				throw new NullPointerException("null localname");
 			}
 
-			this.namespace=namespace;
-			this.localname=localname;
+			this.namespace = namespace;
+			this.localname = localname;
 		}
 
 		@Override
