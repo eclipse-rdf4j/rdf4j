@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -100,7 +99,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XsdDatatype.STRING);
+		return new SimpleLiteral(value, XSD.Datatype.STRING);
 	}
 
 	@Override
@@ -162,7 +161,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XsdDatatype.BYTE);
+		return createIntegerLiteral(value, XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -170,7 +169,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XsdDatatype.SHORT);
+		return createIntegerLiteral(value, XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -178,7 +177,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XsdDatatype.INT);
+		return createIntegerLiteral(value, XSD.Datatype.INT);
 	}
 
 	/**
@@ -186,7 +185,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XsdDatatype.LONG);
+		return createIntegerLiteral(value, XSD.Datatype.LONG);
 	}
 
 	/**
@@ -196,7 +195,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
-	protected Literal createIntegerLiteral(Number value, XsdDatatype datatype) {
+	protected Literal createIntegerLiteral(Number value, XSD.Datatype datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
@@ -205,7 +204,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XsdDatatype.FLOAT);
+		return createFPLiteral(value, XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -213,7 +212,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XsdDatatype.DOUBLE);
+		return createFPLiteral(value, XSD.Datatype.DOUBLE);
 	}
 
 	@Override
@@ -233,7 +232,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
-	protected Literal createFPLiteral(Number value, XsdDatatype datatype) {
+	protected Literal createFPLiteral(Number value, XSD.Datatype datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
@@ -250,7 +249,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
-	protected Literal createNumericLiteral(Number number, XsdDatatype datatype) {
+	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}

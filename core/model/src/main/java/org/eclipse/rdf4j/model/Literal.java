@@ -13,7 +13,6 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -48,7 +47,7 @@ public interface Literal extends Value {
 	 */
 	IRI getDatatype();
 
-	default Optional<XsdDatatype> getXsdDatatype() {
+	default Optional<XSD.Datatype> getXsdDatatype() {
 		return Optional.empty();
 	}
 

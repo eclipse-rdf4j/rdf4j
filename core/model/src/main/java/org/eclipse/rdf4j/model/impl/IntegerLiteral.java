@@ -11,7 +11,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -41,7 +40,7 @@ public class IntegerLiteral extends SimpleLiteral {
 		this.value = value;
 	}
 
-	protected IntegerLiteral(BigInteger value, XsdDatatype datatype) {
+	protected IntegerLiteral(BigInteger value, XSD.Datatype datatype) {
 		// TODO: maybe IntegerLiteralImpl should not extend LiteralImpl?
 		super(value.toString(), datatype);
 		this.value = value;

@@ -17,7 +17,6 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -56,7 +55,7 @@ public class SimpleLiteral implements Literal {
 	private IRI datatype;
 
 	private boolean xsdDatatypeCached;
-	private Optional<XsdDatatype> xsdDatatype;
+	private Optional<XSD.Datatype> xsdDatatype;
 
 	/*--------------*
 	 * Constructors *
@@ -97,18 +96,18 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XsdDatatype.STRING);
+			setDatatype(XSD.Datatype.STRING);
 		} else {
 			setDatatype(datatype);
 		}
 	}
 
-	protected SimpleLiteral(String label, XsdDatatype datatype) {
+	protected SimpleLiteral(String label, XSD.Datatype datatype) {
 		setLabel(label);
 		if (RDF.LANGSTRING.equals(datatype.getIri())) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XsdDatatype.STRING);
+			setDatatype(XSD.Datatype.STRING);
 		} else {
 			setDatatype(datatype);
 		}
@@ -147,7 +146,7 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
-	protected void setDatatype(XsdDatatype datatype) {
+	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
 		this.xsdDatatypeCached = true;
 		this.xsdDatatype = Optional.of(datatype);
@@ -159,9 +158,9 @@ public class SimpleLiteral implements Literal {
 	}
 
 	@Override
-	public Optional<XsdDatatype> getXsdDatatype() {
+	public Optional<XSD.Datatype> getXsdDatatype() {
 		if (!xsdDatatypeCached) {
-			xsdDatatype = XsdDatatype.from(datatype);
+			xsdDatatype = XSD.Datatype.from(datatype);
 			xsdDatatypeCached = true;
 		}
 		return xsdDatatype;

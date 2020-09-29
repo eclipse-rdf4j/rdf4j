@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.datatypes.XsdDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
@@ -153,8 +152,8 @@ public class QueryEvaluationUtil {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
-		XsdDatatype leftXsdDatatype = leftLit.getXsdDatatype().orElse(null);
-		XsdDatatype rightXsdDatatype = rightLit.getXsdDatatype().orElse(null);
+		XSD.Datatype leftXsdDatatype = leftLit.getXsdDatatype().orElse(null);
+		XSD.Datatype rightXsdDatatype = rightLit.getXsdDatatype().orElse(null);
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
@@ -176,11 +175,12 @@ public class QueryEvaluationUtil {
 					commonDatatype = leftDatatype;
 				} else if (leftXsdDatatype.isNumericDatatype() && rightXsdDatatype.isNumericDatatype()) {
 					// left and right arguments have different datatypes, try to find a more general, shared datatype
-					if (leftXsdDatatype == XsdDatatype.DOUBLE || rightXsdDatatype == XsdDatatype.DOUBLE) {
+					if (leftXsdDatatype == XSD.Datatype.DOUBLE || rightXsdDatatype == XSD.Datatype.DOUBLE) {
 						commonDatatype = XSD.DOUBLE;
-					} else if (leftXsdDatatype == XsdDatatype.FLOAT || rightXsdDatatype == XsdDatatype.FLOAT) {
+					} else if (leftXsdDatatype == XSD.Datatype.FLOAT || rightXsdDatatype == XSD.Datatype.FLOAT) {
 						commonDatatype = XSD.FLOAT;
-					} else if (leftXsdDatatype == XsdDatatype.DECIMAL || rightXsdDatatype == XsdDatatype.DECIMAL) {
+					} else if (leftXsdDatatype == XSD.Datatype.DECIMAL
+							|| rightXsdDatatype == XSD.Datatype.DECIMAL) {
 						commonDatatype = XSD.DECIMAL;
 					} else {
 						commonDatatype = XSD.INTEGER;
@@ -219,7 +219,8 @@ public class QueryEvaluationUtil {
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
-							if (leftXsdDatatype == XsdDatatype.DATETIME && rightXsdDatatype == XsdDatatype.DATETIME) {
+							if (leftXsdDatatype == XSD.Datatype.DATETIME
+									&& rightXsdDatatype == XSD.Datatype.DATETIME) {
 								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
 							} else {
 								// We fallback to the regular RDF term compare
@@ -295,8 +296,8 @@ public class QueryEvaluationUtil {
 					if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 					}
-					boolean leftString = leftXsdDatatype == XsdDatatype.STRING;
-					boolean rightString = rightXsdDatatype == XsdDatatype.STRING;
+					boolean leftString = leftXsdDatatype == XSD.Datatype.STRING;
+					boolean rightString = rightXsdDatatype == XSD.Datatype.STRING;
 					boolean leftNumeric = leftXsdDatatype.isNumericDatatype();
 					boolean rightNumeric = rightXsdDatatype.isNumericDatatype();
 					boolean leftDate = leftXsdDatatype.isCalendarDatatype();
@@ -352,9 +353,9 @@ public class QueryEvaluationUtil {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		Optional<XsdDatatype> xsdDatatype = l.getXsdDatatype();
+		Optional<XSD.Datatype> xsdDatatype = l.getXsdDatatype();
 		return xsdDatatype
-				.map(datatype -> datatype == XsdDatatype.STRING)
+				.map(datatype -> datatype == XSD.Datatype.STRING)
 				.orElseGet(() -> (l.getDatatype().equals(XSD.STRING)));
 
 	}
