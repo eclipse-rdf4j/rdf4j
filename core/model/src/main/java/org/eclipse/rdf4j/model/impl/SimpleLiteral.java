@@ -47,7 +47,7 @@ public class SimpleLiteral implements Literal {
 	/**
 	 * The literal's language tag.
 	 */
-	private String language;
+	private Optional<String> language = Optional.empty();
 
 	/**
 	 * The literal's datatype.
@@ -136,13 +136,13 @@ public class SimpleLiteral implements Literal {
 		if (language.isEmpty()) {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
-		this.language = language;
+		this.language = Optional.of(language);
 		setDatatype(RDF.LANGSTRING);
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+		return language;
 	}
 
 	protected void setDatatype(IRI datatype) {
@@ -215,7 +215,7 @@ public class SimpleLiteral implements Literal {
 	@Override
 	public String toString() {
 		if (Literals.isLanguageLiteral(this)) {
-			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);
+			StringBuilder sb = new StringBuilder(label.length() + language.get().length() + 3);
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
