@@ -42,21 +42,6 @@ public interface Triple extends Resource {
 	Value getObject();
 
 	@Override
-	default boolean isBNode() {
-		return false;
-	}
-
-	@Override
-	default boolean isIRI() {
-		return false;
-	}
-
-	@Override
-	default boolean isLiteral() {
-		return false;
-	}
-
-	@Override
 	default boolean isTriple() {
 		return true;
 	}

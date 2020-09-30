@@ -155,27 +155,8 @@ public interface Literal extends Value {
 	XMLGregorianCalendar calendarValue();
 
 	@Override
-	default boolean isBNode() {
-		return false;
-	}
-
-	@Override
-	default boolean isIRI() {
-		return false;
-	}
-
-	@Override
 	default boolean isLiteral() {
 		return true;
 	}
 
-	@Override
-	default boolean isTriple() {
-		return false;
-	}
-
-	@Override
-	default boolean isResource() {
-		return false;
-	}
 }

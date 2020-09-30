@@ -14,11 +14,6 @@ public interface Resource extends Value {
 	// Empty place holder as common supertype of IRI and BNode
 
 	@Override
-	default boolean isLiteral() {
-		return false;
-	}
-
-	@Override
 	default boolean isResource() {
 		return true;
 	}

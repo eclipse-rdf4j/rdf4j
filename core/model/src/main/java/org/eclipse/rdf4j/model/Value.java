@@ -21,22 +21,22 @@ public interface Value extends Serializable {
 	public String stringValue();
 
 	default boolean isBNode() {
-		return this instanceof BNode;
+		return false;
 	}
 
 	default boolean isIRI() {
-		return this instanceof IRI;
+		return false;
 	}
 
 	default boolean isResource() {
-		return this instanceof Resource;
+		return false;
 	}
 
 	default boolean isLiteral() {
-		return this instanceof Literal;
+		return false;
 	}
 
 	default boolean isTriple() {
-		return this instanceof Triple;
+		return false;
 	}
 }

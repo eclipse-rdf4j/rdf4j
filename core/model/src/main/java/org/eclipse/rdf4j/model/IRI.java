@@ -74,22 +74,7 @@ public interface IRI extends URI, Resource {
 	public int hashCode();
 
 	@Override
-	default boolean isBNode() {
-		return false;
-	}
-
-	@Override
 	default boolean isIRI() {
 		return true;
-	}
-
-	@Override
-	default boolean isLiteral() {
-		return false;
-	}
-
-	@Override
-	default boolean isTriple() {
-		return false;
 	}
 }
