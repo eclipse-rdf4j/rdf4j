@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -212,10 +213,6 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).booleanValue());
 
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("true", iri(XSD_STRING)).booleanValue()
-		// );
-
 	}
 
 	@Test
@@ -233,10 +230,6 @@ public abstract class LiteralTest {
 
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).booleanValue());
-
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).byteValue()
-		// );
 
 	}
 
@@ -256,10 +249,6 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).shortValue());
 
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).shortValue()
-		// );
-
 	}
 
 	@Test
@@ -277,10 +266,6 @@ public abstract class LiteralTest {
 
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).intValue());
-
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).intValue()
-		// );
 
 	}
 
@@ -300,10 +285,6 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).longValue());
 
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).longValue()
-		// );
-
 	}
 
 	@Test
@@ -318,16 +299,15 @@ public abstract class LiteralTest {
 		assertThat(literal("100.0", datatype).floatValue()).isInstanceOf(type).isEqualTo(100);
 		assertThat(literal("10e1", datatype).floatValue()).isInstanceOf(type).isEqualTo(100);
 
-		// assertThatIllegalArgumentException().as("not normalized").isThrownBy(() ->
-		// literal("\t100", datatype).floatValue()
-		// );
+		assertThat(literal("INF", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.POSITIVE_INFINITY);
+		assertThat(literal("-INF", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.NEGATIVE_INFINITY);
+		assertThat(literal("NaN", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.NaN);
+
+		// assertThatIllegalArgumentException().as("not normalized")
+		// 		.isThrownBy(() -> literal("\t100", datatype).floatValue());
 
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).floatValue());
-
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).longValue()
-		// );
 
 	}
 
@@ -343,16 +323,15 @@ public abstract class LiteralTest {
 		assertThat(literal("100.0", datatype).doubleValue()).isInstanceOf(type).isEqualTo(100);
 		assertThat(literal("10e1", datatype).doubleValue()).isInstanceOf(type).isEqualTo(100);
 
-		// assertThatIllegalArgumentException().as("not normalized").isThrownBy(() ->
-		// literal("\t100", datatype).doubleValue()
-		// );
+		assertThat(literal("INF", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.POSITIVE_INFINITY);
+		assertThat(literal("-INF", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.NEGATIVE_INFINITY);
+		assertThat(literal("NaN", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.NaN);
+
+		// assertThatIllegalArgumentException().as("not normalized")
+		// 		.isThrownBy(() -> literal("\t100", datatype).doubleValue());
 
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).doubleValue());
-
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).doubleValue()
-		// );
 
 	}
 
@@ -371,10 +350,6 @@ public abstract class LiteralTest {
 
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).integerValue());
-
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).integerValue()
-		// );
 
 	}
 
@@ -396,10 +371,6 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).decimalValue());
 
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).decimalValue()
-		// );
-
 	}
 
 	@Test
@@ -407,9 +378,22 @@ public abstract class LiteralTest {
 
 		final Class<XMLGregorianCalendar> type=XMLGregorianCalendar.class;
 
+		final DatatypeFactory factory=DatatypeFactory.newInstance();
+
+		final Function<Consumer<XMLGregorianCalendar>, XMLGregorianCalendar> setup=consumer -> {
+
+			final XMLGregorianCalendar calendar=factory.newXMLGregorianCalendar();
+
+			consumer.accept(calendar);
+
+			return calendar;
+
+		};
+
+
 		assertThat(literal("2020-09-29T01:02:03.004Z", XSD_DATE_TIME).calendarValue())
 				.isInstanceOf(type)
-				.isEqualTo(calendar(calendar -> {
+				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 					calendar.setMonth(9);
 					calendar.setDay(29);
@@ -419,13 +403,13 @@ public abstract class LiteralTest {
 
 		assertThat(literal("01:02:03.004", XSD_TIME).calendarValue())
 				.isInstanceOf(type)
-				.isEqualTo(calendar(calendar -> {
+				.isEqualTo(setup.apply(calendar -> {
 					calendar.setTime(1, 2, 3, 4);
 				}));
 
 		assertThat(literal("2020-09-29", XSD_DATE).calendarValue())
 				.isInstanceOf(type)
-				.isEqualTo(calendar(calendar -> {
+				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 					calendar.setMonth(9);
 					calendar.setDay(29);
@@ -433,33 +417,33 @@ public abstract class LiteralTest {
 
 		assertThat(literal("2020-09", XSD_G_YEAR_MONTH).calendarValue())
 				.isInstanceOf(type)
-				.isEqualTo(calendar(calendar -> {
+				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 					calendar.setMonth(9);
 				}));
 
 		// assertThat(literal("09-29", XSD_G_MONTH_DAY).calendarValue())
 		// .isInstanceOf(type)
-		// .isEqualTo(calendar(calendar -> {
+		// .isEqualTo(setup.apply(calendar -> {
 		// calendar.setYear(2020);
 		// calendar.setMonth(9);
 		// }));
 
 		assertThat(literal("2020", XSD_G_YEAR).calendarValue())
 				.isInstanceOf(type)
-				.isEqualTo(calendar(calendar -> {
+				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 				}));
 
 		// assertThat(literal("-09", XSD_G_MONTH).calendarValue())
 		// .isInstanceOf(type)
-		// .isEqualTo(calendar(calendar -> {
+		// .isEqualTo(setup.apply(calendar -> {
 		// calendar.setMonth(9);
 		// }));
 
 		// assertThat(literal("--29", XSD_G_DAY).calendarValue())
 		// .isInstanceOf(type)
-		// .isEqualTo(calendar(calendar -> {
+		// .isEqualTo(setup.apply(calendar -> {
 		// calendar.setDay(29);
 		// }));
 
@@ -469,19 +453,6 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", XSD_DATE_TIME).calendarValue());
 
-		// assertThatIllegalArgumentException().as("mis-typed").isThrownBy(() ->
-		// literal("100", iri(XSD_STRING)).calendarValue()
-		// );
-
-	}
-
-	private XMLGregorianCalendar calendar(Consumer<XMLGregorianCalendar> setup) throws DatatypeConfigurationException {
-
-		final XMLGregorianCalendar calendar=DatatypeFactory.newInstance().newXMLGregorianCalendar();
-
-		setup.accept(calendar);
-
-		return calendar;
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

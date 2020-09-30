@@ -40,6 +40,10 @@ public abstract class AbstractLiteral implements Literal {
 	static final String XSD_STRING="http://www.w3.org/2001/XMLSchema#string";
 	static final String RDF_LANG_STRING="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
 
+	private static final String POSITIVE_INFINITY="INF";
+	private static final String NEGATIVE_INFINITY="-INF";
+	private static final String NAN="NaN";
+
 	private static final Pattern WhitespacePattern=Pattern.compile("\\s+");
 
 	private static final ThreadLocal<DatatypeFactory> factory=ThreadLocal.withInitial(() -> {
@@ -116,12 +120,20 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public float floatValue() {
-		return value(Float::parseFloat);
+		return value(label -> label.equals(POSITIVE_INFINITY) ? Float.POSITIVE_INFINITY
+				: label.equals(NEGATIVE_INFINITY) ? Float.NEGATIVE_INFINITY
+				: label.equals(NAN) ? Float.NaN
+				: Float.parseFloat(label)
+		);
 	}
 
 	@Override
 	public double doubleValue() {
-		return value(Double::parseDouble);
+		return value(label -> label.equals(POSITIVE_INFINITY) ? Float.POSITIVE_INFINITY
+				: label.equals(NEGATIVE_INFINITY) ? Float.NEGATIVE_INFINITY
+				: label.equals(NAN) ? Float.NaN
+				: Double.parseDouble(label)
+		);
 	}
 
 	@Override
