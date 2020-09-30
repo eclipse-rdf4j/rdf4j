@@ -58,7 +58,8 @@ public class OrderComparatorTest {
 		}
 
 		@Override
-		public Value evaluate(Var expr, BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(Var expr, BindingSet bindings)
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return null;
 		}
 

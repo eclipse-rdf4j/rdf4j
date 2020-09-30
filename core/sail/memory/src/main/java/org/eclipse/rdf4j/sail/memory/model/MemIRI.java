@@ -132,11 +132,12 @@ public class MemIRI implements IRI, MemResource {
 
 	@Override
 	public int compareTo(IRI o) {
-		if(o instanceof MemIRI){
+		if (o instanceof MemIRI) {
 			int compareTo = namespace.compareTo(((MemIRI) o).namespace);
-			if(compareTo == 0){
+			if (compareTo == 0) {
 				return localName.compareTo(((MemIRI) o).localName);
-			}else return compareTo;
+			} else
+				return compareTo;
 		}
 
 		return toString().compareTo(o.toString());

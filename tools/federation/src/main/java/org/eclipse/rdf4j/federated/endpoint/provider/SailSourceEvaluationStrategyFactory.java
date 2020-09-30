@@ -131,10 +131,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 			return delegate.evaluate(expr, bindings);
 		}
 
-
 		@Override
 		public Value evaluate(Var expr, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+				throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.evaluate(expr, bindings);
 		}
 

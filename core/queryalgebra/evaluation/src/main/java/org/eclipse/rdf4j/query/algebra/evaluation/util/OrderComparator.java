@@ -134,7 +134,6 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		}
 	}
 
-
 	private Value evaluate(Var var, BindingSet o) throws QueryEvaluationException {
 		try {
 			return strategy.evaluate(var, o);

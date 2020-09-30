@@ -301,7 +301,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 //				}
 				list.add(iter.next());
 			}
-		}  finally {
+		} finally {
 			iter.close();
 		}
 		SortedIterators<BindingSet> iterator;

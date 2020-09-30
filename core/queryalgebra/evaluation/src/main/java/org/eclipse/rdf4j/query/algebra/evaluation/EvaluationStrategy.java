@@ -104,8 +104,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
 	 */
 	Value evaluate(Var expr, BindingSet bindings)
-		throws ValueExprEvaluationException, QueryEvaluationException;
-
+			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
 	 * Evaluates the boolean expression on the supplied TripleSource object.

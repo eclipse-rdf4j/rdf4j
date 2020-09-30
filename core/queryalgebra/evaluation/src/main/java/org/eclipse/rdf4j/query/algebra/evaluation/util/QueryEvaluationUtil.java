@@ -354,10 +354,11 @@ public class QueryEvaluationUtil {
 
 	public static boolean isPlainLiteral(Literal l) {
 		Optional<XSD.Datatype> xsdDatatype = l.getXsdDatatype();
-		return xsdDatatype
-				.map(datatype -> datatype == XSD.Datatype.STRING)
-				.orElseGet(() -> (l.getDatatype().equals(XSD.STRING)));
+		if (xsdDatatype.isPresent()) {
+			return xsdDatatype.get() == XSD.Datatype.STRING;
+		}
 
+		return l.getDatatype().equals(XSD.STRING);
 	}
 
 	/**
