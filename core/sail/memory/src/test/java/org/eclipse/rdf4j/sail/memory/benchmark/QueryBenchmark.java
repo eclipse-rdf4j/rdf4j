@@ -59,12 +59,14 @@ public class QueryBenchmark {
 	private static final String query1;
 	private static final String query2;
 	private static final String query3;
+	private static final String query4;
 
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
 			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
+			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -181,6 +183,16 @@ public class QueryBenchmark {
 		}
 		return hasStatement();
 
+	}
+
+	@Benchmark
+	public List<BindingSet> sort() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return Iterations.asList(connection
+					.prepareTupleQuery(query4)
+					.evaluate());
+		}
 	}
 
 	private boolean hasStatement() {
