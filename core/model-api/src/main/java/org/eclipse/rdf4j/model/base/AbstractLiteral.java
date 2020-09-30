@@ -161,9 +161,17 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(getLabel())
-				^ Objects.hashCode(getLanguage().map(this::normalize))
-				^ Objects.hashCode(getDatatype());
+
+		// !!! this definition while not incorrect may be improved upon by including language and datatype in the hash
+
+		return Objects.hashCode(getLabel());
+
+		// !!! switching to this definition breaks oer.sail.shacl.UniqueTest.tupleCardinality2()
+
+		// return Objects.hashCode(getLabel())
+		// ^ Objects.hashCode(getLanguage().map(this::normalize))
+		// ^ Objects.hashCode(getDatatype());
+
 	}
 
 	/**
