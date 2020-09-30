@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.Statement;
  */
 public abstract class AbstractStatement implements Statement {
 
-	private static final long serialVersionUID=2087591563645988076L;
+	private static final long serialVersionUID = 2087591563645988076L;
 
 	@Override
 	public boolean equals(Object o) {
@@ -30,28 +30,28 @@ public abstract class AbstractStatement implements Statement {
 		// so these are checked last.
 
 		return this == o || o instanceof Statement
-				&& Objects.equals(getObject(), ((Statement)o).getObject())
-				&& Objects.equals(getSubject(), ((Statement)o).getSubject())
-				&& Objects.equals(getPredicate(), ((Statement)o).getPredicate())
-				&& Objects.equals(getContext(), ((Statement)o).getContext());
+				&& Objects.equals(getObject(), ((Statement) o).getObject())
+				&& Objects.equals(getSubject(), ((Statement) o).getSubject())
+				&& Objects.equals(getPredicate(), ((Statement) o).getPredicate())
+				&& Objects.equals(getContext(), ((Statement) o).getContext());
 	}
 
 	@Override
 	public int hashCode() {
 		return Objects.hashCode(getSubject())
-				^Objects.hashCode(getPredicate())
-				^Objects.hashCode(getObject())
-				^Objects.hashCode(getContext());
+				^ Objects.hashCode(getPredicate())
+				^ Objects.hashCode(getObject())
+				^ Objects.hashCode(getContext());
 	}
 
 	@Override
 	public String toString() {
 		return "("
-				+getSubject()
-				+", "+getPredicate()
-				+", "+getObject()
-				+(getContext() == null ? "" : ", "+getContext())
-				+")";
+				+ getSubject()
+				+ ", " + getPredicate()
+				+ ", " + getObject()
+				+ (getContext() == null ? "" : ", " + getContext())
+				+ ")";
 	}
 
 }

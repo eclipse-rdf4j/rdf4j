@@ -33,9 +33,9 @@ public abstract class NamespaceTest {
 	@Test
 	public void compareTo() {
 
-		final Namespace x=namespace("com", "http://example.org/x");
-		final Namespace y=namespace("org", "http://example.org/y");
-		final Namespace z=namespace("org", "http://example.org/z");
+		final Namespace x = namespace("com", "http://example.org/x");
+		final Namespace y = namespace("org", "http://example.org/y");
+		final Namespace z = namespace("org", "http://example.org/z");
 
 		assertThat(x).isEqualByComparingTo(x);
 
@@ -52,8 +52,8 @@ public abstract class NamespaceTest {
 	@Test
 	public void testEquals() {
 
-		final Namespace x=namespace("com", "http://example.org/x");
-		final Namespace y=namespace("org", "http://example.org/y");
+		final Namespace x = namespace("com", "http://example.org/x");
+		final Namespace y = namespace("org", "http://example.org/y");
 
 		assertThat(x).as("same object").isEqualTo(x);
 		assertThat(x).as("same class").isEqualTo(namespace(x.getPrefix(), x.getName()));

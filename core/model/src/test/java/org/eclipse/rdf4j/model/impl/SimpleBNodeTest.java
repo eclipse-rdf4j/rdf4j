@@ -8,7 +8,8 @@
 
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeTest;
 
 /**
  * Unit tests for {@link SimpleLiteral}.
@@ -18,9 +19,9 @@ public class SimpleBNodeTest extends BNodeTest {
 	@Override
 	protected BNode bnode(String id) {
 
-		if (id == null) {
+		if (id == null) { // handle missing checks
 			throw new NullPointerException("null id");
-		} // ;( patch missing checks
+		}
 
 		return new SimpleBNode(id);
 	}

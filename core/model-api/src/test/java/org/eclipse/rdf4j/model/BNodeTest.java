@@ -33,9 +33,9 @@ public abstract class BNodeTest {
 	@Test
 	public final void testConstructor() {
 
-		final String id="id";
+		final String id = "id";
 
-		final BNode bnode=bnode(id);
+		final BNode bnode = bnode(id);
 
 		assertThat(bnode.getID()).isEqualTo(id);
 
@@ -45,7 +45,7 @@ public abstract class BNodeTest {
 	@Test
 	public void testStringValue() {
 
-		final String id="bnode";
+		final String id = "bnode";
 
 		assertThat(bnode(id).getID()).isEqualTo(id);
 	}
@@ -53,8 +53,8 @@ public abstract class BNodeTest {
 	@Test
 	public void testEquals() {
 
-		final BNode x=bnode("x");
-		final BNode y=bnode("y");
+		final BNode x = bnode("x");
+		final BNode y = bnode("y");
 
 		assertThat(x).isEqualTo(x);
 		assertThat(x).isEqualTo(bnode(x.getID()));
@@ -68,7 +68,7 @@ public abstract class BNodeTest {
 	@Test
 	public void testHashCode() {
 
-		final BNode bnode=bnode("bnode");
+		final BNode bnode = bnode("bnode");
 
 		assertThat(bnode.hashCode()).isEqualTo(bnode.getID().hashCode());
 	}

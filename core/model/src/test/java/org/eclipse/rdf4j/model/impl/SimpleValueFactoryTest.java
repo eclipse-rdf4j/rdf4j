@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
-
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.ValueFactoryTest;
 import org.junit.Before;

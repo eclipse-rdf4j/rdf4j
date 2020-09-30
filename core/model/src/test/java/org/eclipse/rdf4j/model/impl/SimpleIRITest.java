@@ -7,8 +7,6 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.BNodeTest;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.IRITest;
 
@@ -20,17 +18,15 @@ public class SimpleIRITest extends IRITest {
 	@Override
 	protected IRI iri(String namespace, String localname) {
 
-		if (namespace == null) {
+		if (namespace == null) { // handle missing checks
 			throw new NullPointerException("null namespace");
-		} // fake check
-		if (localname == null) {
-			throw new NullPointerException("null localname");
-		} // fake check
+		}
 
-		return new SimpleIRI(namespace == null ? localname
-				: localname == null ? namespace
-						: namespace + localname
-		);
+		if (localname == null) { // handle missing checks
+			throw new NullPointerException("null localname");
+		}
+
+		return new SimpleIRI(namespace + localname);
 	}
 
 }

@@ -51,7 +51,7 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateBNode() {
 
-		final BNode bnode=factory().createBNode();
+		final BNode bnode = factory().createBNode();
 
 		assertThat(bnode).isNotNull();
 		assertThat(bnode.getID()).isNotNull();
@@ -60,14 +60,14 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralBoolean() {
 
-		final Literal _true=factory().createLiteral(true);
+		final Literal _true = factory().createLiteral(true);
 
 		assertThat(_true).isNotNull();
 		assertThat(_true.booleanValue()).isTrue();
 		assertThat(_true.getLabel()).isEqualTo("true");
 		assertThat(_true.getDatatype().stringValue()).isEqualTo(XSD_BOOLEAN);
 
-		final Literal _false=factory().createLiteral(false);
+		final Literal _false = factory().createLiteral(false);
 
 		assertThat(_false).isNotNull();
 		assertThat(_false.booleanValue()).isFalse();
@@ -78,9 +78,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralByte() {
 
-		final byte value=42;
+		final byte value = 42;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.byteValue()).isEqualTo(value);
@@ -91,9 +91,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralShort() {
 
-		final short value=42;
+		final short value = 42;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.shortValue()).isEqualTo(value);
@@ -104,9 +104,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralInt() {
 
-		final int value=42;
+		final int value = 42;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.intValue()).isEqualTo(value);
@@ -117,9 +117,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralLong() {
 
-		final long value=42L;
+		final long value = 42L;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.longValue()).isEqualTo(value);
@@ -130,9 +130,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralFloat() {
 
-		final float value=42.0f;
+		final float value = 42.0f;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.floatValue()).isEqualTo(value);
@@ -144,9 +144,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralDouble() {
 
-		final double value=42.0d;
+		final double value = 42.0d;
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.doubleValue()).isEqualTo(value);
@@ -157,9 +157,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralInteger() {
 
-		final BigInteger value=new BigInteger("42");
+		final BigInteger value = new BigInteger("42");
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.integerValue()).isEqualTo(value);
@@ -170,9 +170,9 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralDecimal() {
 
-		final BigDecimal value=new BigDecimal("42.0");
+		final BigDecimal value = new BigDecimal("42.0");
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.decimalValue()).isEqualTo(value);
@@ -183,10 +183,10 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralXMLGregorianCalendar() throws DatatypeConfigurationException {
 
-		final XMLGregorianCalendar value=DatatypeFactory.newInstance()
+		final XMLGregorianCalendar value = DatatypeFactory.newInstance()
 				.newXMLGregorianCalendar("2020-09-30T01:02:03.004Z");
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.calendarValue()).isEqualTo(value);
@@ -198,10 +198,10 @@ public abstract class ValueFactoryTest {
 	@Test
 	public void testCreateLiteralDate() throws DatatypeConfigurationException {
 
-		final Date value=DatatypeConverter.parseDateTime("2020-09-30T01:02:03.004Z").getTime();
-		final String string=new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(value);
+		final Date value = DatatypeConverter.parseDateTime("2020-09-30T01:02:03.004Z").getTime();
+		final String string = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(value);
 
-		final Literal literal=factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.calendarValue()).isEqualTo(DatatypeFactory.newInstance().newXMLGregorianCalendar(string));

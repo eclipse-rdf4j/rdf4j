@@ -45,11 +45,11 @@ public abstract class TripleTest {
 	@Test
 	public final void testConstructor() {
 
-		final Resource subject=iri("http://example.org/subject");
-		final IRI predicate=iri("http://example.org/predicate");
-		final Value object=iri("http://example.org/object");
+		final Resource subject = iri("http://example.org/subject");
+		final IRI predicate = iri("http://example.org/predicate");
+		final Value object = iri("http://example.org/object");
 
-		final Triple triple=triple(subject, predicate, object);
+		final Triple triple = triple(subject, predicate, object);
 
 		assertThat(triple.getSubject()).isEqualTo(subject);
 		assertThat(triple.getPredicate()).isEqualTo(predicate);
@@ -68,11 +68,11 @@ public abstract class TripleTest {
 	@Test
 	public void testEquals() {
 
-		final Resource subject=iri("http://example.org/subject");
-		final IRI predicate=iri("http://example.org/predicate");
-		final Value object=iri("http://example.org/object");
+		final Resource subject = iri("http://example.org/subject");
+		final IRI predicate = iri("http://example.org/predicate");
+		final Value object = iri("http://example.org/object");
 
-		final Triple triple=triple(subject, predicate, object);
+		final Triple triple = triple(subject, predicate, object);
 
 		assertThat(triple).isEqualTo(triple);
 		assertThat(triple).isEqualTo(triple(triple.getSubject(), triple.getPredicate(), triple.getObject()));
@@ -80,7 +80,7 @@ public abstract class TripleTest {
 		assertThat(triple).isNotEqualTo(null);
 		assertThat(triple).isNotEqualTo(new Object());
 
-		final IRI other=iri("http://example.org/other");
+		final IRI other = iri("http://example.org/other");
 
 		assertThat(triple).isNotEqualTo(triple(other, triple.getPredicate(), triple.getObject()));
 		assertThat(triple).isNotEqualTo(triple(triple.getSubject(), other, triple.getObject()));

@@ -7,12 +7,17 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.StatementTest;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Unit tests for {@link SimpleTriple}.
  */
 public class SimpleStatementTest extends StatementTest {
+
 	@Override
 	protected Statement statement(Resource subject, IRI predicate, Value object, Resource context) {
 		return new ContextStatement(subject, predicate, object, context);

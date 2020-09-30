@@ -45,7 +45,7 @@ public class AbstractLiteralTest extends LiteralTest {
 
 	private static final class TestLiteral extends AbstractLiteral {
 
-		private static final long serialVersionUID=-19640527584237291L;
+		private static final long serialVersionUID = -19640527584237291L;
 
 		private final String label;
 		private final String language;
@@ -53,47 +53,47 @@ public class AbstractLiteralTest extends LiteralTest {
 
 		TestLiteral(String label) {
 
-			if ( label == null ) {
+			if (label == null) {
 				throw new NullPointerException("null label");
 			}
 
-			this.label=label;
-			this.language=null;
-			this.datatype=new TestIRI(XSD_STRING);
+			this.label = label;
+			this.language = null;
+			this.datatype = new TestIRI(XSD_STRING);
 		}
 
 		TestLiteral(String label, String language) {
 
-			if ( label == null ) {
+			if (label == null) {
 				throw new NullPointerException("null label");
 			}
 
-			if ( language == null ) {
+			if (language == null) {
 				throw new NullPointerException("null language");
 			}
 
-			if ( label.isEmpty() ) {
+			if (label.isEmpty()) {
 				throw new IllegalArgumentException("empty language tag");
 			}
 
-			this.label=label;
-			this.language=language;
-			this.datatype=new TestIRI(RDF_LANG_STRING);
+			this.label = label;
+			this.language = language;
+			this.datatype = new TestIRI(RDF_LANG_STRING);
 		}
 
 		TestLiteral(String label, IRI datatype) {
 
-			if ( label == null ) {
+			if (label == null) {
 				throw new NullPointerException("null label");
 			}
 
-			if ( datatype != null && datatype.stringValue().equals(RDF_LANG_STRING) ) {
+			if (datatype != null && datatype.stringValue().equals(RDF_LANG_STRING)) {
 				throw new IllegalArgumentException("reserved rdf:langString datatype");
 			}
 
-			this.label=label;
-			this.language=null;
-			this.datatype=datatype != null ? datatype : new TestIRI(XSD_STRING);
+			this.label = label;
+			this.language = null;
+			this.datatype = datatype != null ? datatype : new TestIRI(XSD_STRING);
 		}
 
 		@Override
