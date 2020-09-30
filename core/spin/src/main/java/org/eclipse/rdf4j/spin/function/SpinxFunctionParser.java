@@ -57,6 +57,11 @@ public class SpinxFunctionParser implements FunctionParser {
 		}
 
 		ScriptEngine engine = scriptManager.getEngineByName("javascript");
+
+		if (engine == null) {
+			throw new UnsupportedOperationException("No javascript engine available!");
+		}
+
 		try {
 			if (file != null) {
 				String ns = funcUri.getNamespace();
@@ -65,6 +70,7 @@ public class SpinxFunctionParser implements FunctionParser {
 							new URL(new URL(ns.substring(0, ns.length() - 1)), file).openStream());
 					try {
 						engine.eval(reader);
+
 					} finally {
 						try {
 							reader.close();
