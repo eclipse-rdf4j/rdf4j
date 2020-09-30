@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Triple;
 
 public abstract class AbstractTriple implements Triple {
 
-	private static final long serialVersionUID=2661609986803671844L;
+	private static final long serialVersionUID = 2661609986803671844L;
 
 	@Override
 	public String stringValue() {
