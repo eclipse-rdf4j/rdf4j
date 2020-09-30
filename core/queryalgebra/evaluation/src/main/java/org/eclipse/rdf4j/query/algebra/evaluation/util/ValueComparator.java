@@ -47,8 +47,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 2. Blank nodes
-		boolean b1 = o1.isBnode();
-		boolean b2 = o2.isBnode();
+		boolean b1 = o1.isBNode();
+		boolean b2 = o2.isBNode();
 		if (b1 && b2) {
 			return compareBNodes((BNode) o1, (BNode) o2);
 		}

@@ -42,7 +42,7 @@ public interface BNode extends Resource {
 	public int hashCode();
 
 	@Override
-	default boolean isBnode() {
+	default boolean isBNode() {
 		return true;
 	}
 

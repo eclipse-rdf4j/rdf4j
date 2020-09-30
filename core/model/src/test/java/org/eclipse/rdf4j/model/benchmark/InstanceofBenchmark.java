@@ -118,7 +118,7 @@ public class InstanceofBenchmark {
 			if (subject.isLiteral()) {
 				count += 2;
 			}
-			if (subject.isBnode()) {
+			if (subject.isBNode()) {
 				count += 3;
 			}
 			if (subject.isTriple()) {

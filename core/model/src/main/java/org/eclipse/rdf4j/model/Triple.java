@@ -42,7 +42,7 @@ public interface Triple extends Resource {
 	Value getObject();
 
 	@Override
-	default boolean isBnode() {
+	default boolean isBNode() {
 		return false;
 	}
 

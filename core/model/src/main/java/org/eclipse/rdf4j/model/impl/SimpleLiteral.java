@@ -58,7 +58,7 @@ public class SimpleLiteral implements Literal {
 	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
 	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
 	// only used to stop this field from be serialised.
-	transient private Optional<XSD.Datatype> xsdDatatype;
+	transient private Optional<XSD.Datatype> xsdDatatype = null;
 
 	/*--------------*
 	 * Constructors *

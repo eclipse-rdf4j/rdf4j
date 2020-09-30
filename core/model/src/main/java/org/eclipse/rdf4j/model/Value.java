@@ -20,7 +20,7 @@ public interface Value extends Serializable {
 	 */
 	public String stringValue();
 
-	default boolean isBnode() {
+	default boolean isBNode() {
 		return this instanceof BNode;
 	}
 

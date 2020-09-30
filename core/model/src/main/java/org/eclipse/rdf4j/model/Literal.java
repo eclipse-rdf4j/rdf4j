@@ -155,7 +155,7 @@ public interface Literal extends Value {
 	XMLGregorianCalendar calendarValue();
 
 	@Override
-	default boolean isBnode() {
+	default boolean isBNode() {
 		return false;
 	}
 
