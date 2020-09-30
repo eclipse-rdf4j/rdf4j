@@ -17,8 +17,6 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -48,11 +46,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms512M", "-Xmx512M" })
+@Fork(value = 1, jvmArgs = { "-Xms512M", "-Xmx512M", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class QueryBenchmark {
+public class QueryReadBenchmark {
 
 	private SailRepository repository;
 
@@ -72,8 +70,6 @@ public class QueryBenchmark {
 		}
 	}
 
-	List<Statement> statementList;
-
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("QueryBenchmark.groupByQuery") // adapt to run other benchmark tests
@@ -84,7 +80,7 @@ public class QueryBenchmark {
 		new Runner(opt).run();
 	}
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
 		repository = new SailRepository(new MemoryStore());
@@ -95,18 +91,17 @@ public class QueryBenchmark {
 			connection.commit();
 		}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		System.gc();
+		System.gc();
+		System.gc();
 
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
-		}
-		
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
+		return QueryReadBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
-	@TearDown(Level.Invocation)
+	@TearDown(Level.Trial)
 	public void afterClass() {
 
 		repository.shutDown();
@@ -121,66 +116,6 @@ public class QueryBenchmark {
 					.prepareTupleQuery(query1)
 					.evaluate());
 		}
-	}
-
-	@Benchmark
-	public boolean simpleUpdateQueryIsolationReadCommitted() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	@Benchmark
-	public boolean simpleUpdateQueryIsolationNone() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	@Benchmark
-	public boolean removeByQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	@Benchmark
-	public boolean removeByQueryReadCommitted() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-		}
-		return hasStatement();
-
 	}
 
 	@Benchmark
