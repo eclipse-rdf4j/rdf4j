@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -18,6 +19,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -134,23 +136,31 @@ public class QueryReadBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueComparator valueComparator = new ValueComparator();
-			return connection.getStatements(null, null, null).stream().sorted((a, b) -> {
+			List<Statement> collect = connection.getStatements(null, null, null).stream().collect(Collectors.toList());
 
-				int object = valueComparator.compare(a.getObject(), b.getObject());
-				if (object != 0) {
-					return object;
-				}
+			Statement[] statements = collect.toArray(new Statement[0]);
 
-				int predicate = valueComparator.compare(a.getPredicate(), b.getPredicate());
-				if (predicate != 0) {
-					return predicate;
-				}
+			Arrays.parallelSort(
+					statements,
+					(a, b) -> {
+						int object = valueComparator.compare(a.getObject(), b.getObject());
+						if (object != 0) {
+							return object;
+						}
 
-				return valueComparator.compare(a.getSubject(), b.getSubject());
+						int predicate = valueComparator.compare(a.getPredicate(), b.getPredicate());
+						if (predicate != 0) {
+							return predicate;
+						}
 
-			}).limit(1).collect(Collectors.toList());
+						return valueComparator.compare(a.getSubject(), b.getSubject());
+					}
+			);
+
+			return Arrays.asList(statements[0]);
 
 		}
+
 	}
 
 	private boolean hasStatement() {
