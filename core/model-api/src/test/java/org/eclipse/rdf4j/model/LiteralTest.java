@@ -422,12 +422,12 @@ public abstract class LiteralTest {
 					calendar.setMonth(9);
 				}));
 
-		// assertThat(literal("09-29", XSD_G_MONTH_DAY).calendarValue())
-		// .isInstanceOf(type)
-		// .isEqualTo(setup.apply(calendar -> {
-		// calendar.setYear(2020);
-		// calendar.setMonth(9);
-		// }));
+		assertThat(literal("--09-29", XSD_G_MONTH_DAY).calendarValue())
+				.isInstanceOf(type)
+				.isEqualTo(setup.apply(calendar -> {
+					calendar.setMonth(9);
+					calendar.setDay(29);
+				}));
 
 		assertThat(literal("2020", XSD_G_YEAR).calendarValue())
 				.isInstanceOf(type)
@@ -435,17 +435,17 @@ public abstract class LiteralTest {
 					calendar.setYear(2020);
 				}));
 
-		// assertThat(literal("-09", XSD_G_MONTH).calendarValue())
-		// .isInstanceOf(type)
-		// .isEqualTo(setup.apply(calendar -> {
-		// calendar.setMonth(9);
-		// }));
+		assertThat(literal("--09", XSD_G_MONTH).calendarValue())
+				.isInstanceOf(type)
+				.isEqualTo(setup.apply(calendar -> {
+					calendar.setMonth(9);
+				}));
 
-		// assertThat(literal("--29", XSD_G_DAY).calendarValue())
-		// .isInstanceOf(type)
-		// .isEqualTo(setup.apply(calendar -> {
-		// calendar.setDay(29);
-		// }));
+		assertThat(literal("---29", XSD_G_DAY).calendarValue())
+				.isInstanceOf(type)
+				.isEqualTo(setup.apply(calendar -> {
+					calendar.setDay(29);
+				}));
 
 		assertThatIllegalArgumentException().as("not normalized")
 				.isThrownBy(() -> literal("\t100", XSD_DATE_TIME).calendarValue());
