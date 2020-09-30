@@ -35,7 +35,7 @@ public interface IRI extends URI, Resource {
 	 * @return The String-representation of this IRI.
 	 */
 	@Override
-	public String toString();
+	String toString();
 
 	/**
 	 * Gets the namespace part of this IRI. The namespace is defined as per the algorithm described in the class
@@ -44,7 +44,7 @@ public interface IRI extends URI, Resource {
 	 * @return The IRI's namespace.
 	 */
 	@Override
-	public String getNamespace();
+	String getNamespace();
 
 	/**
 	 * Gets the local name part of this IRI. The local name is defined as per the algorithm described in the class
@@ -53,7 +53,7 @@ public interface IRI extends URI, Resource {
 	 * @return The IRI's local name.
 	 */
 	@Override
-	public String getLocalName();
+	String getLocalName();
 
 	/**
 	 * Compares a IRI object to another object.
@@ -63,7 +63,7 @@ public interface IRI extends URI, Resource {
 	 *         equal, <tt>false</tt> otherwise.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
 	 * The hash code of an IRI is defined as the hash code of its String-representation: <tt>toString().hashCode</tt>.
@@ -71,5 +71,10 @@ public interface IRI extends URI, Resource {
 	 * @return A hash code for the IRI.
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
+
+	@Override
+	default boolean isIRI() {
+		return true;
+	}
 }
