@@ -270,39 +270,38 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	@Override
 	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
-		List<BindingSet> list = new LinkedList<>();
+		List<BindingSet> list = new ArrayList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
 			while (iter.hasNext()) {
-				if (list.size() >= syncThreshold && list.size() < limit) {
-					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
-					sort(list).forEach(bs -> queue.add(bs));
-					serialized.add(queue);
-					decrement(list.size() - queue.size());
-					list = new ArrayList<>(list.size());
-					if (threshold == null && serialized.stream().mapToLong(q -> q.size()).sum() >= limit) {
-						Stream<BindingSet> stream = serialized.stream().map(q -> q.peekLast());
-						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().get();
-					}
-				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
-					List<BindingSet> sorted = new ArrayList<>(limit2);
-					sort(list).forEach(bs -> sorted.add(bs));
-					decrement(list.size() - sorted.size());
-					list = sorted;
-					if (sorted.size() >= limit) {
-						threshold = sorted.get(sorted.size() - 1);
-					}
-				}
-				BindingSet next = iter.next();
-				if (threshold == null || comparator.compare(next, threshold) < 0) {
-					list.add(next);
-					increment();
-				}
+//				if (list.size() >= syncThreshold && list.size() < limit) {
+//					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
+//					sort(list).forEach(bs -> queue.add(bs));
+//					serialized.add(queue);
+//					decrement(list.size() - queue.size());
+//					list = new ArrayList<>(list.size());
+//					if (threshold == null && serialized.stream().mapToLong(q -> q.size()).sum() >= limit) {
+//						Stream<BindingSet> stream = serialized.stream().map(q -> q.peekLast());
+//						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().get();
+//					}
+//				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
+//					List<BindingSet> sorted = new ArrayList<>(limit2);
+//					sort(list).forEach(bs -> sorted.add(bs));
+//					decrement(list.size() - sorted.size());
+//					list = sorted;
+//					if (sorted.size() >= limit) {
+//						threshold = sorted.get(sorted.size() - 1);
+//					}
+//				}
+//				BindingSet next = iter.next();
+//				if (threshold == null || comparator.compare(next, threshold) < 0) {
+//					list.add(next);
+//					increment();
+//				}
+				list.add(iter.next());
 			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
-		} finally {
+		}  finally {
 			iter.close();
 		}
 		SortedIterators<BindingSet> iterator;

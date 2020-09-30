@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -53,6 +54,11 @@ public class OrderComparatorTest {
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
 				throws ValueExprEvaluationException, QueryEvaluationException {
+			return null;
+		}
+
+		@Override
+		public Value evaluate(Var expr, BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
 			return null;
 		}
 

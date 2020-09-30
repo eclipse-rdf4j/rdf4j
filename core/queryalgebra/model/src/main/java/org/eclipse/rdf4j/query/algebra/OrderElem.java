@@ -21,7 +21,7 @@ public class OrderElem extends AbstractQueryModelNode {
 	 */
 	private static final long serialVersionUID = -6573481604435459287L;
 
-	private ValueExpr expr;
+	private Var expr;
 
 	private boolean ascending = true;
 
@@ -45,14 +45,14 @@ public class OrderElem extends AbstractQueryModelNode {
 	 * Methods *
 	 *---------*/
 
-	public ValueExpr getExpr() {
+	public Var getExpr() {
 		return expr;
 	}
 
 	public void setExpr(ValueExpr expr) {
 		assert expr != null : "expr must not be null";
 		expr.setParentNode(this);
-		this.expr = expr;
+		this.expr = (Var) expr;
 	}
 
 	public boolean isAscending() {

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.slf4j.Logger;
@@ -96,7 +97,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 			// we create an ordered list of binding names (using natural string order) to use for
 			// consistent iteration over binding names and binding values.
-			final ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1.getBindingNames());
+			ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1.getBindingNames());
 			Collections.sort(o1bindingNamesOrdered);
 
 			// binding set sizes are equal. compare on binding names.
@@ -117,10 +118,10 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 			// binding names equal. compare on all values.
 			for (String bindingName : o1bindingNamesOrdered) {
-				final Value v1 = o1.getValue(bindingName);
-				final Value v2 = o2.getValue(bindingName);
+				Value v1 = o1.getValue(bindingName);
+				Value v2 = o2.getValue(bindingName);
 
-				final int compare = cmp.compare(v1, v2);
+				int compare = cmp.compare(v1, v2);
 				if (compare != 0) {
 					return compare;
 				}
@@ -133,9 +134,10 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		}
 	}
 
-	private Value evaluate(ValueExpr valueExpr, BindingSet o) throws QueryEvaluationException {
+
+	private Value evaluate(Var var, BindingSet o) throws QueryEvaluationException {
 		try {
-			return strategy.evaluate(valueExpr, o);
+			return strategy.evaluate(var, o);
 		} catch (ValueExprEvaluationException exc) {
 			return null;
 		}

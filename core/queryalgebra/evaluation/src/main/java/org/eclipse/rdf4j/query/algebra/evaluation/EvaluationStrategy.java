@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -94,6 +95,17 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 */
 	Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
+
+	/**
+	 * Gets the value of this expression.
+	 *
+	 * @param expr
+	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
+	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
+	 */
+	Value evaluate(Var expr, BindingSet bindings)
+		throws ValueExprEvaluationException, QueryEvaluationException;
+
 
 	/**
 	 * Evaluates the boolean expression on the supplied TripleSource object.
