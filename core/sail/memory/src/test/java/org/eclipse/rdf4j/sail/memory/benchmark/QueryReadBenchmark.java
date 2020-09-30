@@ -13,12 +13,13 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -109,7 +110,7 @@ public class QueryReadBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> groupByQuery() {
+	public List groupByQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return Iterations.asList(connection
@@ -119,12 +120,36 @@ public class QueryReadBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> sort() {
+	public List sort() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return Iterations.asList(connection
 					.prepareTupleQuery(query4)
 					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public List sortWithoutQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueComparator valueComparator = new ValueComparator();
+			return connection.getStatements(null, null, null).stream().sorted((a, b) -> {
+
+				int object = valueComparator.compare(a.getObject(), b.getObject());
+				if (object != 0) {
+					return object;
+				}
+
+				int predicate = valueComparator.compare(a.getPredicate(), b.getPredicate());
+				if (predicate != 0) {
+					return predicate;
+				}
+
+				return valueComparator.compare(a.getSubject(), b.getSubject());
+
+			}).limit(1).collect(Collectors.toList());
+
 		}
 	}
 
