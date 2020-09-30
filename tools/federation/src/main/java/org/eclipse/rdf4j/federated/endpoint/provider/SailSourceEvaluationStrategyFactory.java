@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -127,6 +128,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
 				throws ValueExprEvaluationException, QueryEvaluationException {
+			return delegate.evaluate(expr, bindings);
+		}
+
+
+		@Override
+		public Value evaluate(Var expr, BindingSet bindings)
+			throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.evaluate(expr, bindings);
 		}
 
