@@ -5,9 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  ******************************************************************************/
+
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.*;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTest;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Unit tests for {@link SimpleTriple}.

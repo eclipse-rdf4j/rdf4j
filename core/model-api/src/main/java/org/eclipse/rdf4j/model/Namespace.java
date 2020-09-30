@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.model;
 
 import java.io.Serializable;
-import java.util.Comparator;
 
 /**
  * A namespace, consisting of a namespace name and a prefix that has been assigned to it.
