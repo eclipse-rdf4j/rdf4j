@@ -40,6 +40,12 @@ public class IntegerLiteral extends SimpleLiteral {
 		this.value = value;
 	}
 
+	protected IntegerLiteral(BigInteger value, XSD.Datatype datatype) {
+		// TODO: maybe IntegerLiteralImpl should not extend LiteralImpl?
+		super(value.toString(), datatype);
+		this.value = value;
+	}
+
 	@Override
 	public byte byteValue() {
 		return value.byteValue();

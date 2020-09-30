@@ -54,6 +54,12 @@ public class SimpleLiteral implements Literal {
 	 */
 	private IRI datatype;
 
+	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
+	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
+	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
+	// only used to stop this field from be serialised.
+	transient private Optional<XSD.Datatype> xsdDatatype = null;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -93,9 +99,22 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XSD.STRING;
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
 		}
-		setDatatype(datatype);
+	}
+
+	protected SimpleLiteral(String label, XSD.Datatype datatype) {
+		setLabel(label);
+		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		} else if (datatype == null) {
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
+		}
+
 	}
 
 	/*---------*
@@ -130,9 +149,23 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
+	protected void setDatatype(XSD.Datatype datatype) {
+		this.datatype = datatype.getIri();
+		this.xsdDatatype = Optional.of(datatype);
+	}
+
 	@Override
 	public IRI getDatatype() {
 		return datatype;
+	}
+
+	@Override
+	public Optional<XSD.Datatype> getXsdDatatype() {
+		// we are caching the optional value, so null means that we haven't cached anything yet
+		if (xsdDatatype == null) {
+			xsdDatatype = XSD.Datatype.from(datatype);
+		}
+		return xsdDatatype;
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -159,11 +192,9 @@ public class SimpleLiteral implements Literal {
 				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
 			}
 			// If only one has a language, then return false
-			else if (getLanguage().isPresent() || other.getLanguage().isPresent()) {
-				return false;
+			else {
+				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
 			}
-
-			return true;
 		}
 
 		return false;

@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.4.3-SNAPSHOT</version>
+	<version>3.5.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -294,10 +294,10 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.30</slf4j.version>
 		<logback.version>1.1.11</logback.version>
-		<httpclient.version>4.5.10</httpclient.version>
-		<httpcore.version>4.4.12</httpcore.version>
-		<jackson.version>2.10.4</jackson.version>
-		<jsonldjava.version>0.13.0</jsonldjava.version>
+		<httpclient.version>4.5.12</httpclient.version>
+		<httpcore.version>4.4.13</httpcore.version>
+		<jackson.version>2.10.5</jackson.version>
+		<jsonldjava.version>0.13.2</jsonldjava.version>
 		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<lucene.version>7.7.2</lucene.version>
@@ -305,7 +305,7 @@
 		<elasticsearch.version>6.8.8</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>
 		<jetty.version>9.4.24.v20191120</jetty.version>
-		<spring.version>5.2.4.RELEASE</spring.version>
+		<spring.version>5.2.9.RELEASE</spring.version>
 		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 	</properties>
