@@ -94,7 +94,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 	}
 
 	private int compareURIs(IRI leftURI, IRI rightURI) {
-		return leftURI.toString().compareTo(rightURI.toString());
+		return leftURI.compareTo(rightURI);
 	}
 
 	private int compareLiterals(Literal leftLit, Literal rightLit) {

@@ -27,7 +27,7 @@ package org.eclipse.rdf4j.model;
  * @author Jeen Broekstra
  */
 @SuppressWarnings("deprecation")
-public interface IRI extends URI, Resource {
+public interface IRI extends URI, Resource, Comparable<IRI> {
 
 	/**
 	 * Returns the String-representation of this IRI.
@@ -76,5 +76,10 @@ public interface IRI extends URI, Resource {
 	@Override
 	default boolean isIRI() {
 		return true;
+	}
+
+	@Override
+	default int compareTo(IRI o) {
+		return this.toString().compareTo(o.toString());
 	}
 }
