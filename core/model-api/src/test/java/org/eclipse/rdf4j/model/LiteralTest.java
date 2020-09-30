@@ -30,29 +30,29 @@ public abstract class LiteralTest {
 	private static final String XSD="http://www.w3.org/2001/XMLSchema#";
 	private static final String RDF="http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 
-	private static final String XSD_BOOLEAN=XSD+"boolean";
+	static final String XSD_BOOLEAN=XSD+"boolean";
 
-	private static final String XSD_BYTE=XSD+"byte";
-	private static final String XSD_SHORT=XSD+"short";
-	private static final String XSD_INT=XSD+"int";
-	private static final String XSD_LONG=XSD+"long";
-	private static final String XSD_FLOAT=XSD+"float";
-	private static final String XSD_DOUBLE=XSD+"double";
-	private static final String XSD_INTEGER=XSD+"integer";
-	private static final String XSD_DECIMAL=XSD+"decimal";
+	static final String XSD_BYTE=XSD+"byte";
+	static final String XSD_SHORT=XSD+"short";
+	static final String XSD_INT=XSD+"int";
+	static final String XSD_LONG=XSD+"long";
+	static final String XSD_FLOAT=XSD+"float";
+	static final String XSD_DOUBLE=XSD+"double";
+	static final String XSD_INTEGER=XSD+"integer";
+	static final String XSD_DECIMAL=XSD+"decimal";
 
-	private static final String XSD_STRING=XSD+"string";
+	static final String XSD_STRING=XSD+"string";
 
-	private static final String XSD_DATE_TIME=XSD+"dateTime";
-	private static final String XSD_TIME=XSD+"time";
-	private static final String XSD_DATE=XSD+"date";
-	private static final String XSD_G_YEAR_MONTH=XSD+"gYearMonth";
-	private static final String XSD_G_MONTH_DAY=XSD+"gMonthDay";
-	private static final String XSD_G_YEAR=XSD+"gYear";
-	private static final String XSD_G_MONTH=XSD+"gMonth";
-	private static final String XSD_G_DAY=XSD+"gDay";
+	static final String XSD_DATETIME=XSD+"dateTime";
+	static final String XSD_TIME=XSD+"time";
+	static final String XSD_DATE=XSD+"date";
+	static final String XSD_GYEARMONTH=XSD+"gYearMonth";
+	static final String XSD_GMONTHDAY=XSD+"gMonthDay";
+	static final String XSD_GYEAR=XSD+"gYear";
+	static final String XSD_GMONTH=XSD+"gMonth";
+	static final String XSD_GDAY=XSD+"gDay";
 
-	private static final String RDF_LANG_STRING=RDF+"langString";
+	static final String RDF_LANG_STRING=RDF+"langString";
 
 	/**
 	 * Creates a test literal instance.
@@ -391,7 +391,7 @@ public abstract class LiteralTest {
 		};
 
 
-		assertThat(literal("2020-09-29T01:02:03.004Z", XSD_DATE_TIME).calendarValue())
+		assertThat(literal("2020-09-29T01:02:03.004Z", XSD_DATETIME).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
@@ -415,43 +415,43 @@ public abstract class LiteralTest {
 					calendar.setDay(29);
 				}));
 
-		assertThat(literal("2020-09", XSD_G_YEAR_MONTH).calendarValue())
+		assertThat(literal("2020-09", XSD_GYEARMONTH).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 					calendar.setMonth(9);
 				}));
 
-		assertThat(literal("--09-29", XSD_G_MONTH_DAY).calendarValue())
+		assertThat(literal("--09-29", XSD_GMONTHDAY).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setMonth(9);
 					calendar.setDay(29);
 				}));
 
-		assertThat(literal("2020", XSD_G_YEAR).calendarValue())
+		assertThat(literal("2020", XSD_GYEAR).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setYear(2020);
 				}));
 
-		assertThat(literal("--09", XSD_G_MONTH).calendarValue())
+		assertThat(literal("--09", XSD_GMONTH).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setMonth(9);
 				}));
 
-		assertThat(literal("---29", XSD_G_DAY).calendarValue())
+		assertThat(literal("---29", XSD_GDAY).calendarValue())
 				.isInstanceOf(type)
 				.isEqualTo(setup.apply(calendar -> {
 					calendar.setDay(29);
 				}));
 
 		assertThatIllegalArgumentException().as("not normalized")
-				.isThrownBy(() -> literal("\t100", XSD_DATE_TIME).calendarValue());
+				.isThrownBy(() -> literal("\t100", XSD_DATETIME).calendarValue());
 
 		assertThatIllegalArgumentException().as("malformed")
-				.isThrownBy(() -> literal("malformed", XSD_DATE_TIME).calendarValue());
+				.isThrownBy(() -> literal("malformed", XSD_DATETIME).calendarValue());
 
 	}
 
