@@ -13,7 +13,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.Test;
 
 /**
- * Abstract Namespace test suite.
+ * Abstract {@link Namespace} test suite.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
  */
 public abstract class NamespaceTest {
 
@@ -30,9 +33,9 @@ public abstract class NamespaceTest {
 	@Test
 	public void compareTo() {
 
-		final Namespace x = namespace("com", "http://example.org/x");
-		final Namespace y = namespace("org", "http://example.org/y");
-		final Namespace z = namespace("org", "http://example.org/z");
+		final Namespace x=namespace("com", "http://example.org/x");
+		final Namespace y=namespace("org", "http://example.org/y");
+		final Namespace z=namespace("org", "http://example.org/z");
 
 		assertThat(x).isEqualByComparingTo(x);
 
@@ -49,8 +52,8 @@ public abstract class NamespaceTest {
 	@Test
 	public void testEquals() {
 
-		final Namespace x = namespace("com", "http://example.org/x");
-		final Namespace y = namespace("org", "http://example.org/y");
+		final Namespace x=namespace("com", "http://example.org/x");
+		final Namespace y=namespace("org", "http://example.org/y");
 
 		assertThat(x).as("same object").isEqualTo(x);
 		assertThat(x).as("same class").isEqualTo(namespace(x.getPrefix(), x.getName()));

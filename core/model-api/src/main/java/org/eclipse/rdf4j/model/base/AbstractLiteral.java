@@ -27,21 +27,27 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 
+/**
+ * Base class for {@link Literal}, offering common functionality.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
+ */
 public abstract class AbstractLiteral implements Literal {
 
-	private static final long serialVersionUID = -1286527360744086451L;
+	private static final long serialVersionUID=-1286527360744086451L;
 
-	static final String XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
-	static final String RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
+	static final String XSD_STRING="http://www.w3.org/2001/XMLSchema#string";
+	static final String RDF_LANG_STRING="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
 
-	private static final Pattern WhitespacePattern = Pattern.compile("\\s+");
+	private static final Pattern WhitespacePattern=Pattern.compile("\\s+");
 
-	private static final ThreadLocal<DatatypeFactory> factory = ThreadLocal.withInitial(() -> {
+	private static final ThreadLocal<DatatypeFactory> factory=ThreadLocal.withInitial(() -> {
 		try {
 
-			return DatatypeFactory.newInstance();
+			return DatatypeFactory.newInstance(); // not guaranteed to be thread-safe
 
-		} catch (final DatatypeConfigurationException e) {
+		} catch ( final DatatypeConfigurationException e ) {
 
 			throw new RuntimeException("unable to create datatype factory", e);
 
@@ -81,7 +87,7 @@ public abstract class AbstractLiteral implements Literal {
 
 				.map(normalized -> (normalized.equals("true") || normalized.equals("1")) ? TRUE
 						: (normalized.equals("false") || normalized.equals("0")) ? FALSE
-								: null
+						: null
 				)
 
 				.orElse(null)
@@ -136,16 +142,16 @@ public abstract class AbstractLiteral implements Literal {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof Literal
-				&& Objects.equals(getLabel(), ((Literal) o).getLabel())
-				&& Objects.equals(getLanguage().map(this::normalize), ((Literal) o).getLanguage().map(this::normalize))
-				&& Objects.equals(getDatatype(), ((Literal) o).getDatatype());
+				&& Objects.equals(getLabel(), ((Literal)o).getLabel())
+				&& Objects.equals(getLanguage().map(this::normalize), ((Literal)o).getLanguage().map(this::normalize))
+				&& Objects.equals(getDatatype(), ((Literal)o).getDatatype());
 	}
 
 	@Override
 	public int hashCode() {
 		return Objects.hashCode(getLabel())
-				^ Objects.hashCode(getLanguage().map(this::normalize))
-				^ Objects.hashCode(getDatatype());
+				^Objects.hashCode(getLanguage().map(this::normalize))
+				^Objects.hashCode(getDatatype());
 	}
 
 	/**
@@ -156,13 +162,13 @@ public abstract class AbstractLiteral implements Literal {
 	@Override
 	public String toString() {
 
-		final String label = Optional.ofNullable(getLabel()).orElse("");
-		final String language = getLanguage().orElse(null);
-		final String datatype = Optional.ofNullable(getDatatype()).map(Value::stringValue).orElse(XSD_STRING);
+		final String label=Optional.ofNullable(getLabel()).orElse("");
+		final String language=getLanguage().orElse(null);
+		final String datatype=Optional.ofNullable(getDatatype()).map(Value::stringValue).orElse(XSD_STRING);
 
-		return language != null ? '"' + label + '"' + '@' + language
-				: datatype.equals(XSD_STRING) ? '"' + label + '"'
-						: '"' + label + '"' + "^^<" + datatype + ">";
+		return language != null ? '"'+label+'"'+'@'+language
+				: datatype.equals(XSD_STRING) ? '"'+label+'"'
+				: '"'+label+'"'+"^^<"+datatype+">";
 	}
 
 	private String normalize(String tag) {

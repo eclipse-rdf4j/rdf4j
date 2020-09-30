@@ -10,16 +10,21 @@ package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 
+/**
+ * Base class for {@link Triple}, offering common functionality.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
+ */
 public abstract class AbstractTriple implements Triple {
 
-	private static final long serialVersionUID = 2661609986803671844L;
+	private static final long serialVersionUID=2661609986803671844L;
 
 	@Override
 	public String stringValue() {
-		return "<<" + getSubject() + " " + getPredicate() + " " + getObject() + ">>";
+		return "<<"+getSubject()+" "+getPredicate()+" "+getObject()+">>";
 	}
 
 	@Override
@@ -30,16 +35,16 @@ public abstract class AbstractTriple implements Triple {
 		// so these are checked last.
 
 		return this == o || o instanceof Triple
-				&& Objects.equals(getObject(), ((Triple) o).getObject())
-				&& Objects.equals(getSubject(), ((Triple) o).getSubject())
-				&& Objects.equals(getPredicate(), ((Triple) o).getPredicate());
+				&& Objects.equals(getObject(), ((Triple)o).getObject())
+				&& Objects.equals(getSubject(), ((Triple)o).getSubject())
+				&& Objects.equals(getPredicate(), ((Triple)o).getPredicate());
 	}
 
 	@Override
 	public int hashCode() {
 		return Objects.hashCode(getSubject())
-				^ Objects.hashCode(getPredicate())
-				^ Objects.hashCode(getObject());
+				^Objects.hashCode(getPredicate())
+				^Objects.hashCode(getObject());
 	}
 
 	@Override

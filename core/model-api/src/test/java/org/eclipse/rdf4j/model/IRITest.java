@@ -11,11 +11,13 @@ package org.eclipse.rdf4j.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.junit.Test;
 
 /**
- * Abstract IRI test suite.
+ * Abstract {@link IRI} test suite.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
  */
 public abstract class IRITest {
 
@@ -32,10 +34,10 @@ public abstract class IRITest {
 	@Test
 	public final void testConstructor() {
 
-		final String namespace = "http://example.org/";
-		final String localname = "iri";
+		final String namespace="http://example.org/";
+		final String localname="iri";
 
-		final IRI iri = iri(namespace, localname);
+		final IRI iri=iri(namespace, localname);
 
 		assertThat(iri.getNamespace()).isEqualTo(namespace);
 		assertThat(iri.getLocalName()).isEqualTo(localname);
@@ -48,19 +50,19 @@ public abstract class IRITest {
 	@Test
 	public void testStringValue() {
 
-		final String namespace = "http://example.org/";
-		final String localname = "x";
+		final String namespace="http://example.org/";
+		final String localname="x";
 
-		final IRI iri = iri(namespace, localname);
+		final IRI iri=iri(namespace, localname);
 
-		assertThat(iri.stringValue()).isEqualTo(namespace + localname);
+		assertThat(iri.stringValue()).isEqualTo(namespace+localname);
 	}
 
 	@Test
 	public void testEquals() {
 
-		final IRI x = iri("http://example.org/", "x");
-		final IRI y = iri("http://example.org/", "Y");
+		final IRI x=iri("http://example.org/", "x");
+		final IRI y=iri("http://example.org/", "Y");
 
 		assertThat(x).isEqualTo(x);
 		assertThat(x).isEqualTo(iri(x.getNamespace(), x.getLocalName()));
@@ -74,7 +76,7 @@ public abstract class IRITest {
 	@Test
 	public void testHashCode() {
 
-		final IRI iri = iri("http://example.org/", "iri");
+		final IRI iri=iri("http://example.org/", "iri");
 
 		assertThat(iri.hashCode()).isEqualTo(iri.stringValue().hashCode());
 	}

@@ -13,15 +13,21 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Namespace;
 
+/**
+ * Base class for {@link Namespace}, offering common functionality.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
+ */
 public abstract class AbstractNamespace implements Namespace {
 
-	private static final long serialVersionUID = 1915019376191661835L;
+	private static final long serialVersionUID=1915019376191661835L;
 
 	/**
 	 * Sorts namespaces first by {@linkplain #getPrefix() prefix} and then by {@linkplain #getName()} () name};
 	 * {@code null} values are sorted before other values.
 	 */
-	private static final Comparator<Namespace> COMPARATOR = Comparator.nullsFirst(
+	private static final Comparator<Namespace> COMPARATOR=Comparator.nullsFirst(
 			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
 	);
 
@@ -33,19 +39,19 @@ public abstract class AbstractNamespace implements Namespace {
 	@Override
 	public boolean equals(final Object object) {
 		return this == object || object instanceof Namespace
-				&& Objects.equals(getPrefix(), ((Namespace) object).getPrefix())
-				&& Objects.equals(getName(), ((Namespace) object).getName());
+				&& Objects.equals(getPrefix(), ((Namespace)object).getPrefix())
+				&& Objects.equals(getName(), ((Namespace)object).getName());
 	}
 
 	@Override
 	public int hashCode() {
 		return Objects.hashCode(getPrefix())
-				^ Objects.hashCode(getName());
+				^Objects.hashCode(getName());
 	}
 
 	@Override
 	public String toString() {
-		return getPrefix() + " :: " + getName();
+		return getPrefix()+" :: "+getName();
 	}
 
 }

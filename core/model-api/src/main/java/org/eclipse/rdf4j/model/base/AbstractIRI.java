@@ -13,19 +13,25 @@ import java.util.Objects;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 
+/**
+ * Base class for {@link IRI}, offering common functionality.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
+ */
 public abstract class AbstractIRI implements IRI {
 
-	private static final long serialVersionUID = 7799969821538513046L;
+	private static final long serialVersionUID=7799969821538513046L;
 
 	@Override
 	public String stringValue() {
-		return getNamespace() + getLocalName();
+		return getNamespace()+getLocalName();
 	}
 
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof IRI
-				&& Objects.equals(stringValue(), ((Value) o).stringValue());
+				&& Objects.equals(stringValue(), ((Value)o).stringValue());
 	}
 
 	@Override

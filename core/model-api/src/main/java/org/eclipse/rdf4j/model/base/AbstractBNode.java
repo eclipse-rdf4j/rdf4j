@@ -12,9 +12,15 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.BNode;
 
+/**
+ * Base class for {@link BNode}, offering common functionality.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
+ */
 public abstract class AbstractBNode implements BNode {
 
-	private static final long serialVersionUID = -437354568418943981L;
+	private static final long serialVersionUID=-437354568418943981L;
 
 	@Override
 	public String stringValue() {
@@ -24,7 +30,7 @@ public abstract class AbstractBNode implements BNode {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof BNode
-				&& Objects.equals(getID(), ((BNode) o).getID());
+				&& Objects.equals(getID(), ((BNode)o).getID());
 	}
 
 	@Override
@@ -34,7 +40,7 @@ public abstract class AbstractBNode implements BNode {
 
 	@Override
 	public String toString() {
-		return "_:" + getID();
+		return "_:"+getID();
 	}
 
 }

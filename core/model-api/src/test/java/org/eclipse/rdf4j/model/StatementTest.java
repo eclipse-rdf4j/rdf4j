@@ -15,7 +15,10 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * Abstract Statement test suite.
+ * Abstract {@link Statement} test suite.
+ *
+ * @author Alessandro Bollini
+ * @since 3.5.0
  */
 public abstract class StatementTest {
 
@@ -43,12 +46,12 @@ public abstract class StatementTest {
 	@Test
 	public final void testConstructor() {
 
-		final Resource subject = iri("http://example.org/subject");
-		final IRI predicate = iri("http://example.org/predicate");
-		final Value object = iri("http://example.org/object");
-		final Resource context = iri("http://example.org/context");
+		final Resource subject=iri("http://example.org/subject");
+		final IRI predicate=iri("http://example.org/predicate");
+		final Value object=iri("http://example.org/object");
+		final Resource context=iri("http://example.org/context");
 
-		final Statement statement = statement(subject, predicate, object, context);
+		final Statement statement=statement(subject, predicate, object, context);
 
 		assertThat(statement.getSubject()).isEqualTo(subject);
 		assertThat(statement.getPredicate()).isEqualTo(predicate);
@@ -71,12 +74,12 @@ public abstract class StatementTest {
 	@Test
 	public void testEquals() {
 
-		final Resource subject = iri("http://example.org/subject");
-		final IRI predicate = iri("http://example.org/predicate");
-		final Value object = iri("http://example.org/object");
-		final Resource context = iri("http://example.org/context");
+		final Resource subject=iri("http://example.org/subject");
+		final IRI predicate=iri("http://example.org/predicate");
+		final Value object=iri("http://example.org/object");
+		final Resource context=iri("http://example.org/context");
 
-		final Statement statement = statement(subject, predicate, object, context);
+		final Statement statement=statement(subject, predicate, object, context);
 
 		assertThat(statement).isEqualTo(statement);
 		assertThat(statement).isEqualTo(statement(
@@ -86,7 +89,7 @@ public abstract class StatementTest {
 		assertThat(statement).isNotEqualTo(null);
 		assertThat(statement).isNotEqualTo(new Object());
 
-		final IRI other = iri("http://example.org/other");
+		final IRI other=iri("http://example.org/other");
 
 		assertThat(statement).isNotEqualTo(statement(
 				other, statement.getPredicate(), statement.getObject(), statement.getContext()
