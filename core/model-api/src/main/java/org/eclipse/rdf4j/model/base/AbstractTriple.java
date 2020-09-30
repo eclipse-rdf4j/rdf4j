@@ -42,9 +42,17 @@ public abstract class AbstractTriple implements Triple {
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(getSubject())
-				^ Objects.hashCode(getPredicate())
-				^ Objects.hashCode(getObject());
+
+		// !!! this definition incurs in implicit array creation costs
+
+		return Objects.hash(getSubject(), getPredicate(), getObject());
+
+		// !!! switching to this definition breaks MemoryRDFStarSupportTest.testAddRDFStarSubject()/Object()
+
+		// return Objects.hashCode(getSubject())
+		// ^ Objects.hashCode(getPredicate())
+		// ^ Objects.hashCode(getObject());
+
 	}
 
 	@Override
