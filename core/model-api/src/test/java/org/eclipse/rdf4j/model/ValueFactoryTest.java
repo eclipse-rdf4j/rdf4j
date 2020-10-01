@@ -25,7 +25,6 @@ import java.math.BigInteger;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-import javax.xml.bind.DatatypeConverter;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -197,11 +196,10 @@ public abstract class ValueFactoryTest {
 
 	@Test
 	public void testCreateLiteralDate() throws DatatypeConfigurationException {
+		final Date date = new Date(2020, 9, 30, 1, 2, 3);
+		final String string = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(date);
 
-		final Date value = DatatypeConverter.parseDateTime("2020-09-30T01:02:03.004Z").getTime();
-		final String string = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(value);
-
-		final Literal literal = factory().createLiteral(value);
+		final Literal literal = factory().createLiteral(date);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.calendarValue()).isEqualTo(DatatypeFactory.newInstance().newXMLGregorianCalendar(string));
