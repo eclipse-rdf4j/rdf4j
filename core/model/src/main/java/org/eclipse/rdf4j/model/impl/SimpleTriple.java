@@ -106,4 +106,5 @@ public class SimpleTriple implements Triple {
 	public int hashCode() {
 		return Objects.hash(subject, predicate, object);
 	}
+
 }

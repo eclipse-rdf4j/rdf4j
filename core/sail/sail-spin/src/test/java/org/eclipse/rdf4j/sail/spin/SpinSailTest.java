@@ -17,6 +17,8 @@ import java.net.URL;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
+import javax.script.ScriptEngineManager;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -144,8 +146,12 @@ public class SpinSailTest {
 
 	@Test
 	public void testSpinxRule() throws Exception {
-		loadStatements("testSpinxRule.ttl");
-		assertStatements("testSpinxRule-expected.ttl");
+		try {
+			loadStatements("testSpinxRule.ttl");
+			assertStatements("testSpinxRule-expected.ttl");
+		} catch (UnsupportedOperationException e) {
+			assert new ScriptEngineManager().getEngineByName("javascript") == null;
+		}
 	}
 
 	@Ignore("This test shows how the SpinSail fails on transactional workloads.")

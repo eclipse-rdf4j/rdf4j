@@ -12,4 +12,10 @@ package org.eclipse.rdf4j.model;
  */
 public interface Resource extends Value {
 	// Empty place holder as common supertype of IRI and BNode
+
+	@Override
+	default boolean isResource() {
+		return true;
+	}
+
 }

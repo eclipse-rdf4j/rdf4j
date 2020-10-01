@@ -21,7 +21,7 @@ public interface BNode extends Resource {
 	 *
 	 * @return A blank node identifier.
 	 */
-	public String getID();
+	String getID();
 
 	/**
 	 * Compares a blank node object to another object.
@@ -31,7 +31,7 @@ public interface BNode extends Resource {
 	 *         otherwise.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
 	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>id.hashCode()</tt>.
@@ -39,5 +39,11 @@ public interface BNode extends Resource {
 	 * @return A hash code for the blank node.
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
+
+	@Override
+	default boolean isBNode() {
+		return true;
+	}
+
 }
