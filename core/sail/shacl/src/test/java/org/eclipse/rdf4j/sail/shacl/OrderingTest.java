@@ -9,10 +9,12 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
+import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
@@ -151,6 +154,11 @@ public class OrderingTest {
 					Arrays.asList(target5.toString(), target5.toString()));
 
 		}
+	}
+
+	@Test
+	public void testComparableTuplesDifferentLength() {
+		assertThat(new Tuple(RDF.FIRST)).isLessThan(new Tuple(RDF.FIRST, RDF.REST));
 	}
 
 	public void verify(List<Tuple> actual, List<String>... expect) {
