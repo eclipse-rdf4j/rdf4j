@@ -153,7 +153,7 @@ public class QueryEvaluationUtil {
 		IRI rightDatatype = rightLit.getDatatype();
 
 		XSD.Datatype leftXsdDatatype = Literals.getXsdDatatype(leftLit).orElse(null);
-		XSD.Datatype rightXsdDatatype = Literals.getXsdDatatype(leftLit).orElse(null);
+		XSD.Datatype rightXsdDatatype = Literals.getXsdDatatype(rightLit).orElse(null);
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
