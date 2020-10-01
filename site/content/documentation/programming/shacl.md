@@ -51,15 +51,31 @@ Utilize a normal connection to load your shapes into this graph. SPARQL is not s
 
 {{< highlight java >}}
 ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-SailRepository sailRepository = new SailRepository(shaclSail);
+Repository repo = new SailRepository(shaclSail);
 
-try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-    connection.begin();
+try (RepositoryConnection connection = repo.getConnection()) {
 
     Reader shaclRules = ....
 
+    // add shapes
+    connection.begin();
     connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
     connection.commit();
+    
+    // clear existing shapes and add new ones in single transaction (eg. update shapes)
+    connection.begin();
+    connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+    connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+    connection.commit();
+
+    // clear all shapes
+    connection.begin();
+    connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+    connection.commit();
+    
+    // connection.clear(); will not clear the Shapes graph!
+
+
 }
 {{< / highlight >}}
 
@@ -72,9 +88,7 @@ slowdowns.
 
 Remember that a full validation is run for all the affect shapes. Depending on the amount of
 data already in your store this may take a significant amount of time. If you are sure that your
-data will not violate the shapes, or otherwise need to skip validation, you can
-temporarily disable validation for your entire ShaclSail with `setValidationEnabled(false)`. Keep
-in mind that this affects all transactions.
+data will not violate the shapes, or otherwise need to skip validation then you can read the section on [Performance](#performance).
 
 Do not use SPARQL to update your shapes!
 
