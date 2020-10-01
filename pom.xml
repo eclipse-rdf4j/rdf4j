@@ -873,6 +873,10 @@
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+								<!-- GH-2538 bug fix, not considered backward incompatible -->
+								<exclude>org.eclipse.rdf4j.model.Namespace#equals(java.lang.Object)</exclude>
+								<exclude>org.eclipse.rdf4j.model.Namespace#hashCode()</exclude>
+								<!-- GH-2350 introduced with defaults, so false positive -->
 								<exclude>org.eclipse.rdf4j.IsolationLevel#getValue()</exclude>
 								<exclude>org.eclipse.rdf4j.IsolationLevel#getName()</exclude>
 							</excludes>

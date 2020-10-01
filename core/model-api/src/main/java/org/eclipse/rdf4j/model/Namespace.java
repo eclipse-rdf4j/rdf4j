@@ -14,7 +14,7 @@ import java.io.Serializable;
  * <p>
  * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
  * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
- * 
+ *
  */
 public interface Namespace extends Serializable, Comparable<Namespace> {
 
@@ -23,14 +23,14 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 *
 	 * @return prefix of namespace, or an empty string in case of the default namespace.
 	 */
-	public String getPrefix();
+	String getPrefix();
 
 	/**
 	 * Gets the name of the current namespace (i.e. its IRI).
 	 *
 	 * @return name of namespace
 	 */
-	public String getName();
+	String getName();
 
 	/**
 	 * Compares this namespace to another object.
