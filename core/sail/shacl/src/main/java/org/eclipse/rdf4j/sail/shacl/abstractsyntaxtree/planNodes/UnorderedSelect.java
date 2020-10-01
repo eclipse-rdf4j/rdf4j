@@ -118,43 +118,6 @@ public class UnorderedSelect implements PlanNode {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		UnorderedSelect that = (UnorderedSelect) o;
-
-		Object connection = this.connection;
-		if (connection instanceof MemoryStoreConnection) {
-			connection = ((MemoryStoreConnection) connection).getSail();
-		}
-
-		Object thatConnection = that.connection;
-		if (thatConnection instanceof MemoryStoreConnection) {
-			thatConnection = ((MemoryStoreConnection) thatConnection).getSail();
-		}
-
-		return connection.equals(thatConnection) &&
-				Objects.equals(subject, that.subject) &&
-				Objects.equals(predicate, that.predicate) &&
-				Objects.equals(object, that.object);
-	}
-
-	@Override
-	public int hashCode() {
-
-		Object connection = this.connection;
-		if (connection instanceof MemoryStoreConnection) {
-			connection = ((MemoryStoreConnection) connection).getSail();
-		}
-
-		return Objects.hash(connection, subject, predicate, object);
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 	}
@@ -167,5 +130,26 @@ public class UnorderedSelect implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		UnorderedSelect that = (UnorderedSelect) o;
+		return connection.equals(that.connection) &&
+				Objects.equals(subject, that.subject) &&
+				Objects.equals(predicate, that.predicate) &&
+				Objects.equals(object, that.object) &&
+				mapper.equals(that.mapper);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(connection, subject, predicate, object, mapper);
 	}
 }

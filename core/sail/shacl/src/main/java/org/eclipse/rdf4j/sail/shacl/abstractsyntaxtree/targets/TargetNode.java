@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
@@ -126,5 +127,22 @@ public class TargetNode extends Target {
 		sb.append("}\n");
 
 		return sb.toString();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		TargetNode that = (TargetNode) o;
+		return targetNodes.equals(that.targetNodes);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(targetNodes);
 	}
 }

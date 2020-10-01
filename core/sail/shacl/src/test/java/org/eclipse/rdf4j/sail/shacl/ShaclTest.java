@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;

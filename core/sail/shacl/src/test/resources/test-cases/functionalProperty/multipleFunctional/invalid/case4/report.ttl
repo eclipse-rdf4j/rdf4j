@@ -31,10 +31,10 @@ ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
             ];
           sh:maxCount 1
         ];
-      rdf:rest (_:node1ejb4ki0ix5), (_:node1ejb4ki0ix5)
+      rdf:rest (_:node1ejhk3n09x5), (_:node1ejhk3n09x5)
     ] .
 
-_:node1ejb4ki0ix5 a sh:PropertyShape;
+_:node1ejhk3n09x5 a sh:PropertyShape;
   sh:path [
       sh:inversePath ex:username
     ];

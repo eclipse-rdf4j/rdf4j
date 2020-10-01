@@ -6,10 +6,12 @@ public enum ValidationApproach {
 	SPARQL;
 
 	public static ValidationApproach reduce(ValidationApproach a, ValidationApproach b) {
-		if (a == SPARQL)
+		if (a == SPARQL) {
 			return a;
-		if (b == SPARQL)
+		}
+		if (b == SPARQL) {
 			return b;
+		}
 
 		return a;
 	}

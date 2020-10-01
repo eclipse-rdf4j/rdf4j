@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.apache.commons.lang3.NotImplementedException;
@@ -96,5 +97,23 @@ public class TupleMapper implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		TupleMapper that = (TupleMapper) o;
+		return parent.equals(that.parent) &&
+				function.equals(that.function);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent, function);
 	}
 }

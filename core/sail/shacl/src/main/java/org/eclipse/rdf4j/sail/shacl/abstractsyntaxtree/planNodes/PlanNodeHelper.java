@@ -11,8 +11,9 @@ public class PlanNodeHelper {
 
 	public static PlanNode handleSorting(PlanNode child, PlanNode parent) {
 		if (child.requiresSorted()) {
-			if (!parent.producesSorted())
+			if (!parent.producesSorted()) {
 				parent = new Sort(parent);
+			}
 		}
 		return parent;
 	}

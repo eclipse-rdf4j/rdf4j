@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -146,5 +147,22 @@ public class TargetClass extends Target {
 					"FILTER(?typekokokopko in (" + in + ")) \n";
 		}
 
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		TargetClass that = (TargetClass) o;
+		return targetClass.equals(that.targetClass);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(targetClass);
 	}
 }

@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -128,4 +129,20 @@ public class TargetSubjectsOf extends Target {
 
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		TargetSubjectsOf that = (TargetSubjectsOf) o;
+		return targetSubjectsOf.equals(that.targetSubjectsOf);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(targetSubjectsOf);
+	}
 }

@@ -142,35 +142,6 @@ public class Select implements PlanNode {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		Select select = (Select) o;
-
-		return Objects.equals(
-				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
-						: connection,
-				select.connection instanceof MemoryStoreConnection
-						? ((MemoryStoreConnection) select.connection).getSail()
-						: select.connection)
-				&& query.equals(select.query);
-	}
-
-	@Override
-	public int hashCode() {
-
-		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).getSail()), query);
-		}
-		return Objects.hash(System.identityHashCode(connection), query);
-
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 	}
@@ -183,5 +154,24 @@ public class Select implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		Select select = (Select) o;
+		return connection.equals(select.connection) &&
+				mapper.equals(select.mapper) &&
+				query.equals(select.query);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(connection, mapper, query);
 	}
 }

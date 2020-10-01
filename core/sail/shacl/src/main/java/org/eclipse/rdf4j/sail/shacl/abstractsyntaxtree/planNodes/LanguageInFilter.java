@@ -51,8 +51,9 @@ public class LanguageInFilter extends FilterPlanNode {
 		String langTag = language.get();
 
 		for (String languageRange : languageRanges) {
-			if (Literals.langMatches(langTag, languageRange))
+			if (Literals.langMatches(langTag, languageRange)) {
 				return true;
+			}
 		}
 
 		return false;

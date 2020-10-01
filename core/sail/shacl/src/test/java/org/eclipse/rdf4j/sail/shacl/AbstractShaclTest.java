@@ -42,7 +42,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -192,7 +191,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/pattern/simple",
 		"test-cases/propertyShapeWithTarget/simple",
 		"test-cases/uniqueLang/not",
-		"test-cases/uniqueLang/simple" ,
+		"test-cases/uniqueLang/simple",
 		"test-cases/datatype/notNestedPropertyShape",
 		"test-cases/datatype/notNestedPropertyShape2",
 		"test-cases/hasValue/simple",
@@ -216,7 +215,7 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValue/targetShapeAndOr2",
 //		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or",
-				"test-cases/class/simpleNested"
+		"test-cases/class/simpleNested"
 
 	)
 		.distinct()
@@ -454,6 +453,13 @@ abstract public class AbstractShaclTest {
 	private static boolean isIsomorphic(Model validationReportActual, Model validationReportExpected) {
 		validationReportActual = normalizeModel(validationReportActual);
 		validationReportExpected = normalizeModel(validationReportExpected);
+
+		String actualString = modelToString(validationReportActual);
+		String expectedString = modelToString(validationReportExpected);
+
+		if (actualString.equals(expectedString)) {
+			return true;
+		}
 
 		return Models.isomorphic(validationReportActual, validationReportExpected);
 //		return true;
@@ -809,12 +815,13 @@ abstract public class AbstractShaclTest {
 		SailRepository repository = new SailRepository(shaclSail);
 
 		shaclSail.setLogValidationPlans(fullLogging);
-		shaclSail.setCacheSelectNodes(false);
+		shaclSail.setCacheSelectNodes(true);
 		shaclSail.setParallelValidation(false);
 		shaclSail.setLogValidationViolations(fullLogging);
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
 		shaclSail.setEclipseRdf4jShaclExtensions(true);
 		shaclSail.setDashDataShapes(true);
+		shaclSail.setPerformanceLogging(false);
 
 		repository.init();
 
