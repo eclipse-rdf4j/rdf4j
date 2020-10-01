@@ -42,4 +42,8 @@ public interface Triple extends Resource {
 	 */
 	Value getObject();
 
+	@Override
+	default boolean isTriple() {
+		return true;
+	}
 }

@@ -89,6 +89,7 @@ public class SpinxFunction implements TransientFunction {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+
 		Bindings bindings = scriptEngine.createBindings();
 		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);

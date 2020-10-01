@@ -30,6 +30,14 @@ package org.eclipse.rdf4j.model;
 public interface IRI extends URI, Resource {
 
 	/**
+	 * Gets the string-representation of this IRI.
+	 *
+	 * @return The String-representation of this IRI.
+	 */
+	@Override
+	String toString();
+
+	/**
 	 * Gets the namespace part of this IRI.
 	 * <p>
 	 * The namespace is defined as per the algorithm described in the class documentation.
@@ -37,7 +45,7 @@ public interface IRI extends URI, Resource {
 	 * @return the namespace of this IRI
 	 */
 	@Override
-	public String getNamespace();
+	String getNamespace();
 
 	/**
 	 * Gets the local name part of this IRI.
@@ -47,7 +55,7 @@ public interface IRI extends URI, Resource {
 	 * @return the local name of this IRI
 	 */
 	@Override
-	public String getLocalName();
+	String getLocalName();
 
 	/**
 	 * Compares a IRI object to another object.
@@ -58,7 +66,7 @@ public interface IRI extends URI, Resource {
 	 *         string values} are equal, <tt>false</tt> otherwise.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
 	 * The hash code of an IRI is defined as the hash code of its string value: <tt>stringValue().hashCode</tt>.
@@ -66,6 +74,10 @@ public interface IRI extends URI, Resource {
 	 * @return a hash code for this IRI
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
 
+	@Override
+	default boolean isIRI() {
+		return true;
+	}
 }

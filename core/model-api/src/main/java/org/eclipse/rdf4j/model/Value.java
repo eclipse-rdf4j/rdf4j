@@ -18,6 +18,60 @@ public interface Value extends Serializable {
 	 * Returns the String-value of a <tt>Value</tt> object. This returns either a {@link Literal}'s label, a
 	 * {@link IRI}'s URI or a {@link BNode}'s ID.
 	 */
-	public String stringValue();
+	String stringValue();
 
+	/**
+	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
+	 *
+	 * For implementers: This default implementation is overridden in the repsective sub-interface.
+	 *
+	 * @return true if instance of {@link BNode}
+	 */
+	default boolean isBNode() {
+		return false;
+	}
+
+	/**
+	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
+	 *
+	 * For implementers: This default implementation is overridden in the repsective sub-interface.
+	 *
+	 * @return true if instance of {@link IRI}
+	 */
+	default boolean isIRI() {
+		return false;
+	}
+
+	/**
+	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
+	 *
+	 * For implementers: This default implementation is overridden in the repsective sub-interface.
+	 *
+	 * @return true if instance of {@link Resource}
+	 */
+	default boolean isResource() {
+		return false;
+	}
+
+	/**
+	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
+	 *
+	 * For implementers: This default implementation is overridden in the repsective sub-interface.
+	 *
+	 * @return true if instance of {@link Literal}
+	 */
+	default boolean isLiteral() {
+		return false;
+	}
+
+	/**
+	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
+	 *
+	 * For implementers: This default implementation is overridden in the repsective sub-interface.
+	 *
+	 * @return true if instance of {@link Triple}
+	 */
+	default boolean isTriple() {
+		return false;
+	}
 }

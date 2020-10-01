@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -53,6 +54,12 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's datatype.
 	 */
 	private IRI datatype;
+
+	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
+	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
+	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
+	// only used to stop this field from be serialised.
+	transient private Optional<XSD.Datatype> xsdDatatype = null;
 
 	/*--------------*
 	 * Constructors *
@@ -93,9 +100,22 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XSD.STRING;
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
 		}
-		setDatatype(datatype);
+	}
+
+	protected SimpleLiteral(String label, XSD.Datatype datatype) {
+		setLabel(label);
+		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		} else if (datatype == null) {
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
+		}
+
 	}
 
 	/*---------*
@@ -130,9 +150,90 @@ public class SimpleLiteral extends AbstractLiteral {
 		this.datatype = datatype;
 	}
 
+	protected void setDatatype(XSD.Datatype datatype) {
+		this.datatype = datatype.getIri();
+		this.xsdDatatype = Optional.of(datatype);
+	}
+
 	@Override
 	public IRI getDatatype() {
 		return datatype;
+	}
+
+	public Optional<XSD.Datatype> getXsdDatatype() {
+		// we are caching the optional value, so null means that we haven't cached anything yet
+		if (xsdDatatype == null) {
+			xsdDatatype = XSD.Datatype.from(datatype);
+		}
+		return xsdDatatype;
+	}
+
+	// Overrides Object.equals(Object), implements Literal.equals(Object)
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+
+		if (o instanceof Literal) {
+			Literal other = (Literal) o;
+
+			// Compare labels
+			if (!label.equals(other.getLabel())) {
+				return false;
+			}
+
+			// Compare datatypes
+			if (!datatype.equals(other.getDatatype())) {
+				return false;
+			}
+
+			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
+				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
+			}
+			// If only one has a language, then return false
+			else {
+				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
+			}
+		}
+
+		return false;
+	}
+
+	// overrides Object.hashCode(), implements Literal.hashCode()
+	@Override
+	public int hashCode() {
+		return label.hashCode();
+	}
+
+	/**
+	 * Returns the label of the literal with its language or datatype. Note that this method does not escape the quoted
+	 * label.
+	 *
+	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(org.eclipse.rdf4j.model.Literal)
+	 */
+	@Override
+	public String toString() {
+		if (Literals.isLanguageLiteral(this)) {
+			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);
+			sb.append('"').append(label).append('"');
+			sb.append('@').append(language);
+			return sb.toString();
+		} else if (XSD.STRING.equals(datatype) || datatype == null) {
+			StringBuilder sb = new StringBuilder(label.length() + 2);
+			sb.append('"').append(label).append('"');
+			return sb.toString();
+		} else {
+			StringBuilder sb = new StringBuilder(label.length() + datatype.stringValue().length() + 6);
+			sb.append('"').append(label).append('"');
+			sb.append("^^<").append(datatype.toString()).append(">");
+			return sb.toString();
+		}
+	}
+
+	@Override
+	public String stringValue() {
+		return label;
 	}
 
 	@Override

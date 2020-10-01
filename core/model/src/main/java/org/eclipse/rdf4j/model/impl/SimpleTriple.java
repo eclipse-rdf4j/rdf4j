@@ -71,4 +71,42 @@ public class SimpleTriple extends AbstractTriple {
 		return object;
 	}
 
+	@Override
+	public String stringValue() {
+		StringBuilder sb = new StringBuilder(256);
+
+		sb.append("<<");
+		sb.append(getSubject());
+		sb.append(" ");
+		sb.append(getPredicate());
+		sb.append(" ");
+		sb.append(getObject());
+		sb.append(">>");
+
+		return sb.toString();
+	}
+
+	@Override
+	public String toString() {
+		return stringValue();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o instanceof Triple) {
+			Triple that = (Triple) o;
+			return Objects.equals(subject, that.getSubject()) && Objects.equals(predicate, that.getPredicate())
+					&& Objects.equals(object, that.getObject());
+		}
+		return false;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(subject, predicate, object);
+	}
+
 }
