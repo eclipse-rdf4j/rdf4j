@@ -93,11 +93,11 @@ public abstract class TripleTest {
 	@Test
 	public void testHashCode() {
 
-		final Resource subject=iri("http://example.org/subject");
-		final IRI predicate=iri("http://example.org/predicate");
-		final Value object=iri("http://example.org/object");
+		final Resource subject = iri("http://example.org/subject");
+		final IRI predicate = iri("http://example.org/predicate");
+		final Value object = iri("http://example.org/object");
 
-		final Triple triple	=triple(subject, predicate, object);
+		final Triple triple = triple(subject, predicate, object);
 
 		assertThat(triple.hashCode())
 				.as("computed according to contract")

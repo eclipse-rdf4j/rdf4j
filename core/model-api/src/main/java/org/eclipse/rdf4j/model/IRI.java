@@ -25,7 +25,7 @@ package org.eclipse.rdf4j.model;
  * <p>
  * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
  * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
-
+ * 
  * @author Jeen Broekstra
  * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  */
@@ -62,8 +62,8 @@ public interface IRI extends URI, Resource {
 	 *
 	 * @param o the object to compare this IRI to
 	 *
-	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #toString()
-	 *         string values} are equal; {@code false}, otherwise
+	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #toString() string
+	 *         values} are equal; {@code false}, otherwise
 	 */
 	@Override
 	boolean equals(Object o);

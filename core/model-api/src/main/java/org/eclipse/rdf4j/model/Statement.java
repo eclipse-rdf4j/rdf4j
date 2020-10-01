@@ -18,7 +18,7 @@ import java.io.Serializable;
  * <p>
  * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
  * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
-
+ * 
  */
 public interface Statement extends Serializable {
 
@@ -56,8 +56,8 @@ public interface Statement extends Serializable {
 	 * @param other the object to compare this statement to
 	 *
 	 * @return {@code true} if the other object is an instance of {@code Statement} and if their
-	 * {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates}, {@linkplain #getObject() objects}
-	 * and {@linkplain #getContext() contexts} are equal; {@code false} otherwise
+	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates}, {@linkplain #getObject()
+	 *         objects} and {@linkplain #getContext() contexts} are equal; {@code false} otherwise
 	 */
 	@Override
 	public boolean equals(Object other);
@@ -66,7 +66,7 @@ public interface Statement extends Serializable {
 	 * Computes the hash code of this statement.
 	 *
 	 * @return a hash code for this statement computed as {@link java.util.Objects#hash Objects.hash}(
-	 * {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()}, {@link #getContext()})
+	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()}, {@link #getContext()})
 	 */
 	@Override
 	public int hashCode();

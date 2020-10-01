@@ -18,7 +18,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
  * <p>
  * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
  * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
-
+ * 
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
  */
@@ -137,14 +137,13 @@ public interface Literal extends Value {
 	 */
 	XMLGregorianCalendar calendarValue();
 
-
 	/**
 	 * Compares this literal to another object.
 	 *
 	 * @param other the object to compare this literal to
 	 *
-	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel() labels}, {@linkplain #getLanguage() language tags}
-	 *         and {@linkplain #getDatatype() datatypes} are equal
+	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
+	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
 	 */
 	@Override
 	boolean equals(Object other);

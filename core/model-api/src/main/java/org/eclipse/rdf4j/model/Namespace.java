@@ -14,7 +14,7 @@ import java.io.Serializable;
  * <p>
  * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
  * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
-
+ * 
  */
 public interface Namespace extends Serializable, Comparable<Namespace> {
 
@@ -33,12 +33,12 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	public String getName();
 
 	/**
-	 * Compares  this namespace to another object.
+	 * Compares this namespace to another object.
 	 *
 	 * @param o The object to compare this namespace to
 	 *
 	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
-	 * 		prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
+	 *         prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
 	 */
 	@Override
 	boolean equals(Object o);
@@ -47,7 +47,7 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 * Computes the hash code of this namespace.
 	 *
 	 * @return a hash code for this namespace computed as {@link java.util.Objects#hash Objects.hash}(
-	 * {@link #getPrefix()}, {@link #getName()})
+	 *         {@link #getPrefix()}, {@link #getName()})
 	 */
 	@Override
 	int hashCode();

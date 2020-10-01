@@ -36,8 +36,8 @@ public interface BNode extends Resource {
 	 *
 	 * @param o the object to compare this blank node to
 	 *
-	 * @return {@code true}, if the other object is an instance of {@code BNode} and their {@linkplain #getID() IDs}
-	 * 		are equal; {@code false}, otherwise.
+	 * @return {@code true}, if the other object is an instance of {@code BNode} and their {@linkplain #getID() IDs} are
+	 *         equal; {@code false}, otherwise.
 	 */
 	@Override
 	boolean equals(Object o);
