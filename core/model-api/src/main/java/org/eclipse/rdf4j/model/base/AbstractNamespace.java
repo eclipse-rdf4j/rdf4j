@@ -45,8 +45,7 @@ public abstract class AbstractNamespace implements Namespace {
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(getPrefix())
-				^ Objects.hashCode(getName());
+		return Objects.hash(getPrefix(), getName());
 	}
 
 	@Override
