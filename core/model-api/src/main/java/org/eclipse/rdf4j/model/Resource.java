@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.model;
  * The supertype of all RDF resources (IRIs and blank nodes).
  */
 public interface Resource extends Value {
+
 	// Empty place holder as common supertype of IRI and BNode
 
 	@Override

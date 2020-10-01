@@ -291,6 +291,4 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 		return subjects;
 	}
 
-	;
-
 }

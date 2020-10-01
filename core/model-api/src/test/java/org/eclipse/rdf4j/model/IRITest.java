@@ -78,7 +78,9 @@ public abstract class IRITest {
 
 		final IRI iri = iri("http://example.org/", "iri");
 
-		assertThat(iri.hashCode()).isEqualTo(iri.stringValue().hashCode());
+		assertThat(iri.hashCode())
+				.as("computed according to contract")
+				.isEqualTo(iri.toString().hashCode()); // !!! .toString() >> .valueString()
 	}
 
 }

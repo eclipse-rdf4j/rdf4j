@@ -487,11 +487,16 @@ public abstract class LiteralTest {
 		assertThat(tagged).isNotEqualTo(literal(tagged.getLabel(), "other"));
 		assertThat(typed).isNotEqualTo(literal(typed.getLabel(), datatype("http://example.org/other")));
 
+
 		// hashCode() should return identical values for literals for which equals() is true
 
 		assertThat(plain.hashCode()).isEqualTo(_plain.hashCode());
 		assertThat(tagged.hashCode()).isEqualTo(_tagged.hashCode());
 		assertThat(typed.hashCode()).isEqualTo(_typed.hashCode());
+
+		assertThat(tagged.hashCode())
+				.as("computed according to contract")
+				.isEqualTo(tagged.getLabel().hashCode()); // !!! label >> label+language+datatype
 
 	}
 

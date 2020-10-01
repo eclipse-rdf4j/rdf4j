@@ -70,7 +70,9 @@ public abstract class BNodeTest {
 
 		final BNode bnode = bnode("bnode");
 
-		assertThat(bnode.hashCode()).isEqualTo(bnode.getID().hashCode());
+		assertThat(bnode.hashCode())
+				.as("computed according to contract")
+				.isEqualTo(bnode.getID().hashCode());
 	}
 
 }

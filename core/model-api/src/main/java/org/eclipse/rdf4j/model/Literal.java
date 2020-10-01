@@ -15,11 +15,19 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
- *
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface Literal extends Value {
+
+	@Override
+	default boolean isLiteral() {
+		return true;
+	}
 
 	/**
 	 * Gets the label (the lexical value) of this literal.
@@ -44,16 +52,6 @@ public interface Literal extends Value {
 	 * @return The datatype for this literal.
 	 */
 	IRI getDatatype();
-
-	/**
-	 * Compares a literal object to another object.
-	 *
-	 * @param other The object to compare this literal to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
-	 *         and datatypes are equal.
-	 */
-	@Override
-	boolean equals(Object other);
 
 	/**
 	 * Returns the <tt>boolean</tt> value of this literal.
@@ -139,18 +137,24 @@ public interface Literal extends Value {
 	 */
 	XMLGregorianCalendar calendarValue();
 
+
 	/**
-	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
-	 * <tt>getLabel().hashCode()</tt>.
+	 * Compares this literal to another object.
 	 *
-	 * @return A hash code for the literal.
+	 * @param other the object to compare this literal to
+	 *
+	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel() labels}, {@linkplain #getLanguage() language tags}
+	 *         and {@linkplain #getDatatype() datatypes} are equal
+	 */
+	@Override
+	boolean equals(Object other);
+
+	/**
+	 * Computes the hash code of this literal.
+	 *
+	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
 	 */
 	@Override
 	int hashCode();
-
-	@Override
-	default boolean isLiteral() {
-		return true;
-	}
 
 }

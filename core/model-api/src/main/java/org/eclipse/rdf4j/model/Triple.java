@@ -15,11 +15,19 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * <p>
  * Additional utility functionality for working with {@code Triple} objects is available in the
  * {@code org.eclipse.rdf4j.model.util.Statements} utility class.
- *
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+
  * @author Pavel Mihaylov
  */
 @Experimental
 public interface Triple extends Resource {
+
+	@Override
+	default boolean isTriple() {
+		return true;
+	}
 
 	/**
 	 * Gets the subject of this triple.
@@ -42,8 +50,25 @@ public interface Triple extends Resource {
 	 */
 	Value getObject();
 
+	/**
+	 * Compares this triple to another object.
+	 *
+	 * @param other the object to compare this triple to
+	 *
+	 * @return {@code true} if the other object is an instance of {@code Triple} and if their
+	 *        {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates} and
+	 *        {@linkplain #getObject() objects; {@code false} otherwise
+	 */
 	@Override
-	default boolean isTriple() {
-		return true;
-	}
+	public boolean equals(Object other);
+
+	/**
+	 * Computes the hash code of this triple.
+	 *
+	 * @return a hash code for this triple computed as {@link java.util.Objects#hash Objects.hash}(
+	 *        {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()})
+	 */
+	@Override
+	public int hashCode();
+
 }

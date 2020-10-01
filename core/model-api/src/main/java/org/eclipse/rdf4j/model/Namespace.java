@@ -11,6 +11,10 @@ import java.io.Serializable;
 
 /**
  * A namespace, consisting of a namespace name and a prefix that has been assigned to it.
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+
  */
 public interface Namespace extends Serializable, Comparable<Namespace> {
 
@@ -27,5 +31,25 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 * @return name of namespace
 	 */
 	public String getName();
+
+	/**
+	 * Compares  this namespace to another object.
+	 *
+	 * @param o The object to compare this namespace to
+	 *
+	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
+	 * 		prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
+	 */
+	@Override
+	boolean equals(Object o);
+
+	/**
+	 * Computes the hash code of this namespace.
+	 *
+	 * @return a hash code for this namespace computed as {@link java.util.Objects#hash Objects.hash}(
+	 * {@link #getPrefix()}, {@link #getName()})
+	 */
+	@Override
+	int hashCode();
 
 }

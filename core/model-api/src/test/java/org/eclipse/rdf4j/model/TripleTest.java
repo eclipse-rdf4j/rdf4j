@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import java.util.Objects;
+
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -88,9 +90,21 @@ public abstract class TripleTest {
 
 	}
 
-	@Ignore("undefined rules")
 	@Test
 	public void testHashCode() {
-	}
 
+		final Resource subject=iri("http://example.org/subject");
+		final IRI predicate=iri("http://example.org/predicate");
+		final Value object=iri("http://example.org/object");
+
+		final Triple triple	=triple(subject, predicate, object);
+
+		assertThat(triple.hashCode())
+				.as("computed according to contract")
+				.isEqualTo(Objects.hash(
+						triple.getSubject(),
+						triple.getPredicate(),
+						triple.getObject()
+				));
+	}
 }

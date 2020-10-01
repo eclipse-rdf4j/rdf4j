@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Objects;
+
 import org.junit.Test;
 
 /**
@@ -61,6 +63,16 @@ public abstract class NamespaceTest {
 		assertThat(x).isNotEqualTo(null);
 		assertThat(x).isNotEqualTo(new Object());
 		assertThat(x).isNotEqualTo(y);
+	}
+
+	@Test
+	public void testHashCode() {
+
+		final Namespace namespace = namespace("com", "http://example.org/x");
+
+		assertThat(namespace.hashCode())
+				.as("computed according to contract")
+				.isEqualTo(Objects.hash(namespace.getPrefix(), namespace.getName()));
 	}
 
 }

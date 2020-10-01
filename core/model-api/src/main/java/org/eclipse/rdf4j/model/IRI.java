@@ -22,20 +22,20 @@ package org.eclipse.rdf4j.model;
  * </ul>
  * The last step should never fail as every legal (full) IRI contains at least one ':' character to separate the scheme
  * from the rest of the IRI. The implementation should check this upon object creation.
- *
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+
  * @author Jeen Broekstra
  * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  */
 @SuppressWarnings("deprecation")
 public interface IRI extends URI, Resource {
 
-	/**
-	 * Gets the string-representation of this IRI.
-	 *
-	 * @return The String-representation of this IRI.
-	 */
 	@Override
-	String toString();
+	default boolean isIRI() {
+		return true;
+	}
 
 	/**
 	 * Gets the namespace part of this IRI.
@@ -58,26 +58,22 @@ public interface IRI extends URI, Resource {
 	String getLocalName();
 
 	/**
-	 * Compares a IRI object to another object.
+	 * Compares this IRI to another object.
 	 *
-	 * @param o The object to compare this IRI to.
+	 * @param o the object to compare this IRI to
 	 *
-	 * @return <tt>true</tt> if the other object is an instance of {@code IRI} and their {@linkplain #stringValue()
-	 *         string values} are equal, <tt>false</tt> otherwise.
+	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #toString()
+	 *         string values} are equal; {@code false}, otherwise
 	 */
 	@Override
 	boolean equals(Object o);
 
 	/**
-	 * The hash code of an IRI is defined as the hash code of its string value: <tt>stringValue().hashCode</tt>.
+	 * Computes the hash code of this IRI.
 	 *
-	 * @return a hash code for this IRI
+	 * @return a hash code for this IRI computed as {@link #toString()}{@code .hashCode()}
 	 */
 	@Override
 	int hashCode();
 
-	@Override
-	default boolean isIRI() {
-		return true;
-	}
 }
