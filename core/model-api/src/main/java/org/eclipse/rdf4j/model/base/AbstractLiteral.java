@@ -161,7 +161,7 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(getLabel()); // !!! include language/datatype (after #2561 is resolved)
+		return Objects.hashCode(getLabel());
 	}
 
 	/**
