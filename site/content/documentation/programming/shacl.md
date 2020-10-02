@@ -49,19 +49,35 @@ is type `ex:Person`.
 The ShaclSail uses a reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) for storing the SHACL shapes.
 Utilize a normal connection to load your shapes into this graph. SPARQL is not supported.
 
-{{< highlight java >}}
+```java
 ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-SailRepository sailRepository = new SailRepository(shaclSail);
+Repository repo = new SailRepository(shaclSail);
 
-try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-    connection.begin();
+try (RepositoryConnection connection = repo.getConnection()) {
 
     Reader shaclRules = ....
 
+    // add shapes
+    connection.begin();
     connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
     connection.commit();
+    
+    // clear existing shapes and add new ones in single transaction (eg. update shapes)
+    connection.begin();
+    connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+    connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+    connection.commit();
+
+    // clear all shapes
+    connection.begin();
+    connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+    connection.commit();
+    
+    // connection.clear(); will not clear the Shapes graph!
+
+
 }
-{{< / highlight >}}
+```
 
 You can at any point update your shapes. Updating shapes will cause your data to be re-validated. The transaction
 will fail if the data is not valid according to the changed shapes.
@@ -72,9 +88,7 @@ slowdowns.
 
 Remember that a full validation is run for all the affect shapes. Depending on the amount of
 data already in your store this may take a significant amount of time. If you are sure that your
-data will not violate the shapes, or otherwise need to skip validation, you can
-temporarily disable validation for your entire ShaclSail with `setValidationEnabled(false)`. Keep
-in mind that this affects all transactions.
+data will not violate the shapes, or otherwise need to skip validation then you can read the section on [Performance](#performance).
 
 Do not use SPARQL to update your shapes!
 
@@ -134,7 +148,7 @@ Nested `sh:property` is not supported.
 
 On `commit()` the ShaclSail will validate your changes and throw an exception if there are violations. The exception contains a validation report and can be retrieved like this:
 
-{{< highlight java >}}
+```java
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -148,7 +162,7 @@ try {
     }
     throw exception;
 }
-{{< / highlight >}}
+```
 
 The `validationReportModel` follows the report format specified by the W3C SHACL recommendation. It does not provide all the information specified in the recommendation. Example report:
 
@@ -192,7 +206,7 @@ Limitations can either be configured directly in the ShaclSail or through the co
 Since all shapes are stored in the SHACL shapes graph, the actual shape that was violated can be retrieved from the
 ShaclSail when a transaction fails.
 
-{{< highlight java >}}
+```java
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -219,7 +233,7 @@ try {
     }
     throw exception;
 }
-{{< / highlight >}}
+```
 
 ## Transactional support
 
@@ -275,7 +289,7 @@ NativeStore and using the new transaction settings introduced in 3.3.0.
 Disabling validation for a transaction may leave your data in an invalid state. Running a transaction with bulk validation will force a full validation.
 This is a useful approach if you need to use multiple transactions to bulk load your data.
 
-{{< highlight java >}}
+```java
 ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,psoc"));
 SailRepository sailRepository = new SailRepository(shaclSail);
 
@@ -306,7 +320,7 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 }
 
 sailRepository.shutDown();
-{{< / highlight >}}
+```
 
 ## Reasoning
 By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
@@ -391,7 +405,7 @@ The structure of this log and its contents may change in the future, without war
 
 ## Full working example
 
-{{< highlight java >}}
+```java
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.model.Model;
@@ -482,7 +496,7 @@ public class ShaclSampleCode {
         }
     }
 }
-{{< / highlight >}}
+```
 
 ## Further reading
 
