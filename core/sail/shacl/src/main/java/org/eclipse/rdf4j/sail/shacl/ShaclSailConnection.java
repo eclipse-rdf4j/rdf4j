@@ -394,8 +394,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					.map(planNode -> () -> {
 
-						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
-						planNode.receiveLogger(validationExecutionLogger);
+						ValidationExecutionLogger validationExecutionLogger = null;
+						if (GlobalValidationExecutionLogging.loggingEnabled) {
+							validationExecutionLogger = new ValidationExecutionLogger();
+							planNode.receiveLogger(validationExecutionLogger);
+						}
 
 						try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode
 								.iterator()) {
@@ -415,7 +418,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								validationResults = new ValidationResultIterator(iterator,
 										sail.getEffectiveValidationResultsLimitPerConstraint());
 							} finally {
-								validationExecutionLogger.flush();
+								if (validationExecutionLogger != null) {
+									validationExecutionLogger.flush();
+								}
 							}
 
 //							if (sail.isPerformanceLogging()) {

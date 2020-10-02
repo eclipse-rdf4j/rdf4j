@@ -15,13 +15,16 @@ public class ValidationExecutionLogger {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValidationExecutionLogger.class);
 
-	private List<LogStatement> list = new ArrayList<>();
+	private List<LogStatement> list = null;
 
 	private static boolean groupedLogging = true;
 
 	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id) {
 		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id);
 		if (groupedLogging) {
+			if (list == null) {
+				list = new ArrayList<>();
+			}
 			list.add(logStatement);
 		} else {
 			logger.info(logStatement.toString());
@@ -30,7 +33,7 @@ public class ValidationExecutionLogger {
 
 	public void flush() {
 
-		if (list.isEmpty()) {
+		if (list == null || list.isEmpty()) {
 			return;
 		}
 

@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.AndConstraintComponent;
@@ -363,7 +364,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
-		allTargetsPlan.receiveLogger(new ValidationExecutionLogger());
+		if (GlobalValidationExecutionLogging.loggingEnabled) {
+			allTargetsPlan.receiveLogger(new ValidationExecutionLogger());
+		}
 		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = allTargetsPlan.iterator()) {
 			return iterator.hasNext();
 		}
