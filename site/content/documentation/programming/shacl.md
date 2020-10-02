@@ -49,7 +49,7 @@ is type `ex:Person`.
 The ShaclSail uses a reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) for storing the SHACL shapes.
 Utilize a normal connection to load your shapes into this graph. SPARQL is not supported.
 
-{{< highlight java >}}
+```java
 ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 Repository repo = new SailRepository(shaclSail);
 
@@ -77,7 +77,7 @@ try (RepositoryConnection connection = repo.getConnection()) {
 
 
 }
-{{< / highlight >}}
+```
 
 You can at any point update your shapes. Updating shapes will cause your data to be re-validated. The transaction
 will fail if the data is not valid according to the changed shapes.
@@ -148,7 +148,7 @@ Nested `sh:property` is not supported.
 
 On `commit()` the ShaclSail will validate your changes and throw an exception if there are violations. The exception contains a validation report and can be retrieved like this:
 
-{{< highlight java >}}
+```java
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -162,7 +162,7 @@ try {
     }
     throw exception;
 }
-{{< / highlight >}}
+```
 
 The `validationReportModel` follows the report format specified by the W3C SHACL recommendation. It does not provide all the information specified in the recommendation. Example report:
 
@@ -206,7 +206,7 @@ Limitations can either be configured directly in the ShaclSail or through the co
 Since all shapes are stored in the SHACL shapes graph, the actual shape that was violated can be retrieved from the
 ShaclSail when a transaction fails.
 
-{{< highlight java >}}
+```java
 try {
     connection.commit();
 } catch (RepositoryException exception) {
@@ -233,7 +233,7 @@ try {
     }
     throw exception;
 }
-{{< / highlight >}}
+```
 
 ## Transactional support
 
@@ -289,7 +289,7 @@ NativeStore and using the new transaction settings introduced in 3.3.0.
 Disabling validation for a transaction may leave your data in an invalid state. Running a transaction with bulk validation will force a full validation.
 This is a useful approach if you need to use multiple transactions to bulk load your data.
 
-{{< highlight java >}}
+```java
 ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,psoc"));
 SailRepository sailRepository = new SailRepository(shaclSail);
 
@@ -320,7 +320,7 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 }
 
 sailRepository.shutDown();
-{{< / highlight >}}
+```
 
 ## Reasoning
 By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
@@ -405,7 +405,7 @@ The structure of this log and its contents may change in the future, without war
 
 ## Full working example
 
-{{< highlight java >}}
+```java
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.eclipse.rdf4j.model.Model;
@@ -496,7 +496,7 @@ public class ShaclSampleCode {
         }
     }
 }
-{{< / highlight >}}
+```
 
 ## Further reading
 
