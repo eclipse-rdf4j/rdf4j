@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -55,6 +56,22 @@ public class Literals {
 	public static String getLabel(Optional v, String fallback) {
 
 		return v != null ? getLabel((Value) v.orElseGet(null), fallback) : fallback;
+	}
+
+	/**
+	 * Retrieves the {@link XSD.Datatype} value for the supplied Literal, if it has one.
+	 *
+	 * @param a Literal
+	 * @return an Optional {@link XSD.Datatype} enum, if one is available. Note that the absence of this enum does
+	 *         <i>not</i> indicate that the literal has no datatype, merely that it has no cached enum representation of
+	 *         that datatype.
+	 * @since 3.5.0
+	 */
+	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
+		if (l instanceof SimpleLiteral) {
+			return ((SimpleLiteral) l).getXsdDatatype();
+		}
+		return Optional.empty();
 	}
 
 	/**
@@ -507,7 +524,7 @@ public class Literals {
 	/**
 	 * Implements language range filtering for SPARQL langMatches
 	 * (https://www.w3.org/TR/sparql11-query/#func-langMatches).
-	 * 
+	 *
 	 * @param langTag   the tag to filter
 	 * @param langRange the range to filter against
 	 * @return true if langTag matches langRange

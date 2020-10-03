@@ -5,17 +5,30 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.model;
+package org.eclipse.rdf4j.model.impl;
+
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.ValueFactoryTest;
+import org.junit.Before;
 
 /**
- * The supertype of all RDF resources (IRIs and blank nodes).
+ * @author jeen
  */
-public interface Resource extends Value {
-	// Empty place holder as common supertype of IRI and BNode
+public class SimpleValueFactoryTest extends ValueFactoryTest {
+
+	private ValueFactory f;
 
 	@Override
-	default boolean isResource() {
-		return true;
+	protected ValueFactory factory() {
+		return f;
+	}
+
+	/**
+	 * @throws java.lang.Exception
+	 */
+	@Before
+	public void setUp() throws Exception {
+		f = SimpleValueFactory.getInstance();
 	}
 
 }

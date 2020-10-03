@@ -152,8 +152,8 @@ public class QueryEvaluationUtil {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
-		XSD.Datatype leftXsdDatatype = leftLit.getXsdDatatype().orElse(null);
-		XSD.Datatype rightXsdDatatype = rightLit.getXsdDatatype().orElse(null);
+		XSD.Datatype leftXsdDatatype = Literals.getXsdDatatype(leftLit).orElse(null);
+		XSD.Datatype rightXsdDatatype = Literals.getXsdDatatype(rightLit).orElse(null);
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
@@ -353,7 +353,7 @@ public class QueryEvaluationUtil {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		Optional<XSD.Datatype> xsdDatatype = l.getXsdDatatype();
+		Optional<XSD.Datatype> xsdDatatype = Literals.getXsdDatatype(l);
 		return xsdDatatype
 				.map(datatype -> datatype == XSD.Datatype.STRING)
 				.orElseGet(() -> (l.getDatatype().equals(XSD.STRING)));

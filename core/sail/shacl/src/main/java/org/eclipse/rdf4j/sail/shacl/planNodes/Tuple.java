@@ -143,7 +143,7 @@ public class Tuple implements Comparable<Tuple> {
 
 		}
 
-		return 0;
+		return line.size() - o.line.size();
 	}
 
 	public String getCause() {

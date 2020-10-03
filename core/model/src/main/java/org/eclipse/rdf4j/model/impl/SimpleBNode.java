@@ -8,13 +8,14 @@
 package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.base.AbstractBNode;
 
 /**
  * An simple default implementation of the {@link BNode} interface.
  *
  * @author Arjohn Kampman
  */
-public class SimpleBNode implements BNode {
+public class SimpleBNode extends AbstractBNode {
 
 	/*-----------*
 	 * Constants *
@@ -65,37 +66,4 @@ public class SimpleBNode implements BNode {
 		this.id = id;
 	}
 
-	@Override
-	public String stringValue() {
-		return id;
-	}
-
-	// Overrides Object.equals(Object), implements BNode.equals(Object)
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-
-		if (o instanceof BNode) {
-			String a = getID();
-			String b = ((BNode) o).getID();
-
-			return a.equals(b);
-		}
-
-		return false;
-	}
-
-	// Overrides Object.hashCode(), implements BNode.hashCode()
-	@Override
-	public int hashCode() {
-		return id.hashCode();
-	}
-
-	// Overrides Object.toString()
-	@Override
-	public String toString() {
-		return "_:" + id;
-	}
 }

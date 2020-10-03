@@ -11,7 +11,6 @@ import java.io.Serializable;
 import java.util.Comparator;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -110,9 +109,8 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-
-				Optional<XSD.Datatype> leftXmlDatatype = leftLit.getXsdDatatype();
-				Optional<XSD.Datatype> rightXmlDatatype = rightLit.getXsdDatatype();
+				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
+				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
 
 				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
 					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());

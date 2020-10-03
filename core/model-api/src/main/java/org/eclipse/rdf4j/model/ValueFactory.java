@@ -4,7 +4,7 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
 package org.eclipse.rdf4j.model;
 
 import java.math.BigDecimal;
@@ -12,9 +12,6 @@ import java.math.BigInteger;
 import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
-
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
@@ -30,7 +27,7 @@ public interface ValueFactory {
 	 *
 	 * @param iri A string-representation of a IRI.
 	 * @return An object representing the IRI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
 	 */
 	public IRI createIRI(String iri);
 
@@ -39,7 +36,7 @@ public interface ValueFactory {
 	 *
 	 * @param uri A string-representation of a URI.
 	 * @return An object representing the URI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
 	 * @deprecated Use {{@link #createIRI(String)} instead.
 	 */
 	@Deprecated
@@ -66,7 +63,7 @@ public interface ValueFactory {
 	 * @param namespace The IRI's namespace.
 	 * @param localName The IRI's local name.
 	 * @return An object representing the URI.
-	 * @throws IlllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
+	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
 	 * @deprecated Use {@link #createIRI(String, String)} instead.
 	 */
 	@Deprecated
@@ -91,7 +88,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
-	 * object must be {@link XSD#STRING}.
+	 * object must be <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
 	 */
@@ -99,7 +96,8 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal with the supplied label and language attribute. The return value of
-	 * {@link Literal#getDatatype()} for the returned object must be {@link RDF#LANGSTRING}.
+	 * {@link Literal#getDatatype()} for the returned object must be
+	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>.
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param language The literal's language attribute, must not be <tt>null</tt>.
@@ -110,7 +108,8 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
+	 * @param datatype The literal's datatype. If it is null, the datatype
+	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
 	 */
 	public Literal createLiteral(String label, IRI datatype);
@@ -119,7 +118,8 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label and datatype.
 	 *
 	 * @param label    The literal's label.
-	 * @param datatype The literal's datatype. If it is null, the datatype {@link XSD#STRING} will be assigned to this
+	 * @param datatype The literal's datatype. If it is null, the datatype
+	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
 	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
 	 */
@@ -274,4 +274,5 @@ public interface ValueFactory {
 	default Triple createTriple(Resource subject, IRI predicate, Value object) {
 		throw new UnsupportedOperationException();
 	}
+
 }
