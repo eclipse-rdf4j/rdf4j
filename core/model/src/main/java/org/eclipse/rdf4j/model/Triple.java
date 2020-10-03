@@ -13,12 +13,13 @@ import org.eclipse.rdf4j.model.util.Statements;
 /**
  * An RDF* triple. Triples have a subject, predicate and object. Unlike {@link Statement}, a triple never has an
  * associated context.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
  *
  * @author Pavel Mihaylov
  * @see Statements
+ *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 @Experimental
 public interface Triple extends Resource {
