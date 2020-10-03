@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -98,8 +97,9 @@ public class EffectiveTarget {
 
 		boolean hasTargetNode = Stream.concat(chain.stream(), getOptionalAsStream())
 				.anyMatch(e -> e.target instanceof TargetNode);
-		if (hasTargetNode)
+		if (hasTargetNode) {
 			return true;
+		}
 
 		return Stream.concat(chain.stream(), getOptionalAsStream())
 				.flatMap(EffectiveTargetObject::getStatementPatterns)

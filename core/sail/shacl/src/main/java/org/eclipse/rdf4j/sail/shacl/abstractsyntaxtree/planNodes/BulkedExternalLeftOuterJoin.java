@@ -29,9 +29,10 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	private final SailConnection connection;
 	private final PlanNode leftNode;
-	private final ParsedQuery parsedQuery;
+	private ParsedQuery parsedQuery;
 	private final boolean skipBasedOnPreviousConnection;
 	private final SailConnection previousStateConnection;
+	private final String query;
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
@@ -39,8 +40,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			Function<BindingSet, ValidationTuple> mapper) {
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
-		parsedQuery = parseQuery(query);
-
+		this.query = query;
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
 		this.previousStateConnection = previousStateConnection;
@@ -70,6 +70,10 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 				if (left.isEmpty()) {
 					return;
+				}
+
+				if (parsedQuery == null) {
+					parsedQuery = parseQuery(query);
 				}
 
 				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection,
@@ -176,7 +180,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalLeftOuterJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ")
+		return "BulkedExternalLeftOuterJoin{" + "query=" + query.replace("\n", "  ")
 				+ '}';
 	}
 

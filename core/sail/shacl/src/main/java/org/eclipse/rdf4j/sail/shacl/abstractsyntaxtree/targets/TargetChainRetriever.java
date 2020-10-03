@@ -84,7 +84,7 @@ public class TargetChainRetriever implements PlanNode {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
 
-			final ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+			ParsedQuery parsedQuery;
 
 			public void calculateNextStatementPattern() {
 				if (statements != null && statements.hasNext()) {
@@ -144,6 +144,10 @@ public class TargetChainRetriever implements PlanNode {
 							if (statements == null || !statements.hasNext()) {
 								return;
 							}
+						}
+
+						if (parsedQuery == null) {
+							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 						}
 
 						Statement next = statements.next();

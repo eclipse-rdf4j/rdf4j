@@ -34,9 +34,10 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private static final ValueComparator VALUE_COMPARATOR = new ValueComparator();
 	private final SailConnection connection;
 	private final PlanNode leftNode;
-	private final ParsedQuery parsedQuery;
+	private ParsedQuery parsedQuery = null;
 	private final boolean skipBasedOnPreviousConnection;
 	private final SailConnection previousStateConnection;
+	private final String query;
 	private boolean printed = false;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, String query,
@@ -46,7 +47,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
 
-		parsedQuery = parseQuery(query);
+		this.query = query;
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -77,6 +78,10 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 					while (left.size() < 200 && leftNodeIterator.hasNext()) {
 						left.addFirst(leftNodeIterator.next());
+					}
+
+					if (parsedQuery == null) {
+						parsedQuery = parseQuery(query);
 					}
 
 					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection,
@@ -194,7 +199,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalInnerJoin{" + "parsedQuery=" + parsedQuery.getSourceString().replace("\n", "  ") + '}';
+		return "BulkedExternalInnerJoin{" + "query=" + query.replace("\n", "") + '}';
 	}
 
 	@Override

@@ -67,9 +67,13 @@ public class Select implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = null;
 
-			{
+			private void init() {
+
+				if (bindingSet != null) {
+					return;
+				}
 
 				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
 						.get(QueryLanguage.SPARQL)
@@ -87,16 +91,20 @@ public class Select implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				bindingSet.close();
+				if (bindingSet != null) {
+					bindingSet.close();
+				}
 			}
 
 			@Override
 			boolean localHasNext() throws SailException {
+				init();
 				return bindingSet.hasNext();
 			}
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
+				init();
 				return mapper.apply(bindingSet.next());
 			}
 
