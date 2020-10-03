@@ -20,61 +20,60 @@ package org.eclipse.rdf4j.model;
  * <li>If this fails, split after the last occurrence of the '/' character,
  * <li>If this fails, split after the last occurrence of the ':' character.
  * </ul>
- * The last step should never fail as every legal (full) IRI contains at least one ':' character to seperate the scheme
+ * The last step should never fail as every legal (full) IRI contains at least one ':' character to separate the scheme
  * from the rest of the IRI. The implementation should check this upon object creation.
- *
- * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+ * 
  * @author Jeen Broekstra
+ * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  */
 @SuppressWarnings("deprecation")
 public interface IRI extends URI, Resource {
-
-	/**
-	 * Returns the String-representation of this IRI.
-	 *
-	 * @return The String-representation of this IRI.
-	 */
-	@Override
-	String toString();
-
-	/**
-	 * Gets the namespace part of this IRI. The namespace is defined as per the algorithm described in the class
-	 * documentation.
-	 *
-	 * @return The IRI's namespace.
-	 */
-	@Override
-	String getNamespace();
-
-	/**
-	 * Gets the local name part of this IRI. The local name is defined as per the algorithm described in the class
-	 * documentation.
-	 *
-	 * @return The IRI's local name.
-	 */
-	@Override
-	String getLocalName();
-
-	/**
-	 * Compares a IRI object to another object.
-	 *
-	 * @param o The object to compare this IRI to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link IRI} and their String-representations are
-	 *         equal, <tt>false</tt> otherwise.
-	 */
-	@Override
-	boolean equals(Object o);
-
-	/**
-	 * The hash code of an IRI is defined as the hash code of its String-representation: <tt>toString().hashCode</tt>.
-	 *
-	 * @return A hash code for the IRI.
-	 */
-	@Override
-	int hashCode();
 
 	@Override
 	default boolean isIRI() {
 		return true;
 	}
+
+	/**
+	 * Gets the namespace part of this IRI.
+	 * <p>
+	 * The namespace is defined as per the algorithm described in the class documentation.
+	 *
+	 * @return the namespace of this IRI
+	 */
+	@Override
+	String getNamespace();
+
+	/**
+	 * Gets the local name part of this IRI.
+	 * <p>
+	 * The local name is defined as per the algorithm described in the class documentation.
+	 *
+	 * @return the local name of this IRI
+	 */
+	@Override
+	String getLocalName();
+
+	/**
+	 * Compares this IRI to another object.
+	 *
+	 * @param o the object to compare this IRI to
+	 *
+	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #toString() string
+	 *         values} are equal; {@code false}, otherwise
+	 */
+	@Override
+	boolean equals(Object o);
+
+	/**
+	 * Computes the hash code of this IRI.
+	 *
+	 * @return a hash code for this IRI computed as {@link #toString()}{@code .hashCode()}
+	 */
+	@Override
+	int hashCode();
+
 }

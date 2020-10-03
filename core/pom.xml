@@ -10,6 +10,7 @@
 	<packaging>pom</packaging>
 	<modules>
 		<module>util</module>
+		<module>model-api</module>
 		<module>model</module>
 		<module>sparqlbuilder</module>
 		<module>rio</module>

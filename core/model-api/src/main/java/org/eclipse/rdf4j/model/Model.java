@@ -12,17 +12,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-
 /**
  * An RDF Model, represented as a {@link java.util.Set} of {@link Statement}s with predictable iteration order.
  * <p>
- * Additional utility functionality for working with Model objects is available in the
- * {@link org.eclipse.rdf4j.model.util.Models Models} utility class.
+ * Additional utility functionality for working with {@code Model} objects is available in the
+ * {@code org.eclipse.rdf4j.model.util.Models} utility class.
  *
  * @author James Leigh
  * @author Jeen Broekstra
- * @see org.eclipse.rdf4j.model.util.Models the Models utility class
  */
 public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 
@@ -46,7 +43,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	public default Namespace setNamespace(String prefix, String name) {
 		Optional<? extends Namespace> result = getNamespace(prefix);
 		if (!result.isPresent() || !result.get().getName().equals(name)) {
-			result = Optional.of(new SimpleNamespace(prefix, name));
+			result = Optional.of(new ModelNamespace(prefix, name));
 			setNamespace(result.get());
 		}
 		return result.get();
@@ -293,7 +290,5 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 		Set<Resource> subjects = stream().map(st -> st.getContext()).collect(Collectors.toSet());
 		return subjects;
 	}
-
-	;
 
 }

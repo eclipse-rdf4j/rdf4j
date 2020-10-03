@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -138,8 +139,8 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				Optional<XSD.Datatype> leftXmlDatatype = leftLit.getXsdDatatype();
-				Optional<XSD.Datatype> rightXmlDatatype = rightLit.getXsdDatatype();
+				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
+				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
 
 				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
 					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());

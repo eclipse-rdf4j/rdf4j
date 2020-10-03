@@ -16,6 +16,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -27,7 +28,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * @author Arjohn Kampman
  * @author David Huynh
  */
-public class SimpleLiteral implements Literal {
+public class SimpleLiteral extends AbstractLiteral {
 
 	/*-----------*
 	 * Constants *
@@ -159,7 +160,6 @@ public class SimpleLiteral implements Literal {
 		return datatype;
 	}
 
-	@Override
 	public Optional<XSD.Datatype> getXsdDatatype() {
 		// we are caching the optional value, so null means that we haven't cached anything yet
 		if (xsdDatatype == null) {
@@ -238,51 +238,52 @@ public class SimpleLiteral implements Literal {
 
 	@Override
 	public boolean booleanValue() {
-		return XMLDatatypeUtil.parseBoolean(getLabel());
+		return XMLDatatypeUtil.parseBoolean(label);
 	}
 
 	@Override
 	public byte byteValue() {
-		return XMLDatatypeUtil.parseByte(getLabel());
+		return XMLDatatypeUtil.parseByte(label);
 	}
 
 	@Override
 	public short shortValue() {
-		return XMLDatatypeUtil.parseShort(getLabel());
+		return XMLDatatypeUtil.parseShort(label);
 	}
 
 	@Override
 	public int intValue() {
-		return XMLDatatypeUtil.parseInt(getLabel());
+		return XMLDatatypeUtil.parseInt(label);
 	}
 
 	@Override
 	public long longValue() {
-		return XMLDatatypeUtil.parseLong(getLabel());
+		return XMLDatatypeUtil.parseLong(label);
 	}
 
 	@Override
 	public float floatValue() {
-		return XMLDatatypeUtil.parseFloat(getLabel());
+		return XMLDatatypeUtil.parseFloat(label);
 	}
 
 	@Override
 	public double doubleValue() {
-		return XMLDatatypeUtil.parseDouble(getLabel());
+		return XMLDatatypeUtil.parseDouble(label);
 	}
 
 	@Override
 	public BigInteger integerValue() {
-		return XMLDatatypeUtil.parseInteger(getLabel());
+		return XMLDatatypeUtil.parseInteger(label);
 	}
 
 	@Override
 	public BigDecimal decimalValue() {
-		return XMLDatatypeUtil.parseDecimal(getLabel());
+		return XMLDatatypeUtil.parseDecimal(label);
 	}
 
 	@Override
 	public XMLGregorianCalendar calendarValue() {
-		return XMLDatatypeUtil.parseCalendar(getLabel());
+		return XMLDatatypeUtil.parseCalendar(label);
 	}
+
 }
