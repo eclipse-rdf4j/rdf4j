@@ -84,6 +84,8 @@ public class TargetChainRetriever implements PlanNode {
 
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
 
+			final ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+
 			public void calculateNextStatementPattern() {
 				if (statements != null && statements.hasNext()) {
 					return;
@@ -134,8 +136,6 @@ public class TargetChainRetriever implements PlanNode {
 						if (results != null) {
 							results.close();
 						}
-
-						ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 
 						MapBindingSet bindings = new MapBindingSet();
 
