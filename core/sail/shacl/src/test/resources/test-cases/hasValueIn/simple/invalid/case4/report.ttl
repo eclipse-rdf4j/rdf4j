@@ -13,16 +13,16 @@
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:HasValueConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ejhk3telx1
+      sh:sourceShape _:node1ejmtjg84x1
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson2;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:HasValueConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ejhk3telx1
+      sh:sourceShape _:node1ejmtjg84x1
     ] .
 
-_:node1ejhk3telx1 a sh:PropertyShape;
+_:node1ejmtjg84x1 a sh:PropertyShape;
   sh:path ex:knows;
   <http://datashapes.org/dash#hasValueIn> [
       rdf:first ex:peter;

@@ -70,7 +70,8 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-		return true;
+		return getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+				.couldMatch(connectionsGroup);
 	}
 
 	@Override

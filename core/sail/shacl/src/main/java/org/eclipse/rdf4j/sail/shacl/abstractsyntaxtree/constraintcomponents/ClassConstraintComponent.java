@@ -240,4 +240,11 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 		return new Unique(allTargetsPlan);
 	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+		return super.requiresEvaluation(connectionsGroup, scope)
+				|| connectionsGroup.getRemovedStatements().hasStatement(null, RDF.TYPE, clazz, true)
+				|| connectionsGroup.getAddedStatements().hasStatement(null, RDF.TYPE, clazz, true);
+	}
 }

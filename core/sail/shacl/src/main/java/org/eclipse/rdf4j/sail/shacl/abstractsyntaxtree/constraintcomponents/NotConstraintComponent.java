@@ -176,4 +176,9 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		notConstraintComponent.not = (Shape) not.deepClone();
 		return notConstraintComponent;
 	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+		return not.requiresEvaluation(connectionsGroup, scope);
+	}
 }

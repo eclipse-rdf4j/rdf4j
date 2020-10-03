@@ -165,4 +165,9 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.collect(Collectors.toList());
 		return constraintComponent;
 	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+		return or.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+	}
 }

@@ -125,4 +125,9 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.collect(Collectors.toList());
 		return andConstraintComponent;
 	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+	}
 }

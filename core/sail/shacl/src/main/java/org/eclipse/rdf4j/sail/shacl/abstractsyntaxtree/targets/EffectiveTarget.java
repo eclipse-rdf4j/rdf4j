@@ -6,10 +6,13 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -87,36 +90,45 @@ public class EffectiveTarget {
 		return chain.stream().map(t -> t.var).collect(Collectors.toList());
 	}
 
-	static class EffectiveTargetObject {
+	/**
+	 *
+	 * @return false if it is 100% sure that this will not match, else returns true
+	 */
+	public boolean couldMatch(ConnectionsGroup connectionsGroup) {
 
-		final Var var;
-		final Targetable target;
-		final EffectiveTargetObject prev;
-		final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+		boolean hasTargetNode = Stream.concat(chain.stream(), getOptionalAsStream())
+				.anyMatch(e -> e.target instanceof TargetNode);
+		if (hasTargetNode)
+			return true;
 
-		public EffectiveTargetObject(Var var, Targetable target, EffectiveTargetObject prev,
-				RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-			this.var = var;
-			this.target = target;
-			this.prev = prev;
-			this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+		return Stream.concat(chain.stream(), getOptionalAsStream())
+				.flatMap(EffectiveTargetObject::getStatementPatterns)
+				.anyMatch(currentStatementPattern ->
+
+				connectionsGroup.getAddedStatements()
+						.hasStatement(
+								(Resource) currentStatementPattern.getSubjectVar().getValue(),
+								(IRI) currentStatementPattern.getPredicateVar().getValue(),
+								currentStatementPattern.getObjectVar().getValue(), false)
+						||
+						connectionsGroup.getRemovedStatements()
+								.hasStatement(
+										(Resource) currentStatementPattern.getSubjectVar().getValue(),
+										(IRI) currentStatementPattern.getPredicateVar().getValue(),
+										currentStatementPattern.getObjectVar().getValue(), false)
+
+				);
+
+	}
+
+	private Stream<EffectiveTargetObject> getOptionalAsStream() {
+		Stream<EffectiveTargetObject> optional;
+		if (this.optional != null) {
+			optional = Stream.of(this.optional);
+		} else {
+			optional = Stream.empty();
 		}
-
-		public Stream<StatementPattern> getStatementPatterns() {
-			if (prev == null) {
-				return target.getStatementPatterns(null, var, rdfsSubClassOfReasoner);
-			} else {
-				return target.getStatementPatterns(prev.var, var, rdfsSubClassOfReasoner);
-			}
-		}
-
-		public String getQueryFragment() {
-			if (prev == null) {
-				return target.getTargetQueryFragment(null, var, rdfsSubClassOfReasoner);
-			} else {
-				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
-			}
-		}
+		return optional;
 	}
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
@@ -229,6 +241,38 @@ public class EffectiveTarget {
 	public enum Extend {
 		left,
 		right
+	}
+
+	static class EffectiveTargetObject {
+
+		final Var var;
+		final Targetable target;
+		final EffectiveTargetObject prev;
+		final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+
+		public EffectiveTargetObject(Var var, Targetable target, EffectiveTargetObject prev,
+				RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			this.var = var;
+			this.target = target;
+			this.prev = prev;
+			this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+		}
+
+		public Stream<StatementPattern> getStatementPatterns() {
+			if (prev == null) {
+				return target.getStatementPatterns(null, var, rdfsSubClassOfReasoner);
+			} else {
+				return target.getStatementPatterns(prev.var, var, rdfsSubClassOfReasoner);
+			}
+		}
+
+		public String getQueryFragment() {
+			if (prev == null) {
+				return target.getTargetQueryFragment(null, var, rdfsSubClassOfReasoner);
+			} else {
+				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
+			}
+		}
 	}
 
 }

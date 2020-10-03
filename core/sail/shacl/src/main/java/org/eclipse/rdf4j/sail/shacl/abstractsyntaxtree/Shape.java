@@ -363,13 +363,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
-		if (GlobalValidationExecutionLogging.loggingEnabled) {
-			allTargetsPlan.receiveLogger(new ValidationExecutionLogger());
-		}
-		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = allTargetsPlan.iterator()) {
-			return iterator.hasNext();
-		}
+		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
 
 	public static class Factory {
