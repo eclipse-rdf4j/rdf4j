@@ -69,6 +69,11 @@ public class ShaclProperties {
 	private final Set<IRI> targetObjectsOf = new HashSet<>();
 	private final List<Resource> targetShape = new ArrayList<>();
 
+	private final List<Resource> qualifiedValueShape = new ArrayList<>();
+	private Long qualifiedMinCount;
+	private Long qualifiedMaxCount;
+	private Boolean qualifiedValueShapesDisjoint;
+
 	private final List<Resource> target = new ArrayList<>();
 
 	private boolean deactivated = false;
@@ -255,12 +260,34 @@ public class ShaclProperties {
 				case "http://www.w3.org/ns/shacl#hasValue":
 					hasValue.add(object);
 					break;
+				case "http://www.w3.org/ns/shacl#qualifiedValueShape":
+					qualifiedValueShape.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#qualifiedValueShapesDisjoint":
+					if (qualifiedValueShapesDisjoint != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					qualifiedValueShapesDisjoint = ((Literal) object).booleanValue();
+					break;
+				case "http://www.w3.org/ns/shacl#qualifiedMinCount":
+					if (qualifiedMinCount != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					qualifiedMinCount = ((Literal) object).longValue();
+					break;
+				case "http://www.w3.org/ns/shacl#qualifiedMaxCount":
+					if (qualifiedMaxCount != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					qualifiedMaxCount = ((Literal) object).longValue();
+					break;
 				case "http://datashapes.org/dash#hasValueIn":
 					hasValueIn.add((Resource) object);
 					break;
 				case "http://rdf4j.org/shacl-extensions#targetShape":
 					targetShape.add((Resource) object);
 					break;
+
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
 						logger.warn("Unsupported SHACL feature detected {} in statement {}",
@@ -438,4 +465,19 @@ public class ShaclProperties {
 		return hasValueIn;
 	}
 
+	public List<Resource> getQualifiedValueShape() {
+		return qualifiedValueShape;
+	}
+
+	public Long getQualifiedMinCount() {
+		return qualifiedMinCount;
+	}
+
+	public Long getQualifiedMaxCount() {
+		return qualifiedMaxCount;
+	}
+
+	public Boolean getQualifiedValueShapesDisjoint() {
+		return qualifiedValueShapesDisjoint;
+	}
 }

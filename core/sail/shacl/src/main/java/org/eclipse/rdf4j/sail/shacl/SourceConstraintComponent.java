@@ -47,6 +47,10 @@ public enum SourceConstraintComponent {
 	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair,
 			true),
 
+	QualifiedMaxCountConstraintComponent(SHACL.QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,
+			false),
+	QualifiedMinCountConstraintComponent(SHACL.QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,
+			false),
 	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, true),
 	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, false);
 

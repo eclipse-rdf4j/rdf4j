@@ -46,6 +46,8 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Node
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.NotConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.OrConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.PatternConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.QualifiedMaxCountConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.QualifiedMinCountConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.UniqueLangConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.XoneConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
@@ -279,6 +281,22 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				.stream()
 				.map(LessThanOrEqualsConstraintComponent::new)
 				.forEach(constraintComponent::add);
+
+		if (properties.getQualifiedMaxCount() != null) {
+			properties.getQualifiedValueShape()
+					.stream()
+					.map(p -> new QualifiedMaxCountConstraintComponent(p, connection, cache, shaclSail,
+							properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMaxCount()))
+					.forEach(constraintComponent::add);
+		}
+
+		if (properties.getQualifiedMinCount() != null) {
+			properties.getQualifiedValueShape()
+					.stream()
+					.map(p -> new QualifiedMinCountConstraintComponent(p, connection, cache, shaclSail,
+							properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMinCount()))
+					.forEach(constraintComponent::add);
+		}
 
 		if (shaclSail.isDashDataShapes()) {
 			properties.getHasValueIn()
