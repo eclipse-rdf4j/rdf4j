@@ -282,20 +282,21 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				.map(LessThanOrEqualsConstraintComponent::new)
 				.forEach(constraintComponent::add);
 
-		if (properties.getQualifiedMaxCount() != null) {
-			properties.getQualifiedValueShape()
-					.stream()
-					.map(p -> new QualifiedMaxCountConstraintComponent(p, connection, cache, shaclSail,
-							properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMaxCount()))
-					.forEach(constraintComponent::add);
-		}
+		if (properties.getQualifiedValueShape() != null) {
 
-		if (properties.getQualifiedMinCount() != null) {
-			properties.getQualifiedValueShape()
-					.stream()
-					.map(p -> new QualifiedMinCountConstraintComponent(p, connection, cache, shaclSail,
-							properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMinCount()))
-					.forEach(constraintComponent::add);
+			if (properties.getQualifiedMaxCount() != null) {
+				QualifiedMaxCountConstraintComponent qualifiedMaxCountConstraintComponent = new QualifiedMaxCountConstraintComponent(
+						properties.getQualifiedValueShape(), connection, cache, shaclSail,
+						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMaxCount());
+				constraintComponent.add(qualifiedMaxCountConstraintComponent);
+			}
+
+			if (properties.getQualifiedMinCount() != null) {
+				QualifiedMinCountConstraintComponent qualifiedMinCountConstraintComponent = new QualifiedMinCountConstraintComponent(
+						properties.getQualifiedValueShape(), connection, cache, shaclSail,
+						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMinCount());
+				constraintComponent.add(qualifiedMinCountConstraintComponent);
+			}
 		}
 
 		if (shaclSail.isDashDataShapes()) {

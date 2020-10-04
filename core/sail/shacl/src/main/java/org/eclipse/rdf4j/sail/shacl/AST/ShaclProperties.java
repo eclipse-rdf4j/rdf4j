@@ -69,7 +69,7 @@ public class ShaclProperties {
 	private final Set<IRI> targetObjectsOf = new HashSet<>();
 	private final List<Resource> targetShape = new ArrayList<>();
 
-	private final List<Resource> qualifiedValueShape = new ArrayList<>();
+	private Resource qualifiedValueShape;
 	private Long qualifiedMinCount;
 	private Long qualifiedMaxCount;
 	private Boolean qualifiedValueShapesDisjoint;
@@ -261,7 +261,10 @@ public class ShaclProperties {
 					hasValue.add(object);
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedValueShape":
-					qualifiedValueShape.add((Resource) object);
+					if (qualifiedValueShape != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					qualifiedValueShape = ((Resource) object);
 					break;
 				case "http://www.w3.org/ns/shacl#qualifiedValueShapesDisjoint":
 					if (qualifiedValueShapesDisjoint != null) {
@@ -465,7 +468,7 @@ public class ShaclProperties {
 		return hasValueIn;
 	}
 
-	public List<Resource> getQualifiedValueShape() {
+	public Resource getQualifiedValueShape() {
 		return qualifiedValueShape;
 	}
 

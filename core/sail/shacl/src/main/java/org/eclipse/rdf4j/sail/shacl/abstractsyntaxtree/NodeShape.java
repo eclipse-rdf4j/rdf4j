@@ -69,7 +69,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		if (properties.isUniqueLang()) {
 			throw new IllegalStateException("NodeShapes do not support sh:uniqueLang in " + getId());
 		}
-		if (!properties.getQualifiedValueShape().isEmpty()) {
+		if (properties.getQualifiedValueShape() != null) {
 			throw new IllegalStateException("NodeShapes do not support sh:qualifiedValueShape in " + getId());
 		}
 		/*
