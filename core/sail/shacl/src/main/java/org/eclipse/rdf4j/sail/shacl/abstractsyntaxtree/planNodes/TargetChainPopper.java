@@ -24,12 +24,14 @@ import org.eclipse.rdf4j.sail.SailException;
 public class TargetChainPopper implements PlanNode {
 
 	private final PlanNode parent;
+	private final StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TargetChainPopper(PlanNode parent) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override

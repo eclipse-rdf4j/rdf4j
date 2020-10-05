@@ -17,8 +17,18 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCountFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.LeftOuterJoin;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PropertyShapeScopeWithValueFilter;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToPropertyShape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
 
 public class QualifiedMinCountConstraintComponent extends AbstractConstraintComponent {
@@ -62,7 +72,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		}
 
 		if (qualifiedMinCount != null) {
-			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, vf.createLiteral(qualifiedMinCount));
+			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, vf.createLiteral(qualifiedMinCount));
 		}
 
 		qualifiedValueShape.toModel(null, null, model, exported);
@@ -83,22 +93,111 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			boolean negatePlan, boolean negateChildren, Scope scope) {
+		assert scope == Scope.propertyShape;
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
+		assert scope == Scope.propertyShape;
+
+		PlanNode planNode = negated(connectionsGroup, logValidationPlans, overrideTargetNode, scope);
+
+		planNode = new DebugPlanNode(planNode, p -> {
+			assert p != null;
+		});
+
+		PlanNode target = getTargetChain()
+				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getPlanNode(connectionsGroup, scope, false);
+		if (overrideTargetNode != null) {
+			target = overrideTargetNode.getPlanNode();
+		}
+
+		planNode = new LeftOuterJoin(target, planNode);
+		planNode = new DebugPlanNode(planNode, p -> {
+			assert p != null;
+		});
+
+		return new GroupByCountFilter(planNode, count -> count < qualifiedMinCount);
+
+	}
+
+	public PlanNode negated(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		// if (scope == Scope.nodeShape) {
 
-		throw new ShaclUnsupportedException();
+		PlanNodeProvider planNodeProvider;
+		if (overrideTargetNode != null) {
+			planNodeProvider = overrideTargetNode;
+		} else {
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, scope);
+		}
+
+		PlanNode planNode = qualifiedValueShape.generateTransactionalValidationPlan(
+				connectionsGroup,
+				logValidationPlans,
+				planNodeProvider,
+				scope
+		);
+
+		PlanNode invalid = new Unique(planNode);
+
+		PlanNode allTargetsPlan;
+		if (overrideTargetNode != null) {
+			if (scope == Scope.propertyShape) {
+				allTargetsPlan = getTargetChain()
+						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
+								EffectiveTarget.Extend.right, false);
+				allTargetsPlan = new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			} else {
+				allTargetsPlan = getTargetChain()
+						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+						.extend(planNodeProvider.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+								false);
+			}
+
+		} else {
+			allTargetsPlan = planNodeProvider.getPlanNode();
+		}
+
+		allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> {
+			assert p != null;
+		});
+		invalid = new NotValuesIn(allTargetsPlan, invalid);
+
+		invalid = new DebugPlanNode(invalid, p -> {
+			assert p != null;
+		});
+
+		return invalid;
 
 	}
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
-		throw new ShaclUnsupportedException();
+		assert scope == Scope.propertyShape;
+		PlanNode allTargets;
+
+		PlanNode allTargetsPlan = getTargetChain()
+				.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+
+		allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
+
+		PlanNode notTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
+
+		notTargets = new PropertyShapeScopeWithValueFilter(notTargets).getTrueNode(UnBufferedPlanNode.class);
+		allTargets = new PropertyShapeScopeWithValueFilter(allTargets).getTrueNode(UnBufferedPlanNode.class);
+
+		notTargets = new DebugPlanNode(notTargets, p -> {
+
+			assert p != null;
+		});
+		return new Unique(new UnionNode(allTargets, notTargets));
 
 	}
 

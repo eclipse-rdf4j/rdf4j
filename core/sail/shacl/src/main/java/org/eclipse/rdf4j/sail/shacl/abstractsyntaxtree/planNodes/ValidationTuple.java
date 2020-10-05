@@ -239,8 +239,19 @@ public class ValidationTuple {
 	}
 
 	public void pop() {
-		assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! " + toString();
 
-		chain.removeLast();
+		if (getScope() == ConstraintComponent.Scope.propertyShape) {
+			if (hasValue()) {
+				assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
+						+ toString();
+				chain.removeLast();
+			} else {
+				propertyShapeScopeWithValue = true;
+			}
+		} else {
+			assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! " + toString();
+			chain.removeLast();
+		}
+
 	}
 }

@@ -215,8 +215,8 @@ abstract public class AbstractShaclTest {
 //		"test-cases/hasValue/targetShapeAndOr2",
 //		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or",
-		"test-cases/class/simpleNested"
-
+		"test-cases/class/simpleNested",
+		"test-cases/qualifiedShape/simple"
 	)
 		.distinct()
 		.sorted()
