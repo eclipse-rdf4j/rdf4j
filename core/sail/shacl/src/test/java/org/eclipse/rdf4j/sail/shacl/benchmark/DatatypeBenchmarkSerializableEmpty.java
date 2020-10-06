@@ -81,9 +81,6 @@ public class DatatypeBenchmarkSerializableEmpty {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
-//		((ShaclSail) repository.getSail()).setIgnoreNoShapesLoadedException(true);
-//		((ShaclSail) repository.getSail()).disableValidation();
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SERIALIZABLE);
 			connection.commit();

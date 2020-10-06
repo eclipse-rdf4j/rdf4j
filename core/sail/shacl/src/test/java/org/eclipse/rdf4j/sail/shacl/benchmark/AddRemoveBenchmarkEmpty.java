@@ -85,9 +85,6 @@ public class AddRemoveBenchmarkEmpty {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
 
-//		((ShaclSail) repository.getSail()).setIgnoreNoShapesLoadedException(true);
-//		((ShaclSail) repository.getSail()).disableValidation();
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin(IsolationLevels.SNAPSHOT);
