@@ -14,3 +14,5 @@ ex:PersonShape
 		sh:class ex:Person ;
 	] .
 
+ex:CustomPerson rdfs:subClassOf ex:Person.
+ex:CustomCustomPerson rdfs:subClassOf ex:CustomPerson.
