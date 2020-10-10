@@ -26,6 +26,8 @@ class Vocabularies {
 	static Namespace createNamespace(String prefix, String namespace) {
 		return new AbstractNamespace() {
 
+			private static final long serialVersionUID = 3913851292983866831L;
+
 			@Override
 			public String getPrefix() {
 				return prefix;
@@ -41,6 +43,17 @@ class Vocabularies {
 
 	static IRI createIRI(final String namespace, final String localName) {
 		return new AbstractIRI() {
+
+			private static final long serialVersionUID = 1692436252019169159L;
+
+			// ;( removing .toString() causes a 2x penalty in .equals() performance on Oracle JDK 1.8/11…
+
+			private final String stringValue = (namespace + localName).toString();
+
+			@Override
+			public String stringValue() {
+				return stringValue;
+			}
 
 			@Override
 			public String getNamespace() {
