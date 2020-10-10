@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the <a href="http://www.w3.org/TR/rdf-schema/">RDF Vocabulary Description Language 1.0: RDF Schema</a>
@@ -30,7 +27,7 @@ public class RDFS {
 	/**
 	 * An immutable {@link Namespace} constant that represents the RDFS namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://www.w3.org/2000/01/rdf-schema#Resource */
 	public final static IRI RESOURCE;
@@ -78,21 +75,20 @@ public class RDFS {
 	public final static IRI CONTAINERMEMBERSHIPPROPERTY;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		RESOURCE = factory.createIRI(RDFS.NAMESPACE, "Resource");
-		LITERAL = factory.createIRI(RDFS.NAMESPACE, "Literal");
-		CLASS = factory.createIRI(RDFS.NAMESPACE, "Class");
-		SUBCLASSOF = factory.createIRI(RDFS.NAMESPACE, "subClassOf");
-		SUBPROPERTYOF = factory.createIRI(RDFS.NAMESPACE, "subPropertyOf");
-		DOMAIN = factory.createIRI(RDFS.NAMESPACE, "domain");
-		RANGE = factory.createIRI(RDFS.NAMESPACE, "range");
-		COMMENT = factory.createIRI(RDFS.NAMESPACE, "comment");
-		LABEL = factory.createIRI(RDFS.NAMESPACE, "label");
-		DATATYPE = factory.createIRI(RDFS.NAMESPACE, "Datatype");
-		CONTAINER = factory.createIRI(RDFS.NAMESPACE, "Container");
-		MEMBER = factory.createIRI(RDFS.NAMESPACE, "member");
-		ISDEFINEDBY = factory.createIRI(RDFS.NAMESPACE, "isDefinedBy");
-		SEEALSO = factory.createIRI(RDFS.NAMESPACE, "seeAlso");
-		CONTAINERMEMBERSHIPPROPERTY = factory.createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
+		RESOURCE = Vocabularies.createIRI(RDFS.NAMESPACE, "Resource");
+		LITERAL = Vocabularies.createIRI(RDFS.NAMESPACE, "Literal");
+		CLASS = Vocabularies.createIRI(RDFS.NAMESPACE, "Class");
+		SUBCLASSOF = Vocabularies.createIRI(RDFS.NAMESPACE, "subClassOf");
+		SUBPROPERTYOF = Vocabularies.createIRI(RDFS.NAMESPACE, "subPropertyOf");
+		DOMAIN = Vocabularies.createIRI(RDFS.NAMESPACE, "domain");
+		RANGE = Vocabularies.createIRI(RDFS.NAMESPACE, "range");
+		COMMENT = Vocabularies.createIRI(RDFS.NAMESPACE, "comment");
+		LABEL = Vocabularies.createIRI(RDFS.NAMESPACE, "label");
+		DATATYPE = Vocabularies.createIRI(RDFS.NAMESPACE, "Datatype");
+		CONTAINER = Vocabularies.createIRI(RDFS.NAMESPACE, "Container");
+		MEMBER = Vocabularies.createIRI(RDFS.NAMESPACE, "member");
+		ISDEFINEDBY = Vocabularies.createIRI(RDFS.NAMESPACE, "isDefinedBy");
+		SEEALSO = Vocabularies.createIRI(RDFS.NAMESPACE, "seeAlso");
+		CONTAINERMEMBERSHIPPROPERTY = Vocabularies.createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
 	}
 }

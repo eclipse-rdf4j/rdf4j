@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://jena.hpl.hp.com/ARQ/list#.
@@ -33,9 +31,8 @@ public final class LIST {
 	public static final IRI LENGTH;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		MEMBER = factory.createIRI(NAMESPACE, "member");
-		INDEX = factory.createIRI(NAMESPACE, "index");
-		LENGTH = factory.createIRI(NAMESPACE, "length");
+		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
+		INDEX = Vocabularies.createIRI(NAMESPACE, "index");
+		LENGTH = Vocabularies.createIRI(NAMESPACE, "length");
 	}
 }

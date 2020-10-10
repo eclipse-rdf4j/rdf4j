@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the W3C Vocabulary of Interlinked Datasets.
@@ -35,7 +32,7 @@ public class VOID {
 	/**
 	 * An immutable {@link Namespace} constant that represents the VoID namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** void:Dataset */
@@ -133,39 +130,38 @@ public class VOID {
 	public static final IRI VOCABULARY;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
-		DATASET = factory.createIRI(NAMESPACE, "Dataset");
-		DATASET_DESCRIPTION = factory.createIRI(NAMESPACE, "DatasetDescription");
-		LINKSET = factory.createIRI(NAMESPACE, "Linkset");
-		TECHNICAL_FEATURE = factory.createIRI(NAMESPACE, "TechnicalFeature");
+		DATASET = Vocabularies.createIRI(NAMESPACE, "Dataset");
+		DATASET_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "DatasetDescription");
+		LINKSET = Vocabularies.createIRI(NAMESPACE, "Linkset");
+		TECHNICAL_FEATURE = Vocabularies.createIRI(NAMESPACE, "TechnicalFeature");
 
-		CLASS = factory.createIRI(NAMESPACE, "class");
-		CLASS_PARTITION = factory.createIRI(NAMESPACE, "classPartition");
-		CLASSES = factory.createIRI(NAMESPACE, "classes");
-		DATA_DUMP = factory.createIRI(NAMESPACE, "dataDump");
-		DISTINCT_OBJECTS = factory.createIRI(NAMESPACE, "distinctObjects");
-		DISTINCT_SUBJECTS = factory.createIRI(NAMESPACE, "distinctSubjects");
-		DOCUMENTS = factory.createIRI(NAMESPACE, "documents");
-		ENTITIES = factory.createIRI(NAMESPACE, "entities");
-		EXAMPLE_RESOURCE = factory.createIRI(NAMESPACE, "exampleResource");
-		FEATURE = factory.createIRI(NAMESPACE, "feature");
-		IN_DATASET = factory.createIRI(NAMESPACE, "inDataset");
-		LINK_PREDICATE = factory.createIRI(NAMESPACE, "linkPredicate");
-		OBJECTS_TARGET = factory.createIRI(NAMESPACE, "objectsTarget");
-		OPEN_SEARCH_DESCRIPTION = factory.createIRI(NAMESPACE, "openSearchDescription");
-		PROPERTIES = factory.createIRI(NAMESPACE, "properties");
-		PROPERTY = factory.createIRI(NAMESPACE, "property");
-		PROPERTY_PARTITION = factory.createIRI(NAMESPACE, "propertyPartition");
-		ROOT_RESOURCE = factory.createIRI(NAMESPACE, "rootResource");
-		SPARQL_ENDPOINT = factory.createIRI(NAMESPACE, "sparqlEndpoint");
-		SUBJECTS_TARGET = factory.createIRI(NAMESPACE, "subjectsTarget");
-		SUBSET = factory.createIRI(NAMESPACE, "subset");
-		TARGET = factory.createIRI(NAMESPACE, "target");
-		TRIPLES = factory.createIRI(NAMESPACE, "triples");
-		URI_LOOKUP_ENDPOINT = factory.createIRI(NAMESPACE, "uriLookupEndpoint");
-		URI_REGEX_PATTERN = factory.createIRI(NAMESPACE, "uriRegexPattern");
-		URI_SPACE = factory.createIRI(NAMESPACE, "uriSpace");
-		VOCABULARY = factory.createIRI(NAMESPACE, "vocabulary");
+		CLASS = Vocabularies.createIRI(NAMESPACE, "class");
+		CLASS_PARTITION = Vocabularies.createIRI(NAMESPACE, "classPartition");
+		CLASSES = Vocabularies.createIRI(NAMESPACE, "classes");
+		DATA_DUMP = Vocabularies.createIRI(NAMESPACE, "dataDump");
+		DISTINCT_OBJECTS = Vocabularies.createIRI(NAMESPACE, "distinctObjects");
+		DISTINCT_SUBJECTS = Vocabularies.createIRI(NAMESPACE, "distinctSubjects");
+		DOCUMENTS = Vocabularies.createIRI(NAMESPACE, "documents");
+		ENTITIES = Vocabularies.createIRI(NAMESPACE, "entities");
+		EXAMPLE_RESOURCE = Vocabularies.createIRI(NAMESPACE, "exampleResource");
+		FEATURE = Vocabularies.createIRI(NAMESPACE, "feature");
+		IN_DATASET = Vocabularies.createIRI(NAMESPACE, "inDataset");
+		LINK_PREDICATE = Vocabularies.createIRI(NAMESPACE, "linkPredicate");
+		OBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, "objectsTarget");
+		OPEN_SEARCH_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "openSearchDescription");
+		PROPERTIES = Vocabularies.createIRI(NAMESPACE, "properties");
+		PROPERTY = Vocabularies.createIRI(NAMESPACE, "property");
+		PROPERTY_PARTITION = Vocabularies.createIRI(NAMESPACE, "propertyPartition");
+		ROOT_RESOURCE = Vocabularies.createIRI(NAMESPACE, "rootResource");
+		SPARQL_ENDPOINT = Vocabularies.createIRI(NAMESPACE, "sparqlEndpoint");
+		SUBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, "subjectsTarget");
+		SUBSET = Vocabularies.createIRI(NAMESPACE, "subset");
+		TARGET = Vocabularies.createIRI(NAMESPACE, "target");
+		TRIPLES = Vocabularies.createIRI(NAMESPACE, "triples");
+		URI_LOOKUP_ENDPOINT = Vocabularies.createIRI(NAMESPACE, "uriLookupEndpoint");
+		URI_REGEX_PATTERN = Vocabularies.createIRI(NAMESPACE, "uriRegexPattern");
+		URI_SPACE = Vocabularies.createIRI(NAMESPACE, "uriSpace");
+		VOCABULARY = Vocabularies.createIRI(NAMESPACE, "vocabulary");
 	}
 }

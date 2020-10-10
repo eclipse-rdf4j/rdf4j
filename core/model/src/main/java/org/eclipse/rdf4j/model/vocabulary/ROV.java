@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the W3C Registered Organization Vocabulary.
@@ -35,7 +32,7 @@ public class ROV {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Registered Organization namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Class
 	/**
@@ -75,15 +72,14 @@ public class ROV {
 	public static final IRI REGISTRATION;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
-		REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "RegisteredOrganization");
+		REGISTERED_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "RegisteredOrganization");
 
-		HAS_REGISTERED_ORGANIZATION = factory.createIRI(NAMESPACE, "hasRegisteredOrganization");
-		LEGAL_NAME = factory.createIRI(NAMESPACE, "legalName");
-		ORG_ACTIVITY = factory.createIRI(NAMESPACE, "orgActivity");
-		ORG_STATUS = factory.createIRI(NAMESPACE, "orgStatus");
-		ORG_TYPE = factory.createIRI(NAMESPACE, "orgType");
-		REGISTRATION = factory.createIRI(NAMESPACE, "registration");
+		HAS_REGISTERED_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "hasRegisteredOrganization");
+		LEGAL_NAME = Vocabularies.createIRI(NAMESPACE, "legalName");
+		ORG_ACTIVITY = Vocabularies.createIRI(NAMESPACE, "orgActivity");
+		ORG_STATUS = Vocabularies.createIRI(NAMESPACE, "orgStatus");
+		ORG_TYPE = Vocabularies.createIRI(NAMESPACE, "orgType");
+		REGISTRATION = Vocabularies.createIRI(NAMESPACE, "registration");
 	}
 }

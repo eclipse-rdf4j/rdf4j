@@ -10,9 +10,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 public class DASH {
 
@@ -23,9 +20,7 @@ public class DASH {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
-
-	static private final ValueFactory vf = SimpleValueFactory.getInstance();
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	public static final IRI AllObjectsTarget = createIRI("AllObjectsTarget");
 	public static final IRI AllSubjectsTarget = createIRI("AllSubjectsTarget");
@@ -33,7 +28,7 @@ public class DASH {
 	public static final IRI HasValueInConstraintComponent = createIRI("HasValueInConstraintComponent");
 
 	private static IRI createIRI(String allObjectsTarget) {
-		return vf.createIRI(NAMESPACE, allObjectsTarget);
+		return Vocabularies.createIRI(NAMESPACE, allObjectsTarget);
 	}
 
 }

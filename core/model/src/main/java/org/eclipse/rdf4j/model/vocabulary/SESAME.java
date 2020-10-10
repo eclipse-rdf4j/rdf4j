@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Defines constants for the Sesame schema namespace.
@@ -31,7 +28,7 @@ public class SESAME {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Sesame Schema namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** <tt>http://www.openrdf.org/schema/sesame#directSubClassOf</tt> */
 	public final static IRI DIRECTSUBCLASSOF;
@@ -56,13 +53,12 @@ public class SESAME {
 	public final static IRI WILDCARD;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		DIRECTSUBCLASSOF = factory.createIRI(SESAME.NAMESPACE, "directSubClassOf");
-		DIRECTSUBPROPERTYOF = factory.createIRI(SESAME.NAMESPACE, "directSubPropertyOf");
-		DIRECTTYPE = factory.createIRI(SESAME.NAMESPACE, "directType");
+		DIRECTSUBCLASSOF = Vocabularies.createIRI(SESAME.NAMESPACE, "directSubClassOf");
+		DIRECTSUBPROPERTYOF = Vocabularies.createIRI(SESAME.NAMESPACE, "directSubPropertyOf");
+		DIRECTTYPE = Vocabularies.createIRI(SESAME.NAMESPACE, "directType");
 
-		NIL = factory.createIRI(NAMESPACE, "nil");
+		NIL = Vocabularies.createIRI(NAMESPACE, "nil");
 
-		WILDCARD = factory.createIRI(NAMESPACE, "wildcard");
+		WILDCARD = Vocabularies.createIRI(NAMESPACE, "wildcard");
 	}
 }

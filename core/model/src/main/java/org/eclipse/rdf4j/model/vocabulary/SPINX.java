@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://spinrdf.org/spinx#.
@@ -31,8 +29,7 @@ public final class SPINX {
 	public static final IRI JAVA_SCRIPT_FILE_PROPERTY;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		JAVA_SCRIPT_CODE_PROPERTY = factory.createIRI(NAMESPACE, "javaScriptCode");
-		JAVA_SCRIPT_FILE_PROPERTY = factory.createIRI(NAMESPACE, "javaScriptFile");
+		JAVA_SCRIPT_CODE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "javaScriptCode");
+		JAVA_SCRIPT_FILE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "javaScriptFile");
 	}
 }

@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * @version 1.4.0
@@ -364,74 +362,73 @@ public class SPIN {
 	public static final IRI SELECT_PROPERTY;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		FUNCTION_CLASS = factory.createIRI(NAMESPACE, "Function");
-		MODULE_CLASS = factory.createIRI(NAMESPACE, "Module");
-		BODY_PROPERTY = factory.createIRI(NAMESPACE, "body");
-		TABLE_DATA_PROVIDER_CLASS = factory.createIRI(NAMESPACE, "TableDataProvider");
-		CONSTRUCT_TEMPLATE_CLASS = factory.createIRI(NAMESPACE, "ConstructTemplate");
-		TEMPLATE_CLASS = factory.createIRI(NAMESPACE, "Template");
-		RULE_CLASS = factory.createIRI(NAMESPACE, "Rule");
-		ASK_TEMPLATE_CLASS = factory.createIRI(NAMESPACE, "AskTemplate");
-		UPDATE_TEMPLATE_CLASS = factory.createIRI(NAMESPACE, "UpdateTemplate");
-		RULE_PROPERTY_CLASS = factory.createIRI(NAMESPACE, "RuleProperty");
-		CONSTRAINT_VIOLATION_CLASS = factory.createIRI(NAMESPACE, "ConstraintViolation");
-		MODULES_CLASS = factory.createIRI(NAMESPACE, "Modules");
-		SELECT_TEMPLATE_CLASS = factory.createIRI(NAMESPACE, "SelectTemplate");
-		COLUMN_CLASS = factory.createIRI(NAMESPACE, "Column");
-		LIBRARY_ONTOLOGY_CLASS = factory.createIRI(NAMESPACE, "LibraryOntology");
-		MAGIC_PROPERTY_CLASS = factory.createIRI(NAMESPACE, "MagicProperty");
-		UPDATE_PROPERTY = factory.createIRI(NAMESPACE, "update");
-		COMMAND_PROPERTY = factory.createIRI(NAMESPACE, "command");
-		RETURN_TYPE_PROPERTY = factory.createIRI(NAMESPACE, "returnType");
-		SYSTEM_PROPERTY_PROPERTY = factory.createIRI(NAMESPACE, "systemProperty");
-		COLUMN_PROPERTY = factory.createIRI(NAMESPACE, "column");
-		SYMBOL_PROPERTY = factory.createIRI(NAMESPACE, "symbol");
-		VIOLATION_ROOT_PROPERTY = factory.createIRI(NAMESPACE, "violationRoot");
-		COLUMN_TYPE_PROPERTY = factory.createIRI(NAMESPACE, "columnType");
-		NEXT_RULE_PROPERTY_PROPERTY = factory.createIRI(NAMESPACE, "nextRuleProperty");
-		PRIVATE_PROPERTY = factory.createIRI(NAMESPACE, "private");
-		LABEL_TEMPLATE_PROPERTY = factory.createIRI(NAMESPACE, "labelTemplate");
-		VIOLATION_PATH_PROPERTY = factory.createIRI(NAMESPACE, "violationPath");
-		CONSTRUCTOR_PROPERTY = factory.createIRI(NAMESPACE, "constructor");
-		ABSTRACT_PROPERTY = factory.createIRI(NAMESPACE, "abstract");
-		CONSTRAINT_PROPERTY = factory.createIRI(NAMESPACE, "constraint");
-		QUERY_PROPERTY = factory.createIRI(NAMESPACE, "query");
-		FIX_PROPERTY = factory.createIRI(NAMESPACE, "fix");
-		COLUMN_WIDTH_PROPERTY = factory.createIRI(NAMESPACE, "columnWidth");
-		VIOLATION_SOURCE_PROPERTY = factory.createIRI(NAMESPACE, "violationSource");
-		COLUMN_INDEX_PROPERTY = factory.createIRI(NAMESPACE, "columnIndex");
-		THIS_UNBOUND_PROPERTY = factory.createIRI(NAMESPACE, "thisUnbound");
-		RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY = factory.createIRI(NAMESPACE, "rulePropertyMaxIterationCount");
-		IMPORTS_PROPERTY = factory.createIRI(NAMESPACE, "imports");
-		CONSTRUCT_TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "ConstructTemplates");
-		TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "Templates");
-		EVAL_CLASS = factory.createIRI(NAMESPACE, "eval");
-		FUNCTIONS_CLASS = factory.createIRI(NAMESPACE, "Functions");
-		ASK_TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "AskTemplates");
-		SELECT_TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "SelectTemplates");
-		MAGIC_PROPERTIES_CLASS = factory.createIRI(NAMESPACE, "MagicProperties");
-		THIS_CONTEXT_INSTANCE = factory.createIRI(NAMESPACE, "_this");
-		UPDATE_TEMPLATES_CLASS = factory.createIRI(NAMESPACE, "UpdateTemplates");
-		RULE_PROPERTY = factory.createIRI(NAMESPACE, "rule");
+		FUNCTION_CLASS = Vocabularies.createIRI(NAMESPACE, "Function");
+		MODULE_CLASS = Vocabularies.createIRI(NAMESPACE, "Module");
+		BODY_PROPERTY = Vocabularies.createIRI(NAMESPACE, "body");
+		TABLE_DATA_PROVIDER_CLASS = Vocabularies.createIRI(NAMESPACE, "TableDataProvider");
+		CONSTRUCT_TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, "ConstructTemplate");
+		TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, "Template");
+		RULE_CLASS = Vocabularies.createIRI(NAMESPACE, "Rule");
+		ASK_TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, "AskTemplate");
+		UPDATE_TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, "UpdateTemplate");
+		RULE_PROPERTY_CLASS = Vocabularies.createIRI(NAMESPACE, "RuleProperty");
+		CONSTRAINT_VIOLATION_CLASS = Vocabularies.createIRI(NAMESPACE, "ConstraintViolation");
+		MODULES_CLASS = Vocabularies.createIRI(NAMESPACE, "Modules");
+		SELECT_TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, "SelectTemplate");
+		COLUMN_CLASS = Vocabularies.createIRI(NAMESPACE, "Column");
+		LIBRARY_ONTOLOGY_CLASS = Vocabularies.createIRI(NAMESPACE, "LibraryOntology");
+		MAGIC_PROPERTY_CLASS = Vocabularies.createIRI(NAMESPACE, "MagicProperty");
+		UPDATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "update");
+		COMMAND_PROPERTY = Vocabularies.createIRI(NAMESPACE, "command");
+		RETURN_TYPE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "returnType");
+		SYSTEM_PROPERTY_PROPERTY = Vocabularies.createIRI(NAMESPACE, "systemProperty");
+		COLUMN_PROPERTY = Vocabularies.createIRI(NAMESPACE, "column");
+		SYMBOL_PROPERTY = Vocabularies.createIRI(NAMESPACE, "symbol");
+		VIOLATION_ROOT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "violationRoot");
+		COLUMN_TYPE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "columnType");
+		NEXT_RULE_PROPERTY_PROPERTY = Vocabularies.createIRI(NAMESPACE, "nextRuleProperty");
+		PRIVATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "private");
+		LABEL_TEMPLATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "labelTemplate");
+		VIOLATION_PATH_PROPERTY = Vocabularies.createIRI(NAMESPACE, "violationPath");
+		CONSTRUCTOR_PROPERTY = Vocabularies.createIRI(NAMESPACE, "constructor");
+		ABSTRACT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "abstract");
+		CONSTRAINT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "constraint");
+		QUERY_PROPERTY = Vocabularies.createIRI(NAMESPACE, "query");
+		FIX_PROPERTY = Vocabularies.createIRI(NAMESPACE, "fix");
+		COLUMN_WIDTH_PROPERTY = Vocabularies.createIRI(NAMESPACE, "columnWidth");
+		VIOLATION_SOURCE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "violationSource");
+		COLUMN_INDEX_PROPERTY = Vocabularies.createIRI(NAMESPACE, "columnIndex");
+		THIS_UNBOUND_PROPERTY = Vocabularies.createIRI(NAMESPACE, "thisUnbound");
+		RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "rulePropertyMaxIterationCount");
+		IMPORTS_PROPERTY = Vocabularies.createIRI(NAMESPACE, "imports");
+		CONSTRUCT_TEMPLATES_CLASS = Vocabularies.createIRI(NAMESPACE, "ConstructTemplates");
+		TEMPLATES_CLASS = Vocabularies.createIRI(NAMESPACE, "Templates");
+		EVAL_CLASS = Vocabularies.createIRI(NAMESPACE, "eval");
+		FUNCTIONS_CLASS = Vocabularies.createIRI(NAMESPACE, "Functions");
+		ASK_TEMPLATES_CLASS = Vocabularies.createIRI(NAMESPACE, "AskTemplates");
+		SELECT_TEMPLATES_CLASS = Vocabularies.createIRI(NAMESPACE, "SelectTemplates");
+		MAGIC_PROPERTIES_CLASS = Vocabularies.createIRI(NAMESPACE, "MagicProperties");
+		THIS_CONTEXT_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_this");
+		UPDATE_TEMPLATES_CLASS = Vocabularies.createIRI(NAMESPACE, "UpdateTemplates");
+		RULE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "rule");
 
-		VIOLATION_VALUE_PROPERTY = factory.createIRI(NAMESPACE, "violationValue");
-		VIOLATION_LEVEL_PROPERTY = factory.createIRI(NAMESPACE, "violationLevel");
+		VIOLATION_VALUE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "violationValue");
+		VIOLATION_LEVEL_PROPERTY = Vocabularies.createIRI(NAMESPACE, "violationLevel");
 
-		INFO_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Info");
-		WARNING_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Warning");
-		ERROR_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Error");
-		FATAL_VIOLATION_LEVEL = factory.createIRI(NAMESPACE, "Fatal");
+		INFO_VIOLATION_LEVEL = Vocabularies.createIRI(NAMESPACE, "Info");
+		WARNING_VIOLATION_LEVEL = Vocabularies.createIRI(NAMESPACE, "Warning");
+		ERROR_VIOLATION_LEVEL = Vocabularies.createIRI(NAMESPACE, "Error");
+		FATAL_VIOLATION_LEVEL = Vocabularies.createIRI(NAMESPACE, "Fatal");
 
-		ARG1_INSTANCE = factory.createIRI(NAMESPACE, "_arg1");
-		ARG2_INSTANCE = factory.createIRI(NAMESPACE, "_arg2");
-		ARG3_INSTANCE = factory.createIRI(NAMESPACE, "_arg3");
-		ARG4_INSTANCE = factory.createIRI(NAMESPACE, "_arg4");
-		ARG5_INSTANCE = factory.createIRI(NAMESPACE, "_arg5");
+		ARG1_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_arg1");
+		ARG2_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_arg2");
+		ARG3_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_arg3");
+		ARG4_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_arg4");
+		ARG5_INSTANCE = Vocabularies.createIRI(NAMESPACE, "_arg5");
 
-		EVAL_FUNCTION = factory.createIRI(NAMESPACE, "eval");
-		ASK_FUNCTION = factory.createIRI(NAMESPACE, "ask");
-		CONSTRUCT_PROPERTY = factory.createIRI(NAMESPACE, "construct");
-		SELECT_PROPERTY = factory.createIRI(NAMESPACE, "select");
+		EVAL_FUNCTION = Vocabularies.createIRI(NAMESPACE, "eval");
+		ASK_FUNCTION = Vocabularies.createIRI(NAMESPACE, "ask");
+		CONSTRUCT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "construct");
+		SELECT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "select");
 	}
 }

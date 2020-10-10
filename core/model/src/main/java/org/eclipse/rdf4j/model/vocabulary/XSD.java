@@ -15,8 +15,6 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the standard <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema 1.1 datatypes</a>.
@@ -36,7 +34,7 @@ public class XSD {
 	/**
 	 * An immutable {@link Namespace} constant that represents the XML Schema namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/*
 	 * Primitive datatypes
@@ -188,7 +186,7 @@ public class XSD {
 	public static final IRI YEARMONTHDURATION = create("yearMonthDuration");
 
 	private static IRI create(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(XSD.NAMESPACE, localName);
+		return Vocabularies.createIRI(XSD.NAMESPACE, localName);
 	}
 
 	public enum Datatype {
@@ -333,8 +331,9 @@ public class XSD {
 		 * xsd:gMonthDay, xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates
 		 * and/or times.
 		 *
-		 * @see XMLGregorianCalendar
 		 * @return true if it is a calendar type
+		 *
+		 * @see XMLGregorianCalendar
 		 */
 		public boolean isCalendarDatatype() {
 			return calendar;
@@ -344,8 +343,9 @@ public class XSD {
 		 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
 		 * These are the datatypes that represents durations.
 		 *
-		 * @see Duration
 		 * @return true if it is a duration type
+		 *
+		 * @see Duration
 		 */
 		public boolean isDurationDatatype() {
 			return duration;

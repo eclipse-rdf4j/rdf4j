@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for RDF primitives and for the RDF namespace.
@@ -31,7 +28,7 @@ public class RDF {
 	/**
 	 * An immutable {@link Namespace} constant that represents the RDF namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#type */
 	public final static IRI TYPE;
@@ -88,24 +85,23 @@ public class RDF {
 	public static final IRI HTML;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		TYPE = factory.createIRI(RDF.NAMESPACE, "type");
-		PROPERTY = factory.createIRI(RDF.NAMESPACE, "Property");
-		XMLLITERAL = factory.createIRI(RDF.NAMESPACE, "XMLLiteral");
-		SUBJECT = factory.createIRI(RDF.NAMESPACE, "subject");
-		PREDICATE = factory.createIRI(RDF.NAMESPACE, "predicate");
-		OBJECT = factory.createIRI(RDF.NAMESPACE, "object");
-		STATEMENT = factory.createIRI(RDF.NAMESPACE, "Statement");
-		BAG = factory.createIRI(RDF.NAMESPACE, "Bag");
-		ALT = factory.createIRI(RDF.NAMESPACE, "Alt");
-		SEQ = factory.createIRI(RDF.NAMESPACE, "Seq");
-		VALUE = factory.createIRI(RDF.NAMESPACE, "value");
-		LI = factory.createIRI(RDF.NAMESPACE, "li");
-		LIST = factory.createIRI(RDF.NAMESPACE, "List");
-		FIRST = factory.createIRI(RDF.NAMESPACE, "first");
-		REST = factory.createIRI(RDF.NAMESPACE, "rest");
-		NIL = factory.createIRI(RDF.NAMESPACE, "nil");
-		LANGSTRING = factory.createIRI(RDF.NAMESPACE, "langString");
-		HTML = factory.createIRI(RDF.NAMESPACE, "HTML");
+		TYPE = Vocabularies.createIRI(RDF.NAMESPACE, "type");
+		PROPERTY = Vocabularies.createIRI(RDF.NAMESPACE, "Property");
+		XMLLITERAL = Vocabularies.createIRI(RDF.NAMESPACE, "XMLLiteral");
+		SUBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "subject");
+		PREDICATE = Vocabularies.createIRI(RDF.NAMESPACE, "predicate");
+		OBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "object");
+		STATEMENT = Vocabularies.createIRI(RDF.NAMESPACE, "Statement");
+		BAG = Vocabularies.createIRI(RDF.NAMESPACE, "Bag");
+		ALT = Vocabularies.createIRI(RDF.NAMESPACE, "Alt");
+		SEQ = Vocabularies.createIRI(RDF.NAMESPACE, "Seq");
+		VALUE = Vocabularies.createIRI(RDF.NAMESPACE, "value");
+		LI = Vocabularies.createIRI(RDF.NAMESPACE, "li");
+		LIST = Vocabularies.createIRI(RDF.NAMESPACE, "List");
+		FIRST = Vocabularies.createIRI(RDF.NAMESPACE, "first");
+		REST = Vocabularies.createIRI(RDF.NAMESPACE, "rest");
+		NIL = Vocabularies.createIRI(RDF.NAMESPACE, "nil");
+		LANGSTRING = Vocabularies.createIRI(RDF.NAMESPACE, "langString");
+		HTML = Vocabularies.createIRI(RDF.NAMESPACE, "HTML");
 	}
 }

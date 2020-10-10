@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for FOAF primitives and for the FOAF namespace.<br>
@@ -33,7 +30,7 @@ public class FOAF {
 	/**
 	 * An immutable {@link Namespace} constant that represents the FOAF namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// ----- Classes ------
 	public final static IRI AGENT;
@@ -192,85 +189,84 @@ public class FOAF {
 	public final static IRI YAHOO_CHAT_ID;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
 		// ----- Classes ------
-		AGENT = factory.createIRI(FOAF.NAMESPACE, "Agent");
-		DOCUMENT = factory.createIRI(FOAF.NAMESPACE, "Document");
-		GROUP = factory.createIRI(FOAF.NAMESPACE, "Group");
-		IMAGE = factory.createIRI(FOAF.NAMESPACE, "Image");
-		LABEL_PROPERTY = factory.createIRI(FOAF.NAMESPACE, "LabelProperty");
-		ONLINE_ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "OnlineAccount");
-		ONLINE_CHAT_ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "OnlineChatAccount");
-		ONLINE_ECOMMERCE_ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "OnlineEcommerceAccount");
-		ONLINE_GAMING_ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "OnlineGamingAccount");
-		ORGANIZATION = factory.createIRI(FOAF.NAMESPACE, "Organization");
-		PERSON = factory.createIRI(FOAF.NAMESPACE, "Person");
-		PERSONAL_PROFILE_DOCUMENT = factory.createIRI(FOAF.NAMESPACE, "PersonalProfileDocument");
-		PROJECT = factory.createIRI(FOAF.NAMESPACE, "Project");
+		AGENT = Vocabularies.createIRI(FOAF.NAMESPACE, "Agent");
+		DOCUMENT = Vocabularies.createIRI(FOAF.NAMESPACE, "Document");
+		GROUP = Vocabularies.createIRI(FOAF.NAMESPACE, "Group");
+		IMAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "Image");
+		LABEL_PROPERTY = Vocabularies.createIRI(FOAF.NAMESPACE, "LabelProperty");
+		ONLINE_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "OnlineAccount");
+		ONLINE_CHAT_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "OnlineChatAccount");
+		ONLINE_ECOMMERCE_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "OnlineEcommerceAccount");
+		ONLINE_GAMING_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "OnlineGamingAccount");
+		ORGANIZATION = Vocabularies.createIRI(FOAF.NAMESPACE, "Organization");
+		PERSON = Vocabularies.createIRI(FOAF.NAMESPACE, "Person");
+		PERSONAL_PROFILE_DOCUMENT = Vocabularies.createIRI(FOAF.NAMESPACE, "PersonalProfileDocument");
+		PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, "Project");
 
 		// ----- Properties ------
-		ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "account");
-		ACCOUNT_NAME = factory.createIRI(FOAF.NAMESPACE, "accountName");
-		ACCOUNT_SERVICE_HOMEPAGE = factory.createIRI(FOAF.NAMESPACE, "accountServiceHomepage");
-		AGE = factory.createIRI(FOAF.NAMESPACE, "age");
-		AIM_CHAT_ID = factory.createIRI(FOAF.NAMESPACE, "aimChatID");
-		BASED_NEAR = factory.createIRI(FOAF.NAMESPACE, "based_near");
-		BIRTHDAY = factory.createIRI(FOAF.NAMESPACE, "birthday");
-		CURRENT_PROJECT = factory.createIRI(FOAF.NAMESPACE, "currentProject");
-		DEPICTION = factory.createIRI(FOAF.NAMESPACE, "depiction");
-		DEPICTS = factory.createIRI(FOAF.NAMESPACE, "depicts");
-		DNA_CHECKSUM = factory.createIRI(FOAF.NAMESPACE, "dnaChecksum");
-		FAMILY_NAME = factory.createIRI(FOAF.NAMESPACE, "familyName");
-		FAMILYNAME = factory.createIRI(FOAF.NAMESPACE, "family_name");
-		FIRST_NAME = factory.createIRI(FOAF.NAMESPACE, "firstName");
-		FOCUS = factory.createIRI(FOAF.NAMESPACE, "focus");
-		FUNDED_BY = factory.createIRI(FOAF.NAMESPACE, "fundedBy");
-		GEEKCODE = factory.createIRI(FOAF.NAMESPACE, "geekcode");
-		GENDER = factory.createIRI(FOAF.NAMESPACE, "gender");
-		GIVEN_NAME = factory.createIRI(FOAF.NAMESPACE, "givenName");
-		GIVENNAME = factory.createIRI(FOAF.NAMESPACE, "givenname");
-		HOLDS_ACCOUNT = factory.createIRI(FOAF.NAMESPACE, "holdsAccount");
-		HOMEPAGE = factory.createIRI(FOAF.NAMESPACE, "homepage");
-		ICQ_CHAT_ID = factory.createIRI(FOAF.NAMESPACE, "icqChatID");
-		IMG = factory.createIRI(FOAF.NAMESPACE, "img");
-		INTEREST = factory.createIRI(FOAF.NAMESPACE, "interest");
-		IS_PRIMARY_TOPIC_OF = factory.createIRI(FOAF.NAMESPACE, "isPrimaryTopicOf");
-		JABBER_ID = factory.createIRI(FOAF.NAMESPACE, "jabberID");
-		KNOWS = factory.createIRI(FOAF.NAMESPACE, "knows");
-		LAST_NAME = factory.createIRI(FOAF.NAMESPACE, "lastName");
-		LOGO = factory.createIRI(FOAF.NAMESPACE, "logo");
-		MADE = factory.createIRI(FOAF.NAMESPACE, "made");
-		MAKER = factory.createIRI(FOAF.NAMESPACE, "maker");
-		MBOX = factory.createIRI(FOAF.NAMESPACE, "mbox");
-		MBOX_SHA1SUM = factory.createIRI(FOAF.NAMESPACE, "mbox_sha1sum");
-		MEMBER = factory.createIRI(FOAF.NAMESPACE, "member");
-		MEMBERSHIP_CLASS = factory.createIRI(FOAF.NAMESPACE, "membershipClass");
-		MSN_CHAT_ID = factory.createIRI(FOAF.NAMESPACE, "msnChatID");
-		MYERS_BRIGGS = factory.createIRI(FOAF.NAMESPACE, "myersBriggs");
-		NAME = factory.createIRI(FOAF.NAMESPACE, "name");
-		NICK = factory.createIRI(FOAF.NAMESPACE, "nick");
-		OPENID = factory.createIRI(FOAF.NAMESPACE, "openid");
-		PAGE = factory.createIRI(FOAF.NAMESPACE, "page");
-		PAST_PROJECT = factory.createIRI(FOAF.NAMESPACE, "pastProject");
-		PHONE = factory.createIRI(FOAF.NAMESPACE, "phone");
-		PLAN = factory.createIRI(FOAF.NAMESPACE, "plan");
-		PRIMARY_TOPIC = factory.createIRI(FOAF.NAMESPACE, "primaryTopic");
-		PUBLICATIONS = factory.createIRI(FOAF.NAMESPACE, "publications");
-		SCHOOL_HOMEPAGE = factory.createIRI(FOAF.NAMESPACE, "schoolHomepage");
-		SHA1 = factory.createIRI(FOAF.NAMESPACE, "sha1");
-		SKYPE_ID = factory.createIRI(FOAF.NAMESPACE, "skypeID");
-		STATUS = factory.createIRI(FOAF.NAMESPACE, "status");
-		SURNAME = factory.createIRI(FOAF.NAMESPACE, "surname");
-		THEME = factory.createIRI(FOAF.NAMESPACE, "theme");
-		THUMBNAIL = factory.createIRI(FOAF.NAMESPACE, "thumbnail");
-		TIPJAR = factory.createIRI(FOAF.NAMESPACE, "tipjar");
-		TITLE = factory.createIRI(FOAF.NAMESPACE, "title");
-		TOPIC = factory.createIRI(FOAF.NAMESPACE, "topic");
-		TOPIC_INTEREST = factory.createIRI(FOAF.NAMESPACE, "topic_interest");
-		WEBLOG = factory.createIRI(FOAF.NAMESPACE, "weblog");
-		WORK_INFO_HOMEPAGE = factory.createIRI(FOAF.NAMESPACE, "workInfoHomepage");
-		WORKPLACE_HOMEPAGE = factory.createIRI(FOAF.NAMESPACE, "workplaceHomepage");
-		YAHOO_CHAT_ID = factory.createIRI(FOAF.NAMESPACE, "yahooChatID");
+		ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "account");
+		ACCOUNT_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "accountName");
+		ACCOUNT_SERVICE_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "accountServiceHomepage");
+		AGE = Vocabularies.createIRI(FOAF.NAMESPACE, "age");
+		AIM_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "aimChatID");
+		BASED_NEAR = Vocabularies.createIRI(FOAF.NAMESPACE, "based_near");
+		BIRTHDAY = Vocabularies.createIRI(FOAF.NAMESPACE, "birthday");
+		CURRENT_PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, "currentProject");
+		DEPICTION = Vocabularies.createIRI(FOAF.NAMESPACE, "depiction");
+		DEPICTS = Vocabularies.createIRI(FOAF.NAMESPACE, "depicts");
+		DNA_CHECKSUM = Vocabularies.createIRI(FOAF.NAMESPACE, "dnaChecksum");
+		FAMILY_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "familyName");
+		FAMILYNAME = Vocabularies.createIRI(FOAF.NAMESPACE, "family_name");
+		FIRST_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "firstName");
+		FOCUS = Vocabularies.createIRI(FOAF.NAMESPACE, "focus");
+		FUNDED_BY = Vocabularies.createIRI(FOAF.NAMESPACE, "fundedBy");
+		GEEKCODE = Vocabularies.createIRI(FOAF.NAMESPACE, "geekcode");
+		GENDER = Vocabularies.createIRI(FOAF.NAMESPACE, "gender");
+		GIVEN_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "givenName");
+		GIVENNAME = Vocabularies.createIRI(FOAF.NAMESPACE, "givenname");
+		HOLDS_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, "holdsAccount");
+		HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "homepage");
+		ICQ_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "icqChatID");
+		IMG = Vocabularies.createIRI(FOAF.NAMESPACE, "img");
+		INTEREST = Vocabularies.createIRI(FOAF.NAMESPACE, "interest");
+		IS_PRIMARY_TOPIC_OF = Vocabularies.createIRI(FOAF.NAMESPACE, "isPrimaryTopicOf");
+		JABBER_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "jabberID");
+		KNOWS = Vocabularies.createIRI(FOAF.NAMESPACE, "knows");
+		LAST_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "lastName");
+		LOGO = Vocabularies.createIRI(FOAF.NAMESPACE, "logo");
+		MADE = Vocabularies.createIRI(FOAF.NAMESPACE, "made");
+		MAKER = Vocabularies.createIRI(FOAF.NAMESPACE, "maker");
+		MBOX = Vocabularies.createIRI(FOAF.NAMESPACE, "mbox");
+		MBOX_SHA1SUM = Vocabularies.createIRI(FOAF.NAMESPACE, "mbox_sha1sum");
+		MEMBER = Vocabularies.createIRI(FOAF.NAMESPACE, "member");
+		MEMBERSHIP_CLASS = Vocabularies.createIRI(FOAF.NAMESPACE, "membershipClass");
+		MSN_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "msnChatID");
+		MYERS_BRIGGS = Vocabularies.createIRI(FOAF.NAMESPACE, "myersBriggs");
+		NAME = Vocabularies.createIRI(FOAF.NAMESPACE, "name");
+		NICK = Vocabularies.createIRI(FOAF.NAMESPACE, "nick");
+		OPENID = Vocabularies.createIRI(FOAF.NAMESPACE, "openid");
+		PAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "page");
+		PAST_PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, "pastProject");
+		PHONE = Vocabularies.createIRI(FOAF.NAMESPACE, "phone");
+		PLAN = Vocabularies.createIRI(FOAF.NAMESPACE, "plan");
+		PRIMARY_TOPIC = Vocabularies.createIRI(FOAF.NAMESPACE, "primaryTopic");
+		PUBLICATIONS = Vocabularies.createIRI(FOAF.NAMESPACE, "publications");
+		SCHOOL_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "schoolHomepage");
+		SHA1 = Vocabularies.createIRI(FOAF.NAMESPACE, "sha1");
+		SKYPE_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "skypeID");
+		STATUS = Vocabularies.createIRI(FOAF.NAMESPACE, "status");
+		SURNAME = Vocabularies.createIRI(FOAF.NAMESPACE, "surname");
+		THEME = Vocabularies.createIRI(FOAF.NAMESPACE, "theme");
+		THUMBNAIL = Vocabularies.createIRI(FOAF.NAMESPACE, "thumbnail");
+		TIPJAR = Vocabularies.createIRI(FOAF.NAMESPACE, "tipjar");
+		TITLE = Vocabularies.createIRI(FOAF.NAMESPACE, "title");
+		TOPIC = Vocabularies.createIRI(FOAF.NAMESPACE, "topic");
+		TOPIC_INTEREST = Vocabularies.createIRI(FOAF.NAMESPACE, "topic_interest");
+		WEBLOG = Vocabularies.createIRI(FOAF.NAMESPACE, "weblog");
+		WORK_INFO_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "workInfoHomepage");
+		WORKPLACE_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, "workplaceHomepage");
+		YAHOO_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, "yahooChatID");
 	}
 }

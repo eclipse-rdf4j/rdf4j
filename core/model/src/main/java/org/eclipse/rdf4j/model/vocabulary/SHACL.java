@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the Shapes Constraint Language.
@@ -34,7 +31,7 @@ public class SHACL {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** sh:AbstractResult */
@@ -618,217 +615,227 @@ public class SHACL {
 	public static final IRI ZERO_OR_ONE_PATH;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
-		ABSTRACT_RESULT = factory.createIRI(NAMESPACE, "AbstractResult");
-		AND_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "AndConstraintComponent");
-		AND_CONSTRAINT_COMPONENT_AND = factory.createIRI(NAMESPACE, "AndConstraintComponent-and");
-		BLANK_NODE = factory.createIRI(NAMESPACE, "BlankNode");
-		BLANK_NODE_OR_IRI = factory.createIRI(NAMESPACE, "BlankNodeOrIRI");
-		BLANK_NODE_OR_LITERAL = factory.createIRI(NAMESPACE, "BlankNodeOrLiteral");
-		CLASS_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "ClassConstraintComponent");
-		CLASS_CONSTRAINT_COMPONENT_CLASS = factory.createIRI(NAMESPACE, "ClassConstraintComponent-class");
-		CLOSED_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "ClosedConstraintComponent");
-		CLOSED_CONSTRAINT_COMPONENT_CLOSED = factory.createIRI(NAMESPACE, "ClosedConstraintComponent-closed");
-		CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES = factory.createIRI(NAMESPACE,
+		ABSTRACT_RESULT = Vocabularies.createIRI(NAMESPACE, "AbstractResult");
+		AND_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "AndConstraintComponent");
+		AND_CONSTRAINT_COMPONENT_AND = Vocabularies.createIRI(NAMESPACE, "AndConstraintComponent-and");
+		BLANK_NODE = Vocabularies.createIRI(NAMESPACE, "BlankNode");
+		BLANK_NODE_OR_IRI = Vocabularies.createIRI(NAMESPACE, "BlankNodeOrIRI");
+		BLANK_NODE_OR_LITERAL = Vocabularies.createIRI(NAMESPACE, "BlankNodeOrLiteral");
+		CLASS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "ClassConstraintComponent");
+		CLASS_CONSTRAINT_COMPONENT_CLASS = Vocabularies.createIRI(NAMESPACE, "ClassConstraintComponent-class");
+		CLOSED_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "ClosedConstraintComponent");
+		CLOSED_CONSTRAINT_COMPONENT_CLOSED = Vocabularies.createIRI(NAMESPACE, "ClosedConstraintComponent-closed");
+		CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES = Vocabularies.createIRI(NAMESPACE,
 				"ClosedConstraintComponent-ignoredProperties");
-		CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "ConstraintComponent");
-		DATATYPE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "DatatypeConstraintComponent");
-		DATATYPE_CONSTRAINT_COMPONENT_DATATYPE = factory.createIRI(NAMESPACE, "DatatypeConstraintComponent-datatype");
-		DERIVED_VALUES_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "DerivedValuesConstraintComponent");
-		DISJOINT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "DisjointConstraintComponent");
-		DISJOINT_CONSTRAINT_COMPONENT_DISJOINT = factory.createIRI(NAMESPACE, "DisjointConstraintComponent-disjoint");
-		EQUALS_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "EqualsConstraintComponent");
-		EQUALS_CONSTRAINT_COMPONENT_EQUALS = factory.createIRI(NAMESPACE, "EqualsConstraintComponent-equals");
-		FUNCTION = factory.createIRI(NAMESPACE, "Function");
-		HAS_VALUE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "HasValueConstraintComponent");
-		HAS_VALUE_CONSTRAINT_COMPONENT_HAS_VALUE = factory.createIRI(NAMESPACE, "HasValueConstraintComponent-hasValue");
-		IRI = factory.createIRI(NAMESPACE, "IRI");
-		IRI_OR_LITERAL = factory.createIRI(NAMESPACE, "IRIOrLiteral");
-		IN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "InConstraintComponent");
-		IN_CONSTRAINT_COMPONENT_IN = factory.createIRI(NAMESPACE, "InConstraintComponent-in");
-		INFO = factory.createIRI(NAMESPACE, "Info");
-		LANGUAGE_IN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LanguageInConstraintComponent");
-		LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN = factory.createIRI(NAMESPACE,
+		CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "ConstraintComponent");
+		DATATYPE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "DatatypeConstraintComponent");
+		DATATYPE_CONSTRAINT_COMPONENT_DATATYPE = Vocabularies.createIRI(NAMESPACE,
+				"DatatypeConstraintComponent-datatype");
+		DERIVED_VALUES_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "DerivedValuesConstraintComponent");
+		DISJOINT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "DisjointConstraintComponent");
+		DISJOINT_CONSTRAINT_COMPONENT_DISJOINT = Vocabularies.createIRI(NAMESPACE,
+				"DisjointConstraintComponent-disjoint");
+		EQUALS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "EqualsConstraintComponent");
+		EQUALS_CONSTRAINT_COMPONENT_EQUALS = Vocabularies.createIRI(NAMESPACE, "EqualsConstraintComponent-equals");
+		FUNCTION = Vocabularies.createIRI(NAMESPACE, "Function");
+		HAS_VALUE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "HasValueConstraintComponent");
+		HAS_VALUE_CONSTRAINT_COMPONENT_HAS_VALUE = Vocabularies.createIRI(NAMESPACE,
+				"HasValueConstraintComponent-hasValue");
+		IRI = Vocabularies.createIRI(NAMESPACE, "IRI");
+		IRI_OR_LITERAL = Vocabularies.createIRI(NAMESPACE, "IRIOrLiteral");
+		IN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "InConstraintComponent");
+		IN_CONSTRAINT_COMPONENT_IN = Vocabularies.createIRI(NAMESPACE, "InConstraintComponent-in");
+		INFO = Vocabularies.createIRI(NAMESPACE, "Info");
+		LANGUAGE_IN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "LanguageInConstraintComponent");
+		LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN = Vocabularies.createIRI(NAMESPACE,
 				"LanguageInConstraintComponent-languageIn");
-		LESS_THAN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LessThanConstraintComponent");
-		LESS_THAN_CONSTRAINT_COMPONENT_LESS_THAN = factory.createIRI(NAMESPACE, "LessThanConstraintComponent-lessThan");
-		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "LessThanOrEqualsConstraintComponent");
-		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS = factory.createIRI(NAMESPACE,
+		LESS_THAN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "LessThanConstraintComponent");
+		LESS_THAN_CONSTRAINT_COMPONENT_LESS_THAN = Vocabularies.createIRI(NAMESPACE,
+				"LessThanConstraintComponent-lessThan");
+		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,
+				"LessThanOrEqualsConstraintComponent");
+		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS = Vocabularies.createIRI(NAMESPACE,
 				"LessThanOrEqualsConstraintComponent-lessThanOrEquals");
-		LITERAL = factory.createIRI(NAMESPACE, "Literal");
-		MAX_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxCountConstraintComponent");
-		MAX_COUNT_CONSTRAINT_COMPONENT_MAX_COUNT = factory.createIRI(NAMESPACE, "MaxCountConstraintComponent-maxCount");
-		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxExclusiveConstraintComponent");
-		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE = factory.createIRI(NAMESPACE,
+		LITERAL = Vocabularies.createIRI(NAMESPACE, "Literal");
+		MAX_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MaxCountConstraintComponent");
+		MAX_COUNT_CONSTRAINT_COMPONENT_MAX_COUNT = Vocabularies.createIRI(NAMESPACE,
+				"MaxCountConstraintComponent-maxCount");
+		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MaxExclusiveConstraintComponent");
+		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE,
 				"MaxExclusiveConstraintComponent-maxExclusive");
-		MAX_INCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxInclusiveConstraintComponent");
-		MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE = factory.createIRI(NAMESPACE,
+		MAX_INCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MaxInclusiveConstraintComponent");
+		MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE = Vocabularies.createIRI(NAMESPACE,
 				"MaxInclusiveConstraintComponent-maxInclusive");
-		MAX_LENGTH_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MaxLengthConstraintComponent");
-		MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH = factory.createIRI(NAMESPACE,
+		MAX_LENGTH_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MaxLengthConstraintComponent");
+		MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH = Vocabularies.createIRI(NAMESPACE,
 				"MaxLengthConstraintComponent-maxLength");
-		MIN_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinCountConstraintComponent");
-		MIN_COUNT_CONSTRAINT_COMPONENT_MIN_COUNT = factory.createIRI(NAMESPACE, "MinCountConstraintComponent-minCount");
-		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinExclusiveConstraintComponent");
-		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE = factory.createIRI(NAMESPACE,
+		MIN_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MinCountConstraintComponent");
+		MIN_COUNT_CONSTRAINT_COMPONENT_MIN_COUNT = Vocabularies.createIRI(NAMESPACE,
+				"MinCountConstraintComponent-minCount");
+		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MinExclusiveConstraintComponent");
+		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE,
 				"MinExclusiveConstraintComponent-minExclusive");
-		MIN_INCLUSIVE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinInclusiveConstraintComponent");
-		MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE = factory.createIRI(NAMESPACE,
+		MIN_INCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MinInclusiveConstraintComponent");
+		MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE = Vocabularies.createIRI(NAMESPACE,
 				"MinInclusiveConstraintComponent-minInclusive");
-		MIN_LENGTH_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "MinLengthConstraintComponent");
-		MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH = factory.createIRI(NAMESPACE,
+		MIN_LENGTH_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "MinLengthConstraintComponent");
+		MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH = Vocabularies.createIRI(NAMESPACE,
 				"MinLengthConstraintComponent-minLength");
-		NODE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "NodeConstraintComponent");
-		NODE_CONSTRAINT_COMPONENT_NODE = factory.createIRI(NAMESPACE, "NodeConstraintComponent-node");
-		NODE_KIND = factory.createIRI(NAMESPACE, "NodeKind");
-		NODE_KIND_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "NodeKindConstraintComponent");
-		NODE_KIND_CONSTRAINT_COMPONENT_NODE_KIND = factory.createIRI(NAMESPACE, "NodeKindConstraintComponent-nodeKind");
-		NODE_SHAPE = factory.createIRI(NAMESPACE, "NodeShape");
-		NOT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "NotConstraintComponent");
-		NOT_CONSTRAINT_COMPONENT_NOT = factory.createIRI(NAMESPACE, "NotConstraintComponent-not");
-		OR_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "OrConstraintComponent");
-		OR_CONSTRAINT_COMPONENT_OR = factory.createIRI(NAMESPACE, "OrConstraintComponent-or");
-		PARAMETER = factory.createIRI(NAMESPACE, "Parameter");
-		PARAMETERIZABLE = factory.createIRI(NAMESPACE, "Parameterizable");
-		PATTERN_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "PatternConstraintComponent");
-		PATTERN_CONSTRAINT_COMPONENT_FLAGS = factory.createIRI(NAMESPACE, "PatternConstraintComponent-flags");
-		PATTERN_CONSTRAINT_COMPONENT_PATTERN = factory.createIRI(NAMESPACE, "PatternConstraintComponent-pattern");
-		PREFIX_DECLARATION = factory.createIRI(NAMESPACE, "PrefixDeclaration");
-		PROPERTY_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "PropertyConstraintComponent");
-		PROPERTY_CONSTRAINT_COMPONENT_PROPERTY = factory.createIRI(NAMESPACE, "PropertyConstraintComponent-property");
-		PROPERTY_GROUP = factory.createIRI(NAMESPACE, "PropertyGroup");
-		PROPERTY_SHAPE = factory.createIRI(NAMESPACE, "PropertyShape");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "QualifiedMaxCountConstraintComponent");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT = factory.createIRI(NAMESPACE,
+		NODE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "NodeConstraintComponent");
+		NODE_CONSTRAINT_COMPONENT_NODE = Vocabularies.createIRI(NAMESPACE, "NodeConstraintComponent-node");
+		NODE_KIND = Vocabularies.createIRI(NAMESPACE, "NodeKind");
+		NODE_KIND_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "NodeKindConstraintComponent");
+		NODE_KIND_CONSTRAINT_COMPONENT_NODE_KIND = Vocabularies.createIRI(NAMESPACE,
+				"NodeKindConstraintComponent-nodeKind");
+		NODE_SHAPE = Vocabularies.createIRI(NAMESPACE, "NodeShape");
+		NOT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "NotConstraintComponent");
+		NOT_CONSTRAINT_COMPONENT_NOT = Vocabularies.createIRI(NAMESPACE, "NotConstraintComponent-not");
+		OR_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "OrConstraintComponent");
+		OR_CONSTRAINT_COMPONENT_OR = Vocabularies.createIRI(NAMESPACE, "OrConstraintComponent-or");
+		PARAMETER = Vocabularies.createIRI(NAMESPACE, "Parameter");
+		PARAMETERIZABLE = Vocabularies.createIRI(NAMESPACE, "Parameterizable");
+		PATTERN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "PatternConstraintComponent");
+		PATTERN_CONSTRAINT_COMPONENT_FLAGS = Vocabularies.createIRI(NAMESPACE, "PatternConstraintComponent-flags");
+		PATTERN_CONSTRAINT_COMPONENT_PATTERN = Vocabularies.createIRI(NAMESPACE, "PatternConstraintComponent-pattern");
+		PREFIX_DECLARATION = Vocabularies.createIRI(NAMESPACE, "PrefixDeclaration");
+		PROPERTY_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "PropertyConstraintComponent");
+		PROPERTY_CONSTRAINT_COMPONENT_PROPERTY = Vocabularies.createIRI(NAMESPACE,
+				"PropertyConstraintComponent-property");
+		PROPERTY_GROUP = Vocabularies.createIRI(NAMESPACE, "PropertyGroup");
+		PROPERTY_SHAPE = Vocabularies.createIRI(NAMESPACE, "PropertyShape");
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,
+				"QualifiedMaxCountConstraintComponent");
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMaxCountConstraintComponent-qualifiedMaxCount");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE,
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMaxCountConstraintComponent-qualifiedValueShape");
-		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE,
+		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMaxCountConstraintComponent-qualifiedValueShapesDisjoint");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "QualifiedMinCountConstraintComponent");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT = factory.createIRI(NAMESPACE,
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,
+				"QualifiedMinCountConstraintComponent");
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMinCountConstraintComponent-qualifiedMinCount");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE,
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMinCountConstraintComponent-qualifiedValueShape");
-		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE,
+		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE,
 				"QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint");
-		RESULT_ANNOTATION = factory.createIRI(NAMESPACE, "ResultAnnotation");
-		SPARQL_ASK_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLAskExecutable");
-		SPARQL_ASK_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLAskValidator");
-		SPARQL_CONSTRAINT = factory.createIRI(NAMESPACE, "SPARQLConstraint");
-		SPARQL_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent");
-		SPARQL_CONSTRAINT_COMPONENT_SPARQL = factory.createIRI(NAMESPACE, "SPARQLConstraintComponent-sparql");
-		SPARQL_CONSTRUCT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLConstructExecutable");
-		SPARQL_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLExecutable");
-		SPARQL_FUNCTION = factory.createIRI(NAMESPACE, "SPARQLFunction");
-		SPARQL_SELECT_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLSelectExecutable");
-		SPARQL_SELECT_VALIDATOR = factory.createIRI(NAMESPACE, "SPARQLSelectValidator");
-		SPARQL_TARGET = factory.createIRI(NAMESPACE, "SPARQLTarget");
-		SPARQL_TARGET_TYPE = factory.createIRI(NAMESPACE, "SPARQLTargetType");
-		SPARQL_UPDATE_EXECUTABLE = factory.createIRI(NAMESPACE, "SPARQLUpdateExecutable");
-		SPARQL_VALUES_DERIVER = factory.createIRI(NAMESPACE, "SPARQLValuesDeriver");
-		SEVERITY = factory.createIRI(NAMESPACE, "Severity");
-		SHAPE = factory.createIRI(NAMESPACE, "Shape");
-		TARGET = factory.createIRI(NAMESPACE, "Target");
-		TARGET_TYPE = factory.createIRI(NAMESPACE, "TargetType");
-		UNIQUE_LANG_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "UniqueLangConstraintComponent");
-		UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG = factory.createIRI(NAMESPACE,
+		RESULT_ANNOTATION = Vocabularies.createIRI(NAMESPACE, "ResultAnnotation");
+		SPARQL_ASK_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, "SPARQLAskExecutable");
+		SPARQL_ASK_VALIDATOR = Vocabularies.createIRI(NAMESPACE, "SPARQLAskValidator");
+		SPARQL_CONSTRAINT = Vocabularies.createIRI(NAMESPACE, "SPARQLConstraint");
+		SPARQL_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "SPARQLConstraintComponent");
+		SPARQL_CONSTRAINT_COMPONENT_SPARQL = Vocabularies.createIRI(NAMESPACE, "SPARQLConstraintComponent-sparql");
+		SPARQL_CONSTRUCT_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, "SPARQLConstructExecutable");
+		SPARQL_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, "SPARQLExecutable");
+		SPARQL_FUNCTION = Vocabularies.createIRI(NAMESPACE, "SPARQLFunction");
+		SPARQL_SELECT_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, "SPARQLSelectExecutable");
+		SPARQL_SELECT_VALIDATOR = Vocabularies.createIRI(NAMESPACE, "SPARQLSelectValidator");
+		SPARQL_TARGET = Vocabularies.createIRI(NAMESPACE, "SPARQLTarget");
+		SPARQL_TARGET_TYPE = Vocabularies.createIRI(NAMESPACE, "SPARQLTargetType");
+		SPARQL_UPDATE_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, "SPARQLUpdateExecutable");
+		SPARQL_VALUES_DERIVER = Vocabularies.createIRI(NAMESPACE, "SPARQLValuesDeriver");
+		SEVERITY = Vocabularies.createIRI(NAMESPACE, "Severity");
+		SHAPE = Vocabularies.createIRI(NAMESPACE, "Shape");
+		TARGET = Vocabularies.createIRI(NAMESPACE, "Target");
+		TARGET_TYPE = Vocabularies.createIRI(NAMESPACE, "TargetType");
+		UNIQUE_LANG_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "UniqueLangConstraintComponent");
+		UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG = Vocabularies.createIRI(NAMESPACE,
 				"UniqueLangConstraintComponent-uniqueLang");
-		VALIDATION_REPORT = factory.createIRI(NAMESPACE, "ValidationReport");
-		VALIDATION_RESULT = factory.createIRI(NAMESPACE, "ValidationResult");
-		VALIDATOR = factory.createIRI(NAMESPACE, "Validator");
-		VALUES_DERIVER = factory.createIRI(NAMESPACE, "ValuesDeriver");
-		VIOLATION = factory.createIRI(NAMESPACE, "Violation");
-		WARNING = factory.createIRI(NAMESPACE, "Warning");
-		XONE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "XoneConstraintComponent");
-		XONE_CONSTRAINT_COMPONENT_XONE = factory.createIRI(NAMESPACE, "XoneConstraintComponent-xone");
+		VALIDATION_REPORT = Vocabularies.createIRI(NAMESPACE, "ValidationReport");
+		VALIDATION_RESULT = Vocabularies.createIRI(NAMESPACE, "ValidationResult");
+		VALIDATOR = Vocabularies.createIRI(NAMESPACE, "Validator");
+		VALUES_DERIVER = Vocabularies.createIRI(NAMESPACE, "ValuesDeriver");
+		VIOLATION = Vocabularies.createIRI(NAMESPACE, "Violation");
+		WARNING = Vocabularies.createIRI(NAMESPACE, "Warning");
+		XONE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "XoneConstraintComponent");
+		XONE_CONSTRAINT_COMPONENT_XONE = Vocabularies.createIRI(NAMESPACE, "XoneConstraintComponent-xone");
 
-		ALTERNATIVE_PATH = factory.createIRI(NAMESPACE, "alternativePath");
-		AND = factory.createIRI(NAMESPACE, "and");
-		ANNOTATION_PROPERTY = factory.createIRI(NAMESPACE, "annotationProperty");
-		ANNOTATION_VALUE = factory.createIRI(NAMESPACE, "annotationValue");
-		ANNOTATION_VAR_NAME = factory.createIRI(NAMESPACE, "annotationVarName");
-		ASK = factory.createIRI(NAMESPACE, "ask");
-		CLASS = factory.createIRI(NAMESPACE, "class");
-		CLOSED = factory.createIRI(NAMESPACE, "closed");
-		CONFORMS = factory.createIRI(NAMESPACE, "conforms");
-		CONSTRUCT = factory.createIRI(NAMESPACE, "construct");
-		DATATYPE = factory.createIRI(NAMESPACE, "datatype");
-		DEACTIVATED = factory.createIRI(NAMESPACE, "deactivated");
-		DECLARE = factory.createIRI(NAMESPACE, "declare");
-		DEFAULT_VALUE = factory.createIRI(NAMESPACE, "defaultValue");
-		DERIVED_VALUES = factory.createIRI(NAMESPACE, "derivedValues");
-		DESCRIPTION = factory.createIRI(NAMESPACE, "description");
-		DETAIL = factory.createIRI(NAMESPACE, "detail");
-		DISJOINT = factory.createIRI(NAMESPACE, "disjoint");
-		EQUALS = factory.createIRI(NAMESPACE, "equals");
-		FLAGS = factory.createIRI(NAMESPACE, "flags");
-		FOCUS_NODE = factory.createIRI(NAMESPACE, "focusNode");
-		GROUP = factory.createIRI(NAMESPACE, "group");
-		HAS_VALUE = factory.createIRI(NAMESPACE, "hasValue");
-		IGNORED_PROPERTIES = factory.createIRI(NAMESPACE, "ignoredProperties");
-		IN = factory.createIRI(NAMESPACE, "in");
-		INVERSE_PATH = factory.createIRI(NAMESPACE, "inversePath");
-		LABEL_TEMPLATE = factory.createIRI(NAMESPACE, "labelTemplate");
-		LANGUAGE_IN = factory.createIRI(NAMESPACE, "languageIn");
-		LESS_THAN = factory.createIRI(NAMESPACE, "lessThan");
-		LESS_THAN_OR_EQUALS = factory.createIRI(NAMESPACE, "lessThanOrEquals");
-		MAX_COUNT = factory.createIRI(NAMESPACE, "maxCount");
-		MAX_EXCLUSIVE = factory.createIRI(NAMESPACE, "maxExclusive");
-		MAX_INCLUSIVE = factory.createIRI(NAMESPACE, "maxInclusive");
-		MAX_LENGTH = factory.createIRI(NAMESPACE, "maxLength");
-		MESSAGE = factory.createIRI(NAMESPACE, "message");
-		MIN_COUNT = factory.createIRI(NAMESPACE, "minCount");
-		MIN_EXCLUSIVE = factory.createIRI(NAMESPACE, "minExclusive");
-		MIN_INCLUSIVE = factory.createIRI(NAMESPACE, "minInclusive");
-		MIN_LENGTH = factory.createIRI(NAMESPACE, "minLength");
-		NAME = factory.createIRI(NAMESPACE, "name");
-		NAMESPACE_PROP = factory.createIRI(NAMESPACE, "namespace");
-		NODE = factory.createIRI(NAMESPACE, "node");
-		NODE_KIND_PROP = factory.createIRI(NAMESPACE, "nodeKind");
-		NODE_VALIDATOR = factory.createIRI(NAMESPACE, "nodeValidator");
-		NOT = factory.createIRI(NAMESPACE, "not");
-		ONE_OR_MORE_PATH = factory.createIRI(NAMESPACE, "oneOrMorePath");
-		OPTIONAL = factory.createIRI(NAMESPACE, "optional");
-		OR = factory.createIRI(NAMESPACE, "or");
-		ORDER = factory.createIRI(NAMESPACE, "order");
-		PARAMETER_PROP = factory.createIRI(NAMESPACE, "parameter");
-		PATH = factory.createIRI(NAMESPACE, "path");
-		PATTERN = factory.createIRI(NAMESPACE, "pattern");
-		PREFIX_PROP = factory.createIRI(NAMESPACE, "prefix");
-		PREFIXES = factory.createIRI(NAMESPACE, "prefixes");
-		PROPERTY = factory.createIRI(NAMESPACE, "property");
-		PROPERTY_VALIDATOR = factory.createIRI(NAMESPACE, "propertyValidator");
-		QUALIFIED_MAX_COUNT = factory.createIRI(NAMESPACE, "qualifiedMaxCount");
-		QUALIFIED_MIN_COUNT = factory.createIRI(NAMESPACE, "qualifiedMinCount");
-		QUALIFIED_VALUE_SHAPE = factory.createIRI(NAMESPACE, "qualifiedValueShape");
-		QUALIFIED_VALUE_SHAPES_DISJOINT = factory.createIRI(NAMESPACE, "qualifiedValueShapesDisjoint");
-		RESULT = factory.createIRI(NAMESPACE, "result");
-		RESULT_ANNOTATION_PROP = factory.createIRI(NAMESPACE, "resultAnnotation");
-		RESULT_MESSAGE = factory.createIRI(NAMESPACE, "resultMessage");
-		RESULT_PATH = factory.createIRI(NAMESPACE, "resultPath");
-		RESULT_SEVERITY = factory.createIRI(NAMESPACE, "resultSeverity");
-		RETURN_TYPE = factory.createIRI(NAMESPACE, "returnType");
-		SELECT = factory.createIRI(NAMESPACE, "select");
-		SEVERITY_PROP = factory.createIRI(NAMESPACE, "severity");
-		SHAPES_GRAPH = factory.createIRI(NAMESPACE, "shapesGraph");
-		SHAPES_GRAPH_WELL_FORMED = factory.createIRI(NAMESPACE, "shapesGraphWellFormed");
-		SOURCE_CONSTRAINT = factory.createIRI(NAMESPACE, "sourceConstraint");
-		SOURCE_CONSTRAINT_COMPONENT = factory.createIRI(NAMESPACE, "sourceConstraintComponent");
-		SOURCE_SHAPE = factory.createIRI(NAMESPACE, "sourceShape");
-		SPARQL = factory.createIRI(NAMESPACE, "sparql");
-		TARGET_PROP = factory.createIRI(NAMESPACE, "target");
-		TARGET_CLASS = factory.createIRI(NAMESPACE, "targetClass");
-		TARGET_NODE = factory.createIRI(NAMESPACE, "targetNode");
-		TARGET_OBJECTS_OF = factory.createIRI(NAMESPACE, "targetObjectsOf");
-		TARGET_SUBJECTS_OF = factory.createIRI(NAMESPACE, "targetSubjectsOf");
-		UNIQUE_LANG = factory.createIRI(NAMESPACE, "uniqueLang");
-		UPDATE = factory.createIRI(NAMESPACE, "update");
-		VALIDATOR_PROP = factory.createIRI(NAMESPACE, "validator");
-		VALUE = factory.createIRI(NAMESPACE, "value");
-		XONE = factory.createIRI(NAMESPACE, "xone");
-		ZERO_OR_MORE_PATH = factory.createIRI(NAMESPACE, "zeroOrMorePath");
-		ZERO_OR_ONE_PATH = factory.createIRI(NAMESPACE, "zeroOrOnePath");
+		ALTERNATIVE_PATH = Vocabularies.createIRI(NAMESPACE, "alternativePath");
+		AND = Vocabularies.createIRI(NAMESPACE, "and");
+		ANNOTATION_PROPERTY = Vocabularies.createIRI(NAMESPACE, "annotationProperty");
+		ANNOTATION_VALUE = Vocabularies.createIRI(NAMESPACE, "annotationValue");
+		ANNOTATION_VAR_NAME = Vocabularies.createIRI(NAMESPACE, "annotationVarName");
+		ASK = Vocabularies.createIRI(NAMESPACE, "ask");
+		CLASS = Vocabularies.createIRI(NAMESPACE, "class");
+		CLOSED = Vocabularies.createIRI(NAMESPACE, "closed");
+		CONFORMS = Vocabularies.createIRI(NAMESPACE, "conforms");
+		CONSTRUCT = Vocabularies.createIRI(NAMESPACE, "construct");
+		DATATYPE = Vocabularies.createIRI(NAMESPACE, "datatype");
+		DEACTIVATED = Vocabularies.createIRI(NAMESPACE, "deactivated");
+		DECLARE = Vocabularies.createIRI(NAMESPACE, "declare");
+		DEFAULT_VALUE = Vocabularies.createIRI(NAMESPACE, "defaultValue");
+		DERIVED_VALUES = Vocabularies.createIRI(NAMESPACE, "derivedValues");
+		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "description");
+		DETAIL = Vocabularies.createIRI(NAMESPACE, "detail");
+		DISJOINT = Vocabularies.createIRI(NAMESPACE, "disjoint");
+		EQUALS = Vocabularies.createIRI(NAMESPACE, "equals");
+		FLAGS = Vocabularies.createIRI(NAMESPACE, "flags");
+		FOCUS_NODE = Vocabularies.createIRI(NAMESPACE, "focusNode");
+		GROUP = Vocabularies.createIRI(NAMESPACE, "group");
+		HAS_VALUE = Vocabularies.createIRI(NAMESPACE, "hasValue");
+		IGNORED_PROPERTIES = Vocabularies.createIRI(NAMESPACE, "ignoredProperties");
+		IN = Vocabularies.createIRI(NAMESPACE, "in");
+		INVERSE_PATH = Vocabularies.createIRI(NAMESPACE, "inversePath");
+		LABEL_TEMPLATE = Vocabularies.createIRI(NAMESPACE, "labelTemplate");
+		LANGUAGE_IN = Vocabularies.createIRI(NAMESPACE, "languageIn");
+		LESS_THAN = Vocabularies.createIRI(NAMESPACE, "lessThan");
+		LESS_THAN_OR_EQUALS = Vocabularies.createIRI(NAMESPACE, "lessThanOrEquals");
+		MAX_COUNT = Vocabularies.createIRI(NAMESPACE, "maxCount");
+		MAX_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE, "maxExclusive");
+		MAX_INCLUSIVE = Vocabularies.createIRI(NAMESPACE, "maxInclusive");
+		MAX_LENGTH = Vocabularies.createIRI(NAMESPACE, "maxLength");
+		MESSAGE = Vocabularies.createIRI(NAMESPACE, "message");
+		MIN_COUNT = Vocabularies.createIRI(NAMESPACE, "minCount");
+		MIN_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE, "minExclusive");
+		MIN_INCLUSIVE = Vocabularies.createIRI(NAMESPACE, "minInclusive");
+		MIN_LENGTH = Vocabularies.createIRI(NAMESPACE, "minLength");
+		NAME = Vocabularies.createIRI(NAMESPACE, "name");
+		NAMESPACE_PROP = Vocabularies.createIRI(NAMESPACE, "namespace");
+		NODE = Vocabularies.createIRI(NAMESPACE, "node");
+		NODE_KIND_PROP = Vocabularies.createIRI(NAMESPACE, "nodeKind");
+		NODE_VALIDATOR = Vocabularies.createIRI(NAMESPACE, "nodeValidator");
+		NOT = Vocabularies.createIRI(NAMESPACE, "not");
+		ONE_OR_MORE_PATH = Vocabularies.createIRI(NAMESPACE, "oneOrMorePath");
+		OPTIONAL = Vocabularies.createIRI(NAMESPACE, "optional");
+		OR = Vocabularies.createIRI(NAMESPACE, "or");
+		ORDER = Vocabularies.createIRI(NAMESPACE, "order");
+		PARAMETER_PROP = Vocabularies.createIRI(NAMESPACE, "parameter");
+		PATH = Vocabularies.createIRI(NAMESPACE, "path");
+		PATTERN = Vocabularies.createIRI(NAMESPACE, "pattern");
+		PREFIX_PROP = Vocabularies.createIRI(NAMESPACE, "prefix");
+		PREFIXES = Vocabularies.createIRI(NAMESPACE, "prefixes");
+		PROPERTY = Vocabularies.createIRI(NAMESPACE, "property");
+		PROPERTY_VALIDATOR = Vocabularies.createIRI(NAMESPACE, "propertyValidator");
+		QUALIFIED_MAX_COUNT = Vocabularies.createIRI(NAMESPACE, "qualifiedMaxCount");
+		QUALIFIED_MIN_COUNT = Vocabularies.createIRI(NAMESPACE, "qualifiedMinCount");
+		QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE, "qualifiedValueShape");
+		QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE, "qualifiedValueShapesDisjoint");
+		RESULT = Vocabularies.createIRI(NAMESPACE, "result");
+		RESULT_ANNOTATION_PROP = Vocabularies.createIRI(NAMESPACE, "resultAnnotation");
+		RESULT_MESSAGE = Vocabularies.createIRI(NAMESPACE, "resultMessage");
+		RESULT_PATH = Vocabularies.createIRI(NAMESPACE, "resultPath");
+		RESULT_SEVERITY = Vocabularies.createIRI(NAMESPACE, "resultSeverity");
+		RETURN_TYPE = Vocabularies.createIRI(NAMESPACE, "returnType");
+		SELECT = Vocabularies.createIRI(NAMESPACE, "select");
+		SEVERITY_PROP = Vocabularies.createIRI(NAMESPACE, "severity");
+		SHAPES_GRAPH = Vocabularies.createIRI(NAMESPACE, "shapesGraph");
+		SHAPES_GRAPH_WELL_FORMED = Vocabularies.createIRI(NAMESPACE, "shapesGraphWellFormed");
+		SOURCE_CONSTRAINT = Vocabularies.createIRI(NAMESPACE, "sourceConstraint");
+		SOURCE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, "sourceConstraintComponent");
+		SOURCE_SHAPE = Vocabularies.createIRI(NAMESPACE, "sourceShape");
+		SPARQL = Vocabularies.createIRI(NAMESPACE, "sparql");
+		TARGET_PROP = Vocabularies.createIRI(NAMESPACE, "target");
+		TARGET_CLASS = Vocabularies.createIRI(NAMESPACE, "targetClass");
+		TARGET_NODE = Vocabularies.createIRI(NAMESPACE, "targetNode");
+		TARGET_OBJECTS_OF = Vocabularies.createIRI(NAMESPACE, "targetObjectsOf");
+		TARGET_SUBJECTS_OF = Vocabularies.createIRI(NAMESPACE, "targetSubjectsOf");
+		UNIQUE_LANG = Vocabularies.createIRI(NAMESPACE, "uniqueLang");
+		UPDATE = Vocabularies.createIRI(NAMESPACE, "update");
+		VALIDATOR_PROP = Vocabularies.createIRI(NAMESPACE, "validator");
+		VALUE = Vocabularies.createIRI(NAMESPACE, "value");
+		XONE = Vocabularies.createIRI(NAMESPACE, "xone");
+		ZERO_OR_MORE_PATH = Vocabularies.createIRI(NAMESPACE, "zeroOrMorePath");
+		ZERO_OR_ONE_PATH = Vocabularies.createIRI(NAMESPACE, "zeroOrOnePath");
 	}
 }

@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the Linked Data Platform.
@@ -34,7 +31,7 @@ public class LDP {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** ldp:BasicContainer */
@@ -128,38 +125,37 @@ public class LDP {
 	public static final IRI PREFER_MINIMAL_CONTAINER;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
-		BASIC_CONTAINER = factory.createIRI(NAMESPACE, "BasicContainer");
-		CONTAINER = factory.createIRI(NAMESPACE, "Container");
-		DIRECT_CONTAINER = factory.createIRI(NAMESPACE, "DirectContainer");
-		INDIRECT_CONTAINER = factory.createIRI(NAMESPACE, "IndirectContainer");
-		NON_RDF_SOURCE = factory.createIRI(NAMESPACE, "NonRDFSource");
-		PAGE = factory.createIRI(NAMESPACE, "Page");
-		PAGE_SORT_CRITERION = factory.createIRI(NAMESPACE, "PageSortCriterion");
-		RDF_SOURCE = factory.createIRI(NAMESPACE, "RDFSource");
-		RESOURCE = factory.createIRI(NAMESPACE, "Resource");
+		BASIC_CONTAINER = Vocabularies.createIRI(NAMESPACE, "BasicContainer");
+		CONTAINER = Vocabularies.createIRI(NAMESPACE, "Container");
+		DIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, "DirectContainer");
+		INDIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, "IndirectContainer");
+		NON_RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, "NonRDFSource");
+		PAGE = Vocabularies.createIRI(NAMESPACE, "Page");
+		PAGE_SORT_CRITERION = Vocabularies.createIRI(NAMESPACE, "PageSortCriterion");
+		RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, "RDFSource");
+		RESOURCE = Vocabularies.createIRI(NAMESPACE, "Resource");
 
-		CONSTRAINED_BY = factory.createIRI(NAMESPACE, "constrainedBy");
-		CONTAINS = factory.createIRI(NAMESPACE, "contains");
-		HAS_MEMBER_RELATION = factory.createIRI(NAMESPACE, "hasMemberRelation");
-		INBOX = factory.createIRI(NAMESPACE, "inbox");
-		INSERTED_CONTENT_RELATION = factory.createIRI(NAMESPACE, "insertedContentRelation");
-		IS_MEMBER_OF_RELATION = factory.createIRI(NAMESPACE, "isMemberOfRelation");
-		MEMBER = factory.createIRI(NAMESPACE, "member");
-		MEMBERSHIP_RESOURCE = factory.createIRI(NAMESPACE, "membershipResource");
-		PAGE_SEQUENCE = factory.createIRI(NAMESPACE, "pageSequence");
-		PAGE_SORT_COLLATION = factory.createIRI(NAMESPACE, "pageSortCollation");
-		PAGE_SORT_CRITERIA = factory.createIRI(NAMESPACE, "pageSortCriteria");
-		PAGE_SORT_ORDER = factory.createIRI(NAMESPACE, "pageSortOrder");
-		PAGE_SORT_PREDICATE = factory.createIRI(NAMESPACE, "pageSortPredicate");
+		CONSTRAINED_BY = Vocabularies.createIRI(NAMESPACE, "constrainedBy");
+		CONTAINS = Vocabularies.createIRI(NAMESPACE, "contains");
+		HAS_MEMBER_RELATION = Vocabularies.createIRI(NAMESPACE, "hasMemberRelation");
+		INBOX = Vocabularies.createIRI(NAMESPACE, "inbox");
+		INSERTED_CONTENT_RELATION = Vocabularies.createIRI(NAMESPACE, "insertedContentRelation");
+		IS_MEMBER_OF_RELATION = Vocabularies.createIRI(NAMESPACE, "isMemberOfRelation");
+		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
+		MEMBERSHIP_RESOURCE = Vocabularies.createIRI(NAMESPACE, "membershipResource");
+		PAGE_SEQUENCE = Vocabularies.createIRI(NAMESPACE, "pageSequence");
+		PAGE_SORT_COLLATION = Vocabularies.createIRI(NAMESPACE, "pageSortCollation");
+		PAGE_SORT_CRITERIA = Vocabularies.createIRI(NAMESPACE, "pageSortCriteria");
+		PAGE_SORT_ORDER = Vocabularies.createIRI(NAMESPACE, "pageSortOrder");
+		PAGE_SORT_PREDICATE = Vocabularies.createIRI(NAMESPACE, "pageSortPredicate");
 
-		ASCENDING = factory.createIRI(NAMESPACE, "Ascending");
-		DESCENDING = factory.createIRI(NAMESPACE, "Descending");
-		MEMBER_SUBJECT = factory.createIRI(NAMESPACE, "MemberSubject");
-		PREFER_CONTAINMENT = factory.createIRI(NAMESPACE, "PreferContainment");
-		PREFER_EMPTY_CONTAINER = factory.createIRI(NAMESPACE, "PreferEmptyContainer");
-		PREFER_MEMBERSHIP = factory.createIRI(NAMESPACE, "PreferMembership");
-		PREFER_MINIMAL_CONTAINER = factory.createIRI(NAMESPACE, "PreferMinimalContainer");
+		ASCENDING = Vocabularies.createIRI(NAMESPACE, "Ascending");
+		DESCENDING = Vocabularies.createIRI(NAMESPACE, "Descending");
+		MEMBER_SUBJECT = Vocabularies.createIRI(NAMESPACE, "MemberSubject");
+		PREFER_CONTAINMENT = Vocabularies.createIRI(NAMESPACE, "PreferContainment");
+		PREFER_EMPTY_CONTAINER = Vocabularies.createIRI(NAMESPACE, "PreferEmptyContainer");
+		PREFER_MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, "PreferMembership");
+		PREFER_MINIMAL_CONTAINER = Vocabularies.createIRI(NAMESPACE, "PreferMinimalContainer");
 	}
 }

@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * SPIN Standard Module library.
@@ -57,13 +55,13 @@ public final class SPL {
 	public static final IRI OBJECT_FUNCTION;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		ARGUMENT_TEMPLATE = factory.createIRI(NAMESPACE, "Argument");
-		PREDICATE_PROPERTY = factory.createIRI(NAMESPACE, "predicate");
-		VALUE_TYPE_PROPERTY = factory.createIRI(NAMESPACE, "valueType");
-		OPTIONAL_PROPERTY = factory.createIRI(NAMESPACE, "optional");
-		DEFAULT_VALUE_PROPERTY = factory.createIRI(NAMESPACE, "defaultValue");
 
-		OBJECT_FUNCTION = factory.createIRI(NAMESPACE, "object");
+		ARGUMENT_TEMPLATE = Vocabularies.createIRI(NAMESPACE, "Argument");
+		PREDICATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "predicate");
+		VALUE_TYPE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "valueType");
+		OPTIONAL_PROPERTY = Vocabularies.createIRI(NAMESPACE, "optional");
+		DEFAULT_VALUE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "defaultValue");
+
+		OBJECT_FUNCTION = Vocabularies.createIRI(NAMESPACE, "object");
 	}
 }

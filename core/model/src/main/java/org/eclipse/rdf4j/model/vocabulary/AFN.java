@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://jena.hpl.hp.com/ARQ/function#.
@@ -32,7 +30,6 @@ public final class AFN {
 	public static final IRI LOCALNAME;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		LOCALNAME = factory.createIRI(NAMESPACE, "localname");
+		LOCALNAME = Vocabularies.createIRI(NAMESPACE, "localname");
 	}
 }

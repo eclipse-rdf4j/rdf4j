@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 
 /**
  * http://spinrdf.org/spif#.
@@ -89,38 +87,37 @@ public final class SPIF {
 	public static final IRI SPLIT_PROPERTY;
 
 	static {
-		ValueFactory factory = ValueFactoryImpl.getInstance();
-		MOD_FUNCTION = factory.createIRI(NAMESPACE, "mod");
-		PARSE_DATE_FUNCTION = factory.createIRI(NAMESPACE, "parseDate");
-		DATE_FORMAT_FUNCTION = factory.createIRI(NAMESPACE, "dateFormat");
-		DECIMAL_FORMAT_FUNCTION = factory.createIRI(NAMESPACE, "decimalFormat");
-		TRIM_FUNCTION = factory.createIRI(NAMESPACE, "trim");
-		CURRENT_TIME_MILLIS_FUNCTION = factory.createIRI(NAMESPACE, "currentTimeMillis");
-		TIME_MILLIS_FUNCTION = factory.createIRI(NAMESPACE, "timeMillis");
-		GENERATE_UUID_FUNCTION = factory.createIRI(NAMESPACE, "generateUUID");
-		RANDOM_FUNCTION = factory.createIRI(NAMESPACE, "random");
-		CAST_FUNCTION = factory.createIRI(NAMESPACE, "cast");
-		INDEX_OF_FUNCTION = factory.createIRI(NAMESPACE, "indexOf");
-		LAST_INDEX_OF_FUNCTION = factory.createIRI(NAMESPACE, "lastIndexOf");
-		ENCODE_URL_FUNCTION = factory.createIRI(NAMESPACE, "encodeURL");
-		DECODE_URL_FUNCTION = factory.createIRI(NAMESPACE, "decodeURL");
-		BUILD_STRING_FUNCTION = factory.createIRI(NAMESPACE, "buildString");
-		BUILD_URI_FUNCTION = factory.createIRI(NAMESPACE, "buildURI");
-		CONVERT_SPIN_RDF_TO_STRING_FUNCTION = factory.createIRI(NAMESPACE, "convertSPINRDFToString");
-		REPLACE_ALL_FUNCTION = factory.createIRI(NAMESPACE, "replaceAll");
-		NAME_FUNCTION = factory.createIRI(NAMESPACE, "name");
-		UN_CAMEL_CASE_FUNCTION = factory.createIRI(NAMESPACE, "unCamelCase");
-		IS_VALID_URI_FUNCTION = factory.createIRI(NAMESPACE, "isValidURI");
-		HAS_ALL_OBJECTS_FUNCTION = factory.createIRI(NAMESPACE, "hasAllObjects");
-		INVOKE_FUNCTION = factory.createIRI(NAMESPACE, "invoke");
-		CAN_INVOKE_FUNCTION = factory.createIRI(NAMESPACE, "canInvoke");
-		UPPER_CASE_FUNCTION = factory.createIRI(NAMESPACE, "upperCase");
-		LOWER_CASE_FUNCTION = factory.createIRI(NAMESPACE, "lowerCase");
-		TITLE_CASE_FUNCTION = factory.createIRI(NAMESPACE, "titleCase");
-		LOWER_TITLE_CASE_FUNCTION = factory.createIRI(NAMESPACE, "lowerTitleCase");
+		MOD_FUNCTION = Vocabularies.createIRI(NAMESPACE, "mod");
+		PARSE_DATE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "parseDate");
+		DATE_FORMAT_FUNCTION = Vocabularies.createIRI(NAMESPACE, "dateFormat");
+		DECIMAL_FORMAT_FUNCTION = Vocabularies.createIRI(NAMESPACE, "decimalFormat");
+		TRIM_FUNCTION = Vocabularies.createIRI(NAMESPACE, "trim");
+		CURRENT_TIME_MILLIS_FUNCTION = Vocabularies.createIRI(NAMESPACE, "currentTimeMillis");
+		TIME_MILLIS_FUNCTION = Vocabularies.createIRI(NAMESPACE, "timeMillis");
+		GENERATE_UUID_FUNCTION = Vocabularies.createIRI(NAMESPACE, "generateUUID");
+		RANDOM_FUNCTION = Vocabularies.createIRI(NAMESPACE, "random");
+		CAST_FUNCTION = Vocabularies.createIRI(NAMESPACE, "cast");
+		INDEX_OF_FUNCTION = Vocabularies.createIRI(NAMESPACE, "indexOf");
+		LAST_INDEX_OF_FUNCTION = Vocabularies.createIRI(NAMESPACE, "lastIndexOf");
+		ENCODE_URL_FUNCTION = Vocabularies.createIRI(NAMESPACE, "encodeURL");
+		DECODE_URL_FUNCTION = Vocabularies.createIRI(NAMESPACE, "decodeURL");
+		BUILD_STRING_FUNCTION = Vocabularies.createIRI(NAMESPACE, "buildString");
+		BUILD_URI_FUNCTION = Vocabularies.createIRI(NAMESPACE, "buildURI");
+		CONVERT_SPIN_RDF_TO_STRING_FUNCTION = Vocabularies.createIRI(NAMESPACE, "convertSPINRDFToString");
+		REPLACE_ALL_FUNCTION = Vocabularies.createIRI(NAMESPACE, "replaceAll");
+		NAME_FUNCTION = Vocabularies.createIRI(NAMESPACE, "name");
+		UN_CAMEL_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "unCamelCase");
+		IS_VALID_URI_FUNCTION = Vocabularies.createIRI(NAMESPACE, "isValidURI");
+		HAS_ALL_OBJECTS_FUNCTION = Vocabularies.createIRI(NAMESPACE, "hasAllObjects");
+		INVOKE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "invoke");
+		CAN_INVOKE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "canInvoke");
+		UPPER_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "upperCase");
+		LOWER_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "lowerCase");
+		TITLE_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "titleCase");
+		LOWER_TITLE_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, "lowerTitleCase");
 
-		FOR_EACH_PROPERTY = factory.createIRI(NAMESPACE, "foreach");
-		FOR_PROPERTY = factory.createIRI(NAMESPACE, "for");
-		SPLIT_PROPERTY = factory.createIRI(NAMESPACE, "split");
+		FOR_EACH_PROPERTY = Vocabularies.createIRI(NAMESPACE, "foreach");
+		FOR_PROPERTY = Vocabularies.createIRI(NAMESPACE, "for");
+		SPLIT_PROPERTY = Vocabularies.createIRI(NAMESPACE, "split");
 	}
 }

@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for EARL primitives and for the EARL namespace.
@@ -73,32 +71,32 @@ public class EARL {
 	public final static IRI HEURISTIC;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		ASSERTOR = factory.createIRI(EARL.NAMESPACE, "Assertor");
-		ASSERTION = factory.createIRI(EARL.NAMESPACE, "Assertion");
-		ASSERTEDBY = factory.createIRI(EARL.NAMESPACE, "assertedBy");
-		SUBJECT = factory.createIRI(EARL.NAMESPACE, "subject");
-		TEST = factory.createIRI(EARL.NAMESPACE, "test");
-		TEST_SUBJECT = factory.createIRI(EARL.NAMESPACE, "TestSubject");
-		RESULT = factory.createIRI(EARL.NAMESPACE, "result");
-		MODE = factory.createIRI(EARL.NAMESPACE, "mode");
-		TESTRESULT = factory.createIRI(EARL.NAMESPACE, "TestResult");
-		OUTCOME = factory.createIRI(EARL.NAMESPACE, "outcome");
-		SOFTWARE = factory.createIRI(EARL.NAMESPACE, "Software");
+
+		ASSERTOR = Vocabularies.createIRI(EARL.NAMESPACE, "Assertor");
+		ASSERTION = Vocabularies.createIRI(EARL.NAMESPACE, "Assertion");
+		ASSERTEDBY = Vocabularies.createIRI(EARL.NAMESPACE, "assertedBy");
+		SUBJECT = Vocabularies.createIRI(EARL.NAMESPACE, "subject");
+		TEST = Vocabularies.createIRI(EARL.NAMESPACE, "test");
+		TEST_SUBJECT = Vocabularies.createIRI(EARL.NAMESPACE, "TestSubject");
+		RESULT = Vocabularies.createIRI(EARL.NAMESPACE, "result");
+		MODE = Vocabularies.createIRI(EARL.NAMESPACE, "mode");
+		TESTRESULT = Vocabularies.createIRI(EARL.NAMESPACE, "TestResult");
+		OUTCOME = Vocabularies.createIRI(EARL.NAMESPACE, "outcome");
+		SOFTWARE = Vocabularies.createIRI(EARL.NAMESPACE, "Software");
 
 		// Outcome values
 
-		PASS = factory.createIRI(EARL.NAMESPACE, "pass");
-		FAIL = factory.createIRI(EARL.NAMESPACE, "fail");
-		CANNOTTELL = factory.createIRI(EARL.NAMESPACE, "cannotTell");
-		NOTAPPLICABLE = factory.createIRI(EARL.NAMESPACE, "notApplicable");
-		NOTTESTED = factory.createIRI(EARL.NAMESPACE, "notTested");
+		PASS = Vocabularies.createIRI(EARL.NAMESPACE, "pass");
+		FAIL = Vocabularies.createIRI(EARL.NAMESPACE, "fail");
+		CANNOTTELL = Vocabularies.createIRI(EARL.NAMESPACE, "cannotTell");
+		NOTAPPLICABLE = Vocabularies.createIRI(EARL.NAMESPACE, "notApplicable");
+		NOTTESTED = Vocabularies.createIRI(EARL.NAMESPACE, "notTested");
 
 		// Test modes
-		MANUAL = factory.createIRI(EARL.NAMESPACE, "manual");
-		AUTOMATIC = factory.createIRI(EARL.NAMESPACE, "automatic");
-		SEMIAUTOMATIC = factory.createIRI(EARL.NAMESPACE, "semiAutomatic");
-		NOTAVAILABLE = factory.createIRI(EARL.NAMESPACE, "notAvailable");
-		HEURISTIC = factory.createIRI(EARL.NAMESPACE, "heuristic");
+		MANUAL = Vocabularies.createIRI(EARL.NAMESPACE, "manual");
+		AUTOMATIC = Vocabularies.createIRI(EARL.NAMESPACE, "automatic");
+		SEMIAUTOMATIC = Vocabularies.createIRI(EARL.NAMESPACE, "semiAutomatic");
+		NOTAVAILABLE = Vocabularies.createIRI(EARL.NAMESPACE, "notAvailable");
+		HEURISTIC = Vocabularies.createIRI(EARL.NAMESPACE, "heuristic");
 	}
 }

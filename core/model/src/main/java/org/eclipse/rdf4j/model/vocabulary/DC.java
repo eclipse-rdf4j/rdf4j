@@ -9,15 +9,12 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Vocabulary constants for the Dublin Core Metadata Element Set, version 1.1
  *
- * @see <a href="http://dublincore.org/documents/dces/">Dublin Core Metadata Element Set, Version 1.1</a>
  * @author Jeen Broekstra
+ * @see <a href="http://dublincore.org/documents/dces/">Dublin Core Metadata Element Set, Version 1.1</a>
  */
 public class DC {
 
@@ -34,7 +31,7 @@ public class DC {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Dublin Core namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * dc:title
@@ -112,22 +109,21 @@ public class DC {
 	public static final IRI TYPE;
 
 	static {
-		final ValueFactory f = SimpleValueFactory.getInstance();
 
-		CONTRIBUTOR = f.createIRI(NAMESPACE, "contributor");
-		COVERAGE = f.createIRI(NAMESPACE, "coverage");
-		CREATOR = f.createIRI(NAMESPACE, "creator");
-		DATE = f.createIRI(NAMESPACE, "date");
-		DESCRIPTION = f.createIRI(NAMESPACE, "description");
-		FORMAT = f.createIRI(NAMESPACE, "format");
-		IDENTIFIER = f.createIRI(NAMESPACE, "identifier");
-		LANGUAGE = f.createIRI(NAMESPACE, "language");
-		PUBLISHER = f.createIRI(NAMESPACE, "publisher");
-		RELATION = f.createIRI(NAMESPACE, "relation");
-		RIGHTS = f.createIRI(NAMESPACE, "rights");
-		SOURCE = f.createIRI(NAMESPACE, "source");
-		SUBJECT = f.createIRI(NAMESPACE, "subject");
-		TITLE = f.createIRI(NAMESPACE, "title");
-		TYPE = f.createIRI(NAMESPACE, "type");
+		CONTRIBUTOR = Vocabularies.createIRI(NAMESPACE, "contributor");
+		COVERAGE = Vocabularies.createIRI(NAMESPACE, "coverage");
+		CREATOR = Vocabularies.createIRI(NAMESPACE, "creator");
+		DATE = Vocabularies.createIRI(NAMESPACE, "date");
+		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "description");
+		FORMAT = Vocabularies.createIRI(NAMESPACE, "format");
+		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, "identifier");
+		LANGUAGE = Vocabularies.createIRI(NAMESPACE, "language");
+		PUBLISHER = Vocabularies.createIRI(NAMESPACE, "publisher");
+		RELATION = Vocabularies.createIRI(NAMESPACE, "relation");
+		RIGHTS = Vocabularies.createIRI(NAMESPACE, "rights");
+		SOURCE = Vocabularies.createIRI(NAMESPACE, "source");
+		SUBJECT = Vocabularies.createIRI(NAMESPACE, "subject");
+		TITLE = Vocabularies.createIRI(NAMESPACE, "title");
+		TYPE = Vocabularies.createIRI(NAMESPACE, "type");
 	}
 }

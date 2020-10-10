@@ -9,9 +9,6 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the W3C Organization Ontology.
@@ -35,7 +32,7 @@ public class ORG {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Organization namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** void:ChangeEvent */
@@ -172,52 +169,51 @@ public class ORG {
 	public static final IRI UNIT_OF;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
 
-		CHANGE_EVENT = factory.createIRI(NAMESPACE, "ChangeEvent");
-		FORMAL_ORGANIZATION = factory.createIRI(NAMESPACE, "FormalOrganization");
-		MEMBERSHIP = factory.createIRI(NAMESPACE, "Membership");
-		ORGANIZATION = factory.createIRI(NAMESPACE, "Organization");
-		ORGANIZATIONAL_COLLABORATION = factory.createIRI(NAMESPACE, "OrganizationalCollaboration");
-		ORGANIZATIONAL_UNIT = factory.createIRI(NAMESPACE, "OrganizationalUnit");
-		POST = factory.createIRI(NAMESPACE, "Post");
-		ROLE = factory.createIRI(NAMESPACE, "Role");
-		SITE = factory.createIRI(NAMESPACE, "Site");
+		CHANGE_EVENT = Vocabularies.createIRI(NAMESPACE, "ChangeEvent");
+		FORMAL_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "FormalOrganization");
+		MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, "Membership");
+		ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "Organization");
+		ORGANIZATIONAL_COLLABORATION = Vocabularies.createIRI(NAMESPACE, "OrganizationalCollaboration");
+		ORGANIZATIONAL_UNIT = Vocabularies.createIRI(NAMESPACE, "OrganizationalUnit");
+		POST = Vocabularies.createIRI(NAMESPACE, "Post");
+		ROLE = Vocabularies.createIRI(NAMESPACE, "Role");
+		SITE = Vocabularies.createIRI(NAMESPACE, "Site");
 
-		BASED_AT = factory.createIRI(NAMESPACE, "basedAt");
-		CHANGED_BY = factory.createIRI(NAMESPACE, "changedBy");
-		CLASSIFICATION = factory.createIRI(NAMESPACE, "classification");
-		HAS_MEMBER = factory.createIRI(NAMESPACE, "hasMember");
-		HAS_MEMBERSHIP = factory.createIRI(NAMESPACE, "hasMembership");
-		HAS_POST = factory.createIRI(NAMESPACE, "hasPost");
-		HAS_PRIMARY_SITE = factory.createIRI(NAMESPACE, "hasPrimarySite");
-		HAS_REGISTERED_SITE = factory.createIRI(NAMESPACE, "hasRegisteredSite");
-		HAS_SITE = factory.createIRI(NAMESPACE, "hasSite");
-		HAS_SUB_ORGANIZATION = factory.createIRI(NAMESPACE, "hasSubOrganization");
-		HAS_UNIT = factory.createIRI(NAMESPACE, "hasUnit");
-		HEAD_OF = factory.createIRI(NAMESPACE, "headOf");
-		HELD_BY = factory.createIRI(NAMESPACE, "heldBy");
-		HOLDS = factory.createIRI(NAMESPACE, "holds");
-		IDENTIFIER = factory.createIRI(NAMESPACE, "identifier");
-		LINKED_TO = factory.createIRI(NAMESPACE, "linkedTo");
-		LOCATION = factory.createIRI(NAMESPACE, "location");
-		MEMBER_DURING = factory.createIRI(NAMESPACE, "memberDuring");
-		MEMBER_OF = factory.createIRI(NAMESPACE, "memberOf");
-		MEMBER = factory.createIRI(NAMESPACE, "member");
-		HAS_ORGANIZATION = factory.createIRI(NAMESPACE, "organization");
-		ORIGINAL_ORGANIZATION = factory.createIRI(NAMESPACE, "originalOrganization");
-		POST_IN = factory.createIRI(NAMESPACE, "postIn");
-		PURPOSE = factory.createIRI(NAMESPACE, "purpose");
-		REMUNERATION = factory.createIRI(NAMESPACE, "remuneration");
-		REPORTS_TO = factory.createIRI(NAMESPACE, "reportsTo");
-		RESULTED_FROM = factory.createIRI(NAMESPACE, "resultedFrom");
-		RESULTING_ORGANIZATION = factory.createIRI(NAMESPACE, "resultingOrganization");
-		HAS_ROLE = factory.createIRI(NAMESPACE, "role");
-		ROLE_PROPERTY = factory.createIRI(NAMESPACE, "roleProperty");
-		SITE_ADDRESS = factory.createIRI(NAMESPACE, "siteAddress");
-		SITE_OF = factory.createIRI(NAMESPACE, "siteOf");
-		SUB_ORGANIZATION_OF = factory.createIRI(NAMESPACE, "subOrganizationOf");
-		TRANSITIVE_SUB_ORGANIZATION_OF = factory.createIRI(NAMESPACE, "transitiveSubOrganizationOf");
-		UNIT_OF = factory.createIRI(NAMESPACE, "unitOf");
+		BASED_AT = Vocabularies.createIRI(NAMESPACE, "basedAt");
+		CHANGED_BY = Vocabularies.createIRI(NAMESPACE, "changedBy");
+		CLASSIFICATION = Vocabularies.createIRI(NAMESPACE, "classification");
+		HAS_MEMBER = Vocabularies.createIRI(NAMESPACE, "hasMember");
+		HAS_MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, "hasMembership");
+		HAS_POST = Vocabularies.createIRI(NAMESPACE, "hasPost");
+		HAS_PRIMARY_SITE = Vocabularies.createIRI(NAMESPACE, "hasPrimarySite");
+		HAS_REGISTERED_SITE = Vocabularies.createIRI(NAMESPACE, "hasRegisteredSite");
+		HAS_SITE = Vocabularies.createIRI(NAMESPACE, "hasSite");
+		HAS_SUB_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "hasSubOrganization");
+		HAS_UNIT = Vocabularies.createIRI(NAMESPACE, "hasUnit");
+		HEAD_OF = Vocabularies.createIRI(NAMESPACE, "headOf");
+		HELD_BY = Vocabularies.createIRI(NAMESPACE, "heldBy");
+		HOLDS = Vocabularies.createIRI(NAMESPACE, "holds");
+		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, "identifier");
+		LINKED_TO = Vocabularies.createIRI(NAMESPACE, "linkedTo");
+		LOCATION = Vocabularies.createIRI(NAMESPACE, "location");
+		MEMBER_DURING = Vocabularies.createIRI(NAMESPACE, "memberDuring");
+		MEMBER_OF = Vocabularies.createIRI(NAMESPACE, "memberOf");
+		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
+		HAS_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "organization");
+		ORIGINAL_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "originalOrganization");
+		POST_IN = Vocabularies.createIRI(NAMESPACE, "postIn");
+		PURPOSE = Vocabularies.createIRI(NAMESPACE, "purpose");
+		REMUNERATION = Vocabularies.createIRI(NAMESPACE, "remuneration");
+		REPORTS_TO = Vocabularies.createIRI(NAMESPACE, "reportsTo");
+		RESULTED_FROM = Vocabularies.createIRI(NAMESPACE, "resultedFrom");
+		RESULTING_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "resultingOrganization");
+		HAS_ROLE = Vocabularies.createIRI(NAMESPACE, "role");
+		ROLE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "roleProperty");
+		SITE_ADDRESS = Vocabularies.createIRI(NAMESPACE, "siteAddress");
+		SITE_OF = Vocabularies.createIRI(NAMESPACE, "siteOf");
+		SUB_ORGANIZATION_OF = Vocabularies.createIRI(NAMESPACE, "subOrganizationOf");
+		TRANSITIVE_SUB_ORGANIZATION_OF = Vocabularies.createIRI(NAMESPACE, "transitiveSubOrganizationOf");
+		UNIT_OF = Vocabularies.createIRI(NAMESPACE, "unitOf");
 	}
 }

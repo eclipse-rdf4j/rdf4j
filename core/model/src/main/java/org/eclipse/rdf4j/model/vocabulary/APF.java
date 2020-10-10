@@ -8,8 +8,6 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * http://jena.hpl.hp.com/ARQ/property#.
@@ -31,8 +29,7 @@ public final class APF {
 	public static final IRI CONCAT;
 
 	static {
-		ValueFactory factory = SimpleValueFactory.getInstance();
-		STR_SPLIT = factory.createIRI(NAMESPACE, "strSplit");
-		CONCAT = factory.createIRI(NAMESPACE, "concat");
+		STR_SPLIT = Vocabularies.createIRI(NAMESPACE, "strSplit");
+		CONCAT = Vocabularies.createIRI(NAMESPACE, "concat");
 	}
 }

@@ -9,12 +9,9 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Constants for the Eclipse RDF4J SHACL Extensions.
- *
  */
 public class RSX {
 
@@ -29,7 +26,7 @@ public class RSX {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/*
 	 * Primitive datatypes
@@ -39,6 +36,6 @@ public class RSX {
 	public final static IRI targetShape = create("targetShape");
 
 	private static IRI create(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(RSX.NAMESPACE, localName);
+		return Vocabularies.createIRI(RSX.NAMESPACE, localName);
 	}
 }

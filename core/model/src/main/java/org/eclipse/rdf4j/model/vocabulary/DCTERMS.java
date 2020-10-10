@@ -9,15 +9,12 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleNamespace;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Vocabulary constants for the Dublin Core Metadata Initiative Metadata Terms.
  *
- * @see <a href="http://dublincore.org/documents/dcmi-terms/">DCMI Metadata Terms</a>
  * @author Peter Ansell
+ * @see <a href="http://dublincore.org/documents/dcmi-terms/">DCMI Metadata Terms</a>
  */
 public class DCTERMS {
 
@@ -34,7 +31,7 @@ public class DCTERMS {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Dublin Core Terms namespace.
 	 */
-	public static final Namespace NS = new SimpleNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// ----------------------------------------
 	// Properties common to Dublin Core Elements set
@@ -549,117 +546,116 @@ public class DCTERMS {
 	// Static initializer for fields
 
 	static {
-		final ValueFactory f = SimpleValueFactory.getInstance();
 
 		// Properties common to Dublin Core Elements
-		CONTRIBUTOR = f.createIRI(NAMESPACE, "contributor");
-		COVERAGE = f.createIRI(NAMESPACE, "coverage");
-		CREATOR = f.createIRI(NAMESPACE, "creator");
-		DATE = f.createIRI(NAMESPACE, "date");
-		DESCRIPTION = f.createIRI(NAMESPACE, "description");
-		FORMAT = f.createIRI(NAMESPACE, "format");
-		IDENTIFIER = f.createIRI(NAMESPACE, "identifier");
-		LANGUAGE = f.createIRI(NAMESPACE, "language");
-		PUBLISHER = f.createIRI(NAMESPACE, "publisher");
-		RELATION = f.createIRI(NAMESPACE, "relation");
-		RIGHTS = f.createIRI(NAMESPACE, "rights");
-		SOURCE = f.createIRI(NAMESPACE, "source");
-		SUBJECT = f.createIRI(NAMESPACE, "subject");
-		TITLE = f.createIRI(NAMESPACE, "title");
-		TYPE = f.createIRI(NAMESPACE, "type");
+		CONTRIBUTOR = Vocabularies.createIRI(NAMESPACE, "contributor");
+		COVERAGE = Vocabularies.createIRI(NAMESPACE, "coverage");
+		CREATOR = Vocabularies.createIRI(NAMESPACE, "creator");
+		DATE = Vocabularies.createIRI(NAMESPACE, "date");
+		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "description");
+		FORMAT = Vocabularies.createIRI(NAMESPACE, "format");
+		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, "identifier");
+		LANGUAGE = Vocabularies.createIRI(NAMESPACE, "language");
+		PUBLISHER = Vocabularies.createIRI(NAMESPACE, "publisher");
+		RELATION = Vocabularies.createIRI(NAMESPACE, "relation");
+		RIGHTS = Vocabularies.createIRI(NAMESPACE, "rights");
+		SOURCE = Vocabularies.createIRI(NAMESPACE, "source");
+		SUBJECT = Vocabularies.createIRI(NAMESPACE, "subject");
+		TITLE = Vocabularies.createIRI(NAMESPACE, "title");
+		TYPE = Vocabularies.createIRI(NAMESPACE, "type");
 
 		// Properties unique to Dublin Core Terms
-		ABSTRACT = f.createIRI(NAMESPACE, "abstract");
-		ACCESS_RIGHTS = f.createIRI(NAMESPACE, "accessRights");
-		ACCRUAL_METHOD = f.createIRI(NAMESPACE, "accuralMethod");
-		ACCRUAL_PERIODICITY = f.createIRI(NAMESPACE, "accrualPeriodicity");
-		ACCRUAL_POLICY = f.createIRI(NAMESPACE, "accrualPolicy");
-		ALTERNATIVE = f.createIRI(NAMESPACE, "alternative");
-		AUDIENCE = f.createIRI(NAMESPACE, "audience");
-		AVAILABLE = f.createIRI(NAMESPACE, "available");
-		BIBLIOGRAPHIC_CITATION = f.createIRI(NAMESPACE, "bibliographicCitation");
-		CONFORMS_TO = f.createIRI(NAMESPACE, "conformsTo");
-		CREATED = f.createIRI(NAMESPACE, "created");
-		DATE_ACCEPTED = f.createIRI(NAMESPACE, "dateAccepted");
-		DATE_COPYRIGHTED = f.createIRI(NAMESPACE, "dateCopyrighted");
-		DATE_SUBMITTED = f.createIRI(NAMESPACE, "dateSubmitted");
-		EDUCATION_LEVEL = f.createIRI(NAMESPACE, "educationLevel");
-		EXTENT = f.createIRI(NAMESPACE, "extent");
-		HAS_FORMAT = f.createIRI(NAMESPACE, "hasFormat");
-		HAS_PART = f.createIRI(NAMESPACE, "hasPart");
-		HAS_VERSION = f.createIRI(NAMESPACE, "hasVersion");
-		INSTRUCTIONAL_METHOD = f.createIRI(NAMESPACE, "instructionalMethod");
-		IS_FORMAT_OF = f.createIRI(NAMESPACE, "isFormatOf");
-		IS_PART_OF = f.createIRI(NAMESPACE, "isPartOf");
-		IS_REFERENCED_BY = f.createIRI(NAMESPACE, "isReferencedBy");
-		IS_REPLACED_BY = f.createIRI(NAMESPACE, "isReplacedBy");
-		IS_REQUIRED_BY = f.createIRI(NAMESPACE, "isRequiredBy");
-		IS_VERSION_OF = f.createIRI(NAMESPACE, "isVersionOf");
-		ISSUED = f.createIRI(NAMESPACE, "issued");
-		LICENSE = f.createIRI(NAMESPACE, "license");
-		MEDIATOR = f.createIRI(NAMESPACE, "mediator");
-		MEDIUM = f.createIRI(NAMESPACE, "medium");
-		MODIFIED = f.createIRI(NAMESPACE, "modified");
-		PROVENANCE = f.createIRI(NAMESPACE, "provenance");
-		REFERENCES = f.createIRI(NAMESPACE, "references");
-		REPLACES = f.createIRI(NAMESPACE, "replaces");
-		REQUIRES = f.createIRI(NAMESPACE, "requires");
-		RIGHTS_HOLDER = f.createIRI(NAMESPACE, "rightsHolder");
-		SPATIAL = f.createIRI(NAMESPACE, "spatial");
-		TABLE_OF_CONTENTS = f.createIRI(NAMESPACE, "tableOfContents");
-		TEMPORAL = f.createIRI(NAMESPACE, "temporal");
-		VALID = f.createIRI(NAMESPACE, "valid");
+		ABSTRACT = Vocabularies.createIRI(NAMESPACE, "abstract");
+		ACCESS_RIGHTS = Vocabularies.createIRI(NAMESPACE, "accessRights");
+		ACCRUAL_METHOD = Vocabularies.createIRI(NAMESPACE, "accuralMethod");
+		ACCRUAL_PERIODICITY = Vocabularies.createIRI(NAMESPACE, "accrualPeriodicity");
+		ACCRUAL_POLICY = Vocabularies.createIRI(NAMESPACE, "accrualPolicy");
+		ALTERNATIVE = Vocabularies.createIRI(NAMESPACE, "alternative");
+		AUDIENCE = Vocabularies.createIRI(NAMESPACE, "audience");
+		AVAILABLE = Vocabularies.createIRI(NAMESPACE, "available");
+		BIBLIOGRAPHIC_CITATION = Vocabularies.createIRI(NAMESPACE, "bibliographicCitation");
+		CONFORMS_TO = Vocabularies.createIRI(NAMESPACE, "conformsTo");
+		CREATED = Vocabularies.createIRI(NAMESPACE, "created");
+		DATE_ACCEPTED = Vocabularies.createIRI(NAMESPACE, "dateAccepted");
+		DATE_COPYRIGHTED = Vocabularies.createIRI(NAMESPACE, "dateCopyrighted");
+		DATE_SUBMITTED = Vocabularies.createIRI(NAMESPACE, "dateSubmitted");
+		EDUCATION_LEVEL = Vocabularies.createIRI(NAMESPACE, "educationLevel");
+		EXTENT = Vocabularies.createIRI(NAMESPACE, "extent");
+		HAS_FORMAT = Vocabularies.createIRI(NAMESPACE, "hasFormat");
+		HAS_PART = Vocabularies.createIRI(NAMESPACE, "hasPart");
+		HAS_VERSION = Vocabularies.createIRI(NAMESPACE, "hasVersion");
+		INSTRUCTIONAL_METHOD = Vocabularies.createIRI(NAMESPACE, "instructionalMethod");
+		IS_FORMAT_OF = Vocabularies.createIRI(NAMESPACE, "isFormatOf");
+		IS_PART_OF = Vocabularies.createIRI(NAMESPACE, "isPartOf");
+		IS_REFERENCED_BY = Vocabularies.createIRI(NAMESPACE, "isReferencedBy");
+		IS_REPLACED_BY = Vocabularies.createIRI(NAMESPACE, "isReplacedBy");
+		IS_REQUIRED_BY = Vocabularies.createIRI(NAMESPACE, "isRequiredBy");
+		IS_VERSION_OF = Vocabularies.createIRI(NAMESPACE, "isVersionOf");
+		ISSUED = Vocabularies.createIRI(NAMESPACE, "issued");
+		LICENSE = Vocabularies.createIRI(NAMESPACE, "license");
+		MEDIATOR = Vocabularies.createIRI(NAMESPACE, "mediator");
+		MEDIUM = Vocabularies.createIRI(NAMESPACE, "medium");
+		MODIFIED = Vocabularies.createIRI(NAMESPACE, "modified");
+		PROVENANCE = Vocabularies.createIRI(NAMESPACE, "provenance");
+		REFERENCES = Vocabularies.createIRI(NAMESPACE, "references");
+		REPLACES = Vocabularies.createIRI(NAMESPACE, "replaces");
+		REQUIRES = Vocabularies.createIRI(NAMESPACE, "requires");
+		RIGHTS_HOLDER = Vocabularies.createIRI(NAMESPACE, "rightsHolder");
+		SPATIAL = Vocabularies.createIRI(NAMESPACE, "spatial");
+		TABLE_OF_CONTENTS = Vocabularies.createIRI(NAMESPACE, "tableOfContents");
+		TEMPORAL = Vocabularies.createIRI(NAMESPACE, "temporal");
+		VALID = Vocabularies.createIRI(NAMESPACE, "valid");
 
 		// Vocabulary encoding schemes in Dublin Core Terms
 
-		DCMI_TYPE = f.createIRI(NAMESPACE, "DCMIType");
-		DDC = f.createIRI(NAMESPACE, "DDC");
-		IMT = f.createIRI(NAMESPACE, "IMT");
-		LCC = f.createIRI(NAMESPACE, "LCC");
-		LCSH = f.createIRI(NAMESPACE, "LCSH");
-		MESH = f.createIRI(NAMESPACE, "MESH");
-		NLM = f.createIRI(NAMESPACE, "NLM");
-		TGN = f.createIRI(NAMESPACE, "TGN");
-		UDC = f.createIRI(NAMESPACE, "UDC");
+		DCMI_TYPE = Vocabularies.createIRI(NAMESPACE, "DCMIType");
+		DDC = Vocabularies.createIRI(NAMESPACE, "DDC");
+		IMT = Vocabularies.createIRI(NAMESPACE, "IMT");
+		LCC = Vocabularies.createIRI(NAMESPACE, "LCC");
+		LCSH = Vocabularies.createIRI(NAMESPACE, "LCSH");
+		MESH = Vocabularies.createIRI(NAMESPACE, "MESH");
+		NLM = Vocabularies.createIRI(NAMESPACE, "NLM");
+		TGN = Vocabularies.createIRI(NAMESPACE, "TGN");
+		UDC = Vocabularies.createIRI(NAMESPACE, "UDC");
 
 		// Syntax encoding schemes in Dublin Core Terms
 
-		BOX = f.createIRI(NAMESPACE, "Box");
-		ISO3166 = f.createIRI(NAMESPACE, "ISO3166");
-		ISO639_2 = f.createIRI(NAMESPACE, "ISO639-2");
-		ISO639_3 = f.createIRI(NAMESPACE, "ISO639-3");
-		PERIOD = f.createIRI(NAMESPACE, "Period");
-		POINT = f.createIRI(NAMESPACE, "Point");
-		RFC1766 = f.createIRI(NAMESPACE, "RFC1766");
-		RFC3066 = f.createIRI(NAMESPACE, "RFC3066");
-		RFC4646 = f.createIRI(NAMESPACE, "RFC4646");
-		RFC5646 = f.createIRI(NAMESPACE, "RFC5646");
-		URI = f.createIRI(NAMESPACE, "URI");
-		W3CDTF = f.createIRI(NAMESPACE, "W3CDTF");
+		BOX = Vocabularies.createIRI(NAMESPACE, "Box");
+		ISO3166 = Vocabularies.createIRI(NAMESPACE, "ISO3166");
+		ISO639_2 = Vocabularies.createIRI(NAMESPACE, "ISO639-2");
+		ISO639_3 = Vocabularies.createIRI(NAMESPACE, "ISO639-3");
+		PERIOD = Vocabularies.createIRI(NAMESPACE, "Period");
+		POINT = Vocabularies.createIRI(NAMESPACE, "Point");
+		RFC1766 = Vocabularies.createIRI(NAMESPACE, "RFC1766");
+		RFC3066 = Vocabularies.createIRI(NAMESPACE, "RFC3066");
+		RFC4646 = Vocabularies.createIRI(NAMESPACE, "RFC4646");
+		RFC5646 = Vocabularies.createIRI(NAMESPACE, "RFC5646");
+		URI = Vocabularies.createIRI(NAMESPACE, "URI");
+		W3CDTF = Vocabularies.createIRI(NAMESPACE, "W3CDTF");
 
 		// Classes in Dublin Core Terms
 
-		AGENT = f.createIRI(NAMESPACE, "Agent");
-		AGENT_CLASS = f.createIRI(NAMESPACE, "AgentClass");
-		BIBLIOGRAPHIC_RESOURCE = f.createIRI(NAMESPACE, "BibliographicResource");
-		FILE_FORMAT = f.createIRI(NAMESPACE, "FileFormat");
-		FREQUENCY = f.createIRI(NAMESPACE, "Frequency");
-		JURISDICTION = f.createIRI(NAMESPACE, "Jurisdiction");
-		LICENSE_DOCUMENT = f.createIRI(NAMESPACE, "LicenseDocument");
-		LINGUISTIC_SYSTEM = f.createIRI(NAMESPACE, "LinguisticSystem");
-		LOCATION = f.createIRI(NAMESPACE, "Location");
-		LOCATION_PERIOD_OR_JURISDICTION = f.createIRI(NAMESPACE, "LocationPeriodOrJurisdiction");
-		MEDIA_TYPE = f.createIRI(NAMESPACE, "MediaType");
-		MEDIA_TYPE_OR_EXTENT = f.createIRI(NAMESPACE, "MediaTypeOrExtent");
-		METHOD_OF_ACCRUAL = f.createIRI(NAMESPACE, "MethodOfAccrual");
-		METHOD_OF_INSTRUCTION = f.createIRI(NAMESPACE, "MethodOfInstruction");
-		PERIOD_OF_TIME = f.createIRI(NAMESPACE, "PeriodOfTime");
-		PHYSICAL_MEDIUM = f.createIRI(NAMESPACE, "PhysicalMedium");
-		PHYSICAL_RESOURCE = f.createIRI(NAMESPACE, "PhysicalResource");
-		POLICY = f.createIRI(NAMESPACE, "Policy");
-		PROVENANCE_STATEMENT = f.createIRI(NAMESPACE, "ProvenanceStatement");
-		RIGHTS_STATEMENT = f.createIRI(NAMESPACE, "RightsStatement");
-		SIZE_OR_DURATION = f.createIRI(NAMESPACE, "SizeOrDuration");
-		STANDARD = f.createIRI(NAMESPACE, "Standard");
+		AGENT = Vocabularies.createIRI(NAMESPACE, "Agent");
+		AGENT_CLASS = Vocabularies.createIRI(NAMESPACE, "AgentClass");
+		BIBLIOGRAPHIC_RESOURCE = Vocabularies.createIRI(NAMESPACE, "BibliographicResource");
+		FILE_FORMAT = Vocabularies.createIRI(NAMESPACE, "FileFormat");
+		FREQUENCY = Vocabularies.createIRI(NAMESPACE, "Frequency");
+		JURISDICTION = Vocabularies.createIRI(NAMESPACE, "Jurisdiction");
+		LICENSE_DOCUMENT = Vocabularies.createIRI(NAMESPACE, "LicenseDocument");
+		LINGUISTIC_SYSTEM = Vocabularies.createIRI(NAMESPACE, "LinguisticSystem");
+		LOCATION = Vocabularies.createIRI(NAMESPACE, "Location");
+		LOCATION_PERIOD_OR_JURISDICTION = Vocabularies.createIRI(NAMESPACE, "LocationPeriodOrJurisdiction");
+		MEDIA_TYPE = Vocabularies.createIRI(NAMESPACE, "MediaType");
+		MEDIA_TYPE_OR_EXTENT = Vocabularies.createIRI(NAMESPACE, "MediaTypeOrExtent");
+		METHOD_OF_ACCRUAL = Vocabularies.createIRI(NAMESPACE, "MethodOfAccrual");
+		METHOD_OF_INSTRUCTION = Vocabularies.createIRI(NAMESPACE, "MethodOfInstruction");
+		PERIOD_OF_TIME = Vocabularies.createIRI(NAMESPACE, "PeriodOfTime");
+		PHYSICAL_MEDIUM = Vocabularies.createIRI(NAMESPACE, "PhysicalMedium");
+		PHYSICAL_RESOURCE = Vocabularies.createIRI(NAMESPACE, "PhysicalResource");
+		POLICY = Vocabularies.createIRI(NAMESPACE, "Policy");
+		PROVENANCE_STATEMENT = Vocabularies.createIRI(NAMESPACE, "ProvenanceStatement");
+		RIGHTS_STATEMENT = Vocabularies.createIRI(NAMESPACE, "RightsStatement");
+		SIZE_OR_DURATION = Vocabularies.createIRI(NAMESPACE, "SizeOrDuration");
+		STANDARD = Vocabularies.createIRI(NAMESPACE, "Standard");
 	}
 }
