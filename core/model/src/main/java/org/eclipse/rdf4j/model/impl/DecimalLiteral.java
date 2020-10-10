@@ -40,6 +40,12 @@ public class DecimalLiteral extends SimpleLiteral {
 		this.value = value;
 	}
 
+	protected DecimalLiteral(BigDecimal value, XSD.Datatype datatype) {
+		// TODO: maybe DecimalLiteral should not extend SimpleLiteral?
+		super(value.toPlainString(), datatype);
+		this.value = value;
+	}
+
 	@Override
 	public byte byteValue() {
 		return value.byteValue();

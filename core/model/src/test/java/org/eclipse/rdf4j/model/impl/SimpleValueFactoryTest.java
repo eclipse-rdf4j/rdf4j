@@ -5,18 +5,30 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.model;
+package org.eclipse.rdf4j.model.impl;
 
-import java.io.Serializable;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.ValueFactoryTest;
+import org.junit.Before;
 
 /**
- * The supertype of all RDF model objects (URIs, blank nodes and literals).
+ * @author jeen
  */
-public interface Value extends Serializable {
+public class SimpleValueFactoryTest extends ValueFactoryTest {
+
+	private ValueFactory f;
+
+	@Override
+	protected ValueFactory factory() {
+		return f;
+	}
 
 	/**
-	 * Returns the String-value of a <tt>Value</tt> object. This returns either a {@link Literal}'s label, a
-	 * {@link IRI}'s URI or a {@link BNode}'s ID.
+	 * @throws java.lang.Exception
 	 */
-	public String stringValue();
+	@Before
+	public void setUp() throws Exception {
+		f = SimpleValueFactory.getInstance();
+	}
+
 }

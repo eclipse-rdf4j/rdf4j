@@ -13,67 +13,62 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
-
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
- *
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
+ * 
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface Literal extends Value {
+
+	@Override
+	default boolean isLiteral() {
+		return true;
+	}
 
 	/**
 	 * Gets the label (the lexical value) of this literal.
 	 *
 	 * @return The literal's label.
 	 */
-	public String getLabel();
+	String getLabel();
 
 	/**
 	 * Gets the language tag for this literal, normalized to lower case.
 	 *
 	 * @return The language tag for this literal, or {@link Optional#empty()} if it doesn't have one.
 	 */
-	public Optional<String> getLanguage();
+	Optional<String> getLanguage();
 
 	/**
 	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
-	 * {@link RDF#LANGSTRING}. If no datatype was assigned to this literal by the creator, then this method must return
-	 * {@link XSD#STRING}.
+	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>. If no datatype was
+	 * assigned to this literal by the creator, then this method must return
+	 * <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
 	 * @return The datatype for this literal.
 	 */
-	public IRI getDatatype();
+	IRI getDatatype();
 
 	/**
-	 * Compares a literal object to another object.
+	 * Returns the <tt>boolean</tt> value of this literal.
 	 *
-	 * @param other The object to compare this literal to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link Literal} and if their labels, language tags
-	 *         and datatypes are equal.
-	 */
-	@Override
-	public boolean equals(Object other);
-
-	/**
-	 * Returns the literal's hash code. The hash code of a literal is defined as the hash code of its label:
-	 * <tt>label.hashCode()</tt>.
 	 *
-	 * @return A hash code for the literal.
+	 * @return The <tt>boolean</tt> value of the literal.
+	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
 	 */
-	@Override
-	public int hashCode();
+	boolean booleanValue();
 
 	/**
 	 * Returns the <tt>byte</tt> value of this literal.
 	 *
-	 * @return The <tt>byte value of the literal.
-	 * &#64;throws NumberFormatException
-	 *         If the literal cannot be represented by a <tt>byte</tt>.
+	 * @return The <tt>byte</tt> value of the literal.
+	 * @throws NumberFormatException If the literal cannot be represented by a <tt>byte</tt>.
 	 */
-	public byte byteValue();
+	byte byteValue();
 
 	/**
 	 * Returns the <tt>short</tt> value of this literal.
@@ -81,7 +76,7 @@ public interface Literal extends Value {
 	 * @return The <tt>short</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>short</tt>.
 	 */
-	public short shortValue();
+	short shortValue();
 
 	/**
 	 * Returns the <tt>int</tt> value of this literal.
@@ -89,7 +84,7 @@ public interface Literal extends Value {
 	 * @return The <tt>int</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>int</tt>.
 	 */
-	public int intValue();
+	int intValue();
 
 	/**
 	 * Returns the <tt>long</tt> value of this literal.
@@ -97,7 +92,7 @@ public interface Literal extends Value {
 	 * @return The <tt>long</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by to a <tt>long</tt> .
 	 */
-	public long longValue();
+	long longValue();
 
 	/**
 	 * Returns the integer value of this literal.
@@ -105,7 +100,7 @@ public interface Literal extends Value {
 	 * @return The integer value of the literal.
 	 * @throws NumberFormatException If the literal's label is not a valid integer.
 	 */
-	public BigInteger integerValue();
+	BigInteger integerValue();
 
 	/**
 	 * Returns the decimal value of this literal.
@@ -113,7 +108,7 @@ public interface Literal extends Value {
 	 * @return The decimal value of the literal.
 	 * @throws NumberFormatException If the literal's label is not a valid decimal.
 	 */
-	public BigDecimal decimalValue();
+	BigDecimal decimalValue();
 
 	/**
 	 * Returns the <tt>float</tt> value of this literal.
@@ -121,7 +116,7 @@ public interface Literal extends Value {
 	 * @return The <tt>float</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>float</tt>.
 	 */
-	public float floatValue();
+	float floatValue();
 
 	/**
 	 * Returns the <tt>double</tt> value of this literal.
@@ -129,15 +124,7 @@ public interface Literal extends Value {
 	 * @return The <tt>double</tt> value of the literal.
 	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>double</tt>.
 	 */
-	public double doubleValue();
-
-	/**
-	 * Returns the <tt>boolean</tt> value of this literal.
-	 *
-	 * @return The <tt>long</tt> value of the literal.
-	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
-	 */
-	public boolean booleanValue();
+	double doubleValue();
 
 	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
@@ -148,5 +135,29 @@ public interface Literal extends Value {
 	 * @return The calendar value of the literal.
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
-	public XMLGregorianCalendar calendarValue();
+	XMLGregorianCalendar calendarValue();
+
+	/**
+	 * Compares this literal to another object.
+	 *
+	 * @param other the object to compare this literal to
+	 *
+	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
+	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
+	 */
+	@Override
+	boolean equals(Object other);
+
+	/**
+	 * Computes the hash code of this literal.
+	 *
+	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
+	 *
+	 * @implNote {@linkplain #getLanguage() language} amd {@linkplain #getDatatype() datatype} are deliberately not
+	 *           considered in the computation (see issue
+	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)
+	 */
+	@Override
+	int hashCode();
+
 }

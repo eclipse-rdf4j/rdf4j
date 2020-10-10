@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractTriple;
 
 /**
  * A simple default implementation of the {@link Triple} interface.
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
  * @author Pavel Mihaylov
  * @see SimpleValueFactory
  */
-public class SimpleTriple implements Triple {
+public class SimpleTriple extends AbstractTriple {
 
 	/**
 	 * The triple's subject.
@@ -46,7 +47,8 @@ public class SimpleTriple implements Triple {
 	 * @param subject   The triple's subject, must not be <tt>null</tt>.
 	 * @param predicate The triple's predicate, must not be <tt>null</tt>.
 	 * @param object    The triple's object, must not be <tt>null</tt>.
-	 * @see {@link SimpleValueFactory#createTriple(Resource, IRI, Value)
+	 *
+	 * @see SimpleValueFactory#createTriple(Resource, IRI, Value)
 	 */
 	protected SimpleTriple(Resource subject, IRI predicate, Value object) {
 		this.subject = Objects.requireNonNull(subject, "subject must not be null");
@@ -106,4 +108,5 @@ public class SimpleTriple implements Triple {
 	public int hashCode() {
 		return Objects.hash(subject, predicate, object);
 	}
+
 }

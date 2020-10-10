@@ -46,7 +46,7 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xmx64M", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MaxCountBenchmarkEmpty {
@@ -56,7 +56,7 @@ public class MaxCountBenchmarkEmpty {
 
 	private List<List<Statement>> allStatements;
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);

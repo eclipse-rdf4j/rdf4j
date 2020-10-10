@@ -11,33 +11,43 @@ package org.eclipse.rdf4j.model;
  * An RDF-1.1 blank node (aka <em>bnode</em>, aka <em>anonymous node</em>). A blank node has an identifier to be able to
  * compare it to other blank nodes internally. Please note that, conceptually, blank node equality can only be
  * determined by examining the statements that refer to them.
+ * <p>
+ * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
+ * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
  *
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-blank-nodes">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface BNode extends Resource {
 
+	@Override
+	default boolean isBNode() {
+		return true;
+	}
+
 	/**
-	 * retrieves this blank node's identifier.
+	 * Retrieves this blank node's identifier.
 	 *
 	 * @return A blank node identifier.
 	 */
-	public String getID();
+	String getID();
 
 	/**
-	 * Compares a blank node object to another object.
+	 * Compares this blank node to another object.
 	 *
-	 * @param o The object to compare this blank node to.
-	 * @return <tt>true</tt> if the other object is an instance of {@link BNode} and their IDs are equal, <tt>false</tt>
-	 *         otherwise.
+	 * @param o the object to compare this blank node to
+	 *
+	 * @return {@code true}, if the other object is an instance of {@code BNode} and their {@linkplain #getID() IDs} are
+	 *         equal; {@code false}, otherwise.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
-	 * The hash code of a blank node is defined as the hash code of its identifier: <tt>id.hashCode()</tt>.
+	 * Computes the hash code of this blank node.
 	 *
-	 * @return A hash code for the blank node.
+	 * @return a hash code for this blank node computed as {@link #getID()}{@code .hashCode()}
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
+
 }

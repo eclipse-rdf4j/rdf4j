@@ -99,7 +99,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XSD.STRING);
+		return new SimpleLiteral(value, XSD.Datatype.STRING);
 	}
 
 	@Override
@@ -161,7 +161,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XSD.BYTE);
+		return createIntegerLiteral(value, XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -169,7 +169,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XSD.SHORT);
+		return createIntegerLiteral(value, XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -177,7 +177,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XSD.INT);
+		return createIntegerLiteral(value, XSD.Datatype.INT);
 	}
 
 	/**
@@ -185,7 +185,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XSD.LONG);
+		return createIntegerLiteral(value, XSD.Datatype.LONG);
 	}
 
 	/**
@@ -195,12 +195,16 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
+	protected Literal createIntegerLiteral(Number value, XSD.Datatype datatype) {
+		return createNumericLiteral(value, datatype);
+	}
+
 	/**
 	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#FLOAT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XSD.FLOAT);
+		return createFPLiteral(value, XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -208,7 +212,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XSD.DOUBLE);
+		return createFPLiteral(value, XSD.Datatype.DOUBLE);
 	}
 
 	@Override
@@ -228,10 +232,24 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
+	protected Literal createFPLiteral(Number value, XSD.Datatype datatype) {
+		return createNumericLiteral(value, datatype);
+	}
+
 	/**
 	 * Creates specific optimized subtypes of SimpleLiteral for numeric datatypes.
 	 */
 	protected Literal createNumericLiteral(Number number, IRI datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
+	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}
