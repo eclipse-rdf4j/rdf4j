@@ -43,7 +43,7 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 		none,
 		nodeShape,
 		propertyShape,
-		not;
+		not
 	}
 
 	ConstraintComponent deepClone();

@@ -9,21 +9,13 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode _:node1ekej3uplx6;
-      sh:value _:genid-cbdcef79e123405da0e978f0d8302bea-b1;
+      sh:focusNode [];
+      sh:value [];
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ekej3uplx5
-    ], [ a sh:ValidationResult;
-      sh:focusNode _:node1ekej3uplx6;
-      sh:value _:genid-cbdcef79e123405da0e978f0d8302bea-b1;
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ekej3uplx5
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path ex:knows;
+          sh:class ex:Person
+        ]
     ] .
-
-_:node1ekej3uplx5 a sh:PropertyShape;
-  sh:path ex:knows;
-  sh:class ex:Person .

@@ -16,4 +16,20 @@ ex:PersonShape
 			sh:hasValue ex:female ;
 		] ;
 		sh:qualifiedMinCount "1"^^xsd:long ;
-	] .
+	]
+	.
+
+
+ex:PersonShape2
+	a sh:NodeShape ;
+	sh:targetClass ex:Person2 ;
+
+	sh:property [
+        	sh:path ex:temp ;
+        	sh:qualifiedValueShape [
+        		sh:path ex:val ;
+        		sh:datatype xsd:string ;
+        	] ;
+        	sh:qualifiedMinCount "2"^^xsd:long ;
+        ]
+	.
