@@ -144,9 +144,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNodeProvider planNodeProvider = () -> {
 
-			PlanNode target = getTargetChain()
-					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, scope, true);
+			PlanNode target = getAllTargetsPlan(connectionsGroup, scope);
 
 			target = new DebugPlanNode(target, p -> {
 				assert p != null;
@@ -191,9 +189,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode invalid = new Unique(planNode);
 
-		PlanNode allTargetsPlan = getTargetChain()
-				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-				.getPlanNode(connectionsGroup, scope, true);
+		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> {
 			assert p != null;

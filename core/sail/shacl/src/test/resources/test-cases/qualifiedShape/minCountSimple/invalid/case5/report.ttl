@@ -11,7 +11,7 @@
   sh:result [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:resultPath ex:parent;
-      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
+      sh:sourceConstraintComponent sh:QualifiedMinCountConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
           sh:path ex:parent;
@@ -19,6 +19,6 @@
               sh:path ex:sex;
               sh:hasValue ex:female
             ];
-          sh:qualifiedMaxCount "1"^^xsd:long
+          sh:qualifiedMinCount "1"^^xsd:long
         ]
     ] .

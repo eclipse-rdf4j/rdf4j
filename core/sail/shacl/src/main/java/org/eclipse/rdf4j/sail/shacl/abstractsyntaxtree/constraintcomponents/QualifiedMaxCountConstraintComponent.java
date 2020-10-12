@@ -151,9 +151,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNodeProvider planNodeProvider = () -> {
 
-			PlanNode target = getTargetChain()
-					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, scope, true);
+			PlanNode target = getAllTargetsPlan(connectionsGroup, scope);
 
 			target = new DebugPlanNode(target, p -> {
 				assert p != null;
@@ -198,9 +196,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode invalid = new Unique(planNode);
 
-		PlanNode allTargetsPlan = getTargetChain()
-				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-				.getPlanNode(connectionsGroup, scope, true);
+		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
 
 		allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> {
 			assert p != null;
@@ -255,10 +251,14 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 
 		subTargets = new DebugPlanNode(subTargets, p -> {
-
 			assert p != null;
 		});
-		return new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)));
+
+		PlanNode unique = new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)));
+		unique = new DebugPlanNode(unique, p -> {
+			assert p != null;
+		});
+		return unique;
 
 	}
 
