@@ -1,0 +1,29 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+[] a sh:ValidationReport;
+  sh:conforms false;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode _:node1ek9nmq99x6;
+      sh:value _:genid-4ff5804976e64c32b9bf88b58ef56088-b1;
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ek9nmq99x5
+    ], [ a sh:ValidationResult;
+      sh:focusNode _:node1ek9nmq99x6;
+      sh:value _:genid-4ff5804976e64c32b9bf88b58ef56088-b1;
+      sh:resultPath ex:knows;
+      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:resultSeverity sh:Violation;
+      sh:sourceShape _:node1ek9nmq99x5
+    ] .
+
+_:node1ek9nmq99x5 a sh:PropertyShape;
+  sh:path ex:knows;
+  sh:class ex:Person .

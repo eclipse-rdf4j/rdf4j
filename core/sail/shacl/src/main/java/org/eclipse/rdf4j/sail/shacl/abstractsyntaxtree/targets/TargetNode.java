@@ -40,11 +40,6 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return new ValuesBackedNode(targetNodes, scope);
-	}
-
-	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		StringBuilder sb = new StringBuilder();

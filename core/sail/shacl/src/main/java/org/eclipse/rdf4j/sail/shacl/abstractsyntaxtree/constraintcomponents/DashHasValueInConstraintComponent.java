@@ -3,15 +3,21 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
@@ -29,20 +35,21 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValueInFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 
-public class HasValueInConstraintComponent extends AbstractConstraintComponent {
+public class DashHasValueInConstraintComponent extends AbstractConstraintComponent {
 
 	final Set<Value> hasValueIn;
 
-	public HasValueInConstraintComponent(Resource hasValueIn, RepositoryConnection connection) {
+	public DashHasValueInConstraintComponent(Resource hasValueIn, RepositoryConnection connection) {
 		super(hasValueIn);
 		this.hasValueIn = Collections
 				.unmodifiableSet(new LinkedHashSet<>(HelperTool.toList(connection, hasValueIn, Value.class)));
 	}
 
-	public HasValueInConstraintComponent(HasValueInConstraintComponent hasValueInConstraintComponent) {
-		super(hasValueInConstraintComponent.getId());
-		hasValueIn = hasValueInConstraintComponent.hasValueIn;
+	public DashHasValueInConstraintComponent(DashHasValueInConstraintComponent dashHasValueInConstraintComponent) {
+		super(dashHasValueInConstraintComponent.getId());
+		hasValueIn = dashHasValueInConstraintComponent.hasValueIn;
 	}
 
 	@Override
@@ -58,7 +65,7 @@ public class HasValueInConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public ConstraintComponent deepClone() {
-		return new HasValueInConstraintComponent(this);
+		return new DashHasValueInConstraintComponent(this);
 	}
 
 	@Override
@@ -143,4 +150,70 @@ public class HasValueInConstraintComponent extends AbstractConstraintComponent {
 		}
 		return new EmptyNode();
 	}
+
+	@Override
+	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+
+		if(getTargetChain().getPath().isPresent()){
+		Path path = getTargetChain().getPath().get();
+
+		return hasValueIn
+			.stream()
+			.flatMap(value -> path.getStatementPatterns(subject, object, rdfsSubClassOfReasoner));
+		}
+
+		throw new IllegalStateException("Dunno what to do here!");
+	}
+
+	@Override
+	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+		if (scope == Scope.propertyShape) {
+			Path path = getTargetChain().getPath().get();
+
+
+			return hasValueIn
+				.stream()
+				.map(value -> {
+					Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
+
+					if (value instanceof IRI) {
+						return "BIND(<" + value + "> as ?" + objectVar.getName() + ")\n"
+							+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+					}
+					if (value instanceof Literal) {
+						return "BIND(" + value.toString() + " as ?" + objectVar.getName() + ")\n"
+							+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+					}
+
+					throw new UnsupportedOperationException(
+						"value was unsupported type: " + value.getClass().getSimpleName());
+				})
+				.collect(
+					Collectors.joining("} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+						"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+						"}"));
+
+		} else {
+
+			return hasValueIn
+				.stream()
+				.map(value -> {
+					if (value instanceof IRI) {
+						return "?"+subject.getName() + " = <" + value + ">";
+					} else if (value instanceof Literal) {
+						return "?"+subject.getName() + " = " + value;
+					}
+					throw new UnsupportedOperationException(
+						"value was unsupported type: " + value.getClass().getSimpleName());
+				})
+				.reduce((a, b) -> a + " || " + b)
+				.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
+
+		}
+	}
+
+
+
+
+
 }

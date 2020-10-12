@@ -1,17 +1,23 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
@@ -28,6 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToProperty
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 
 public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
@@ -170,4 +177,68 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
 		return or.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
+
+
+
+//	@Override
+//	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+//		if (scope == Scope.propertyShape) {
+//			// within property shape
+//			String objectVariable = randomVariable();
+//			String pathQuery1 = getTargetChain().getPath().get().getTargetQueryFragment(subject, object, null);
+//
+//			String collect = or.stream()
+//				.map(l -> l.stream()
+//					.map(p -> p.buildSparqlValidNodes(objectVariable))
+//					.reduce((a, b) -> a + " && " + b))
+//				.filter(Optional::isPresent)
+//				.map(Optional::get)
+//				.collect(Collectors.joining(" ) || ( ", "( ",
+//					" )"));
+//
+//			String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+//				+ "\n\tFILTER(!(" + collect + "))\n})";
+//
+//			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
+//
+//			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+//				+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+//				+ randomVariable() + " "
+//				+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
+//				+ " \n})\n}";
+//
+//			return query;
+//		} else if (!childrenHasOwnPathRecursive()) {
+//
+//			return or.stream()
+//				.map(l -> l.stream()
+//					.map(p -> p.buildSparqlValidNodes(targetVar))
+//					.reduce((a, b) -> a + " && " + b))
+//				.filter(Optional::isPresent)
+//				.map(Optional::get)
+//				.collect(Collectors.joining(" ) || ( ", "( ",
+//					" )"));
+//		} else {
+//			// within node shape
+//			return or.stream()
+//				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+//				.filter(Optional::isPresent)
+//				.map(Optional::get)
+//				.map(s -> s.replaceAll("(?m)^", "\t"))
+//				.collect(
+//					Collectors.joining("\n} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+//						"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+//						"\n}"));
+//		}
+//	}
+
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+																		 RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+		return or.stream()
+			.flatMap(c -> c.getStatementPatterns_rsx_targetShape( subject,  object, rdfsSubClassOfReasoner, Scope.nodeShape));
+	}
+
+
 }

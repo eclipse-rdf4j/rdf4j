@@ -102,6 +102,9 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 		assert scope == Scope.propertyShape;
 
+
+
+
 		PlanNode planNode = negated(connectionsGroup, logValidationPlans, overrideTargetNode, scope);
 
 		planNode = new DebugPlanNode(planNode, p -> {

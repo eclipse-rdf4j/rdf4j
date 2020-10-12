@@ -47,11 +47,6 @@ public class DashAllSubjects extends Target {
 		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
 	}
 
-	@Override
-	public PlanNode getRemoved(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getRemovedStatements());
-	}
-
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			SailConnection connection) {
 

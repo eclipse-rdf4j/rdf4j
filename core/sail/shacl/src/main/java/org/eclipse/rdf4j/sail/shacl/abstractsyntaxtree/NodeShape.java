@@ -1,9 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
-import java.io.StringWriter;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -11,11 +7,14 @@ import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
@@ -28,6 +27,11 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationReportNode;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+
+import java.io.StringWriter;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
@@ -242,4 +246,18 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		return stringWriter.toString();
 	}
 
+	@Override
+	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+		return constraintComponents
+			.stream()
+			.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object,  new Var("someVarName"), rdfsSubClassOfReasoner, Scope.nodeShape))
+			.reduce((a, b)-> a + "\n" + b).orElse("");
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+																		 RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+		return constraintComponents.stream()
+			.flatMap(c -> c.getStatementPatterns_rsx_targetShape( object,  new Var("someVarName"), rdfsSubClassOfReasoner, Scope.nodeShape));
+	}
 }

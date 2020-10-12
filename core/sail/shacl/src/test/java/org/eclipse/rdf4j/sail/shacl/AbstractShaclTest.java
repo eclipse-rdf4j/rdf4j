@@ -79,20 +79,20 @@ abstract public class AbstractShaclTest {
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
 
-		"test-cases/and-or/datatypeNodeShape",
+	/*	"test-cases/and-or/datatypeNodeShape",
 		"test-cases/class/allObjects",
 		"test-cases/class/allSubjects",
 		"test-cases/class/and",
 		"test-cases/class/and2",
-//		"test-cases/class/complexTargetShape",
-//		"test-cases/class/complexTargetShape2",
+		"test-cases/class/complexTargetShape",
+		"test-cases/class/complexTargetShape2",
 		"test-cases/class/multipleClass",
 		"test-cases/class/not",
 		"test-cases/class/not2",
 		"test-cases/class/notAnd",
 		"test-cases/class/notNotSimple",
 		"test-cases/class/simple",
-//		"test-cases/class/simpleTargetShape",
+		"test-cases/class/simpleTargetShape",
 //		"test-cases/class/sparqlTarget",
 //		"test-cases/class/sparqlTargetNot",
 		"test-cases/class/subclass",
@@ -106,11 +106,11 @@ abstract public class AbstractShaclTest {
 		"test-cases/datatype/not",
 		"test-cases/datatype/notNodeShape",
 		"test-cases/datatype/notNodeShapeAnd",
-//		"test-cases/datatype/notNodeShapeTargetShape",
+		"test-cases/datatype/notNodeShapeTargetShape",
 		"test-cases/datatype/notNot",
 		"test-cases/datatype/notSimpleNodeShape",
 		"test-cases/datatype/notTargetNode",
-//		"test-cases/datatype/notTargetShape",
+		"test-cases/datatype/notTargetShape",
 		"test-cases/datatype/simple",
 		"test-cases/datatype/simpleNested",
 		"test-cases/datatype/simpleNode",
@@ -208,16 +208,17 @@ abstract public class AbstractShaclTest {
 		"test-cases/languageIn/subtags2",
 		"test-cases/hasValueIn/targetNode2",
 		"test-cases/hasValue/or",
-//		"test-cases/hasValue/targetShapeOr",
-//		"test-cases/hasValue/targetShapeAnd",
-//		"test-cases/hasValue/targetShapeAnd2",
-//		"test-cases/hasValue/targetShapeAndOr",
-//		"test-cases/hasValue/targetShapeAndOr2",
-//		"test-cases/hasValueIn/targetShapeOr",
+		"test-cases/hasValue/targetShapeOr",
+		"test-cases/hasValue/targetShapeAnd",
+		"test-cases/hasValue/targetShapeAnd2",
+		"test-cases/hasValue/targetShapeAndOr",
+		"test-cases/hasValue/targetShapeAndOr2",
+		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or",
-		"test-cases/class/simpleNested",
+		"test-cases/class/simpleNested"*/
 		"test-cases/qualifiedShape/simple"
-	)
+
+		)
 		.distinct()
 		.sorted()
 		.collect(Collectors.toList());

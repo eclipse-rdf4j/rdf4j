@@ -1,8 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
 import java.util.Set;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.TargetChainInterface;
@@ -28,6 +32,11 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	SourceConstraintComponent getConstraintComponent();
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
+
+	Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+																			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
+
+	String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
 
 	enum Scope {
 		none,
