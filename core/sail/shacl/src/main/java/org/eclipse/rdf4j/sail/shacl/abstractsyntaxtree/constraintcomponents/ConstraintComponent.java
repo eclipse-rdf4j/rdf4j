@@ -34,9 +34,10 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
 
 	Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
-																			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
 
-	String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
+	String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			Scope scope);
 
 	enum Scope {
 		none,

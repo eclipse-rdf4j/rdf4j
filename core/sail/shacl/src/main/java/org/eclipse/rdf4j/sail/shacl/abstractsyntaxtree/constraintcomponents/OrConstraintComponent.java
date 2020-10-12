@@ -1,9 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -34,7 +32,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToProperty
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
-import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 
 public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
@@ -178,8 +175,6 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		return or.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
 
-
-
 //	@Override
 //	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 //		if (scope == Scope.propertyShape) {
@@ -232,13 +227,12 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 //		}
 //	}
 
-
 	@Override
 	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
-																		 RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		return or.stream()
-			.flatMap(c -> c.getStatementPatterns_rsx_targetShape( subject,  object, rdfsSubClassOfReasoner, Scope.nodeShape));
+				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+						Scope.nodeShape));
 	}
-
 
 }

@@ -84,12 +84,14 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	@Override
-	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 
 	@Override
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 }

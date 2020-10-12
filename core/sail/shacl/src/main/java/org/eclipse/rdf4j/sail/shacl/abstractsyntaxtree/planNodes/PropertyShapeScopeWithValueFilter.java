@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
 
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 
 /**

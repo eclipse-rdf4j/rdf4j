@@ -14,30 +14,30 @@
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ek9nmr0px5
+      sh:sourceShape _:node1ekej3v1mx5
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:peter;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ek9nmr0px5
+      sh:sourceShape _:node1ekej3v1mx5
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ek9nmr0px5
+      sh:sourceShape _:node1ekej3v1mx5
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson1;
       sh:value ex:steve;
       sh:resultPath ex:knows;
       sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1ek9nmr0px5
+      sh:sourceShape _:node1ekej3v1mx5
     ] .
 
-_:node1ek9nmr0px5 a sh:PropertyShape;
+_:node1ekej3v1mx5 a sh:PropertyShape;
   sh:path ex:knows;
   sh:class ex:Person .

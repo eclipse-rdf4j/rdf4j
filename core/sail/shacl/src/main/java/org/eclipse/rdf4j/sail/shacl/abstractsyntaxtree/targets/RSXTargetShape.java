@@ -1,5 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -21,15 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class RSXTargetShape extends Target {
 
@@ -67,33 +66,31 @@ public class RSXTargetShape extends Target {
 	}
 
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-										  SailConnection connection) {
+			SailConnection connection) {
 
-		List<StatementPattern> collect = getStatementPatterns(null, new Var("temp1"), connectionsGroup.getRdfsSubClassOfReasoner()).collect(Collectors.toList());
-
+		List<StatementPattern> collect = getStatementPatterns(null, new Var("temp1"),
+				connectionsGroup.getRdfsSubClassOfReasoner()).collect(Collectors.toList());
 
 		String query = getTargetQueryFragment(null, new Var("temp1"), connectionsGroup.getRdfsSubClassOfReasoner());
 
 		List<Var> vars = Arrays.asList(new Var("temp1"), new Var("someVarName"));
 
-
 		return new TargetChainRetriever(
-			connectionsGroup,
-			collect,
-			null,
-			query,
-			vars,
-			scope
+				connectionsGroup,
+				collect,
+				null,
+				query,
+				vars,
+				scope
 		);
 
 	}
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
-								   RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
-
 
 	}
 
@@ -103,18 +100,17 @@ public class RSXTargetShape extends Target {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query, new Var("temp1"),
-			ValidationTuple::getActiveTarget)
-			.getTrueNode(UnBufferedPlanNode.class);
+				ValidationTuple::getActiveTarget)
+						.getTrueNode(UnBufferedPlanNode.class);
 	}
-
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
-														 RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		return this.targetShape.getStatementPatterns_rsx_targetShape(subject, object,
-			rdfsSubClassOfReasoner, null);
+				rdfsSubClassOfReasoner, null);
 	}
 
 	@Override
@@ -122,7 +118,6 @@ public class RSXTargetShape extends Target {
 		assert (subject == null);
 
 		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null);
-
 
 	}
 
