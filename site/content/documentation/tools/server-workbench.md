@@ -56,6 +56,13 @@ The easiest way to create and manage repositories on an RDF4J Server to use the 
 
 However, you can also directly edit the `config.ttl` of your repository to change its configuration. For example, you can use this to change the repository name as it is shown in the Workbench, or perhaps to change configuration parameters, or change the repository type. However, proceed with caution: if you make a mistake, your repository may become unreadable until after you've rectified the mistake. Also note that if you change the actual store type (e.g. switching from a memory store to a native store), it _won't_ migrate your existing data to the new store configuration!
 
+The different types of repository are: 
+- SPARQLRepository
+- HTTPRepository
+- SailRepository
+- DatasetRepository
+- ContextAwareRepository
+
 More information can be found in the [Repository configuration and templates](/documentation/tools/repository-configuration/) section of the documentation.
 
 ### Logging Configuration
