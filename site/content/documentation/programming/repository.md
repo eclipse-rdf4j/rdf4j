@@ -132,7 +132,7 @@ Repository repo = new SailRepository(
 
 Each layer in the Sail stack is created by a constructor that takes the underlying Sail as a parameter. Finally, we create the SailRepository object as a functional wrapper around the Sail stack.
 
-The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
+The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingRDFSInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
 
 ### Custom Inferencing
 
