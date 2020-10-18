@@ -31,13 +31,38 @@ public abstract class AbstractNamespace implements Namespace {
 			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
 	);
 
+	/**
+	 * Creates a new namespace.
+	 *
+	 * @param prefix the prefix of the namespace
+	 * @param name   the IRI of the namespace
+	 *
+	 * @return a new generic namespace
+	 *
+	 * @throws NullPointerException if either {@code prefix} or {@code name} is {@code null}
+	 */
+	public static Namespace createNamespace(String prefix, String name) {
+
+		if (prefix == null) {
+			throw new NullPointerException("null prefix");
+		}
+
+		if (name == null) {
+			throw new NullPointerException("null name");
+		}
+
+		return new GenericNamespace(prefix, name);
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	@Override
 	public int compareTo(Namespace o) {
 		return COMPARATOR.compare(this, o);
 	}
 
 	@Override
-	public boolean equals(final Object object) {
+	public boolean equals(Object object) {
 		return this == object || object instanceof Namespace
 				&& Objects.equals(getPrefix(), ((Namespace) object).getPrefix())
 				&& Objects.equals(getName(), ((Namespace) object).getName());
@@ -51,6 +76,31 @@ public abstract class AbstractNamespace implements Namespace {
 	@Override
 	public String toString() {
 		return getPrefix() + " :: " + getName();
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	private static class GenericNamespace extends AbstractNamespace {
+
+		private static final long serialVersionUID = -6325162028110821008L;
+
+		private final String prefix;
+		private final String name;
+
+		GenericNamespace(String prefix, String name) {
+			this.prefix = prefix;
+			this.name = name;
+		}
+
+		@Override
+		public String getPrefix() {
+			return prefix;
+		}
+
+		@Override
+		public String getName() {
+			return name;
+		}
 	}
 
 }

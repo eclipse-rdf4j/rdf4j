@@ -68,11 +68,6 @@ public abstract class StatementTest {
 
 	}
 
-	@Ignore("undefined rules")
-	@Test
-	public void testStringValue() {
-	}
-
 	@Test
 	public void testEquals() {
 

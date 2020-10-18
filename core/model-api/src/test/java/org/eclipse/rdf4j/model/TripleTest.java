@@ -62,11 +62,6 @@ public abstract class TripleTest {
 		assertThatNullPointerException().isThrownBy(() -> triple(subject, predicate, null));
 	}
 
-	@Ignore("undefined rules")
-	@Test
-	public void testStringValue() {
-	}
-
 	@Test
 	public void testEquals() {
 

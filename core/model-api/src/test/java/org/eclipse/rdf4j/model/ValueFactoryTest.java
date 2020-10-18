@@ -196,6 +196,7 @@ public abstract class ValueFactoryTest {
 
 	@Test
 	public void testCreateLiteralDate() throws DatatypeConfigurationException {
+
 		final Date date = new Date(2020, 9, 30, 1, 2, 3);
 		final String string = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(date);
 

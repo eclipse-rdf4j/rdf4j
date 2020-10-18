@@ -10,7 +10,10 @@ package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link Statement}, offering common functionality.
@@ -21,6 +24,65 @@ import org.eclipse.rdf4j.model.Statement;
 public abstract class AbstractStatement implements Statement {
 
 	private static final long serialVersionUID = 2087591563645988076L;
+
+	/**
+	 * Creates a new statement.
+	 *
+	 * @param subject   the subject of the statement
+	 * @param predicate the predicate of the statement
+	 * @param object    the object of the statement
+	 *
+	 * @return a new generic statement
+	 *
+	 * @throws NullPointerException if either {@code subject} or {@code predicate} or {@code object} is {@code null}
+	 */
+	public static Statement createStatement(Resource subject, IRI predicate, Value object) {
+
+		if (subject == null) {
+			throw new NullPointerException("null subject");
+		}
+
+		if (predicate == null) {
+			throw new NullPointerException("null predicate");
+		}
+
+		if (object == null) {
+			throw new NullPointerException("null object");
+		}
+
+		return new GenericStatement(subject, predicate, object, null);
+	}
+
+	/**
+	 * Creates a new statement.
+	 *
+	 * @param subject   the subject of the statement
+	 * @param predicate the predicate of the statement
+	 * @param object    the object of the statement
+	 * @param context   the context of the statement; may be {@code null}
+	 *
+	 * @return a new generic statement
+	 *
+	 * @throws NullPointerException if either {@code subject} or {@code predicate} or {@code object} is {@code null}
+	 */
+	public static Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
+
+		if (subject == null) {
+			throw new NullPointerException("null subject");
+		}
+
+		if (predicate == null) {
+			throw new NullPointerException("null predicate");
+		}
+
+		if (object == null) {
+			throw new NullPointerException("null object");
+		}
+
+		return new GenericStatement(subject, predicate, object, context);
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	@Override
 	public boolean equals(Object o) {
@@ -49,6 +111,46 @@ public abstract class AbstractStatement implements Statement {
 				+ ", " + getObject()
 				+ (getContext() == null ? "" : ", " + getContext())
 				+ ")";
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	private static class GenericStatement extends AbstractStatement {
+
+		private static final long serialVersionUID = -4116676621136121342L;
+
+		private final Resource subject;
+		private final IRI predicate;
+		private final Value object;
+		private final Resource context;
+
+		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object;
+		}
+
+		@Override
+		public Resource getContext() {
+			return context;
+		}
+
 	}
 
 }

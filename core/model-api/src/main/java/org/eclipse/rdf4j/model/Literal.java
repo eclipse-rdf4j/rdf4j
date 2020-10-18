@@ -15,12 +15,13 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
- * 
+ *
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
+ *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 public interface Literal extends Value {
 

@@ -9,6 +9,8 @@
 package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.BNode;
 
@@ -21,6 +23,37 @@ import org.eclipse.rdf4j.model.BNode;
 public abstract class AbstractBNode implements BNode {
 
 	private static final long serialVersionUID = -437354568418943981L;
+
+	private static final AtomicLong nodeID = new AtomicLong(ThreadLocalRandom.current().nextLong());
+
+	/**
+	 * Creates a new blank node value.
+	 *
+	 * @return a new generic blank node value with a system-generated label
+	 */
+	public static BNode createBNode() {
+		return new GenericBNode("node" + Long.toString(nodeID.incrementAndGet(), Character.MAX_RADIX));
+	}
+
+	/**
+	 * Creates a new blank node value.
+	 *
+	 * @param nodeID the identifier of the blank node
+	 *
+	 * @return a new generic blank node value
+	 *
+	 * @throws NullPointerException if {@code nodeID} is {@code null}
+	 */
+	public static BNode createBNode(String nodeID) {
+
+		if (nodeID == null) {
+			throw new NullPointerException("null nodeID");
+		}
+
+		return new GenericBNode(nodeID);
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	@Override
 	public String stringValue() {
@@ -41,6 +74,25 @@ public abstract class AbstractBNode implements BNode {
 	@Override
 	public String toString() {
 		return "_:" + getID();
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	private static class GenericBNode extends AbstractBNode {
+
+		private static final long serialVersionUID = -617790782100827067L;
+
+		private final String id;
+
+		GenericBNode(String id) {
+			this.id = id;
+		}
+
+		@Override
+		public String getID() {
+			return id;
+		}
+
 	}
 
 }

@@ -15,10 +15,10 @@ import java.io.Serializable;
  * <p>
  * Additional utility functionality for working with {@code Statement} objects is available in the
  * {@code org.eclipse.rdf4j.model.util.Statements} utility class.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
- * 
+ *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 public interface Statement extends Serializable {
 

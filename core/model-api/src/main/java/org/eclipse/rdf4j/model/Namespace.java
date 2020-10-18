@@ -11,10 +11,10 @@ import java.io.Serializable;
 
 /**
  * A namespace, consisting of a namespace name and a prefix that has been assigned to it.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
  *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 public interface Namespace extends Serializable, Comparable<Namespace> {
 

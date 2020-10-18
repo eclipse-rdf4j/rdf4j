@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.TripleTest;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.base.AbstractIRITest.TestIRI;
 
 /**
  * Unit tests for {@link AbstractTriple}.
@@ -25,56 +24,12 @@ public class AbstractTripleTest extends TripleTest {
 
 	@Override
 	protected Triple triple(Resource subject, IRI predicate, Value object) {
-		return new TestTriple(subject, predicate, object);
+		return AbstractTriple.createTriple(subject, predicate, object);
 	}
 
 	@Override
 	protected IRI iri(String iri) {
-		return new TestIRI(iri);
+		return AbstractIRI.createIRI(iri);
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	private static class TestTriple extends AbstractTriple {
-
-		private static final long serialVersionUID = 7822116805598041700L;
-
-		private final Resource subject;
-		private final IRI predicate;
-		private final Value object;
-
-		TestTriple(Resource subject, IRI predicate, Value object) {
-
-			if (subject == null) {
-				throw new NullPointerException("null subject");
-			}
-
-			if (predicate == null) {
-				throw new NullPointerException("null predicate");
-			}
-
-			if (object == null) {
-				throw new NullPointerException("null object");
-			}
-
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-		}
-
-		@Override
-		public Resource getSubject() {
-			return subject;
-		}
-
-		@Override
-		public IRI getPredicate() {
-			return predicate;
-		}
-
-		@Override
-		public Value getObject() {
-			return object;
-		}
-	}
 }
