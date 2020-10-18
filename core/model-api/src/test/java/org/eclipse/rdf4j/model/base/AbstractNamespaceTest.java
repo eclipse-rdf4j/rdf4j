@@ -21,17 +21,27 @@ public final class AbstractNamespaceTest extends NamespaceTest {
 
 	@Override
 	protected Namespace namespace(String prefix, String name) {
-		return new TestNamespace(prefix, name);
+
+		if (prefix == null) {
+			throw new NullPointerException("null prefix");
+		}
+
+		if (name == null) {
+			throw new NullPointerException("null name");
+		}
+
+		return new GenericNamespace(prefix, name);
 	}
 
-	private static final class TestNamespace extends AbstractNamespace {
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	private static class GenericNamespace extends AbstractNamespace {
 
 		private static final long serialVersionUID = -6325162028110821008L;
-
 		private final String prefix;
 		private final String name;
 
-		private TestNamespace(String prefix, String name) {
+		GenericNamespace(String prefix, String name) {
 			this.prefix = prefix;
 			this.name = name;
 		}
@@ -45,6 +55,6 @@ public final class AbstractNamespaceTest extends NamespaceTest {
 		public String getName() {
 			return name;
 		}
-	}
 
+	}
 }

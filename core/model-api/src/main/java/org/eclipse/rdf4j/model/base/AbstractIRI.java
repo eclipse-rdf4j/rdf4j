@@ -8,10 +8,7 @@
 
 package org.eclipse.rdf4j.model.base;
 
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link IRI}, offering common functionality.
@@ -26,6 +23,8 @@ public abstract class AbstractIRI implements IRI {
 
 	private static final long serialVersionUID = 7799969821538513046L;
 
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	@Override
 	public String stringValue() {
 		return getNamespace() + getLocalName();
@@ -34,17 +33,62 @@ public abstract class AbstractIRI implements IRI {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof IRI
-				&& Objects.equals(toString(), ((Value) o).toString()); // !!! use stringValue()
+				&& toString().equals(o.toString()); // !!! use stringValue()
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(toString()); // !!! use stringValue()
+		return toString().hashCode(); // !!! use stringValue()
 	}
 
 	@Override
 	public String toString() {
 		return stringValue();
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	static class GenericIRI extends AbstractIRI {
+
+		private static final long serialVersionUID = 2209156550690548467L;
+
+		private String iri;
+
+		private int split;
+
+		GenericIRI(String iri) {
+			this.iri = iri;
+			this.split = 0;
+		}
+
+		GenericIRI(String namespace, String localName) {
+			this.iri = namespace + localName; // !!! concatenation performance impact?
+			this.split = namespace.length();
+		}
+
+		@Override
+		public String stringValue() {
+			return iri;
+		}
+
+		@Override
+		public String getNamespace() {
+			return iri.substring(0, split());
+		}
+
+		@Override
+		public String getLocalName() {
+			return iri.substring(split());
+		}
+
+		private int split() {
+			return (split > 0) ? split
+					: (split = iri.indexOf('#') + 1) > 0 ? split
+							: (split = iri.lastIndexOf('/') + 1) > 0 ? split
+									: (split = iri.lastIndexOf(':') + 1) > 0 ? split
+											: 0; // unexpected: colon presence already tested in factory methods
+		}
+
 	}
 
 }

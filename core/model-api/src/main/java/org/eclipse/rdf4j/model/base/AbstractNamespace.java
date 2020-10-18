@@ -31,21 +31,23 @@ public abstract class AbstractNamespace implements Namespace {
 			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
 	);
 
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	@Override
 	public int compareTo(Namespace o) {
 		return COMPARATOR.compare(this, o);
 	}
 
 	@Override
-	public boolean equals(final Object object) {
+	public boolean equals(Object object) {
 		return this == object || object instanceof Namespace
-				&& Objects.equals(getPrefix(), ((Namespace) object).getPrefix())
-				&& Objects.equals(getName(), ((Namespace) object).getName());
+				&& getPrefix().equals(((Namespace) object).getPrefix())
+				&& getName().equals(((Namespace) object).getName());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(getPrefix(), getName());
+		return Objects.hash(getPrefix(), getName()); // !!! avoid array creation
 	}
 
 	@Override

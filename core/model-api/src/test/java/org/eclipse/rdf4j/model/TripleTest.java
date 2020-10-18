@@ -42,7 +42,7 @@ public abstract class TripleTest {
 	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
-	protected abstract IRI iri(final String iri);
+	protected abstract IRI iri(String iri);
 
 	@Test
 	public final void testConstructor() {
@@ -60,11 +60,6 @@ public abstract class TripleTest {
 		assertThatNullPointerException().isThrownBy(() -> triple(null, predicate, object));
 		assertThatNullPointerException().isThrownBy(() -> triple(subject, null, object));
 		assertThatNullPointerException().isThrownBy(() -> triple(subject, predicate, null));
-	}
-
-	@Ignore("undefined rules")
-	@Test
-	public void testStringValue() {
 	}
 
 	@Test
