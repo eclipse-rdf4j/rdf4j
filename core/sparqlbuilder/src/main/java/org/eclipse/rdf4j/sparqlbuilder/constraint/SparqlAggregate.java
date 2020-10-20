@@ -25,7 +25,7 @@ public enum SparqlAggregate implements SparqlOperator {
 
 	private String function;
 
-	private SparqlAggregate(String function) {
+	SparqlAggregate(String function) {
 		this.function = function;
 	}
 

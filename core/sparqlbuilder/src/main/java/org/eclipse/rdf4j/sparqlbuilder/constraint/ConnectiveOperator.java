@@ -24,7 +24,7 @@ enum ConnectiveOperator implements SparqlOperator {
 
 	private String operator;
 
-	private ConnectiveOperator(String operator) {
+	ConnectiveOperator(String operator) {
 		this.operator = operator;
 	}
 

@@ -21,7 +21,7 @@ enum BinaryOperator implements SparqlOperator {
 
 	private String operator;
 
-	private BinaryOperator(String operator) {
+	BinaryOperator(String operator) {
 		this.operator = operator;
 	}
 
