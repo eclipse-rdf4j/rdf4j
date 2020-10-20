@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -30,12 +33,12 @@ public class SESAMEQNAME {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Sesame QName namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/** <tt>http://www.openrdf.org/schema/qname#qname</tt> */
 	public final static IRI QNAME;
 
 	static {
-		QNAME = Vocabularies.createIRI(SESAMEQNAME.NAMESPACE, "qname");
+		QNAME = createIRI(SESAMEQNAME.NAMESPACE, "qname");
 	}
 }

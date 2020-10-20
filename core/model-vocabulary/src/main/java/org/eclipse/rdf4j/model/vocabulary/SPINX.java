@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -29,7 +31,7 @@ public final class SPINX {
 	public static final IRI JAVA_SCRIPT_FILE_PROPERTY;
 
 	static {
-		JAVA_SCRIPT_CODE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "javaScriptCode");
-		JAVA_SCRIPT_FILE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "javaScriptFile");
+		JAVA_SCRIPT_CODE_PROPERTY = createIRI(NAMESPACE, "javaScriptCode");
+		JAVA_SCRIPT_FILE_PROPERTY = createIRI(NAMESPACE, "javaScriptFile");
 	}
 }

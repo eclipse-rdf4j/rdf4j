@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -99,49 +101,49 @@ public class GEOF {
 
 	static {
 
-		DISTANCE = Vocabularies.createIRI(NAMESPACE, "distance");
-		BUFFER = Vocabularies.createIRI(NAMESPACE, "buffer");
-		CONVEX_HULL = Vocabularies.createIRI(NAMESPACE, "convexHull");
-		INTERSECTION = Vocabularies.createIRI(NAMESPACE, "intersection");
-		UNION = Vocabularies.createIRI(NAMESPACE, "union");
-		DIFFERENCE = Vocabularies.createIRI(NAMESPACE, "difference");
-		SYM_DIFFERENCE = Vocabularies.createIRI(NAMESPACE, "symDifference");
-		ENVELOPE = Vocabularies.createIRI(NAMESPACE, "envelope");
-		BOUNDARY = Vocabularies.createIRI(NAMESPACE, "boundary");
-		GET_SRID = Vocabularies.createIRI(NAMESPACE, "getSRID");
+		DISTANCE = createIRI(NAMESPACE, "distance");
+		BUFFER = createIRI(NAMESPACE, "buffer");
+		CONVEX_HULL = createIRI(NAMESPACE, "convexHull");
+		INTERSECTION = createIRI(NAMESPACE, "intersection");
+		UNION = createIRI(NAMESPACE, "union");
+		DIFFERENCE = createIRI(NAMESPACE, "difference");
+		SYM_DIFFERENCE = createIRI(NAMESPACE, "symDifference");
+		ENVELOPE = createIRI(NAMESPACE, "envelope");
+		BOUNDARY = createIRI(NAMESPACE, "boundary");
+		GET_SRID = createIRI(NAMESPACE, "getSRID");
 
-		RELATE = Vocabularies.createIRI(NAMESPACE, "relate");
+		RELATE = createIRI(NAMESPACE, "relate");
 
-		SF_EQUALS = Vocabularies.createIRI(NAMESPACE, "sfEquals");
-		SF_DISJOINT = Vocabularies.createIRI(NAMESPACE, "sfDisjoint");
-		SF_INTERSECTS = Vocabularies.createIRI(NAMESPACE, "sfIntersects");
-		SF_TOUCHES = Vocabularies.createIRI(NAMESPACE, "sfTouches");
-		SF_CROSSES = Vocabularies.createIRI(NAMESPACE, "sfCrosses");
-		SF_WITHIN = Vocabularies.createIRI(NAMESPACE, "sfWithin");
-		SF_CONTAINS = Vocabularies.createIRI(NAMESPACE, "sfContains");
-		SF_OVERLAPS = Vocabularies.createIRI(NAMESPACE, "sfOverlaps");
+		SF_EQUALS = createIRI(NAMESPACE, "sfEquals");
+		SF_DISJOINT = createIRI(NAMESPACE, "sfDisjoint");
+		SF_INTERSECTS = createIRI(NAMESPACE, "sfIntersects");
+		SF_TOUCHES = createIRI(NAMESPACE, "sfTouches");
+		SF_CROSSES = createIRI(NAMESPACE, "sfCrosses");
+		SF_WITHIN = createIRI(NAMESPACE, "sfWithin");
+		SF_CONTAINS = createIRI(NAMESPACE, "sfContains");
+		SF_OVERLAPS = createIRI(NAMESPACE, "sfOverlaps");
 
-		EH_EQUALS = Vocabularies.createIRI(NAMESPACE, "ehEquals");
-		EH_DISJOINT = Vocabularies.createIRI(NAMESPACE, "ehDisjoint");
-		EH_MEET = Vocabularies.createIRI(NAMESPACE, "ehMeet");
-		EH_OVERLAP = Vocabularies.createIRI(NAMESPACE, "ehOverlap");
-		EH_COVERS = Vocabularies.createIRI(NAMESPACE, "ehCovers");
-		EH_COVERED_BY = Vocabularies.createIRI(NAMESPACE, "ehCoveredBy");
-		EH_INSIDE = Vocabularies.createIRI(NAMESPACE, "ehInside");
-		EH_CONTAINS = Vocabularies.createIRI(NAMESPACE, "ehContains");
+		EH_EQUALS = createIRI(NAMESPACE, "ehEquals");
+		EH_DISJOINT = createIRI(NAMESPACE, "ehDisjoint");
+		EH_MEET = createIRI(NAMESPACE, "ehMeet");
+		EH_OVERLAP = createIRI(NAMESPACE, "ehOverlap");
+		EH_COVERS = createIRI(NAMESPACE, "ehCovers");
+		EH_COVERED_BY = createIRI(NAMESPACE, "ehCoveredBy");
+		EH_INSIDE = createIRI(NAMESPACE, "ehInside");
+		EH_CONTAINS = createIRI(NAMESPACE, "ehContains");
 
-		RCC8_EQ = Vocabularies.createIRI(NAMESPACE, "rcc8eq");
-		RCC8_DC = Vocabularies.createIRI(NAMESPACE, "rcc8dc");
-		RCC8_EC = Vocabularies.createIRI(NAMESPACE, "rcc8ec");
-		RCC8_PO = Vocabularies.createIRI(NAMESPACE, "rcc8po");
-		RCC8_TPPI = Vocabularies.createIRI(NAMESPACE, "rcc8tppi");
-		RCC8_TPP = Vocabularies.createIRI(NAMESPACE, "rcc8tpp");
-		RCC8_NTPP = Vocabularies.createIRI(NAMESPACE, "rcc8ntpp");
-		RCC8_NTPPI = Vocabularies.createIRI(NAMESPACE, "rcc8ntppi");
+		RCC8_EQ = createIRI(NAMESPACE, "rcc8eq");
+		RCC8_DC = createIRI(NAMESPACE, "rcc8dc");
+		RCC8_EC = createIRI(NAMESPACE, "rcc8ec");
+		RCC8_PO = createIRI(NAMESPACE, "rcc8po");
+		RCC8_TPPI = createIRI(NAMESPACE, "rcc8tppi");
+		RCC8_TPP = createIRI(NAMESPACE, "rcc8tpp");
+		RCC8_NTPP = createIRI(NAMESPACE, "rcc8ntpp");
+		RCC8_NTPPI = createIRI(NAMESPACE, "rcc8ntppi");
 
-		UOM_DEGREE = Vocabularies.createIRI(UOM_NAMESPACE, "degree");
-		UOM_RADIAN = Vocabularies.createIRI(UOM_NAMESPACE, "radian");
-		UOM_UNITY = Vocabularies.createIRI(UOM_NAMESPACE, "unity");
-		UOM_METRE = Vocabularies.createIRI(UOM_NAMESPACE, "metre");
+		UOM_DEGREE = createIRI(UOM_NAMESPACE, "degree");
+		UOM_RADIAN = createIRI(UOM_NAMESPACE, "radian");
+		UOM_UNITY = createIRI(UOM_NAMESPACE, "unity");
+		UOM_METRE = createIRI(UOM_NAMESPACE, "metre");
 	}
 }

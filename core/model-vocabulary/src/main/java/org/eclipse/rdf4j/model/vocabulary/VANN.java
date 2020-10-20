@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -26,7 +29,7 @@ public class VANN {
 	/**
 	 * An immutable {@link Namespace} constant that represents the VANN namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * A reference to a resource that describes changes between this version of a vocabulary and the previous.
@@ -49,11 +52,11 @@ public class VANN {
 	public final static IRI USAGE_NOTE;
 
 	static {
-		CHANGES = Vocabularies.createIRI(VANN.NAMESPACE, "changes");
-		EXAMPLE = Vocabularies.createIRI(VANN.NAMESPACE, "example");
-		PREFERRED_NAMESPACE_PREFIX = Vocabularies.createIRI(VANN.NAMESPACE, "preferredNamespacePrefix");
-		PREFERRED_NAMESPACE_URI = Vocabularies.createIRI(VANN.NAMESPACE, "preferredNamespaceUri");
-		TERM_GROUP = Vocabularies.createIRI(VANN.NAMESPACE, "termGroup");
-		USAGE_NOTE = Vocabularies.createIRI(VANN.NAMESPACE, "usageNote");
+		CHANGES = createIRI(VANN.NAMESPACE, "changes");
+		EXAMPLE = createIRI(VANN.NAMESPACE, "example");
+		PREFERRED_NAMESPACE_PREFIX = createIRI(VANN.NAMESPACE, "preferredNamespacePrefix");
+		PREFERRED_NAMESPACE_URI = createIRI(VANN.NAMESPACE, "preferredNamespaceUri");
+		TERM_GROUP = createIRI(VANN.NAMESPACE, "termGroup");
+		USAGE_NOTE = createIRI(VANN.NAMESPACE, "usageNote");
 	}
 }

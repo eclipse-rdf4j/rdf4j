@@ -151,7 +151,9 @@ public abstract class AbstractIRI implements IRI {
 
 		BinaryIRI(String namespace, String localname) {
 
-			this.iri = (namespace + localname); // !!! performance
+			// !!! ??? ;( removing .toString() causes a 2x penalty in .equals() performance on Oracle JDK 1.8/11…
+
+			this.iri = (namespace + localname);
 
 			this.namespace = namespace;
 			this.localname = localname;

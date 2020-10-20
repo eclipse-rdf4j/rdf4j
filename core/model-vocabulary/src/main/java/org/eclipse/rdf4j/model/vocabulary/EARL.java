@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -72,31 +74,31 @@ public class EARL {
 
 	static {
 
-		ASSERTOR = Vocabularies.createIRI(EARL.NAMESPACE, "Assertor");
-		ASSERTION = Vocabularies.createIRI(EARL.NAMESPACE, "Assertion");
-		ASSERTEDBY = Vocabularies.createIRI(EARL.NAMESPACE, "assertedBy");
-		SUBJECT = Vocabularies.createIRI(EARL.NAMESPACE, "subject");
-		TEST = Vocabularies.createIRI(EARL.NAMESPACE, "test");
-		TEST_SUBJECT = Vocabularies.createIRI(EARL.NAMESPACE, "TestSubject");
-		RESULT = Vocabularies.createIRI(EARL.NAMESPACE, "result");
-		MODE = Vocabularies.createIRI(EARL.NAMESPACE, "mode");
-		TESTRESULT = Vocabularies.createIRI(EARL.NAMESPACE, "TestResult");
-		OUTCOME = Vocabularies.createIRI(EARL.NAMESPACE, "outcome");
-		SOFTWARE = Vocabularies.createIRI(EARL.NAMESPACE, "Software");
+		ASSERTOR = createIRI(EARL.NAMESPACE, "Assertor");
+		ASSERTION = createIRI(EARL.NAMESPACE, "Assertion");
+		ASSERTEDBY = createIRI(EARL.NAMESPACE, "assertedBy");
+		SUBJECT = createIRI(EARL.NAMESPACE, "subject");
+		TEST = createIRI(EARL.NAMESPACE, "test");
+		TEST_SUBJECT = createIRI(EARL.NAMESPACE, "TestSubject");
+		RESULT = createIRI(EARL.NAMESPACE, "result");
+		MODE = createIRI(EARL.NAMESPACE, "mode");
+		TESTRESULT = createIRI(EARL.NAMESPACE, "TestResult");
+		OUTCOME = createIRI(EARL.NAMESPACE, "outcome");
+		SOFTWARE = createIRI(EARL.NAMESPACE, "Software");
 
 		// Outcome values
 
-		PASS = Vocabularies.createIRI(EARL.NAMESPACE, "pass");
-		FAIL = Vocabularies.createIRI(EARL.NAMESPACE, "fail");
-		CANNOTTELL = Vocabularies.createIRI(EARL.NAMESPACE, "cannotTell");
-		NOTAPPLICABLE = Vocabularies.createIRI(EARL.NAMESPACE, "notApplicable");
-		NOTTESTED = Vocabularies.createIRI(EARL.NAMESPACE, "notTested");
+		PASS = createIRI(EARL.NAMESPACE, "pass");
+		FAIL = createIRI(EARL.NAMESPACE, "fail");
+		CANNOTTELL = createIRI(EARL.NAMESPACE, "cannotTell");
+		NOTAPPLICABLE = createIRI(EARL.NAMESPACE, "notApplicable");
+		NOTTESTED = createIRI(EARL.NAMESPACE, "notTested");
 
 		// Test modes
-		MANUAL = Vocabularies.createIRI(EARL.NAMESPACE, "manual");
-		AUTOMATIC = Vocabularies.createIRI(EARL.NAMESPACE, "automatic");
-		SEMIAUTOMATIC = Vocabularies.createIRI(EARL.NAMESPACE, "semiAutomatic");
-		NOTAVAILABLE = Vocabularies.createIRI(EARL.NAMESPACE, "notAvailable");
-		HEURISTIC = Vocabularies.createIRI(EARL.NAMESPACE, "heuristic");
+		MANUAL = createIRI(EARL.NAMESPACE, "manual");
+		AUTOMATIC = createIRI(EARL.NAMESPACE, "automatic");
+		SEMIAUTOMATIC = createIRI(EARL.NAMESPACE, "semiAutomatic");
+		NOTAVAILABLE = createIRI(EARL.NAMESPACE, "notAvailable");
+		HEURISTIC = createIRI(EARL.NAMESPACE, "heuristic");
 	}
 }

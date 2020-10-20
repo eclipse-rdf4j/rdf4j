@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -29,7 +31,7 @@ public final class APF {
 	public static final IRI CONCAT;
 
 	static {
-		STR_SPLIT = Vocabularies.createIRI(NAMESPACE, "strSplit");
-		CONCAT = Vocabularies.createIRI(NAMESPACE, "concat");
+		STR_SPLIT = createIRI(NAMESPACE, "strSplit");
+		CONCAT = createIRI(NAMESPACE, "concat");
 	}
 }

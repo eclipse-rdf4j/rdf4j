@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -29,7 +32,7 @@ public class DOAP {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** <tt>doap:ArchRepository</tt> */
@@ -193,6 +196,6 @@ public class DOAP {
 	public static final IRI WIKI = create("wiki");
 
 	private static IRI create(String localName) {
-		return Vocabularies.createIRI(DOAP.NAMESPACE, localName);
+		return createIRI(DOAP.NAMESPACE, localName);
 	}
 }

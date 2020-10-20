@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -56,12 +58,12 @@ public final class SPL {
 
 	static {
 
-		ARGUMENT_TEMPLATE = Vocabularies.createIRI(NAMESPACE, "Argument");
-		PREDICATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "predicate");
-		VALUE_TYPE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "valueType");
-		OPTIONAL_PROPERTY = Vocabularies.createIRI(NAMESPACE, "optional");
-		DEFAULT_VALUE_PROPERTY = Vocabularies.createIRI(NAMESPACE, "defaultValue");
+		ARGUMENT_TEMPLATE = createIRI(NAMESPACE, "Argument");
+		PREDICATE_PROPERTY = createIRI(NAMESPACE, "predicate");
+		VALUE_TYPE_PROPERTY = createIRI(NAMESPACE, "valueType");
+		OPTIONAL_PROPERTY = createIRI(NAMESPACE, "optional");
+		DEFAULT_VALUE_PROPERTY = createIRI(NAMESPACE, "defaultValue");
 
-		OBJECT_FUNCTION = Vocabularies.createIRI(NAMESPACE, "object");
+		OBJECT_FUNCTION = createIRI(NAMESPACE, "object");
 	}
 }

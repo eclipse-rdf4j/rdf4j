@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -30,7 +33,7 @@ public class HYDRA {
 	/**
 	 * An immutable {@link Namespace} constant that represents the HYDRA namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// ----- Classes ------
 	public final static IRI API_DOCUMENTATION;
@@ -139,59 +142,59 @@ public class HYDRA {
 	static {
 
 		// ----- Classes ------
-		API_DOCUMENTATION = Vocabularies.createIRI(HYDRA.NAMESPACE, "ApiDocumentation");
-		CLASS = Vocabularies.createIRI(HYDRA.NAMESPACE, "Class");
-		COLLECTION = Vocabularies.createIRI(HYDRA.NAMESPACE, "Collection");
-		ERROR = Vocabularies.createIRI(HYDRA.NAMESPACE, "Error");
-		IRI_TEMPLATE = Vocabularies.createIRI(HYDRA.NAMESPACE, "IriTemplate");
-		IRI_TEMPLATE_MAPPING = Vocabularies.createIRI(HYDRA.NAMESPACE, "IriTemplateMapping");
-		LINK = Vocabularies.createIRI(HYDRA.NAMESPACE, "Link");
-		OPERATION = Vocabularies.createIRI(HYDRA.NAMESPACE, "Operation");
-		PARTIAL_COLLECTION_VIEW = Vocabularies.createIRI(HYDRA.NAMESPACE, "PartialCollectionView");
-		RESOURCE = Vocabularies.createIRI(HYDRA.NAMESPACE, "Resource");
-		STATUS = Vocabularies.createIRI(HYDRA.NAMESPACE, "Status");
-		SUPPORTED_PROPERTY = Vocabularies.createIRI(HYDRA.NAMESPACE, "SupportedProperty");
-		TEMPLATED_LINK = Vocabularies.createIRI(HYDRA.NAMESPACE, "TemplatedLink");
-		VARIABLE_REPRESENTATION = Vocabularies.createIRI(HYDRA.NAMESPACE, "VariableRepresentation");
+		API_DOCUMENTATION = createIRI(HYDRA.NAMESPACE, "ApiDocumentation");
+		CLASS = createIRI(HYDRA.NAMESPACE, "Class");
+		COLLECTION = createIRI(HYDRA.NAMESPACE, "Collection");
+		ERROR = createIRI(HYDRA.NAMESPACE, "Error");
+		IRI_TEMPLATE = createIRI(HYDRA.NAMESPACE, "IriTemplate");
+		IRI_TEMPLATE_MAPPING = createIRI(HYDRA.NAMESPACE, "IriTemplateMapping");
+		LINK = createIRI(HYDRA.NAMESPACE, "Link");
+		OPERATION = createIRI(HYDRA.NAMESPACE, "Operation");
+		PARTIAL_COLLECTION_VIEW = createIRI(HYDRA.NAMESPACE, "PartialCollectionView");
+		RESOURCE = createIRI(HYDRA.NAMESPACE, "Resource");
+		STATUS = createIRI(HYDRA.NAMESPACE, "Status");
+		SUPPORTED_PROPERTY = createIRI(HYDRA.NAMESPACE, "SupportedProperty");
+		TEMPLATED_LINK = createIRI(HYDRA.NAMESPACE, "TemplatedLink");
+		VARIABLE_REPRESENTATION = createIRI(HYDRA.NAMESPACE, "VariableRepresentation");
 
 		// ----- Properties ------
-		API_DOCUMENTATION_PROP = Vocabularies.createIRI(HYDRA.NAMESPACE, "apiDocumentation");
-		COLLECTION_PROP = Vocabularies.createIRI(HYDRA.NAMESPACE, "collection");
-		DESCRIPTION = Vocabularies.createIRI(HYDRA.NAMESPACE, "description");
-		ENTRYPOINT = Vocabularies.createIRI(HYDRA.NAMESPACE, "entrypoint");
-		EXPECTS = Vocabularies.createIRI(HYDRA.NAMESPACE, "expects");
-		EXPECTS_HEADER = Vocabularies.createIRI(HYDRA.NAMESPACE, "expectsHeader");
-		FIRST = Vocabularies.createIRI(HYDRA.NAMESPACE, "first");
-		FREETEXT_QUERY = Vocabularies.createIRI(HYDRA.NAMESPACE, "freetextQuery");
-		LAST = Vocabularies.createIRI(HYDRA.NAMESPACE, "last");
-		LIMIT = Vocabularies.createIRI(HYDRA.NAMESPACE, "limit");
-		MAPPING = Vocabularies.createIRI(HYDRA.NAMESPACE, "mapping");
-		MEMBER = Vocabularies.createIRI(HYDRA.NAMESPACE, "member");
-		METHOD = Vocabularies.createIRI(HYDRA.NAMESPACE, "method");
-		NEXT = Vocabularies.createIRI(HYDRA.NAMESPACE, "next");
-		OFFSET = Vocabularies.createIRI(HYDRA.NAMESPACE, "offset");
-		OPERATION_PROP = Vocabularies.createIRI(HYDRA.NAMESPACE, "operation");
-		PAGE_INDEX = Vocabularies.createIRI(HYDRA.NAMESPACE, "pageIndex");
-		PAGE_REFERENCE = Vocabularies.createIRI(HYDRA.NAMESPACE, "pageReference");
-		POSSIBLE_STATUS = Vocabularies.createIRI(HYDRA.NAMESPACE, "possibleStatus");
-		PREVIOUS = Vocabularies.createIRI(HYDRA.NAMESPACE, "previous");
-		PROPERTY = Vocabularies.createIRI(HYDRA.NAMESPACE, "property");
-		READABLE = Vocabularies.createIRI(HYDRA.NAMESPACE, "readable");
-		REQUIRED = Vocabularies.createIRI(HYDRA.NAMESPACE, "required");
-		RETURNS = Vocabularies.createIRI(HYDRA.NAMESPACE, "returns");
-		RETURNS_HEADER = Vocabularies.createIRI(HYDRA.NAMESPACE, "returnsHeader");
-		SEARCH = Vocabularies.createIRI(HYDRA.NAMESPACE, "search");
-		STATUS_CODE = Vocabularies.createIRI(HYDRA.NAMESPACE, "statusCode");
-		SUPPORTED_CLASS = Vocabularies.createIRI(HYDRA.NAMESPACE, "supportedClass");
-		SUPPORTED_OPERATION = Vocabularies.createIRI(HYDRA.NAMESPACE, "supportedOperation");
-		SUPPORTED_PROPERTY_PROP = Vocabularies.createIRI(HYDRA.NAMESPACE, "supportedProperty");
-		TEMPLATE = Vocabularies.createIRI(HYDRA.NAMESPACE, "template");
-		TITLE = Vocabularies.createIRI(HYDRA.NAMESPACE, "title");
-		TOTAL_ITEMS = Vocabularies.createIRI(HYDRA.NAMESPACE, "totalItems");
-		VARIABLE = Vocabularies.createIRI(HYDRA.NAMESPACE, "variable");
-		VARIABLE_REPRESENTATION_PROP = Vocabularies.createIRI(HYDRA.NAMESPACE, "variableRepresentation");
-		VIEW = Vocabularies.createIRI(HYDRA.NAMESPACE, "view");
-		WRITABLE = Vocabularies.createIRI(HYDRA.NAMESPACE, "writeable");
+		API_DOCUMENTATION_PROP = createIRI(HYDRA.NAMESPACE, "apiDocumentation");
+		COLLECTION_PROP = createIRI(HYDRA.NAMESPACE, "collection");
+		DESCRIPTION = createIRI(HYDRA.NAMESPACE, "description");
+		ENTRYPOINT = createIRI(HYDRA.NAMESPACE, "entrypoint");
+		EXPECTS = createIRI(HYDRA.NAMESPACE, "expects");
+		EXPECTS_HEADER = createIRI(HYDRA.NAMESPACE, "expectsHeader");
+		FIRST = createIRI(HYDRA.NAMESPACE, "first");
+		FREETEXT_QUERY = createIRI(HYDRA.NAMESPACE, "freetextQuery");
+		LAST = createIRI(HYDRA.NAMESPACE, "last");
+		LIMIT = createIRI(HYDRA.NAMESPACE, "limit");
+		MAPPING = createIRI(HYDRA.NAMESPACE, "mapping");
+		MEMBER = createIRI(HYDRA.NAMESPACE, "member");
+		METHOD = createIRI(HYDRA.NAMESPACE, "method");
+		NEXT = createIRI(HYDRA.NAMESPACE, "next");
+		OFFSET = createIRI(HYDRA.NAMESPACE, "offset");
+		OPERATION_PROP = createIRI(HYDRA.NAMESPACE, "operation");
+		PAGE_INDEX = createIRI(HYDRA.NAMESPACE, "pageIndex");
+		PAGE_REFERENCE = createIRI(HYDRA.NAMESPACE, "pageReference");
+		POSSIBLE_STATUS = createIRI(HYDRA.NAMESPACE, "possibleStatus");
+		PREVIOUS = createIRI(HYDRA.NAMESPACE, "previous");
+		PROPERTY = createIRI(HYDRA.NAMESPACE, "property");
+		READABLE = createIRI(HYDRA.NAMESPACE, "readable");
+		REQUIRED = createIRI(HYDRA.NAMESPACE, "required");
+		RETURNS = createIRI(HYDRA.NAMESPACE, "returns");
+		RETURNS_HEADER = createIRI(HYDRA.NAMESPACE, "returnsHeader");
+		SEARCH = createIRI(HYDRA.NAMESPACE, "search");
+		STATUS_CODE = createIRI(HYDRA.NAMESPACE, "statusCode");
+		SUPPORTED_CLASS = createIRI(HYDRA.NAMESPACE, "supportedClass");
+		SUPPORTED_OPERATION = createIRI(HYDRA.NAMESPACE, "supportedOperation");
+		SUPPORTED_PROPERTY_PROP = createIRI(HYDRA.NAMESPACE, "supportedProperty");
+		TEMPLATE = createIRI(HYDRA.NAMESPACE, "template");
+		TITLE = createIRI(HYDRA.NAMESPACE, "title");
+		TOTAL_ITEMS = createIRI(HYDRA.NAMESPACE, "totalItems");
+		VARIABLE = createIRI(HYDRA.NAMESPACE, "variable");
+		VARIABLE_REPRESENTATION_PROP = createIRI(HYDRA.NAMESPACE, "variableRepresentation");
+		VIEW = createIRI(HYDRA.NAMESPACE, "view");
+		WRITABLE = createIRI(HYDRA.NAMESPACE, "writeable");
 
 	}
 }

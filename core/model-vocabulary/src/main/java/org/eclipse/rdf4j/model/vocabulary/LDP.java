@@ -7,6 +7,9 @@
  */
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -31,7 +34,7 @@ public class LDP {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** ldp:BasicContainer */
@@ -126,36 +129,36 @@ public class LDP {
 
 	static {
 
-		BASIC_CONTAINER = Vocabularies.createIRI(NAMESPACE, "BasicContainer");
-		CONTAINER = Vocabularies.createIRI(NAMESPACE, "Container");
-		DIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, "DirectContainer");
-		INDIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, "IndirectContainer");
-		NON_RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, "NonRDFSource");
-		PAGE = Vocabularies.createIRI(NAMESPACE, "Page");
-		PAGE_SORT_CRITERION = Vocabularies.createIRI(NAMESPACE, "PageSortCriterion");
-		RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, "RDFSource");
-		RESOURCE = Vocabularies.createIRI(NAMESPACE, "Resource");
+		BASIC_CONTAINER = createIRI(NAMESPACE, "BasicContainer");
+		CONTAINER = createIRI(NAMESPACE, "Container");
+		DIRECT_CONTAINER = createIRI(NAMESPACE, "DirectContainer");
+		INDIRECT_CONTAINER = createIRI(NAMESPACE, "IndirectContainer");
+		NON_RDF_SOURCE = createIRI(NAMESPACE, "NonRDFSource");
+		PAGE = createIRI(NAMESPACE, "Page");
+		PAGE_SORT_CRITERION = createIRI(NAMESPACE, "PageSortCriterion");
+		RDF_SOURCE = createIRI(NAMESPACE, "RDFSource");
+		RESOURCE = createIRI(NAMESPACE, "Resource");
 
-		CONSTRAINED_BY = Vocabularies.createIRI(NAMESPACE, "constrainedBy");
-		CONTAINS = Vocabularies.createIRI(NAMESPACE, "contains");
-		HAS_MEMBER_RELATION = Vocabularies.createIRI(NAMESPACE, "hasMemberRelation");
-		INBOX = Vocabularies.createIRI(NAMESPACE, "inbox");
-		INSERTED_CONTENT_RELATION = Vocabularies.createIRI(NAMESPACE, "insertedContentRelation");
-		IS_MEMBER_OF_RELATION = Vocabularies.createIRI(NAMESPACE, "isMemberOfRelation");
-		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
-		MEMBERSHIP_RESOURCE = Vocabularies.createIRI(NAMESPACE, "membershipResource");
-		PAGE_SEQUENCE = Vocabularies.createIRI(NAMESPACE, "pageSequence");
-		PAGE_SORT_COLLATION = Vocabularies.createIRI(NAMESPACE, "pageSortCollation");
-		PAGE_SORT_CRITERIA = Vocabularies.createIRI(NAMESPACE, "pageSortCriteria");
-		PAGE_SORT_ORDER = Vocabularies.createIRI(NAMESPACE, "pageSortOrder");
-		PAGE_SORT_PREDICATE = Vocabularies.createIRI(NAMESPACE, "pageSortPredicate");
+		CONSTRAINED_BY = createIRI(NAMESPACE, "constrainedBy");
+		CONTAINS = createIRI(NAMESPACE, "contains");
+		HAS_MEMBER_RELATION = createIRI(NAMESPACE, "hasMemberRelation");
+		INBOX = createIRI(NAMESPACE, "inbox");
+		INSERTED_CONTENT_RELATION = createIRI(NAMESPACE, "insertedContentRelation");
+		IS_MEMBER_OF_RELATION = createIRI(NAMESPACE, "isMemberOfRelation");
+		MEMBER = createIRI(NAMESPACE, "member");
+		MEMBERSHIP_RESOURCE = createIRI(NAMESPACE, "membershipResource");
+		PAGE_SEQUENCE = createIRI(NAMESPACE, "pageSequence");
+		PAGE_SORT_COLLATION = createIRI(NAMESPACE, "pageSortCollation");
+		PAGE_SORT_CRITERIA = createIRI(NAMESPACE, "pageSortCriteria");
+		PAGE_SORT_ORDER = createIRI(NAMESPACE, "pageSortOrder");
+		PAGE_SORT_PREDICATE = createIRI(NAMESPACE, "pageSortPredicate");
 
-		ASCENDING = Vocabularies.createIRI(NAMESPACE, "Ascending");
-		DESCENDING = Vocabularies.createIRI(NAMESPACE, "Descending");
-		MEMBER_SUBJECT = Vocabularies.createIRI(NAMESPACE, "MemberSubject");
-		PREFER_CONTAINMENT = Vocabularies.createIRI(NAMESPACE, "PreferContainment");
-		PREFER_EMPTY_CONTAINER = Vocabularies.createIRI(NAMESPACE, "PreferEmptyContainer");
-		PREFER_MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, "PreferMembership");
-		PREFER_MINIMAL_CONTAINER = Vocabularies.createIRI(NAMESPACE, "PreferMinimalContainer");
+		ASCENDING = createIRI(NAMESPACE, "Ascending");
+		DESCENDING = createIRI(NAMESPACE, "Descending");
+		MEMBER_SUBJECT = createIRI(NAMESPACE, "MemberSubject");
+		PREFER_CONTAINMENT = createIRI(NAMESPACE, "PreferContainment");
+		PREFER_EMPTY_CONTAINER = createIRI(NAMESPACE, "PreferEmptyContainer");
+		PREFER_MEMBERSHIP = createIRI(NAMESPACE, "PreferMembership");
+		PREFER_MINIMAL_CONTAINER = createIRI(NAMESPACE, "PreferMinimalContainer");
 	}
 }

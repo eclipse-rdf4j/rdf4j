@@ -5,6 +5,9 @@
  */
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -29,7 +32,7 @@ public class LOCN {
 	/**
 	 * An immutable {@link Namespace} constant that represents the namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** locn:Address */
@@ -86,23 +89,23 @@ public class LOCN {
 
 	static {
 
-		ADDRESS = Vocabularies.createIRI(NAMESPACE, "Address");
-		GEOMETRY = Vocabularies.createIRI(NAMESPACE, "Geometry");
+		ADDRESS = createIRI(NAMESPACE, "Address");
+		GEOMETRY = createIRI(NAMESPACE, "Geometry");
 
-		ADDRESS_PROP = Vocabularies.createIRI(NAMESPACE, "address");
-		ADDRESS_AREA = Vocabularies.createIRI(NAMESPACE, "addressArea");
-		ADDRESS_ID = Vocabularies.createIRI(NAMESPACE, "addressId");
-		ADMIN_UNIT_L1 = Vocabularies.createIRI(NAMESPACE, "adminUnitL1");
-		ADMIN_UNIT_L2 = Vocabularies.createIRI(NAMESPACE, "adminUnitL2");
-		FULL_ADDRESS = Vocabularies.createIRI(NAMESPACE, "fullAddress");
-		GEOGRAPHIC_NAME = Vocabularies.createIRI(NAMESPACE, "geographicName");
-		GEOMETRY_PROP = Vocabularies.createIRI(NAMESPACE, "geometry");
-		LOCATION = Vocabularies.createIRI(NAMESPACE, "location");
-		LOCATOR_DESIGNATOR = Vocabularies.createIRI(NAMESPACE, "locatorDesignator");
-		LOCATOR_NAME = Vocabularies.createIRI(NAMESPACE, "locatorName");
-		PO_BOX = Vocabularies.createIRI(NAMESPACE, "poBox");
-		POST_CODE = Vocabularies.createIRI(NAMESPACE, "postCode");
-		POST_NAME = Vocabularies.createIRI(NAMESPACE, "postName");
-		THOROUGHFARE = Vocabularies.createIRI(NAMESPACE, "thoroughfare");
+		ADDRESS_PROP = createIRI(NAMESPACE, "address");
+		ADDRESS_AREA = createIRI(NAMESPACE, "addressArea");
+		ADDRESS_ID = createIRI(NAMESPACE, "addressId");
+		ADMIN_UNIT_L1 = createIRI(NAMESPACE, "adminUnitL1");
+		ADMIN_UNIT_L2 = createIRI(NAMESPACE, "adminUnitL2");
+		FULL_ADDRESS = createIRI(NAMESPACE, "fullAddress");
+		GEOGRAPHIC_NAME = createIRI(NAMESPACE, "geographicName");
+		GEOMETRY_PROP = createIRI(NAMESPACE, "geometry");
+		LOCATION = createIRI(NAMESPACE, "location");
+		LOCATOR_DESIGNATOR = createIRI(NAMESPACE, "locatorDesignator");
+		LOCATOR_NAME = createIRI(NAMESPACE, "locatorName");
+		PO_BOX = createIRI(NAMESPACE, "poBox");
+		POST_CODE = createIRI(NAMESPACE, "postCode");
+		POST_NAME = createIRI(NAMESPACE, "postName");
+		THOROUGHFARE = createIRI(NAMESPACE, "thoroughfare");
 	}
 }

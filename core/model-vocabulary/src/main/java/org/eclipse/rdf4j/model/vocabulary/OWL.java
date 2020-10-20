@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -29,7 +32,7 @@ public class OWL {
 	/**
 	 * An immutable {@link Namespace} constant that represents the OWL namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// OWL Lite
 
@@ -274,91 +277,91 @@ public class OWL {
 
 	static {
 
-		CLASS = Vocabularies.createIRI(OWL.NAMESPACE, "Class");
-		INDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, "Individual");
+		CLASS = createIRI(OWL.NAMESPACE, "Class");
+		INDIVIDUAL = createIRI(OWL.NAMESPACE, "Individual");
 
-		THING = Vocabularies.createIRI(OWL.NAMESPACE, "Thing");
-		NOTHING = Vocabularies.createIRI(NAMESPACE, "Nothing");
+		THING = createIRI(OWL.NAMESPACE, "Thing");
+		NOTHING = createIRI(NAMESPACE, "Nothing");
 
-		EQUIVALENTCLASS = Vocabularies.createIRI(OWL.NAMESPACE, "equivalentClass");
-		EQUIVALENTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "equivalentProperty");
-		SAMEAS = Vocabularies.createIRI(OWL.NAMESPACE, "sameAs");
-		DIFFERENTFROM = Vocabularies.createIRI(OWL.NAMESPACE, "differentFrom");
-		ALLDIFFERENT = Vocabularies.createIRI(OWL.NAMESPACE, "AllDifferent");
-		DISTINCTMEMBERS = Vocabularies.createIRI(OWL.NAMESPACE, "distinctMembers");
-		OBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "ObjectProperty");
-		DATATYPEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "DatatypeProperty");
-		INVERSEOF = Vocabularies.createIRI(OWL.NAMESPACE, "inverseOf");
-		TRANSITIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "TransitiveProperty");
-		SYMMETRICPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "SymmetricProperty");
-		FUNCTIONALPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "FunctionalProperty");
-		INVERSEFUNCTIONALPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "InverseFunctionalProperty");
-		RESTRICTION = Vocabularies.createIRI(OWL.NAMESPACE, "Restriction");
-		ONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "onProperty");
-		ALLVALUESFROM = Vocabularies.createIRI(OWL.NAMESPACE, "allValuesFrom");
-		SOMEVALUESFROM = Vocabularies.createIRI(OWL.NAMESPACE, "someValuesFrom");
-		MINCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "minCardinality");
-		MAXCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "maxCardinality");
-		CARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "cardinality");
-		ONTOLOGY = Vocabularies.createIRI(OWL.NAMESPACE, "Ontology");
-		IMPORTS = Vocabularies.createIRI(OWL.NAMESPACE, "imports");
-		INTERSECTIONOF = Vocabularies.createIRI(OWL.NAMESPACE, "intersectionOf");
-		VERSIONINFO = Vocabularies.createIRI(OWL.NAMESPACE, "versionInfo");
-		VERSIONIRI = Vocabularies.createIRI(OWL.NAMESPACE, "versionIRI");
-		PRIORVERSION = Vocabularies.createIRI(OWL.NAMESPACE, "priorVersion");
-		BACKWARDCOMPATIBLEWITH = Vocabularies.createIRI(OWL.NAMESPACE, "backwardCompatibleWith");
-		INCOMPATIBLEWITH = Vocabularies.createIRI(OWL.NAMESPACE, "incompatibleWith");
-		DEPRECATEDCLASS = Vocabularies.createIRI(OWL.NAMESPACE, "DeprecatedClass");
-		DEPRECATEDPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "DeprecatedProperty");
-		ANNOTATIONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "AnnotationProperty");
-		ONTOLOGYPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "OntologyProperty");
+		EQUIVALENTCLASS = createIRI(OWL.NAMESPACE, "equivalentClass");
+		EQUIVALENTPROPERTY = createIRI(OWL.NAMESPACE, "equivalentProperty");
+		SAMEAS = createIRI(OWL.NAMESPACE, "sameAs");
+		DIFFERENTFROM = createIRI(OWL.NAMESPACE, "differentFrom");
+		ALLDIFFERENT = createIRI(OWL.NAMESPACE, "AllDifferent");
+		DISTINCTMEMBERS = createIRI(OWL.NAMESPACE, "distinctMembers");
+		OBJECTPROPERTY = createIRI(OWL.NAMESPACE, "ObjectProperty");
+		DATATYPEPROPERTY = createIRI(OWL.NAMESPACE, "DatatypeProperty");
+		INVERSEOF = createIRI(OWL.NAMESPACE, "inverseOf");
+		TRANSITIVEPROPERTY = createIRI(OWL.NAMESPACE, "TransitiveProperty");
+		SYMMETRICPROPERTY = createIRI(OWL.NAMESPACE, "SymmetricProperty");
+		FUNCTIONALPROPERTY = createIRI(OWL.NAMESPACE, "FunctionalProperty");
+		INVERSEFUNCTIONALPROPERTY = createIRI(OWL.NAMESPACE, "InverseFunctionalProperty");
+		RESTRICTION = createIRI(OWL.NAMESPACE, "Restriction");
+		ONPROPERTY = createIRI(OWL.NAMESPACE, "onProperty");
+		ALLVALUESFROM = createIRI(OWL.NAMESPACE, "allValuesFrom");
+		SOMEVALUESFROM = createIRI(OWL.NAMESPACE, "someValuesFrom");
+		MINCARDINALITY = createIRI(OWL.NAMESPACE, "minCardinality");
+		MAXCARDINALITY = createIRI(OWL.NAMESPACE, "maxCardinality");
+		CARDINALITY = createIRI(OWL.NAMESPACE, "cardinality");
+		ONTOLOGY = createIRI(OWL.NAMESPACE, "Ontology");
+		IMPORTS = createIRI(OWL.NAMESPACE, "imports");
+		INTERSECTIONOF = createIRI(OWL.NAMESPACE, "intersectionOf");
+		VERSIONINFO = createIRI(OWL.NAMESPACE, "versionInfo");
+		VERSIONIRI = createIRI(OWL.NAMESPACE, "versionIRI");
+		PRIORVERSION = createIRI(OWL.NAMESPACE, "priorVersion");
+		BACKWARDCOMPATIBLEWITH = createIRI(OWL.NAMESPACE, "backwardCompatibleWith");
+		INCOMPATIBLEWITH = createIRI(OWL.NAMESPACE, "incompatibleWith");
+		DEPRECATEDCLASS = createIRI(OWL.NAMESPACE, "DeprecatedClass");
+		DEPRECATEDPROPERTY = createIRI(OWL.NAMESPACE, "DeprecatedProperty");
+		ANNOTATIONPROPERTY = createIRI(OWL.NAMESPACE, "AnnotationProperty");
+		ONTOLOGYPROPERTY = createIRI(OWL.NAMESPACE, "OntologyProperty");
 
 		// OWL DL and OWL Full
 
-		ONEOF = Vocabularies.createIRI(OWL.NAMESPACE, "oneOf");
-		HASVALUE = Vocabularies.createIRI(OWL.NAMESPACE, "hasValue");
-		DISJOINTWITH = Vocabularies.createIRI(OWL.NAMESPACE, "disjointWith");
-		UNIONOF = Vocabularies.createIRI(OWL.NAMESPACE, "unionOf");
-		COMPLEMENTOF = Vocabularies.createIRI(OWL.NAMESPACE, "complementOf");
+		ONEOF = createIRI(OWL.NAMESPACE, "oneOf");
+		HASVALUE = createIRI(OWL.NAMESPACE, "hasValue");
+		DISJOINTWITH = createIRI(OWL.NAMESPACE, "disjointWith");
+		UNIONOF = createIRI(OWL.NAMESPACE, "unionOf");
+		COMPLEMENTOF = createIRI(OWL.NAMESPACE, "complementOf");
 
 		// OWL 2
 
-		ALLDISJOINTCLASSES = Vocabularies.createIRI(OWL.NAMESPACE, "AllDisjointClasses");
-		ALLDISJOINTPROPERTIES = Vocabularies.createIRI(OWL.NAMESPACE, "AllDisjointProperties");
-		ANNOTATEDPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "annotatedProperty");
-		ANNOTATEDSOURCE = Vocabularies.createIRI(OWL.NAMESPACE, "annotatedSource");
-		ANNOTATEDTARGET = Vocabularies.createIRI(OWL.NAMESPACE, "annotatedTarget");
-		ANNOTATION = Vocabularies.createIRI(OWL.NAMESPACE, "Annotation");
-		ASSERTIONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "assertionProperty");
-		ASYMMETRICPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "AsymmetricProperty");
-		AXIOM = Vocabularies.createIRI(OWL.NAMESPACE, "Axiom");
-		BOTTOMDATAPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "bottomDataProperty");
-		BOTTOMOBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "bottomObjectProperty");
-		DATARANGE = Vocabularies.createIRI(OWL.NAMESPACE, "DataRange");
-		DATATYPECOMPLEMENTOF = Vocabularies.createIRI(OWL.NAMESPACE, "datatypeComplementOf");
-		DEPRECATED = Vocabularies.createIRI(OWL.NAMESPACE, "deprecated");
-		DISJOINTUNIONOF = Vocabularies.createIRI(OWL.NAMESPACE, "disjointUnionOf");
-		HASKEY = Vocabularies.createIRI(OWL.NAMESPACE, "hasKey");
-		HASSELF = Vocabularies.createIRI(OWL.NAMESPACE, "hasSelf");
-		IRREFLEXIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "IrreflexiveProperty");
-		MAXQUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "maxQualifiedCardinality");
-		MEMBERS = Vocabularies.createIRI(OWL.NAMESPACE, "members");
-		MINQUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "minQualifiedCardinality");
-		NAMEDINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, "NamedIndividual");
-		NEGATIVEPROPERTYASSERTION = Vocabularies.createIRI(OWL.NAMESPACE, "NegativePropertyAssertion");
-		ONCLASS = Vocabularies.createIRI(OWL.NAMESPACE, "onClass");
-		ONDATARANGE = Vocabularies.createIRI(OWL.NAMESPACE, "onDataRange");
-		ONDATATYPE = Vocabularies.createIRI(OWL.NAMESPACE, "onDatatype");
-		ONPROPERTIES = Vocabularies.createIRI(OWL.NAMESPACE, "onProperties");
-		PROPERTYCHAINAXIOM = Vocabularies.createIRI(OWL.NAMESPACE, "propertyChainAxiom");
-		PROPERTYDISJOINTWITH = Vocabularies.createIRI(OWL.NAMESPACE, "propertyDisjointWith");
-		QUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, "qualifiedCardinality");
-		REFLEXIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "ReflexiveProperty");
-		SOURCEINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, "sourceIndividual");
-		TARGETINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, "targetIndividual");
-		TARGETVALUE = Vocabularies.createIRI(OWL.NAMESPACE, "targetValue");
-		TOPDATAPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "topDataProperty");
-		TOPOBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, "topObjectProperty");
-		WITHRESTRICTIONS = Vocabularies.createIRI(OWL.NAMESPACE, "withRestrictions");
+		ALLDISJOINTCLASSES = createIRI(OWL.NAMESPACE, "AllDisjointClasses");
+		ALLDISJOINTPROPERTIES = createIRI(OWL.NAMESPACE, "AllDisjointProperties");
+		ANNOTATEDPROPERTY = createIRI(OWL.NAMESPACE, "annotatedProperty");
+		ANNOTATEDSOURCE = createIRI(OWL.NAMESPACE, "annotatedSource");
+		ANNOTATEDTARGET = createIRI(OWL.NAMESPACE, "annotatedTarget");
+		ANNOTATION = createIRI(OWL.NAMESPACE, "Annotation");
+		ASSERTIONPROPERTY = createIRI(OWL.NAMESPACE, "assertionProperty");
+		ASYMMETRICPROPERTY = createIRI(OWL.NAMESPACE, "AsymmetricProperty");
+		AXIOM = createIRI(OWL.NAMESPACE, "Axiom");
+		BOTTOMDATAPROPERTY = createIRI(OWL.NAMESPACE, "bottomDataProperty");
+		BOTTOMOBJECTPROPERTY = createIRI(OWL.NAMESPACE, "bottomObjectProperty");
+		DATARANGE = createIRI(OWL.NAMESPACE, "DataRange");
+		DATATYPECOMPLEMENTOF = createIRI(OWL.NAMESPACE, "datatypeComplementOf");
+		DEPRECATED = createIRI(OWL.NAMESPACE, "deprecated");
+		DISJOINTUNIONOF = createIRI(OWL.NAMESPACE, "disjointUnionOf");
+		HASKEY = createIRI(OWL.NAMESPACE, "hasKey");
+		HASSELF = createIRI(OWL.NAMESPACE, "hasSelf");
+		IRREFLEXIVEPROPERTY = createIRI(OWL.NAMESPACE, "IrreflexiveProperty");
+		MAXQUALIFIEDCARDINALITY = createIRI(OWL.NAMESPACE, "maxQualifiedCardinality");
+		MEMBERS = createIRI(OWL.NAMESPACE, "members");
+		MINQUALIFIEDCARDINALITY = createIRI(OWL.NAMESPACE, "minQualifiedCardinality");
+		NAMEDINDIVIDUAL = createIRI(OWL.NAMESPACE, "NamedIndividual");
+		NEGATIVEPROPERTYASSERTION = createIRI(OWL.NAMESPACE, "NegativePropertyAssertion");
+		ONCLASS = createIRI(OWL.NAMESPACE, "onClass");
+		ONDATARANGE = createIRI(OWL.NAMESPACE, "onDataRange");
+		ONDATATYPE = createIRI(OWL.NAMESPACE, "onDatatype");
+		ONPROPERTIES = createIRI(OWL.NAMESPACE, "onProperties");
+		PROPERTYCHAINAXIOM = createIRI(OWL.NAMESPACE, "propertyChainAxiom");
+		PROPERTYDISJOINTWITH = createIRI(OWL.NAMESPACE, "propertyDisjointWith");
+		QUALIFIEDCARDINALITY = createIRI(OWL.NAMESPACE, "qualifiedCardinality");
+		REFLEXIVEPROPERTY = createIRI(OWL.NAMESPACE, "ReflexiveProperty");
+		SOURCEINDIVIDUAL = createIRI(OWL.NAMESPACE, "sourceIndividual");
+		TARGETINDIVIDUAL = createIRI(OWL.NAMESPACE, "targetIndividual");
+		TARGETVALUE = createIRI(OWL.NAMESPACE, "targetValue");
+		TOPDATAPROPERTY = createIRI(OWL.NAMESPACE, "topDataProperty");
+		TOPOBJECTPROPERTY = createIRI(OWL.NAMESPACE, "topObjectProperty");
+		WITHRESTRICTIONS = createIRI(OWL.NAMESPACE, "withRestrictions");
 	}
 }

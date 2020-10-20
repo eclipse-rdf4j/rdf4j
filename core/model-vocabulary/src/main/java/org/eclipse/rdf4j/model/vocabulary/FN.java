@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -31,7 +34,7 @@ public class FN {
 	/**
 	 * An immutable {@link Namespace} constant that represents the XPath Functions namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/** fn:concat */
 	public static final IRI CONCAT;
@@ -104,50 +107,50 @@ public class FN {
 
 	static {
 
-		CONCAT = Vocabularies.createIRI(NAMESPACE, "concat");
+		CONCAT = createIRI(NAMESPACE, "concat");
 
-		CONTAINS = Vocabularies.createIRI(NAMESPACE, "contains");
+		CONTAINS = createIRI(NAMESPACE, "contains");
 
-		DAY_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "day-from-dateTime");
+		DAY_FROM_DATETIME = createIRI(NAMESPACE, "day-from-dateTime");
 
-		ENCODE_FOR_URI = Vocabularies.createIRI(NAMESPACE, "encode-for-uri");
+		ENCODE_FOR_URI = createIRI(NAMESPACE, "encode-for-uri");
 
-		ENDS_WITH = Vocabularies.createIRI(NAMESPACE, "ends-with");
+		ENDS_WITH = createIRI(NAMESPACE, "ends-with");
 
-		HOURS_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "hours-from-dateTime");
+		HOURS_FROM_DATETIME = createIRI(NAMESPACE, "hours-from-dateTime");
 
-		LOWER_CASE = Vocabularies.createIRI(NAMESPACE, "lower-case");
+		LOWER_CASE = createIRI(NAMESPACE, "lower-case");
 
-		MINUTES_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "minutes-from-dateTime");
+		MINUTES_FROM_DATETIME = createIRI(NAMESPACE, "minutes-from-dateTime");
 
-		MONTH_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "month-from-dateTime");
+		MONTH_FROM_DATETIME = createIRI(NAMESPACE, "month-from-dateTime");
 
-		NUMERIC_ABS = Vocabularies.createIRI(NAMESPACE, "numeric-abs");
+		NUMERIC_ABS = createIRI(NAMESPACE, "numeric-abs");
 
-		NUMERIC_CEIL = Vocabularies.createIRI(NAMESPACE, "numeric-ceil");
+		NUMERIC_CEIL = createIRI(NAMESPACE, "numeric-ceil");
 
-		NUMERIC_FLOOR = Vocabularies.createIRI(NAMESPACE, "numeric-floor");
+		NUMERIC_FLOOR = createIRI(NAMESPACE, "numeric-floor");
 
-		NUMERIC_ROUND = Vocabularies.createIRI(NAMESPACE, "numeric-round");
+		NUMERIC_ROUND = createIRI(NAMESPACE, "numeric-round");
 
-		REPLACE = Vocabularies.createIRI(NAMESPACE, "replace");
+		REPLACE = createIRI(NAMESPACE, "replace");
 
-		SECONDS_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "seconds-from-dateTime");
+		SECONDS_FROM_DATETIME = createIRI(NAMESPACE, "seconds-from-dateTime");
 
-		STARTS_WITH = Vocabularies.createIRI(NAMESPACE, "starts-with");
+		STARTS_WITH = createIRI(NAMESPACE, "starts-with");
 
-		STRING_LENGTH = Vocabularies.createIRI(NAMESPACE, "string-length");
+		STRING_LENGTH = createIRI(NAMESPACE, "string-length");
 
-		SUBSTRING = Vocabularies.createIRI(NAMESPACE, "substring");
+		SUBSTRING = createIRI(NAMESPACE, "substring");
 
-		SUBSTRING_BEFORE = Vocabularies.createIRI(NAMESPACE, "substring-before");
+		SUBSTRING_BEFORE = createIRI(NAMESPACE, "substring-before");
 
-		SUBSTRING_AFTER = Vocabularies.createIRI(NAMESPACE, "substring-after");
+		SUBSTRING_AFTER = createIRI(NAMESPACE, "substring-after");
 
-		TIMEZONE_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "timezone-from-dateTime");
+		TIMEZONE_FROM_DATETIME = createIRI(NAMESPACE, "timezone-from-dateTime");
 
-		UPPER_CASE = Vocabularies.createIRI(NAMESPACE, "upper-case");
+		UPPER_CASE = createIRI(NAMESPACE, "upper-case");
 
-		YEAR_FROM_DATETIME = Vocabularies.createIRI(NAMESPACE, "year-from-dateTime");
+		YEAR_FROM_DATETIME = createIRI(NAMESPACE, "year-from-dateTime");
 	}
 }

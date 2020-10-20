@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -25,7 +27,7 @@ public class GEO {
 	public static final String DEFAULT_SRID = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
 	static {
-		AS_WKT = Vocabularies.createIRI(NAMESPACE, "asWKT");
-		WKT_LITERAL = Vocabularies.createIRI(NAMESPACE, "wktLiteral");
+		AS_WKT = createIRI(NAMESPACE, "asWKT");
+		WKT_LITERAL = createIRI(NAMESPACE, "wktLiteral");
 	}
 }

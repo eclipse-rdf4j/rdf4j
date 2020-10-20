@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -31,7 +34,7 @@ public class SD {
 	/**
 	 * An immutable {@link Namespace} constant that represents the SPARQL Service Description namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * Aggregate
@@ -496,45 +499,45 @@ public class SD {
 
 	static {
 
-		AGGREGATE = Vocabularies.createIRI(SD.NAMESPACE, "Aggregate");
-		AVAILBLE_GRAPHS = Vocabularies.createIRI(SD.NAMESPACE, "availableGraphs");
-		BASIC_FEDERATED_QUERY = Vocabularies.createIRI(SD.NAMESPACE, "BasicFederatedQuery");
-		DATASET = Vocabularies.createIRI(SD.NAMESPACE, "Dataset");
-		DEFAULT_DATASET = Vocabularies.createIRI(SD.NAMESPACE, "defaultDataset");
-		DEFAULT_ENTAILMENT_REGIME = Vocabularies.createIRI(SD.NAMESPACE, "defaultEntailmentRegime");
-		DEFAULT_GRAPH = Vocabularies.createIRI(SD.NAMESPACE, "defaultGraph");
-		DEFAULT_SUPPORTED_ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE,
+		AGGREGATE = createIRI(SD.NAMESPACE, "Aggregate");
+		AVAILBLE_GRAPHS = createIRI(SD.NAMESPACE, "availableGraphs");
+		BASIC_FEDERATED_QUERY = createIRI(SD.NAMESPACE, "BasicFederatedQuery");
+		DATASET = createIRI(SD.NAMESPACE, "Dataset");
+		DEFAULT_DATASET = createIRI(SD.NAMESPACE, "defaultDataset");
+		DEFAULT_ENTAILMENT_REGIME = createIRI(SD.NAMESPACE, "defaultEntailmentRegime");
+		DEFAULT_GRAPH = createIRI(SD.NAMESPACE, "defaultGraph");
+		DEFAULT_SUPPORTED_ENTAILMENT_PROFILE = createIRI(SD.NAMESPACE,
 				"defaultSupportedEntailmentProfile");
-		DEREFERENCES_URIS = Vocabularies.createIRI(SD.NAMESPACE, "DereferencesURIs");
-		EMPTY_GRAPHS = Vocabularies.createIRI(SD.NAMESPACE, "EmptyGraphs");
-		ENDPOINT = Vocabularies.createIRI(SD.NAMESPACE, "endpoint");
-		ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE, "EntailmentProfile");
-		ENTAILMENT_REGIME_CLASS = Vocabularies.createIRI(SD.NAMESPACE, "EntailmentRegime");
-		ENTAILMENT_REGIME_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, "entailmentRegime");
-		EXTENSION_AGGREGATE = Vocabularies.createIRI(SD.NAMESPACE, "extensionAggregate");
-		EXTENSION_FUNCTION = Vocabularies.createIRI(SD.NAMESPACE, "extensionFunction");
-		FEATURE_CLASS = Vocabularies.createIRI(SD.NAMESPACE, "Feature");
-		FEATURE_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, "feature");
-		FUNCTION = Vocabularies.createIRI(SD.NAMESPACE, "Function");
-		GRAPH_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, "graph");
-		GRAPH_CLASS = Vocabularies.createIRI(SD.NAMESPACE, "Graph");
-		GRAPH_COLLECTION = Vocabularies.createIRI(SD.NAMESPACE, "GraphCollection");
-		INPUT_FORMAT = Vocabularies.createIRI(SD.NAMESPACE, "inputFormat");
-		LANGUAGE = Vocabularies.createIRI(SD.NAMESPACE, "Language");
-		LANGUAGE_EXTENSION = Vocabularies.createIRI(SD.NAMESPACE, "languageExtension");
-		NAME = Vocabularies.createIRI(SD.NAMESPACE, "name");
-		NAMED_GRAPH_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, "namedGraph");
-		NAMED_GRAPH_CLASS = Vocabularies.createIRI(SD.NAMESPACE, "NamedGraph");
-		PROPERTY_FEATURE = Vocabularies.createIRI(SD.NAMESPACE, "propertyFeature");
-		REQUIRES_DATASET = Vocabularies.createIRI(SD.NAMESPACE, "RequiresDataset");
-		RESULT_FORMAT = Vocabularies.createIRI(SD.NAMESPACE, "resultFormat");
-		SERVICE = Vocabularies.createIRI(SD.NAMESPACE, "Service");
-		SPARQL_10_QUERY = Vocabularies.createIRI(SD.NAMESPACE, "SPARQL10Query");
-		SPARQL_11_QUERY = Vocabularies.createIRI(SD.NAMESPACE, "SPARQL11Query");
-		SPARQL_11_UPDATE = Vocabularies.createIRI(SD.NAMESPACE, "SPARQL11Update");
-		SUPPORTED_ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE, "supportedEntailmentProfile");
-		SUPPORTED_LANGUAGE = Vocabularies.createIRI(SD.NAMESPACE, "supportedLanguage");
-		UNION_DEFAULT_GRAPH = Vocabularies.createIRI(SD.NAMESPACE, "UnionDefaultGraph");
+		DEREFERENCES_URIS = createIRI(SD.NAMESPACE, "DereferencesURIs");
+		EMPTY_GRAPHS = createIRI(SD.NAMESPACE, "EmptyGraphs");
+		ENDPOINT = createIRI(SD.NAMESPACE, "endpoint");
+		ENTAILMENT_PROFILE = createIRI(SD.NAMESPACE, "EntailmentProfile");
+		ENTAILMENT_REGIME_CLASS = createIRI(SD.NAMESPACE, "EntailmentRegime");
+		ENTAILMENT_REGIME_PROPERTY = createIRI(SD.NAMESPACE, "entailmentRegime");
+		EXTENSION_AGGREGATE = createIRI(SD.NAMESPACE, "extensionAggregate");
+		EXTENSION_FUNCTION = createIRI(SD.NAMESPACE, "extensionFunction");
+		FEATURE_CLASS = createIRI(SD.NAMESPACE, "Feature");
+		FEATURE_PROPERTY = createIRI(SD.NAMESPACE, "feature");
+		FUNCTION = createIRI(SD.NAMESPACE, "Function");
+		GRAPH_PROPERTY = createIRI(SD.NAMESPACE, "graph");
+		GRAPH_CLASS = createIRI(SD.NAMESPACE, "Graph");
+		GRAPH_COLLECTION = createIRI(SD.NAMESPACE, "GraphCollection");
+		INPUT_FORMAT = createIRI(SD.NAMESPACE, "inputFormat");
+		LANGUAGE = createIRI(SD.NAMESPACE, "Language");
+		LANGUAGE_EXTENSION = createIRI(SD.NAMESPACE, "languageExtension");
+		NAME = createIRI(SD.NAMESPACE, "name");
+		NAMED_GRAPH_PROPERTY = createIRI(SD.NAMESPACE, "namedGraph");
+		NAMED_GRAPH_CLASS = createIRI(SD.NAMESPACE, "NamedGraph");
+		PROPERTY_FEATURE = createIRI(SD.NAMESPACE, "propertyFeature");
+		REQUIRES_DATASET = createIRI(SD.NAMESPACE, "RequiresDataset");
+		RESULT_FORMAT = createIRI(SD.NAMESPACE, "resultFormat");
+		SERVICE = createIRI(SD.NAMESPACE, "Service");
+		SPARQL_10_QUERY = createIRI(SD.NAMESPACE, "SPARQL10Query");
+		SPARQL_11_QUERY = createIRI(SD.NAMESPACE, "SPARQL11Query");
+		SPARQL_11_UPDATE = createIRI(SD.NAMESPACE, "SPARQL11Update");
+		SUPPORTED_ENTAILMENT_PROFILE = createIRI(SD.NAMESPACE, "supportedEntailmentProfile");
+		SUPPORTED_LANGUAGE = createIRI(SD.NAMESPACE, "supportedLanguage");
+		UNION_DEFAULT_GRAPH = createIRI(SD.NAMESPACE, "UnionDefaultGraph");
 	}
 
 	private SD() {

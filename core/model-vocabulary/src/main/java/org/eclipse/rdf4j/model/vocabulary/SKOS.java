@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -32,7 +35,7 @@ public class SKOS {
 	/**
 	 * An immutable {@link Namespace} constant that represents the SKOS namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/* classes */
 
@@ -289,45 +292,45 @@ public class SKOS {
 
 	static {
 
-		CONCEPT = Vocabularies.createIRI(NAMESPACE, "Concept");
-		CONCEPT_SCHEME = Vocabularies.createIRI(NAMESPACE, "ConceptScheme");
-		COLLECTION = Vocabularies.createIRI(NAMESPACE, "Collection");
-		ORDERED_COLLECTION = Vocabularies.createIRI(NAMESPACE, "OrderedCollection");
+		CONCEPT = createIRI(NAMESPACE, "Concept");
+		CONCEPT_SCHEME = createIRI(NAMESPACE, "ConceptScheme");
+		COLLECTION = createIRI(NAMESPACE, "Collection");
+		ORDERED_COLLECTION = createIRI(NAMESPACE, "OrderedCollection");
 
-		PREF_LABEL = Vocabularies.createIRI(NAMESPACE, "prefLabel");
-		ALT_LABEL = Vocabularies.createIRI(NAMESPACE, "altLabel");
+		PREF_LABEL = createIRI(NAMESPACE, "prefLabel");
+		ALT_LABEL = createIRI(NAMESPACE, "altLabel");
 
-		BROADER = Vocabularies.createIRI(NAMESPACE, "broader");
-		NARROWER = Vocabularies.createIRI(NAMESPACE, "narrower");
+		BROADER = createIRI(NAMESPACE, "broader");
+		NARROWER = createIRI(NAMESPACE, "narrower");
 
-		HAS_TOP_CONCEPT = Vocabularies.createIRI(NAMESPACE, "hasTopConcept");
-		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
+		HAS_TOP_CONCEPT = createIRI(NAMESPACE, "hasTopConcept");
+		MEMBER = createIRI(NAMESPACE, "member");
 
-		HIDDEN_LABEL = Vocabularies.createIRI(NAMESPACE, "hiddenLabel");
+		HIDDEN_LABEL = createIRI(NAMESPACE, "hiddenLabel");
 
-		IN_SCHEME = Vocabularies.createIRI(NAMESPACE, "inScheme");
+		IN_SCHEME = createIRI(NAMESPACE, "inScheme");
 
-		TOP_CONCEPT_OF = Vocabularies.createIRI(NAMESPACE, "topConceptOf");
+		TOP_CONCEPT_OF = createIRI(NAMESPACE, "topConceptOf");
 
-		MEMBER_LIST = Vocabularies.createIRI(NAMESPACE, "memberList");
-		NOTATION = Vocabularies.createIRI(NAMESPACE, "notation");
-		CHANGE_NOTE = Vocabularies.createIRI(NAMESPACE, "changeNote");
-		DEFINITION = Vocabularies.createIRI(NAMESPACE, "definition");
-		EDITORIAL_NOTE = Vocabularies.createIRI(NAMESPACE, "editorialNote");
-		EXAMPLE = Vocabularies.createIRI(NAMESPACE, "example");
-		HISTORY_NOTE = Vocabularies.createIRI(NAMESPACE, "historyNote");
-		NOTE = Vocabularies.createIRI(NAMESPACE, "note");
-		SCOPE_NOTE = Vocabularies.createIRI(NAMESPACE, "scopeNote");
-		BROADER_TRANSITIVE = Vocabularies.createIRI(NAMESPACE, "broaderTransitive");
-		NARROWER_TRANSITIVE = Vocabularies.createIRI(NAMESPACE, "narrowerTransitive");
-		RELATED = Vocabularies.createIRI(NAMESPACE, "related");
-		SEMANTIC_RELATION = Vocabularies.createIRI(NAMESPACE, "semanticRelation");
-		BROAD_MATCH = Vocabularies.createIRI(NAMESPACE, "broadMatch");
-		CLOSE_MATCH = Vocabularies.createIRI(NAMESPACE, "closeMatch");
-		EXACT_MATCH = Vocabularies.createIRI(NAMESPACE, "exactMatch");
-		MAPPING_RELATION = Vocabularies.createIRI(NAMESPACE, "mappingRelation");
-		NARROW_MATCH = Vocabularies.createIRI(NAMESPACE, "narrowMatch");
-		RELATED_MATCH = Vocabularies.createIRI(NAMESPACE, "relatedMatch");
+		MEMBER_LIST = createIRI(NAMESPACE, "memberList");
+		NOTATION = createIRI(NAMESPACE, "notation");
+		CHANGE_NOTE = createIRI(NAMESPACE, "changeNote");
+		DEFINITION = createIRI(NAMESPACE, "definition");
+		EDITORIAL_NOTE = createIRI(NAMESPACE, "editorialNote");
+		EXAMPLE = createIRI(NAMESPACE, "example");
+		HISTORY_NOTE = createIRI(NAMESPACE, "historyNote");
+		NOTE = createIRI(NAMESPACE, "note");
+		SCOPE_NOTE = createIRI(NAMESPACE, "scopeNote");
+		BROADER_TRANSITIVE = createIRI(NAMESPACE, "broaderTransitive");
+		NARROWER_TRANSITIVE = createIRI(NAMESPACE, "narrowerTransitive");
+		RELATED = createIRI(NAMESPACE, "related");
+		SEMANTIC_RELATION = createIRI(NAMESPACE, "semanticRelation");
+		BROAD_MATCH = createIRI(NAMESPACE, "broadMatch");
+		CLOSE_MATCH = createIRI(NAMESPACE, "closeMatch");
+		EXACT_MATCH = createIRI(NAMESPACE, "exactMatch");
+		MAPPING_RELATION = createIRI(NAMESPACE, "mappingRelation");
+		NARROW_MATCH = createIRI(NAMESPACE, "narrowMatch");
+		RELATED_MATCH = createIRI(NAMESPACE, "relatedMatch");
 
 	}
 }

@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -33,7 +36,7 @@ public class SKOSXL {
 	/**
 	 * An immutable {@link Namespace} constant that represents the SKOS-XL namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/* classes */
 
@@ -86,11 +89,11 @@ public class SKOSXL {
 	public static final IRI LABEL_RELATION;
 
 	static {
-		LABEL = Vocabularies.createIRI(NAMESPACE, "Label");
-		LITERAL_FORM = Vocabularies.createIRI(NAMESPACE, "literalForm");
-		PREF_LABEL = Vocabularies.createIRI(NAMESPACE, "prefLabel");
-		ALT_LABEL = Vocabularies.createIRI(NAMESPACE, "altLabel");
-		HIDDEN_LABEL = Vocabularies.createIRI(NAMESPACE, "hiddenLabel");
-		LABEL_RELATION = Vocabularies.createIRI(NAMESPACE, "labelRelation");
+		LABEL = createIRI(NAMESPACE, "Label");
+		LITERAL_FORM = createIRI(NAMESPACE, "literalForm");
+		PREF_LABEL = createIRI(NAMESPACE, "prefLabel");
+		ALT_LABEL = createIRI(NAMESPACE, "altLabel");
+		HIDDEN_LABEL = createIRI(NAMESPACE, "hiddenLabel");
+		LABEL_RELATION = createIRI(NAMESPACE, "labelRelation");
 	}
 }

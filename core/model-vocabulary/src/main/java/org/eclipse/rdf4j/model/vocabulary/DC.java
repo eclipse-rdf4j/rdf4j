@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -31,7 +34,7 @@ public class DC {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Dublin Core namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * dc:title
@@ -110,20 +113,20 @@ public class DC {
 
 	static {
 
-		CONTRIBUTOR = Vocabularies.createIRI(NAMESPACE, "contributor");
-		COVERAGE = Vocabularies.createIRI(NAMESPACE, "coverage");
-		CREATOR = Vocabularies.createIRI(NAMESPACE, "creator");
-		DATE = Vocabularies.createIRI(NAMESPACE, "date");
-		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "description");
-		FORMAT = Vocabularies.createIRI(NAMESPACE, "format");
-		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, "identifier");
-		LANGUAGE = Vocabularies.createIRI(NAMESPACE, "language");
-		PUBLISHER = Vocabularies.createIRI(NAMESPACE, "publisher");
-		RELATION = Vocabularies.createIRI(NAMESPACE, "relation");
-		RIGHTS = Vocabularies.createIRI(NAMESPACE, "rights");
-		SOURCE = Vocabularies.createIRI(NAMESPACE, "source");
-		SUBJECT = Vocabularies.createIRI(NAMESPACE, "subject");
-		TITLE = Vocabularies.createIRI(NAMESPACE, "title");
-		TYPE = Vocabularies.createIRI(NAMESPACE, "type");
+		CONTRIBUTOR = createIRI(NAMESPACE, "contributor");
+		COVERAGE = createIRI(NAMESPACE, "coverage");
+		CREATOR = createIRI(NAMESPACE, "creator");
+		DATE = createIRI(NAMESPACE, "date");
+		DESCRIPTION = createIRI(NAMESPACE, "description");
+		FORMAT = createIRI(NAMESPACE, "format");
+		IDENTIFIER = createIRI(NAMESPACE, "identifier");
+		LANGUAGE = createIRI(NAMESPACE, "language");
+		PUBLISHER = createIRI(NAMESPACE, "publisher");
+		RELATION = createIRI(NAMESPACE, "relation");
+		RIGHTS = createIRI(NAMESPACE, "rights");
+		SOURCE = createIRI(NAMESPACE, "source");
+		SUBJECT = createIRI(NAMESPACE, "subject");
+		TITLE = createIRI(NAMESPACE, "title");
+		TYPE = createIRI(NAMESPACE, "type");
 	}
 }

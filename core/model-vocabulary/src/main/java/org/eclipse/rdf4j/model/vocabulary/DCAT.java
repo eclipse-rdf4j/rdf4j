@@ -7,6 +7,9 @@
  */
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -33,7 +36,7 @@ public class DCAT {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Data Catalog Vocabulary namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** dcat:Catalog */
@@ -147,42 +150,42 @@ public class DCAT {
 
 	static {
 
-		CATALOG = Vocabularies.createIRI(NAMESPACE, "Catalog");
-		CATALOG_RECORD = Vocabularies.createIRI(NAMESPACE, "CatalogRecord");
-		DATA_SERVICE = Vocabularies.createIRI(NAMESPACE, "DataService");
-		DATASET = Vocabularies.createIRI(NAMESPACE, "Dataset");
-		DISTRIBUTION = Vocabularies.createIRI(NAMESPACE, "Distribution");
-		RELATIONSHIP = Vocabularies.createIRI(NAMESPACE, "Relationship");
-		RESOURCE = Vocabularies.createIRI(NAMESPACE, "Resource");
-		ROLE = Vocabularies.createIRI(NAMESPACE, "Role");
+		CATALOG = createIRI(NAMESPACE, "Catalog");
+		CATALOG_RECORD = createIRI(NAMESPACE, "CatalogRecord");
+		DATA_SERVICE = createIRI(NAMESPACE, "DataService");
+		DATASET = createIRI(NAMESPACE, "Dataset");
+		DISTRIBUTION = createIRI(NAMESPACE, "Distribution");
+		RELATIONSHIP = createIRI(NAMESPACE, "Relationship");
+		RESOURCE = createIRI(NAMESPACE, "Resource");
+		ROLE = createIRI(NAMESPACE, "Role");
 
-		ACCESS_SERVICE = Vocabularies.createIRI(NAMESPACE, "accessService");
-		ACCESS_URL = Vocabularies.createIRI(NAMESPACE, "accessURL");
-		BBOX = Vocabularies.createIRI(NAMESPACE, "bbox");
-		BYTE_SIZE = Vocabularies.createIRI(NAMESPACE, "byteSize");
-		CENTROID = Vocabularies.createIRI(NAMESPACE, "centroid");
-		COMPRESS_FORMAT = Vocabularies.createIRI(NAMESPACE, "compressFormat");
-		CONTACT_POINT = Vocabularies.createIRI(NAMESPACE, "contactPoint");
-		DOWNLOAD_URL = Vocabularies.createIRI(NAMESPACE, "downloadURL");
-		END_DATE = Vocabularies.createIRI(NAMESPACE, "endDate");
-		ENDPOINT_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "endpointDescription");
-		ENDPOINT_URL = Vocabularies.createIRI(NAMESPACE, "endpointURL");
-		HAD_ROLE = Vocabularies.createIRI(NAMESPACE, "hadRole");
-		HAS_CATALOG = Vocabularies.createIRI(NAMESPACE, "catalog");
-		HAS_DATASET = Vocabularies.createIRI(NAMESPACE, "dataset");
-		HAS_DISTRIBUTION = Vocabularies.createIRI(NAMESPACE, "distribution");
-		HAS_RECORD = Vocabularies.createIRI(NAMESPACE, "record");
-		HAS_SERVICE = Vocabularies.createIRI(NAMESPACE, "service");
-		KEYWORD = Vocabularies.createIRI(NAMESPACE, "keyword");
-		LANDING_PAGE = Vocabularies.createIRI(NAMESPACE, "landingPage");
-		MEDIA_TYPE = Vocabularies.createIRI(NAMESPACE, "mediaType");
-		PACKAGE_FORMAT = Vocabularies.createIRI(NAMESPACE, "packageFormat");
-		QUALIFIED_RELATION = Vocabularies.createIRI(NAMESPACE, "qualifiedRelation");
-		SERVES_DATASET = Vocabularies.createIRI(NAMESPACE, "servesDataset");
-		SPATIAL_RESOLUTION_IN_METERS = Vocabularies.createIRI(NAMESPACE, "spatialResolutionInMeters");
-		START_DATE = Vocabularies.createIRI(NAMESPACE, "startDate");
-		TEMPORAL_RESOLUTION = Vocabularies.createIRI(NAMESPACE, "temporalResolution");
-		THEME = Vocabularies.createIRI(NAMESPACE, "theme");
-		THEME_TAXONOMY = Vocabularies.createIRI(NAMESPACE, "themeTaxonomy");
+		ACCESS_SERVICE = createIRI(NAMESPACE, "accessService");
+		ACCESS_URL = createIRI(NAMESPACE, "accessURL");
+		BBOX = createIRI(NAMESPACE, "bbox");
+		BYTE_SIZE = createIRI(NAMESPACE, "byteSize");
+		CENTROID = createIRI(NAMESPACE, "centroid");
+		COMPRESS_FORMAT = createIRI(NAMESPACE, "compressFormat");
+		CONTACT_POINT = createIRI(NAMESPACE, "contactPoint");
+		DOWNLOAD_URL = createIRI(NAMESPACE, "downloadURL");
+		END_DATE = createIRI(NAMESPACE, "endDate");
+		ENDPOINT_DESCRIPTION = createIRI(NAMESPACE, "endpointDescription");
+		ENDPOINT_URL = createIRI(NAMESPACE, "endpointURL");
+		HAD_ROLE = createIRI(NAMESPACE, "hadRole");
+		HAS_CATALOG = createIRI(NAMESPACE, "catalog");
+		HAS_DATASET = createIRI(NAMESPACE, "dataset");
+		HAS_DISTRIBUTION = createIRI(NAMESPACE, "distribution");
+		HAS_RECORD = createIRI(NAMESPACE, "record");
+		HAS_SERVICE = createIRI(NAMESPACE, "service");
+		KEYWORD = createIRI(NAMESPACE, "keyword");
+		LANDING_PAGE = createIRI(NAMESPACE, "landingPage");
+		MEDIA_TYPE = createIRI(NAMESPACE, "mediaType");
+		PACKAGE_FORMAT = createIRI(NAMESPACE, "packageFormat");
+		QUALIFIED_RELATION = createIRI(NAMESPACE, "qualifiedRelation");
+		SERVES_DATASET = createIRI(NAMESPACE, "servesDataset");
+		SPATIAL_RESOLUTION_IN_METERS = createIRI(NAMESPACE, "spatialResolutionInMeters");
+		START_DATE = createIRI(NAMESPACE, "startDate");
+		TEMPORAL_RESOLUTION = createIRI(NAMESPACE, "temporalResolution");
+		THEME = createIRI(NAMESPACE, "theme");
+		THEME_TAXONOMY = createIRI(NAMESPACE, "themeTaxonomy");
 	}
 }

@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -28,7 +31,7 @@ public class RDF {
 	/**
 	 * An immutable {@link Namespace} constant that represents the RDF namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#type */
 	public final static IRI TYPE;
@@ -85,23 +88,23 @@ public class RDF {
 	public static final IRI HTML;
 
 	static {
-		TYPE = Vocabularies.createIRI(RDF.NAMESPACE, "type");
-		PROPERTY = Vocabularies.createIRI(RDF.NAMESPACE, "Property");
-		XMLLITERAL = Vocabularies.createIRI(RDF.NAMESPACE, "XMLLiteral");
-		SUBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "subject");
-		PREDICATE = Vocabularies.createIRI(RDF.NAMESPACE, "predicate");
-		OBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "object");
-		STATEMENT = Vocabularies.createIRI(RDF.NAMESPACE, "Statement");
-		BAG = Vocabularies.createIRI(RDF.NAMESPACE, "Bag");
-		ALT = Vocabularies.createIRI(RDF.NAMESPACE, "Alt");
-		SEQ = Vocabularies.createIRI(RDF.NAMESPACE, "Seq");
-		VALUE = Vocabularies.createIRI(RDF.NAMESPACE, "value");
-		LI = Vocabularies.createIRI(RDF.NAMESPACE, "li");
-		LIST = Vocabularies.createIRI(RDF.NAMESPACE, "List");
-		FIRST = Vocabularies.createIRI(RDF.NAMESPACE, "first");
-		REST = Vocabularies.createIRI(RDF.NAMESPACE, "rest");
-		NIL = Vocabularies.createIRI(RDF.NAMESPACE, "nil");
-		LANGSTRING = Vocabularies.createIRI(RDF.NAMESPACE, "langString");
-		HTML = Vocabularies.createIRI(RDF.NAMESPACE, "HTML");
+		TYPE = createIRI(RDF.NAMESPACE, "type");
+		PROPERTY = createIRI(RDF.NAMESPACE, "Property");
+		XMLLITERAL = createIRI(RDF.NAMESPACE, "XMLLiteral");
+		SUBJECT = createIRI(RDF.NAMESPACE, "subject");
+		PREDICATE = createIRI(RDF.NAMESPACE, "predicate");
+		OBJECT = createIRI(RDF.NAMESPACE, "object");
+		STATEMENT = createIRI(RDF.NAMESPACE, "Statement");
+		BAG = createIRI(RDF.NAMESPACE, "Bag");
+		ALT = createIRI(RDF.NAMESPACE, "Alt");
+		SEQ = createIRI(RDF.NAMESPACE, "Seq");
+		VALUE = createIRI(RDF.NAMESPACE, "value");
+		LI = createIRI(RDF.NAMESPACE, "li");
+		LIST = createIRI(RDF.NAMESPACE, "List");
+		FIRST = createIRI(RDF.NAMESPACE, "first");
+		REST = createIRI(RDF.NAMESPACE, "rest");
+		NIL = createIRI(RDF.NAMESPACE, "nil");
+		LANGSTRING = createIRI(RDF.NAMESPACE, "langString");
+		HTML = createIRI(RDF.NAMESPACE, "HTML");
 	}
 }

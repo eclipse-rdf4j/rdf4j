@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -32,7 +35,7 @@ public class WGS84 {
 	/**
 	 * An immutable {@link Namespace} constant that represents the WGS84 namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/** The {@code wgs84:SpatialThing} class. */
 	public static final IRI SPATIAL_THING;
@@ -63,16 +66,16 @@ public class WGS84 {
 
 	static {
 
-		SPATIAL_THING = Vocabularies.createIRI(NAMESPACE, "SpatialThing");
-		TEMPORAL_THING = Vocabularies.createIRI(NAMESPACE, "TemporalThing");
-		EVENT = Vocabularies.createIRI(NAMESPACE, "Event");
+		SPATIAL_THING = createIRI(NAMESPACE, "SpatialThing");
+		TEMPORAL_THING = createIRI(NAMESPACE, "TemporalThing");
+		EVENT = createIRI(NAMESPACE, "Event");
 
-		POINT = Vocabularies.createIRI(NAMESPACE, "Point");
-		LOCATION = Vocabularies.createIRI(NAMESPACE, "location");
-		LAT = Vocabularies.createIRI(NAMESPACE, "lat");
-		LONG = Vocabularies.createIRI(NAMESPACE, "long");
-		ALT = Vocabularies.createIRI(NAMESPACE, "alt");
-		LAT_LONG = Vocabularies.createIRI(NAMESPACE, "lat_long");
+		POINT = createIRI(NAMESPACE, "Point");
+		LOCATION = createIRI(NAMESPACE, "location");
+		LAT = createIRI(NAMESPACE, "lat");
+		LONG = createIRI(NAMESPACE, "long");
+		ALT = createIRI(NAMESPACE, "alt");
+		LAT_LONG = createIRI(NAMESPACE, "lat_long");
 
 	}
 

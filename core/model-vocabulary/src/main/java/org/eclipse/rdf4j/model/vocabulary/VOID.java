@@ -7,6 +7,9 @@
  */
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -32,7 +35,7 @@ public class VOID {
 	/**
 	 * An immutable {@link Namespace} constant that represents the VoID namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
 	/** void:Dataset */
@@ -131,37 +134,37 @@ public class VOID {
 
 	static {
 
-		DATASET = Vocabularies.createIRI(NAMESPACE, "Dataset");
-		DATASET_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "DatasetDescription");
-		LINKSET = Vocabularies.createIRI(NAMESPACE, "Linkset");
-		TECHNICAL_FEATURE = Vocabularies.createIRI(NAMESPACE, "TechnicalFeature");
+		DATASET = createIRI(NAMESPACE, "Dataset");
+		DATASET_DESCRIPTION = createIRI(NAMESPACE, "DatasetDescription");
+		LINKSET = createIRI(NAMESPACE, "Linkset");
+		TECHNICAL_FEATURE = createIRI(NAMESPACE, "TechnicalFeature");
 
-		CLASS = Vocabularies.createIRI(NAMESPACE, "class");
-		CLASS_PARTITION = Vocabularies.createIRI(NAMESPACE, "classPartition");
-		CLASSES = Vocabularies.createIRI(NAMESPACE, "classes");
-		DATA_DUMP = Vocabularies.createIRI(NAMESPACE, "dataDump");
-		DISTINCT_OBJECTS = Vocabularies.createIRI(NAMESPACE, "distinctObjects");
-		DISTINCT_SUBJECTS = Vocabularies.createIRI(NAMESPACE, "distinctSubjects");
-		DOCUMENTS = Vocabularies.createIRI(NAMESPACE, "documents");
-		ENTITIES = Vocabularies.createIRI(NAMESPACE, "entities");
-		EXAMPLE_RESOURCE = Vocabularies.createIRI(NAMESPACE, "exampleResource");
-		FEATURE = Vocabularies.createIRI(NAMESPACE, "feature");
-		IN_DATASET = Vocabularies.createIRI(NAMESPACE, "inDataset");
-		LINK_PREDICATE = Vocabularies.createIRI(NAMESPACE, "linkPredicate");
-		OBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, "objectsTarget");
-		OPEN_SEARCH_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, "openSearchDescription");
-		PROPERTIES = Vocabularies.createIRI(NAMESPACE, "properties");
-		PROPERTY = Vocabularies.createIRI(NAMESPACE, "property");
-		PROPERTY_PARTITION = Vocabularies.createIRI(NAMESPACE, "propertyPartition");
-		ROOT_RESOURCE = Vocabularies.createIRI(NAMESPACE, "rootResource");
-		SPARQL_ENDPOINT = Vocabularies.createIRI(NAMESPACE, "sparqlEndpoint");
-		SUBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, "subjectsTarget");
-		SUBSET = Vocabularies.createIRI(NAMESPACE, "subset");
-		TARGET = Vocabularies.createIRI(NAMESPACE, "target");
-		TRIPLES = Vocabularies.createIRI(NAMESPACE, "triples");
-		URI_LOOKUP_ENDPOINT = Vocabularies.createIRI(NAMESPACE, "uriLookupEndpoint");
-		URI_REGEX_PATTERN = Vocabularies.createIRI(NAMESPACE, "uriRegexPattern");
-		URI_SPACE = Vocabularies.createIRI(NAMESPACE, "uriSpace");
-		VOCABULARY = Vocabularies.createIRI(NAMESPACE, "vocabulary");
+		CLASS = createIRI(NAMESPACE, "class");
+		CLASS_PARTITION = createIRI(NAMESPACE, "classPartition");
+		CLASSES = createIRI(NAMESPACE, "classes");
+		DATA_DUMP = createIRI(NAMESPACE, "dataDump");
+		DISTINCT_OBJECTS = createIRI(NAMESPACE, "distinctObjects");
+		DISTINCT_SUBJECTS = createIRI(NAMESPACE, "distinctSubjects");
+		DOCUMENTS = createIRI(NAMESPACE, "documents");
+		ENTITIES = createIRI(NAMESPACE, "entities");
+		EXAMPLE_RESOURCE = createIRI(NAMESPACE, "exampleResource");
+		FEATURE = createIRI(NAMESPACE, "feature");
+		IN_DATASET = createIRI(NAMESPACE, "inDataset");
+		LINK_PREDICATE = createIRI(NAMESPACE, "linkPredicate");
+		OBJECTS_TARGET = createIRI(NAMESPACE, "objectsTarget");
+		OPEN_SEARCH_DESCRIPTION = createIRI(NAMESPACE, "openSearchDescription");
+		PROPERTIES = createIRI(NAMESPACE, "properties");
+		PROPERTY = createIRI(NAMESPACE, "property");
+		PROPERTY_PARTITION = createIRI(NAMESPACE, "propertyPartition");
+		ROOT_RESOURCE = createIRI(NAMESPACE, "rootResource");
+		SPARQL_ENDPOINT = createIRI(NAMESPACE, "sparqlEndpoint");
+		SUBJECTS_TARGET = createIRI(NAMESPACE, "subjectsTarget");
+		SUBSET = createIRI(NAMESPACE, "subset");
+		TARGET = createIRI(NAMESPACE, "target");
+		TRIPLES = createIRI(NAMESPACE, "triples");
+		URI_LOOKUP_ENDPOINT = createIRI(NAMESPACE, "uriLookupEndpoint");
+		URI_REGEX_PATTERN = createIRI(NAMESPACE, "uriRegexPattern");
+		URI_SPACE = createIRI(NAMESPACE, "uriSpace");
+		VOCABULARY = createIRI(NAMESPACE, "vocabulary");
 	}
 }

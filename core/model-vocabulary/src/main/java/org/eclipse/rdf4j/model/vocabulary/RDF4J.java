@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -31,7 +34,7 @@ public class RDF4J {
 	/**
 	 * An immutable {@link Namespace} constant that represents the RDF4J namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/**
 	 * Context identifier for persisting SHACL shape data in the {@link org.eclipse.rdf4j.sail.shacl.ShaclSail} .
@@ -48,6 +51,6 @@ public class RDF4J {
 	public final static IRI NIL = create("nil");
 
 	private static IRI create(String localName) {
-		return Vocabularies.createIRI(NAMESPACE, localName);
+		return createIRI(NAMESPACE, localName);
 	}
 }

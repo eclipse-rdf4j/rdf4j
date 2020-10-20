@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -34,7 +37,7 @@ public class XSD {
 	/**
 	 * An immutable {@link Namespace} constant that represents the XML Schema namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/*
 	 * Primitive datatypes
@@ -186,7 +189,7 @@ public class XSD {
 	public static final IRI YEARMONTHDURATION = create("yearMonthDuration");
 
 	private static IRI create(String localName) {
-		return Vocabularies.createIRI(XSD.NAMESPACE, localName);
+		return createIRI(XSD.NAMESPACE, localName);
 	}
 
 	public enum Datatype {

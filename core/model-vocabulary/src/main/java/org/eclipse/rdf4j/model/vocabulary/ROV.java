@@ -7,6 +7,9 @@
  */
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -32,7 +35,7 @@ public class ROV {
 	/**
 	 * An immutable {@link Namespace} constant that represents the Registered Organization namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	// Class
 	/**
@@ -73,13 +76,13 @@ public class ROV {
 
 	static {
 
-		REGISTERED_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "RegisteredOrganization");
+		REGISTERED_ORGANIZATION = createIRI(NAMESPACE, "RegisteredOrganization");
 
-		HAS_REGISTERED_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, "hasRegisteredOrganization");
-		LEGAL_NAME = Vocabularies.createIRI(NAMESPACE, "legalName");
-		ORG_ACTIVITY = Vocabularies.createIRI(NAMESPACE, "orgActivity");
-		ORG_STATUS = Vocabularies.createIRI(NAMESPACE, "orgStatus");
-		ORG_TYPE = Vocabularies.createIRI(NAMESPACE, "orgType");
-		REGISTRATION = Vocabularies.createIRI(NAMESPACE, "registration");
+		HAS_REGISTERED_ORGANIZATION = createIRI(NAMESPACE, "hasRegisteredOrganization");
+		LEGAL_NAME = createIRI(NAMESPACE, "legalName");
+		ORG_ACTIVITY = createIRI(NAMESPACE, "orgActivity");
+		ORG_STATUS = createIRI(NAMESPACE, "orgStatus");
+		ORG_TYPE = createIRI(NAMESPACE, "orgType");
+		REGISTRATION = createIRI(NAMESPACE, "registration");
 	}
 }

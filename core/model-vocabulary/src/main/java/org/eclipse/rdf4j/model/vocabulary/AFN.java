@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -30,6 +32,6 @@ public final class AFN {
 	public static final IRI LOCALNAME;
 
 	static {
-		LOCALNAME = Vocabularies.createIRI(NAMESPACE, "localname");
+		LOCALNAME = createIRI(NAMESPACE, "localname");
 	}
 }

@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+import static org.eclipse.rdf4j.model.base.AbstractNamespace.createNamespace;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -27,7 +30,7 @@ public class RDFS {
 	/**
 	 * An immutable {@link Namespace} constant that represents the RDFS namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public static final Namespace NS = createNamespace(PREFIX, NAMESPACE);
 
 	/** http://www.w3.org/2000/01/rdf-schema#Resource */
 	public final static IRI RESOURCE;
@@ -75,20 +78,20 @@ public class RDFS {
 	public final static IRI CONTAINERMEMBERSHIPPROPERTY;
 
 	static {
-		RESOURCE = Vocabularies.createIRI(RDFS.NAMESPACE, "Resource");
-		LITERAL = Vocabularies.createIRI(RDFS.NAMESPACE, "Literal");
-		CLASS = Vocabularies.createIRI(RDFS.NAMESPACE, "Class");
-		SUBCLASSOF = Vocabularies.createIRI(RDFS.NAMESPACE, "subClassOf");
-		SUBPROPERTYOF = Vocabularies.createIRI(RDFS.NAMESPACE, "subPropertyOf");
-		DOMAIN = Vocabularies.createIRI(RDFS.NAMESPACE, "domain");
-		RANGE = Vocabularies.createIRI(RDFS.NAMESPACE, "range");
-		COMMENT = Vocabularies.createIRI(RDFS.NAMESPACE, "comment");
-		LABEL = Vocabularies.createIRI(RDFS.NAMESPACE, "label");
-		DATATYPE = Vocabularies.createIRI(RDFS.NAMESPACE, "Datatype");
-		CONTAINER = Vocabularies.createIRI(RDFS.NAMESPACE, "Container");
-		MEMBER = Vocabularies.createIRI(RDFS.NAMESPACE, "member");
-		ISDEFINEDBY = Vocabularies.createIRI(RDFS.NAMESPACE, "isDefinedBy");
-		SEEALSO = Vocabularies.createIRI(RDFS.NAMESPACE, "seeAlso");
-		CONTAINERMEMBERSHIPPROPERTY = Vocabularies.createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
+		RESOURCE = createIRI(RDFS.NAMESPACE, "Resource");
+		LITERAL = createIRI(RDFS.NAMESPACE, "Literal");
+		CLASS = createIRI(RDFS.NAMESPACE, "Class");
+		SUBCLASSOF = createIRI(RDFS.NAMESPACE, "subClassOf");
+		SUBPROPERTYOF = createIRI(RDFS.NAMESPACE, "subPropertyOf");
+		DOMAIN = createIRI(RDFS.NAMESPACE, "domain");
+		RANGE = createIRI(RDFS.NAMESPACE, "range");
+		COMMENT = createIRI(RDFS.NAMESPACE, "comment");
+		LABEL = createIRI(RDFS.NAMESPACE, "label");
+		DATATYPE = createIRI(RDFS.NAMESPACE, "Datatype");
+		CONTAINER = createIRI(RDFS.NAMESPACE, "Container");
+		MEMBER = createIRI(RDFS.NAMESPACE, "member");
+		ISDEFINEDBY = createIRI(RDFS.NAMESPACE, "isDefinedBy");
+		SEEALSO = createIRI(RDFS.NAMESPACE, "seeAlso");
+		CONTAINERMEMBERSHIPPROPERTY = createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
 	}
 }

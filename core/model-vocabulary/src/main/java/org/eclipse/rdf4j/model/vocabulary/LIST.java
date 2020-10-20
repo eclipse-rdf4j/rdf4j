@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.base.AbstractIRI.createIRI;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -31,8 +33,8 @@ public final class LIST {
 	public static final IRI LENGTH;
 
 	static {
-		MEMBER = Vocabularies.createIRI(NAMESPACE, "member");
-		INDEX = Vocabularies.createIRI(NAMESPACE, "index");
-		LENGTH = Vocabularies.createIRI(NAMESPACE, "length");
+		MEMBER = createIRI(NAMESPACE, "member");
+		INDEX = createIRI(NAMESPACE, "index");
+		LENGTH = createIRI(NAMESPACE, "length");
 	}
 }
