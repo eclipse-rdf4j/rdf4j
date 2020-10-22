@@ -14,5 +14,6 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
 class ConnectiveOperation extends Operation<ConnectiveOperation> {
 	ConnectiveOperation(ConnectiveOperator operator) {
 		super(operator);
+		parenthesize();
 	}
 }
