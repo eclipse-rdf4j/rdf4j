@@ -11,21 +11,23 @@ import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
+/**
+ * Interleaved join iterator.
+ *
+ * This join iterator produces results by interleaving results from its left argument into its right argument to speed
+ * up bindings and produce fail-fast results. Note that this join strategy is only valid in cases where all bindings
+ * from the left argument can be considered in scope for the right argument.
+ *
+ * @author Jeen Broekstra
+ *
+ */
 public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
 	/*-----------*
@@ -52,6 +54,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
+
+		join.setAlgorithm(this);
 	}
 
 	/*---------*
@@ -71,14 +75,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 				if (leftIter.hasNext()) {
 					TupleExpr rightArg = join.getRightArg();
-					if (isOutOfScopeForLeftArgBindings(rightArg)) {
-						// leftiter bindings are out of scope for the right arg, so we merge afterward.
-						BindingSet next = leftIter.next();
-						rightIter = new MergeIteration(next, new BindingSetFilterIteration(next,
-								strategy.evaluate(rightArg, new EmptyBindingSet())));
-					} else {
-						rightIter = strategy.evaluate(rightArg, leftIter.next());
-					}
+					rightIter = strategy.evaluate(rightArg, leftIter.next());
 				}
 			}
 		} catch (NoSuchElementException ignore) {
@@ -99,79 +96,6 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 			} finally {
 				rightIter.close();
 			}
-		}
-	}
-
-	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		if (expr instanceof Union) {
-			return true;
-		}
-		return TupleExprs.isGraphPatternGroup(expr) && !(expr instanceof Filter);
-	}
-
-	private class MergeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
-
-		private BindingSet bindingSet;
-		private CloseableIteration<BindingSet, QueryEvaluationException> iter;
-
-		public MergeIteration(BindingSet mergeBS, CloseableIteration<BindingSet, QueryEvaluationException> iter) {
-			this.bindingSet = mergeBS;
-			this.iter = iter;
-
-		}
-
-		/**
-		 * Merge each sequence from the wrapped iterator with the provided BindingSet
-		 */
-		@Override
-		protected BindingSet getNextElement() throws QueryEvaluationException {
-			if (!iter.hasNext()) {
-				return null;
-			}
-
-			BindingSet bs = iter.next();
-			QueryBindingSet result = new QueryBindingSet(bs);
-			for (Binding b : bindingSet) {
-				if (!result.hasBinding(b.getName())) {
-					result.addBinding(b);
-				}
-			}
-			return result;
-		}
-
-		@Override
-		protected void handleClose() {
-			super.handleClose();
-			iter.close();
-		}
-
-	}
-
-	private class BindingSetFilterIteration extends FilterIteration<BindingSet, QueryEvaluationException> {
-
-		private BindingSet bindingSet;
-
-		public BindingSetFilterIteration(BindingSet bindingSet,
-				CloseableIteration<BindingSet, QueryEvaluationException> iteration) {
-			super(iteration);
-			this.bindingSet = bindingSet;
-		}
-
-		/**
-		 * Filter out sequences where any bindings conflict with bindings in the provided bindingSet
-		 */
-		@Override
-		protected boolean accept(BindingSet toBeFiltered) throws QueryEvaluationException {
-			for (Binding b : bindingSet) {
-				Value v = b.getValue();
-				String name = b.getName();
-				if (toBeFiltered.hasBinding(name)) {
-					if (!toBeFiltered.getValue(name).equals(v)) {
-						return false;
-					}
-				}
-			}
-			return true;
 		}
 	}
 }

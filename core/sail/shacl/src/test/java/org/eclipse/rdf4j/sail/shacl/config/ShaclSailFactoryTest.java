@@ -7,28 +7,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
-import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.junit.Before;
-import org.junit.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.junit.Test;
 
 /**
  * Unit tests for {@link ShaclSailFactory}
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ShaclSailFactoryTest {
 
-	private ShaclSailFactory subject;
-
-	@Before
-	public void setUp() throws Exception {
-		subject = new ShaclSailFactory();
-	}
-
 	@Test
 	public void getSailTypeReturnsCorrectValue() {
+		ShaclSailFactory subject = new ShaclSailFactory();
 		assertThat(subject.getSailType()).isEqualTo(ShaclSailFactory.SAIL_TYPE);
 	}
 
@@ -37,6 +30,8 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithDefaultConfigSetsConfigurationCorrectly() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
 		ShaclSailConfig config = new ShaclSailConfig();
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -47,6 +42,8 @@ public class ShaclSailFactoryTest {
 	 */
 	@Test
 	public void getSailWithCustomConfigSetsConfigurationCorrectly() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
 		ShaclSailConfig config = new ShaclSailConfig();
 
 		// set everything to the opposite of its default
@@ -61,6 +58,11 @@ public class ShaclSailFactoryTest {
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
 		config.setRdfsSubClassReasoning(!config.isRdfsSubClassReasoning());
+		config.setEclipseRdf4jShaclExtensions(!config.isEclipseRdf4jShaclExtensions());
+		config.setDashDataShapes(!config.isDashDataShapes());
+
+		config.setValidationResultsLimitTotal(100);
+		config.setValidationResultsLimitPerConstraint(3);
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
@@ -79,6 +81,12 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
 		assertThat(sail.isRdfsSubClassReasoning()).isEqualTo(config.isRdfsSubClassReasoning());
+		assertThat(sail.isEclipseRdf4jShaclExtensions()).isEqualTo(config.isEclipseRdf4jShaclExtensions());
+		assertThat(sail.isDashDataShapes()).isEqualTo(config.isDashDataShapes());
+		assertThat(sail.getValidationResultsLimitTotal()).isEqualTo(config.getValidationResultsLimitTotal());
+		assertThat(sail.getValidationResultsLimitPerConstraint())
+				.isEqualTo(config.getValidationResultsLimitPerConstraint());
+
 	}
 
 }

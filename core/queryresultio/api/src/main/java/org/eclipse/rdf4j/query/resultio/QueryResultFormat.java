@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 /**
  * The base class of all file formats that represent the results of queries. Currently this includes tuple and boolean
  * queries.
- * 
+ *
  * @author Peter Ansell
  */
 public class QueryResultFormat extends FileFormat {
@@ -48,7 +48,7 @@ public class QueryResultFormat extends FileFormat {
 
 	/**
 	 * A standard URI published by the W3C or another standards body to uniquely denote this format.
-	 * 
+	 *
 	 * @see <a href="http://www.w3.org/ns/formats/">Unique URIs for File Formats</a>
 	 */
 	private IRI standardURI;

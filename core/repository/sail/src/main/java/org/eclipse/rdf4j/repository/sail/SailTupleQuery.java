@@ -41,38 +41,25 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
-		IteratingTupleQueryResult result = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = null;
 
 		boolean allGood = false;
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
 
-			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
-			bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
+			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
-			result = new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter2);
+			IteratingTupleQueryResult result = new IteratingTupleQueryResult(
+					new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
 			allGood = true;
 			return result;
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		} finally {
 			if (!allGood) {
-				try {
-					if (result != null) {
-						result.close();
-					}
-				} finally {
-					try {
-						if (bindingsIter2 != null) {
-							bindingsIter2.close();
-						}
-					} finally {
-						if (bindingsIter1 != null) {
-							bindingsIter1.close();
-						}
-					}
+				if (bindingsIter != null) {
+					bindingsIter.close();
 				}
 			}
 		}
@@ -84,4 +71,5 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 		TupleQueryResult queryResult = evaluate();
 		QueryResults.report(queryResult, handler);
 	}
+
 }

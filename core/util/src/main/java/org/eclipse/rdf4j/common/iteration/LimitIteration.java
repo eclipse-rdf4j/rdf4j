@@ -36,7 +36,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 
 	/**
 	 * Creates a new LimitIteration.
-	 * 
+	 *
 	 * @param iter  The underlying Iteration, must not be <tt>null</tt>.
 	 * @param limit The number of query answers to return, must be &gt;= 0.
 	 */

@@ -18,7 +18,7 @@ import org.apache.lucene.store.NIOFSDirectory;
  * LuceneIndex which uses a NIOFSDirectory instead of MMapDirectory to avoid the JVM crash (see
  * <a href= "http://stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput-readvint" >http://
  * stackoverflow.com/questions/8224843/jvm-crashes-on-lucene-datainput- readvint</a>).
- * 
+ *
  * @author andriy.nikolov
  */
 public class LuceneIndexNIOFS extends LuceneIndex {
@@ -27,7 +27,8 @@ public class LuceneIndexNIOFS extends LuceneIndex {
 	protected Directory createDirectory(Properties parameters) throws IOException {
 		if (parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {
 			return new NIOFSDirectory(Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY)));
-		} else
+		} else {
 			return super.createDirectory(parameters);
+		}
 	}
 }

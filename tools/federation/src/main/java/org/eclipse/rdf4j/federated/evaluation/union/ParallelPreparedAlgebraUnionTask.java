@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 /**
  * A task implementation representing a prepared union, i.e. the prepared query is executed on the provided triple
  * source.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ParallelPreparedAlgebraUnionTask extends ParallelTaskBase<BindingSet> {

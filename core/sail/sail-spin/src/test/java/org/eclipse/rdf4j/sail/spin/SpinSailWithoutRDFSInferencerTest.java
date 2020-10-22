@@ -15,6 +15,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.concurrent.Callable;
 
+import javax.script.ScriptEngineManager;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -132,8 +134,12 @@ public class SpinSailWithoutRDFSInferencerTest {
 
 	@Test
 	public void testSpinxRule() throws Exception {
-		loadStatements("testSpinxRule.ttl");
-		assertStatements("testSpinxRule-expected.ttl");
+		try {
+			loadStatements("testSpinxRule.ttl");
+			assertStatements("testSpinxRule-expected.ttl");
+		} catch (UnsupportedOperationException e) {
+			assert new ScriptEngineManager().getEngineByName("javascript") == null;
+		}
 	}
 
 	@Test

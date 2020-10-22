@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Vocabulary used in FedX to describe endpoints and services
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -23,7 +23,7 @@ public class Vocabulary {
 
 	/**
 	 * FedX specific vocabulary
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -44,13 +44,15 @@ public class Vocabulary {
 		public static final IRI REPOSITORY_SERVER = vf.createIRI(NAMESPACE, "repositoryServer");
 
 		public static final IRI REPOSITORY_NAME = vf.createIRI(NAMESPACE, "repositoryName");
+
+		public static final IRI WRITABLE = vf.createIRI(NAMESPACE, "writable");
 	}
 
 	/**
 	 * Vocabulary from the SPARQL 1.1. service description
-	 * 
+	 *
 	 * See https://www.w3.org/TR/sparql11-service-description/
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */

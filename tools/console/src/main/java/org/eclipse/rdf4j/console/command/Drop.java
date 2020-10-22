@@ -12,7 +12,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
-
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -40,7 +39,7 @@ public class Drop extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param close
@@ -78,7 +77,7 @@ public class Drop extends ConsoleCommand {
 
 	/**
 	 * Try to drop a repository after confirmation from user
-	 * 
+	 *
 	 * @param repoID repository ID
 	 * @throws IOException
 	 * @throws RepositoryException

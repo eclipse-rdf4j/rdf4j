@@ -48,15 +48,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConjunctiveConstraintSpli
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.filters.AccurateRepositoryBloomFilter;
 import org.eclipse.rdf4j.repository.filters.RepositoryBloomFilter;
-import org.eclipse.rdf4j.repository.RepositoryResolver;
-import org.eclipse.rdf4j.repository.RepositoryResolverClient;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.federation.optimizers.EmptyPatternOptimizer;
@@ -72,7 +73,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Unions the results from multiple {@link RepositoryConnection} into one {@link SailConnection}.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -134,10 +135,7 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 
 		valueFactory = SimpleValueFactory.getInstance();
 
-		this.members = new ArrayList<>(members.size());
-		for (RepositoryConnection member : members) {
-			this.members.add(member);
-		}
+		this.members = new ArrayList<>(members);
 	}
 
 	public ValueFactory getValueFactory() {
@@ -159,8 +157,9 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 	}
 
 	public FederatedServiceResolver getFederatedServiceResolver() {
-		if (federatedServiceResolver == null)
+		if (federatedServiceResolver == null) {
 			return federation.getFederatedServiceResolver();
+		}
 		return federatedServiceResolver;
 	}
 
@@ -485,5 +484,11 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 				LOGGER.error("Failed to close cursor", e);
 			}
 		}
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		throw new UnsupportedOperationException();
 	}
 }

@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -28,7 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 /**
  * Interface for implementations of triple sources. Particular implementations define how to evaluate the expression on
  * the endpoint. Different implementations might be necessary depending on the underlying repository.
- * 
+ *
  * @author Andreas Schwarte
  *
  * @see SparqlTripleSource
@@ -38,13 +39,13 @@ public interface TripleSource {
 
 	/**
 	 * Evaluate the prepared query in its internal representation on the provided endpoint.
-	 * 
+	 *
 	 * @param preparedQuery a prepared query to evaluate
 	 * @param bindings      the bindings to use
 	 * @param filterExpr    the filter expression to apply or null if there is no filter or if it is evaluated already
-	 * 
+	 *
 	 * @return the resulting iteration
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -55,13 +56,13 @@ public interface TripleSource {
 
 	/**
 	 * Evaluate the prepared query (SPARQL query as String) on the provided endpoint.
-	 * 
+	 *
 	 * @param preparedQuery a prepared query to evaluate (SPARQL query as String)
 	 * @param bindings      the bindings to use
 	 * @param filterExpr    the filter expression to apply or null if there is no filter or if it is evaluated already
-	 * 
+	 *
 	 * @return the resulting iteration
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -72,7 +73,7 @@ public interface TripleSource {
 
 	/**
 	 * Evaluate a given SPARQL query of the provided query type at the given source.
-	 * 
+	 *
 	 * @param preparedQuery
 	 * @param queryType
 	 * @param queryInfo
@@ -92,7 +93,7 @@ public interface TripleSource {
 
 	/**
 	 * Evaluate a given SPARQL query of the provided query type at the given source.
-	 * 
+	 *
 	 * @param preparedQuery
 	 * @param queryBindings optional query bindings, use {@link EmptyBindingSet} if there are none
 	 * @param queryType
@@ -109,13 +110,13 @@ public interface TripleSource {
 
 	/**
 	 * Evaluate the query expression on the provided endpoint.
-	 * 
+	 *
 	 * @param stmt       the stmt expression to evaluate
 	 * @param bindings   the bindings to use
 	 * @param filterExpr the filter expression to apply or null if there is no filter or if it is evaluated already
-	 * 
+	 *
 	 * @return the resulting iteration
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -126,14 +127,14 @@ public interface TripleSource {
 
 	/**
 	 * Return the statements matching the given pattern as a {@link Statement} iteration.
-	 * 
+	 *
 	 * @param subj
 	 * @param pred
 	 * @param obj
 	 * @param contexts
-	 * 
+	 *
 	 * @return the resulting iteration
-	 * 
+	 *
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
@@ -144,22 +145,24 @@ public interface TripleSource {
 
 	/**
 	 * Check if the provided statement can return results.
-	 * 
+	 *
 	 * @param stmt
-	 * @param bindings a binding set. in case no bindings are present, an {@link EmptyBindingSet} can be used (i.e.
-	 *                 never null)
-	 * 
+	 * @param bindings  a binding set. in case no bindings are present, an {@link EmptyBindingSet} can be used (i.e.
+	 *                  never null)
+	 * @param queryInfo
+	 * @param dataset
+	 *
 	 * @return whether the source can return results
 	 * @throws RepositoryException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	public boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo)
+	public boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Check if the repository can return results for the given triple pattern represented by subj, pred and obj
-	 * 
+	 *
 	 * @param subj
 	 * @param pred
 	 * @param obj
@@ -174,7 +177,7 @@ public interface TripleSource {
 	/**
 	 * Check if the repository can return results for the given {@link ExclusiveTupleExpr}, e.g. for an
 	 * {@link ExclusiveGroup} with a list of Statements.
-	 * 
+	 *
 	 * @param group
 	 * @param bindings
 	 * @return whether the repository can return results
@@ -184,9 +187,21 @@ public interface TripleSource {
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
-	 * 
+	 *
+	 * @return true if a prepared query is to be used preferably, false otherwise
+	 * @deprecated replaced with {@link #usePreparedQuery(StatementPattern, QueryInfo)}, to be removed in 4.0
+	 */
+	@Deprecated
+	public default boolean usePreparedQuery() {
+		return true;
+	}
+
+	/**
+	 *
+	 * @param stmt
+	 * @param queryInfo
 	 * @return true if a prepared query is to be used preferably, false otherwise
 	 */
-	public boolean usePreparedQuery();
+	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo);
 
 }

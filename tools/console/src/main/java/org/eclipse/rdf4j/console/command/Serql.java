@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.parser.serql.SeRQLUtil;
 
 /**
  * SERQL query command
- * 
+ *
  * @author Bart Hanssens
  */
 public class Serql extends QueryEvaluator {
@@ -43,7 +43,7 @@ public class Serql extends QueryEvaluator {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param evaluator
 	 */
 	public Serql(TupleAndGraphQueryEvaluator evaluator) {

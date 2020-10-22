@@ -7,31 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
 
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
-
-import java.io.OutputStream;
-
 /**
- * {@link TupleQueryResultWriterFactory} for creating instances of {@link SPARQLStarResultsJSONWriter}.
  *
- * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - moved to
+ *             {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriterFactory}
  */
-public class SPARQLStarResultsJSONWriterFactory implements TupleQueryResultWriterFactory {
-	/**
-	 * Returns {@link TupleQueryResultFormat#JSON_STAR}.
-	 */
-	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return SPARQLStarResultsJSONConstants.QUERY_RESULT_FORMAT;
-	}
-
-	/**
-	 * Returns a new instance of {@link SPARQLStarResultsJSONWriter}.
-	 */
-	@Override
-	public TupleQueryResultWriter getWriter(OutputStream out) {
-		return new SPARQLStarResultsJSONWriter(out);
-	}
+@Deprecated
+public class SPARQLStarResultsJSONWriterFactory
+		extends org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriterFactory {
 }

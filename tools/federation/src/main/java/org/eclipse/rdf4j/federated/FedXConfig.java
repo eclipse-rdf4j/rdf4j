@@ -7,14 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
+import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
+import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.Query;
 
@@ -22,7 +27,7 @@ import com.google.common.cache.CacheBuilderSpec;
 
 /**
  * Configuration class for FedX
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FedXConfig {
@@ -57,17 +62,21 @@ public class FedXConfig {
 
 	private Class<? extends FederationEvalStrategy> sparqlEvaluationStrategy = SparqlFederationEvalStrategy.class;
 
+	private Class<? extends WriteStrategyFactory> writeStrategyFactory = DefaultWriteStrategyFactory.class;
+
+	private TaskWrapper taskWrapper = null;
+
 	private String prefixDeclarations = null;
 
 	/* factory like setters */
 
 	/**
 	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()}.
-	 * 
+	 *
 	 * <p>
 	 * Can be set after federation construction and initialize.
 	 * </p>
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config
 	 */
@@ -78,11 +87,11 @@ public class FedXConfig {
 
 	/**
 	 * Set whether to log queries. See {@link #isLogQueries()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config
 	 */
@@ -93,11 +102,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the {@link FederationEvalStrategy} for SPARQL federations. See {@link #getSPARQLEvaluationStrategy()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param sparqlEvaluationStrategy
 	 * @return the current config
 	 */
@@ -108,11 +117,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the {@link FederationEvalStrategy} for SAIL federations. See {@link #getSailEvaluationStrategy()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param sailEvaluationStrategy
 	 * @return the current config
 	 */
@@ -122,12 +131,23 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Set the {@link WriteStrategyFactory} to be used.
+	 *
+	 * @param writeStrategyFactory
+	 * @return the current config
+	 */
+	public FedXConfig withWriteStrategyFactory(Class<? extends WriteStrategyFactory> writeStrategyFactory) {
+		this.writeStrategyFactory = writeStrategyFactory;
+		return this;
+	}
+
+	/**
 	 * Set enforce max query time. See {@link #getEnforceMaxQueryTime()}.
-	 * 
+	 *
 	 * <p>
 	 * Can be set after federation construction and initialize.
 	 * </p>
-	 * 
+	 *
 	 * @param enforceMaxQueryTime time in seconds, 0 to disable
 	 * @return the current config
 	 */
@@ -138,7 +158,7 @@ public class FedXConfig {
 
 	/**
 	 * Set the default value supplied to {@link Query#setIncludeInferred(boolean)}
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config
 	 */
@@ -149,11 +169,11 @@ public class FedXConfig {
 
 	/**
 	 * Enable monitoring. See {@link #isEnableMonitoring()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config
 	 */
@@ -164,11 +184,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param boundJoinBlockSize
 	 * @return the current config
 	 */
@@ -179,11 +199,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the number of join worker threads. See {@link #getJoinWorkerThreads()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param joinWorkerThreads
 	 * @return the current config
 	 */
@@ -194,11 +214,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the number of left join worker threads. See {@link #getLeftJoinWorkerThreads()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param leftJoinWorkerThreads
 	 * @return the current config
 	 */
@@ -209,11 +229,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the number of union worker threads. See {@link #getUnionWorkerThreads()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param unionWorkerThreads
 	 * @return the current config
 	 */
@@ -224,11 +244,11 @@ public class FedXConfig {
 
 	/**
 	 * Set the optional prefix declarations file. See {@link #getPrefixDeclarations()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param prefixFile
 	 * @return config
 	 */
@@ -239,11 +259,11 @@ public class FedXConfig {
 
 	/**
 	 * Whether to log the query plan with {@link QueryPlanLog}. See {@link #isLogQueryPlan()}.
-	 * 
+	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config
 	 */
@@ -255,7 +275,7 @@ public class FedXConfig {
 	/**
 	 * Whether external SERVICE clauses are evaluated using bound join (i.e. with the VALUES clause). Default
 	 * <i>true</i>
-	 * 
+	 *
 	 * @param flag
 	 * @return the current config.
 	 */
@@ -267,7 +287,7 @@ public class FedXConfig {
 	/**
 	 * The cache specification for the {@link SourceSelectionMemoryCache}. If not set explicitly, the
 	 * {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
-	 * 
+	 *
 	 * @param cacheSpec the {@link CacheBuilderSpec} for the {@link SourceSelectionCache}
 	 * @return the current config
 	 * @see SourceSelectionMemoryCache
@@ -278,9 +298,22 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper is
+	 * explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
+	 * 
+	 * @param taskWrapper the {@link TaskWrapper}
+	 * @return the current config
+	 * @see TaskWrapper
+	 */
+	public FedXConfig withTaskWrapper(TaskWrapper taskWrapper) {
+		this.taskWrapper = taskWrapper;
+		return this;
+	}
+
+	/**
 	 * The (maximum) number of join worker threads used in the {@link ControlledWorkerScheduler} for join operations.
 	 * Default is 20.
-	 * 
+	 *
 	 * @return the number of join worker threads
 	 */
 	public int getJoinWorkerThreads() {
@@ -290,7 +323,7 @@ public class FedXConfig {
 	/**
 	 * The (maximum) number of union worker threads used in the {@link ControlledWorkerScheduler} for join operations.
 	 * Default is 20
-	 * 
+	 *
 	 * @return number of union worker threads
 	 */
 	public int getUnionWorkerThreads() {
@@ -300,7 +333,7 @@ public class FedXConfig {
 	/**
 	 * The (maximum) number of left join worker threads used in the {@link ControlledWorkerScheduler} for join
 	 * operations. Default is 10.
-	 * 
+	 *
 	 * @return the number of left join worker threads
 	 */
 	public int getLeftJoinWorkerThreads() {
@@ -310,7 +343,7 @@ public class FedXConfig {
 	/**
 	 * The block size for a bound join, i.e. the number of bindings that are integrated in a single subquery. Default is
 	 * 15.
-	 * 
+	 *
 	 * @return the bound join block size
 	 */
 	public int getBoundJoinBlockSize() {
@@ -320,11 +353,11 @@ public class FedXConfig {
 	/**
 	 * Returns a flag indicating whether vectored evaluation using the VALUES clause shall be applied for SERVICE
 	 * expressions.
-	 * 
+	 *
 	 * Default: false
-	 * 
+	 *
 	 * Note: for todays endpoints it is more efficient to disable vectored evaluation of SERVICE.
-	 * 
+	 *
 	 * @return whether SERVICE expressions are evaluated using bound joins
 	 */
 	public boolean getEnableServiceAsBoundJoin() {
@@ -338,10 +371,10 @@ public class FedXConfig {
 	 * <p>
 	 * Set to 0 to disable query timeouts.
 	 * </p>
-	 * 
+	 *
 	 * The timeout is also applied for individual fine-granular join or union operations as a max time.
 	 * </p>
-	 * 
+	 *
 	 * @return the maximum query time in seconds
 	 */
 	public int getEnforceMaxQueryTime() {
@@ -349,7 +382,7 @@ public class FedXConfig {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the default for {@link Operation#getIncludeInferred()}
 	 */
 	public boolean getIncludeInferredDefault() {
@@ -358,7 +391,7 @@ public class FedXConfig {
 
 	/**
 	 * Flag to enable/disable monitoring features. Default=false.
-	 * 
+	 *
 	 * @return whether monitoring is enabled
 	 */
 	public boolean isEnableMonitoring() {
@@ -368,7 +401,7 @@ public class FedXConfig {
 	/**
 	 * Flag to enable/disable query plan logging via {@link QueryPlanLog}. Default=false The {@link QueryPlanLog}
 	 * facility allows to retrieve the query execution plan from a variable local to the executing thread.
-	 * 
+	 *
 	 * @return whether the query plan shall be logged
 	 */
 	public boolean isLogQueryPlan() {
@@ -378,9 +411,9 @@ public class FedXConfig {
 	/**
 	 * Flag to enable/disable query logging via {@link QueryLog}. Default=false The {@link QueryLog} facility allows to
 	 * log all queries to a file. See {@link QueryLog} for details.
-	 * 
+	 *
 	 * Requires {@link #isEnableMonitoring()} to be active.
-	 * 
+	 *
 	 * @return whether queries are logged
 	 */
 	public boolean isLogQueries() {
@@ -392,15 +425,15 @@ public class FedXConfig {
 	 * <p>
 	 * Default: no prefixes are replaced. Note that prefixes are only replaced when using the {@link QueryManager} to
 	 * create/evaluate queries.
-	 * 
+	 *
 	 * Example:
-	 * 
+	 *
 	 * <code>
 	 * foaf=http://xmlns.com/foaf/0.1/
 	 * rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
 	 * =http://mydefaultns.org/
 	 * </code>
-	 * 
+	 *
 	 * @return the location of the prefix declarations or <code>null</code> if not configured
 	 */
 	public String getPrefixDeclarations() {
@@ -410,7 +443,7 @@ public class FedXConfig {
 	/**
 	 * Returns the configured {@link CacheBuilderSpec} (if any) for the {@link SourceSelectionMemoryCache}. If not
 	 * defined, the {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
-	 * 
+	 *
 	 * @return the {@link CacheBuilderSpec} or <code>null</code>
 	 */
 	public String getSourceSelectionCacheSpec() {
@@ -423,7 +456,7 @@ public class FedXConfig {
 	 * <p>
 	 * Default {@link SailFederationEvalStrategy}
 	 * </p>
-	 * 
+	 *
 	 * @return the evaluation strategy class
 	 */
 	public Class<? extends FederationEvalStrategy> getSailEvaluationStrategy() {
@@ -436,7 +469,7 @@ public class FedXConfig {
 	 * <p>
 	 * Default {@link SparqlFederationEvalStrategy}
 	 * </p>
-	 * 
+	 *
 	 * @return the evaluation strategy class
 	 */
 	public Class<? extends FederationEvalStrategy> getSPARQLEvaluationStrategy() {
@@ -444,11 +477,34 @@ public class FedXConfig {
 	}
 
 	/**
+	 * Returns the class of the {@link WriteStrategyFactory} implementation.
+	 *
+	 * <p>
+	 * Default: {@link DefaultWriteStrategyFactory}
+	 * </p>
+	 *
+	 * @return the {@link WriteStrategyFactory} class
+	 */
+	public Class<? extends WriteStrategyFactory> getWriteStrategyFactory() {
+		return writeStrategyFactory;
+	}
+
+	/**
 	 * The debug mode for query plan. If enabled, the query execution plan is printed to stdout
-	 * 
+	 *
 	 * @return whether the query plan is printed to std out
 	 */
 	public boolean isDebugQueryPlan() {
 		return debugQueryPlan;
+	}
+
+	/**
+	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper
+	 * is explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
+	 * 
+	 * @return the {@link TaskWrapper}, an empty {@link Optional} if none is explicitly configured
+	 */
+	public Optional<TaskWrapper> getTaskWrapper() {
+		return Optional.ofNullable(taskWrapper);
 	}
 }

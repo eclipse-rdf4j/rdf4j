@@ -21,7 +21,7 @@ import com.google.common.collect.Lists;
 
 /**
  * An {@link ArbitraryLengthPath} node which can be evaluated at a single node.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

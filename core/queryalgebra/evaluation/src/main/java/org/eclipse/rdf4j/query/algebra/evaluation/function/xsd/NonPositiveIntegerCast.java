@@ -14,20 +14,19 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
  * <tt>xsd:nonPositiveInteger</tt> .
- * 
+ *
  * @author Jeen Broekstra
  */
 public class NonPositiveIntegerCast extends IntegerCastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.NON_POSITIVE_INTEGER;
+		return XSD.NON_POSITIVE_INTEGER;
 	}
 
 	@Override

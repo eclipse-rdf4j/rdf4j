@@ -30,8 +30,8 @@ public interface DynamicStatistics {
 	 *
 	 * @return 1 if stale, 0 if not stale, 0.5 if 50% stale. Seen as, given a random statement (that has either been
 	 *         added, or removed), what is the probability that the statistics will return an incorrect result?
-	 * @param count
+	 * @param expectedSize
 	 */
-	double staleness(long count);
+	double staleness(long expectedSize);
 
 }

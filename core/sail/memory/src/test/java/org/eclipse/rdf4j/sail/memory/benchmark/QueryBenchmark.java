@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.memory.benchmark;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -31,12 +37,10 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -55,18 +59,30 @@ public class QueryBenchmark {
 	private static final String query1;
 	private static final String query2;
 	private static final String query3;
+	private static final String query4;
 
 	static {
 		try {
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
 			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
+			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
 	List<Statement> statementList;
+
+	public static void main(String[] args) throws RunnerException {
+		Options opt = new OptionsBuilder()
+				.include("QueryBenchmark.groupByQuery") // adapt to run other benchmark tests
+				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.forks(1)
+				.build();
+
+		new Runner(opt).run();
+	}
 
 	@Setup(Level.Invocation)
 	public void beforeClass() throws IOException, InterruptedException {
@@ -167,6 +183,16 @@ public class QueryBenchmark {
 		}
 		return hasStatement();
 
+	}
+
+	@Benchmark
+	public List<BindingSet> sort() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return Iterations.asList(connection
+					.prepareTupleQuery(query4)
+					.evaluate());
+		}
 	}
 
 	private boolean hasStatement() {

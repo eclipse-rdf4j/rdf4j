@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 
 /**
  * @author Håvard Ottestad
@@ -32,7 +32,6 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 	PlanNode parent;
 	private List<Tuple> tuplesBuffer;
-	private BufferedSplitter that = this;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;
@@ -59,7 +58,6 @@ public class BufferedSplitter implements PlanNodeProvider {
 			private boolean printed = false;
 
 			private ValidationExecutionLogger validationExecutionLogger;
-			PlanNode that = this;
 
 			@Override
 			public CloseableIteration<Tuple, SailException> iterator() {
@@ -116,7 +114,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 			@Override
 			public String getId() {
-				return System.identityHashCode(that) + "";
+				return System.identityHashCode(BufferedSplitter.this) + "";
 			}
 
 			@Override

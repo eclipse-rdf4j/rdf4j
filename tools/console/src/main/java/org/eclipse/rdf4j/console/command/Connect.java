@@ -14,10 +14,9 @@ import java.net.URL;
 
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -53,7 +52,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param disconnect
@@ -89,7 +88,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Connect to default repository
-	 * 
+	 *
 	 * @return true if connected
 	 */
 	public boolean connectDefault() {
@@ -98,7 +97,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Connect to remote repository
-	 * 
+	 *
 	 * @param url    URL of remote repository
 	 * @param user   username
 	 * @param passwd password
@@ -148,7 +147,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Connect to local repository
-	 * 
+	 *
 	 * @param path directory of the local repository
 	 * @return true on success
 	 */
@@ -165,7 +164,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Install and initialize new repository manager
-	 * 
+	 *
 	 * @param newManager   repository manager
 	 * @param newManagerID repository manager ID
 	 * @return true on success
@@ -196,7 +195,7 @@ public class Connect extends ConsoleCommand {
 
 	/**
 	 * Connect to remote repository without username of password
-	 * 
+	 *
 	 * @param url URL of the repository
 	 * @return true on success
 	 */

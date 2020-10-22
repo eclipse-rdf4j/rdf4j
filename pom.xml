@@ -3,11 +3,11 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.2.0-SNAPSHOT</version>
+	<version>3.5.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
-	<url>https://rdf4j.eclipse.org/</url>
+	<url>https://rdf4j.org/</url>
 	<inceptionYear>2015</inceptionYear>
 	<organization>
 		<name>Eclipse Foundation</name>
@@ -17,7 +17,7 @@
 		<developer>
 			<id>jeenbroekstra</id>
 			<name>Jeen Broekstra</name>
-			<email>jeen.broekstra@gmail.com</email>
+			<email>jeen@fastmail.com</email>
 			<timezone>GMT+10</timezone>
 		</developer>
 		<developer>
@@ -38,6 +38,7 @@
 		</license>
 	</licenses>
 	<modules>
+		<module>assembly-descriptors</module>
 		<module>core</module>
 		<module>tools</module>
 		<module>testsuites</module>
@@ -242,32 +243,74 @@
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
 			</properties>
 		</profile>
+		<profile>
+			<id>formatting</id>
+			<activation>
+				<!-- active on all Java 8 and higher builds by default -->
+				<jdk>[1.8,)</jdk>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>net.revelc.code.formatter</groupId>
+						<artifactId>formatter-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<goals>
+									<goal>format</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>net.revelc.code</groupId>
+						<artifactId>impsort-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<goals>
+									<goal>sort</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>au.com.acegi</groupId>
+						<artifactId>xml-format-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<phase>process-resources</phase>
+								<goals>
+									<goal>xml-format</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<slf4j.version>1.7.26</slf4j.version>
+		<slf4j.version>1.7.30</slf4j.version>
 		<logback.version>1.1.11</logback.version>
-		<httpclient.version>4.5.10</httpclient.version>
-		<httpcore.version>4.4.12</httpcore.version>
-		<jackson.version>2.9.9</jackson.version>
-		<jsonldjava.version>0.12.5</jsonldjava.version>
-		<last.japicmp.compare.version>2.0</last.japicmp.compare.version>
+		<httpclient.version>4.5.12</httpclient.version>
+		<httpcore.version>4.4.13</httpcore.version>
+		<jackson.version>2.10.5</jackson.version>
+		<jsonldjava.version>0.13.2</jsonldjava.version>
+		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
-		<solr.version>7.5.0</solr.version>
-		<elasticsearch.version>6.5.4</elasticsearch.version>
+		<lucene.version>7.7.2</lucene.version>
+		<solr.version>7.7.2</solr.version>
+		<elasticsearch.version>6.8.8</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>
-		<spring.version>5.2.4.RELEASE</spring.version>
-		<guava.version>18.0</guava.version>
+		<jetty.version>9.4.24.v20191120</jetty.version>
+		<spring.version>5.2.9.RELEASE</spring.version>
+		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
-			<dependency>
-				<groupId>org.apache.commons</groupId>
-				<artifactId>commons-collections4</artifactId>
-				<version>4.4</version>
-			</dependency>
 			<!-- Jackson Bill-of-Materials -->
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
@@ -302,23 +345,23 @@
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
-				<version>2.6</version>
+				<version>2.7</version>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
 				<artifactId>commons-codec</artifactId>
-				<version>1.11</version>
+				<version>1.13</version>
 				<scope>runtime</scope>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-text</artifactId>
-				<version>1.8</version>
+				<version>1.9</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-lang3</artifactId>
-				<version>3.9</version>
+				<version>3.11</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.httpcomponents</groupId>
@@ -408,7 +451,7 @@
 			<dependency>
 				<groupId>org.locationtech.jts</groupId>
 				<artifactId>jts-core</artifactId>
-				<version>1.15.1</version>
+				<version>1.17.1</version>
 			</dependency>
 			<!-- Java Enterprise Edition -->
 			<dependency>
@@ -475,6 +518,28 @@
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava</artifactId>
 				<version>${guava.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>com.google.code.findbugs</groupId>
+						<artifactId>jsr305</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.checkerframework</groupId>
+						<artifactId>checker-qual</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>com.google.errorprone</groupId>
+						<artifactId>error_prone_annotations</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>com.google.j2objc</groupId>
+						<artifactId>j2objc-annotations</artifactId>
+					</exclusion>
+					<exclusion>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>animal-sniffer-annotations</artifactId>
+					</exclusion>
+				</exclusions>
 			</dependency>
 			<!-- Logging: SLF4J and logback -->
 			<dependency>
@@ -508,16 +573,11 @@
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
 			</dependency>
-			<dependency>
-				<groupId>org.json</groupId>
-				<artifactId>json</artifactId>
-				<version>20140107</version>
-			</dependency>
 			<!-- Testing: JUnit -->
 			<dependency>
 				<groupId>junit</groupId>
 				<artifactId>junit</artifactId>
-				<version>4.12</version>
+				<version>4.13.1</version>
 				<scope>test</scope>
 			</dependency>
 			<dependency>
@@ -579,6 +639,11 @@
 			<plugins>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-assembly-plugin</artifactId>
+					<version>3.3.0</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-antrun-plugin</artifactId>
 					<version>1.6</version>
 				</plugin>
@@ -616,10 +681,10 @@
 				<plugin>
 					<groupId>au.com.acegi</groupId>
 					<artifactId>xml-format-maven-plugin</artifactId>
-					<!-- we use the snapshot version to allow tab indents -->
-					<version>3.1.2-SNAPSHOT</version>
+					<version>3.1.2</version>
 					<configuration>
 						<tabIndent>true</tabIndent>
+						<excludes>**/target/**,**/site/themes/**</excludes>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -657,7 +722,7 @@
 				<plugin>
 					<groupId>org.apache.felix</groupId>
 					<artifactId>maven-bundle-plugin</artifactId>
-					<version>4.2.1</version>
+					<version>5.1.1</version>
 					<extensions>true</extensions>
 					<configuration>
 						<instructions>
@@ -752,6 +817,25 @@
 					</configuration>
 				</plugin>
 				<plugin>
+					<groupId>net.revelc.code.formatter</groupId>
+					<artifactId>formatter-maven-plugin</artifactId>
+					<version>2.12.0</version>
+					<configuration>
+						<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
+						<lineEnding>LF</lineEnding>
+						<skipHtmlFormatting>true</skipHtmlFormatting>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>net.revelc.code</groupId>
+					<artifactId>impsort-maven-plugin</artifactId>
+					<version>1.3.2</version>
+					<configuration>
+						<groups>java.,javax.,org.,com.</groups>
+						<staticGroups>java,*</staticGroups>
+					</configuration>
+				</plugin>
+				<plugin>
 					<groupId>org.apache.tomcat.maven</groupId>
 					<artifactId>tomcat7-maven-plugin</artifactId>
 					<version>2.2</version>
@@ -759,7 +843,7 @@
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.14.0</version>
+					<version>0.14.3</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
@@ -775,9 +859,32 @@
 							</file>
 						</newVersion>
 						<parameter>
-							<ignoreMissingClasses>true</ignoreMissingClasses>
-							<!-- necessary to allow removal of deprecated code -->
 							<onlyModified>true</onlyModified>
+							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+							<breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+							<ignoreMissingOldVersion>true</ignoreMissingOldVersion>
+							<excludes>
+								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
+								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+								<!-- GH-2538 bug fix, not considered backward incompatible -->
+								<exclude>org.eclipse.rdf4j.model.Namespace#equals(java.lang.Object)</exclude>
+								<exclude>org.eclipse.rdf4j.model.Namespace#hashCode()</exclude>
+								<!-- GH-2350 introduced with defaults, so false positive -->
+								<exclude>org.eclipse.rdf4j.IsolationLevel#getValue()</exclude>
+								<exclude>org.eclipse.rdf4j.IsolationLevel#getName()</exclude>
+							</excludes>
+							<overrideCompatibilityChangeParameters>
+								<overrideCompatibilityChangeParameter>
+									<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+									<binaryCompatible>true</binaryCompatible>
+									<sourceCompatible>true</sourceCompatible>
+								</overrideCompatibilityChangeParameter>
+								<overrideCompatibilityChangeParameter>
+									<compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+									<binaryCompatible>true</binaryCompatible>
+									<sourceCompatible>true</sourceCompatible>
+								</overrideCompatibilityChangeParameter>
+							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
 					<executions>
@@ -834,60 +941,14 @@
 				</configuration>
 			</plugin>
 			<plugin>
-				<!-- verify all bytecode (including third party libs) is Java 8 max -->
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-enforcer-plugin</artifactId>
-				<version>1.4.1</version>
-				<executions>
-					<execution>
-						<id>enforce-bytecode-version</id>
-						<goals>
-							<goal>enforce</goal>
-						</goals>
-						<configuration>
-							<rules>
-								<enforceBytecodeVersion>
-									<maxJdkVersion>1.8</maxJdkVersion>
-									<ignoreClasses>
-										<ignoreClass>META-INF/**/module-info</ignoreClass>
-									</ignoreClasses>
-									<excludes>
-										<exclude>org.apache.logging.log4j:log4j-api</exclude>
-										<exclude>org.elasticsearch:elasticsearch</exclude>
-										<exclude>javax.xml.bind:jaxb-api</exclude>
-										<exclude>org.elasticsearch:elasticsearch-core</exclude>
-									</excludes>
-								</enforceBytecodeVersion>
-							</rules>
-							<fail>true</fail>
-						</configuration>
-					</execution>
-				</executions>
-				<dependencies>
-					<dependency>
-						<groupId>org.codehaus.mojo</groupId>
-						<artifactId>extra-enforcer-rules</artifactId>
-						<version>1.0</version>
-					</dependency>
-				</dependencies>
-			</plugin>
-			<plugin>
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>
-				<version>2.8.1</version>
 				<configuration>
 					<!--suppress UnresolvedMavenProperty -->
 					<configFile>${maven.multiModuleProjectDirectory}/eclipse-settings/eclipse-rdf4j-conventions.xml</configFile>
 					<lineEnding>LF</lineEnding>
 					<skipHtmlFormatting>true</skipHtmlFormatting>
 				</configuration>
-				<executions>
-					<execution>
-						<goals>
-							<goal>validate</goal>
-						</goals>
-					</execution>
-				</executions>
 			</plugin>
 		</plugins>
 		<extensions>

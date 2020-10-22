@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 
 /**
  * Context to maintain the state of the current federation
- * 
+ *
  * @author Andreas Schwarte
  *
  */

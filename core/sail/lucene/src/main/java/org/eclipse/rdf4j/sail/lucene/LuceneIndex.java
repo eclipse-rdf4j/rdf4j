@@ -27,11 +27,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.Document;
+import org.apache.lucene.document.*;
 import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.document.StoredField;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.TextField;
+import org.apache.lucene.geo.Line;
+import org.apache.lucene.geo.Polygon;
+import org.apache.lucene.geo.Rectangle;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.FieldInfo;
@@ -80,8 +80,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.SpatialContextFactory;
+import org.locationtech.spatial4j.io.OnePointsBuilder;
 import org.locationtech.spatial4j.shape.Point;
 import org.locationtech.spatial4j.shape.Shape;
+import org.locationtech.spatial4j.shape.impl.GeoCircle;
+import org.locationtech.spatial4j.shape.impl.PointImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +95,7 @@ import com.google.common.collect.Sets;
 /**
  * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
  * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
- * 
+ *
  * @see LuceneSail
  */
 public class LuceneIndex extends AbstractLuceneIndex {
@@ -104,6 +107,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private static final String GEO_FIELD_PREFIX = "_geo_";
+	private static final String POINT_FIELD_PREFIX = "_pt_";
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -140,7 +144,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Constructor for keeping backwards compatibility.
-	 * 
+	 *
 	 * @param directory
 	 * @param analyzer
 	 */
@@ -150,7 +154,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Creates a new LuceneIndex.
-	 * 
+	 *
 	 * @param directory  The Directory in which an index can be found and/or in which index files are written.
 	 * @param analyzer   The Analyzer that will be used for tokenizing strings to index and queries.
 	 * @param similarity The Similarity that will be used for scoring.
@@ -499,7 +503,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
 	 * exists yet.
-	 * 
+	 *
 	 * @param subject
 	 * @param context
 	 * @return document
@@ -517,7 +521,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
 	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
 	 * context
-	 * 
+	 *
 	 * @param subject
 	 * @return list of documents
 	 * @throws IOException
@@ -530,7 +534,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes an ID in a Document.
-	 * 
+	 *
 	 * @param id
 	 * @param document
 	 */
@@ -540,7 +544,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Add the "context" value to the doc
-	 * 
+	 *
 	 * @param context  the context or null, if null-context
 	 * @param document the document
 	 */
@@ -552,7 +556,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Stores and indexes the resource ID in a Document.
-	 * 
+	 *
 	 * @param resourceId
 	 * @param document
 	 */
@@ -578,7 +582,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * invalidate readers, free them if possible (readers that are still open by a {@link LuceneQueryConnection} will
 	 * not be closed. Synchronized on oldmonitors because it manipulates them
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private void invalidateReaders() throws IOException {
@@ -629,14 +633,16 @@ public class LuceneIndex extends AbstractLuceneIndex {
 				String[] idArray;
 				int count = 0;
 				for (int i = 0; i < reader.maxDoc(); i++) {
-					if (isDeleted(reader, i))
+					if (isDeleted(reader, i)) {
 						continue;
+					}
 					doc = readDocument(reader, i, null);
 					totalFields += doc.getFields().size();
 					count++;
 					idArray = doc.getValues("id");
-					for (String id : idArray)
+					for (String id : idArray) {
 						ids.add(id);
+					}
 
 				}
 
@@ -685,7 +691,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Parse the passed query. To be removed, no longer used.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -704,7 +710,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Parse the passed query.
-	 * 
+	 *
 	 * @param query string
 	 * @return the parsed query
 	 * @throws ParseException when the parsing brakes
@@ -748,14 +754,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
 		double degs = GeoUnits.toDegrees(distance, units);
 		final String geoField = SearchFields.getPropertyField(geoProperty);
-		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
-		final Shape boundingCircle = strategy.getSpatialContext().getShapeFactory().circle(p, degs);
-		Query q = strategy.makeQuery(new SpatialArgs(SpatialOperation.Intersects, boundingCircle));
+		SpatialContext context = SpatialContext.GEO;
+		final Shape boundingCircle = context.getShapeFactory().circle(p, degs);
+
+		// use LatLonPoint for distance query after indexing it with the same data structure
+
+		Query q = LatLonPoint.newDistanceQuery(POINT_FIELD_PREFIX + geoField, p.getY(), p.getX(), distance);
 		if (contextVar != null) {
 			q = addContextTerm(q, (Resource) contextVar.getValue());
 		}
 
-		TopDocs docs = search(new FunctionScoreQuery(q, strategy.makeRecipDistanceValueSource(boundingCircle)));
+		TopDocs docs = search(q);
 		final boolean requireContext = (contextVar != null && !contextVar.hasValue());
 		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentDistance>() {
 
@@ -777,16 +786,23 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
 			Var contextVar) throws MalformedQueryException, IOException {
+
+		Object shape = null;
+		try {
+			shape = super.parseLuceneQueryShape(SearchFields.getPropertyField(geoProperty), wkt);
+		} catch (java.text.ParseException e) {
+			logger.error("error while parsing wkt geometry", e);
+		}
 		SpatialOperation op = toSpatialOp(relation);
 		if (op == null) {
 			return null;
 		}
-
 		final String geoField = SearchFields.getPropertyField(geoProperty);
-		SpatialStrategy strategy = getSpatialStrategyMapper().apply(geoField);
-		Query q = strategy.makeQuery(new SpatialArgs(op, shape));
+
+		// Use the new indexing algorithm from lucene (LatLonShape)
+		Query q = makeQuery(op, GEO_FIELD_PREFIX + geoField, shape);
 		if (contextVar != null) {
 			q = addContextTerm(q, (Resource) contextVar.getValue());
 		}
@@ -805,6 +821,39 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		});
 	}
 
+	private LatLonShape.QueryRelation getRelation(SpatialOperation op) {
+		if (op.toString().equals("Contains")) {
+			return LatLonShape.QueryRelation.INTERSECTS;
+		} else if (op.toString().equals("Within")) {
+			return LatLonShape.QueryRelation.WITHIN;
+		} else if (op.toString().equals("Disjoint")) {
+			return LatLonShape.QueryRelation.DISJOINT;
+		} else {
+			throw new IllegalArgumentException("The geo function [" + op.toString() + " is not supported");
+		}
+	}
+
+	private Query makeQuery(SpatialOperation op, String geoField, Object shape) {
+		Query q = null;
+		LatLonShape.QueryRelation relation = getRelation(op);
+		if (shape instanceof double[]) {
+			double[] point = (double[]) shape;
+			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[1], point[0], point[0]);
+		} else if (shape instanceof Polygon) {
+			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon) shape);
+		} else if (shape instanceof Polygon[]) {
+			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon[]) shape);
+		} else if (shape instanceof Line) {
+			q = LatLonShape.newLineQuery(geoField, relation, (Line) shape);
+		} else if (shape instanceof Line[]) {
+			q = LatLonShape.newLineQuery(geoField, relation, (Line[]) shape);
+		} else if (shape instanceof Rectangle[]) {
+			Rectangle box = (Rectangle) shape;
+			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);
+		}
+		return q;
+	}
+
 	private SpatialOperation toSpatialOp(String relation) {
 		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {
 			return SpatialOperation.Intersects;
@@ -818,13 +867,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			return SpatialOperation.IsWithin;
 		} else if (GEOF.EH_COVERS.stringValue().equals(relation)) {
 			return SpatialOperation.Contains;
+		} else if (GEOF.SF_WITHIN.stringValue().equals(relation)) {
+			return SpatialOperation.IsWithin;
+		} else if (GEOF.EH_CONTAINS.stringValue().equals(relation)) {
+			return SpatialOperation.Contains;
 		}
 		return null;
 	}
 
 	/**
 	 * Returns the lucene hit with the given id of the respective lucene query
-	 * 
+	 *
 	 * @param docId        the id of the document to return
 	 * @param fieldsToLoad
 	 * @return the requested hit, or null if it fails
@@ -871,7 +924,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query only for the given resource.
-	 * 
+	 *
 	 * @param resource
 	 * @param query
 	 * @return top documents
@@ -888,7 +941,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Evaluates the given query and returns the results as a TopDocs instance.
-	 * 
+	 *
 	 * @param query
 	 * @return top documents
 	 * @throws IOException
@@ -906,14 +959,17 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private QueryParser getQueryParser(IRI propertyURI) {
 		// check out which query parser to use, based on the given property URI
 		if (propertyURI == null)
-			// if we have no property given, we create a default query parser
-			// which
-			// has the TEXT_FIELD_NAME as the default field
+		// if we have no property given, we create a default query parser
+		// which
+		// has the TEXT_FIELD_NAME as the default field
+		{
 			return new QueryParser(SearchFields.TEXT_FIELD_NAME, this.queryAnalyzer);
-		else
-			// otherwise we create a query parser that has the given property as
-			// the default field
+		} else
+		// otherwise we create a query parser that has the given property as
+		// the default field
+		{
 			return new QueryParser(SearchFields.getPropertyField(propertyURI), this.queryAnalyzer);
+		}
 	}
 
 	/**
@@ -1008,7 +1064,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	/**
-	 * 
+	 *
 	 */
 	@Override
 	public synchronized void clear() throws IOException {
@@ -1018,8 +1074,9 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// clear
 		// the old IndexReaders/Searchers are not outdated
 		invalidateReaders();
-		if (indexWriter != null)
+		if (indexWriter != null) {
 			indexWriter.close();
+		}
 
 		// crate new writer
 		IndexWriterConfig indexWriterConfig = getIndexWriterConfig();
@@ -1036,7 +1093,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Method produces {@link IndexWriterConfig} using settings.
-	 * 
+	 *
 	 * @return
 	 */
 	private IndexWriterConfig getIndexWriterConfig() {

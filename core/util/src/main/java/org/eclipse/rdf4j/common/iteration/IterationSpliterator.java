@@ -7,12 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.Iterator;
 import java.util.Objects;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.function.Consumer;
-import java.util.stream.StreamSupport;
 
 /**
  * A {@link Spliterator} implementation that wraps an {@link Iteration}. It handles occurrence of checked exceptions by

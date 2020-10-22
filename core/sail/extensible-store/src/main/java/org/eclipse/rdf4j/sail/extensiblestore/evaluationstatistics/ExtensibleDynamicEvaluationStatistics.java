@@ -7,9 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
 
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
-import org.apache.druid.hll.HyperLogLogCollector;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -22,12 +26,10 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
+import net.agkn.hll.HLL;
 
 /**
  * <p>
@@ -41,9 +43,9 @@ import java.util.stream.Stream;
  * </p>
  *
  * <p>
- * Since evaluation statistics are best-effort, we use HyperLogLog as sets to keep the number of statements for each
- * pattern we support. HyperLogLog is a very memory efficient set implementation. Furthermore we hash each pattern into
- * a fixed bucket size, 1024 for single dimension and 64 per dimension for multidimensional patterns.
+ * Since evaluation statistics are best-effort, we use HLL as sets to keep the number of statements for each pattern we
+ * support. HLL is a very memory efficient set implementation. Furthermore we hash each pattern into a fixed bucket
+ * size, 1024 for single dimension and 64 per dimension for multidimensional patterns.
  * </p>
  *
  * <p>
@@ -52,9 +54,9 @@ import java.util.stream.Stream;
  * </p>
  *
  * <p>
- * HyperLogLog does not support "remove" operations, so there are two sets of every index. One for all added statements
- * and one for all removed statements. If the user adds, removes and re-adds the same statement then the cardinality for
- * that statement will be incorrect. We call this effect "staleness". To prevent staleness from affecting the returned
+ * HLL does not support "remove" operations, so there are two sets of every index. One for all added statements and one
+ * for all removed statements. If the user adds, removes and re-adds the same statement then the cardinality for that
+ * statement will be incorrect. We call this effect "staleness". To prevent staleness from affecting the returned
  * cardinalities this class needs to be monitored by calling the staleness(...) method. This will automatically be done
  * every 60 seconds by the ExtensibleSailStore.
  * </p>
@@ -66,34 +68,34 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	private static final int QUEUE_LIMIT = 128;
 	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
 
-	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<StatementQueueItem>();
+	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<>();
 
 	AtomicInteger queueSize = new AtomicInteger();
 
 	private final HashFunction HASH_FUNCTION = Hashing.murmur3_128();
 
-	private final HyperLogLogCollector EMPTY_HLL = HyperLogLogCollector.makeLatestCollector();
+	private final HLL EMPTY_HLL = getHLL();
 
-	private final HyperLogLogCollector size = HyperLogLogCollector.makeLatestCollector();
-	private final HyperLogLogCollector size_removed = HyperLogLogCollector.makeLatestCollector();
+	private final HLL size = getHLL();
+	private final HLL size_removed = getHLL();
 
-	private final Map<Integer, HyperLogLogCollector> subjectIndex = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> predicateIndex = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> objectIndex = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> contextIndex = new HashMap<>();
-	private final HyperLogLogCollector defaultContext = HyperLogLogCollector.makeLatestCollector();
+	private final Map<Integer, HLL> subjectIndex = new HashMap<>();
+	private final Map<Integer, HLL> predicateIndex = new HashMap<>();
+	private final Map<Integer, HLL> objectIndex = new HashMap<>();
+	private final Map<Integer, HLL> contextIndex = new HashMap<>();
+	private final HLL defaultContext = getHLL();
 
-	private final HyperLogLogCollector[][] subjectPredicateIndex = new HyperLogLogCollector[64][64];
-	private final HyperLogLogCollector[][] predicateObjectIndex = new HyperLogLogCollector[64][64];
+	private final HLL[][] subjectPredicateIndex = new HLL[64][64];
+	private final HLL[][] predicateObjectIndex = new HLL[64][64];
 
-	private final Map<Integer, HyperLogLogCollector> subjectIndex_removed = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> predicateIndex_removed = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> objectIndex_removed = new HashMap<>();
-	private final Map<Integer, HyperLogLogCollector> contextIndex_removed = new HashMap<>();
-	private final HyperLogLogCollector defaultContext_removed = HyperLogLogCollector.makeLatestCollector();
+	private final Map<Integer, HLL> subjectIndex_removed = new HashMap<>();
+	private final Map<Integer, HLL> predicateIndex_removed = new HashMap<>();
+	private final Map<Integer, HLL> objectIndex_removed = new HashMap<>();
+	private final Map<Integer, HLL> contextIndex_removed = new HashMap<>();
+	private final HLL defaultContext_removed = getHLL();
 
-	private final HyperLogLogCollector[][] subjectPredicateIndex_removed = new HyperLogLogCollector[64][64];
-	private final HyperLogLogCollector[][] predicateObjectIndex_removed = new HyperLogLogCollector[64][64];
+	private final HLL[][] subjectPredicateIndex_removed = new HLL[64][64];
+	private final HLL[][] predicateObjectIndex_removed = new HLL[64][64];
 	volatile private Thread queueConsumingThread;
 
 	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
@@ -103,7 +105,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 				predicateObjectIndex_removed).forEach(index -> {
 					for (int i = 0; i < index.length; i++) {
 						for (int j = 0; j < index[i].length; j++) {
-							index[i][j] = HyperLogLogCollector.makeLatestCollector();
+							index[i][j] = getHLL();
 						}
 					}
 				});
@@ -116,15 +118,29 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	synchronized public double staleness(long actualSize) {
+	synchronized public double staleness(long expectedSize) {
 
-		double estimatedSize = size.estimateCardinality() - size_removed.estimateCardinality();
+		double estimatedSize = size.cardinality() - size_removed.cardinality();
 
-		double diff = Math.abs(estimatedSize - actualSize);
+		// add 500 because this is our minimum margin of error
+		estimatedSize += 500;
+		expectedSize += 500;
 
-		double staleness = 1.0 / Math.max(estimatedSize, actualSize) * diff;
+		double diff = Math.abs(estimatedSize - expectedSize);
 
-		logger.debug("Actual size: {}; estimated size: {}; staleness: {}", actualSize, estimatedSize, staleness);
+		double staleness;
+
+		if (estimatedSize + expectedSize == 0 || diff == 0) {
+			staleness = 0;
+		} else {
+			if (expectedSize > estimatedSize) {
+				staleness = diff / expectedSize;
+			} else {
+				staleness = diff / Math.max(0, estimatedSize);
+			}
+		}
+
+		logger.debug("expected size {}; estimated size: {}; staleness: {}", expectedSize, estimatedSize, staleness);
 
 		return staleness;
 
@@ -134,7 +150,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 		@Override
 		synchronized protected double getCardinality(StatementPattern sp) {
-			double min = size.estimateCardinality() - size_removed.estimateCardinality();
+			double min = size.cardinality() - size_removed.cardinality();
 
 			min = Math.min(min, getSubjectCardinality(sp.getSubjectVar()));
 			min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
@@ -170,7 +186,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		@Override
 		synchronized protected double getSubjectCardinality(Var var) {
 			if (var.getValue() == null) {
-				return size.estimateCardinality();
+				return size.cardinality();
 			} else {
 				return getHllCardinality(subjectIndex, subjectIndex_removed, var.getValue());
 			}
@@ -180,7 +196,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		@Override
 		synchronized protected double getPredicateCardinality(Var var) {
 			if (var.getValue() == null) {
-				return size.estimateCardinality();
+				return size.cardinality();
 			} else {
 				return getHllCardinality(predicateIndex, predicateIndex_removed, var.getValue());
 			}
@@ -189,7 +205,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		@Override
 		synchronized protected double getObjectCardinality(Var var) {
 			if (var.getValue() == null) {
-				return size.estimateCardinality();
+				return size.cardinality();
 			} else {
 				return getHllCardinality(objectIndex, objectIndex_removed, var.getValue());
 			}
@@ -198,34 +214,36 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		@Override
 		synchronized protected double getContextCardinality(Var var) {
 			if (var.getValue() == null) {
-				return defaultContext.estimateCardinality() - defaultContext_removed.estimateCardinality();
+				return defaultContext.cardinality() - defaultContext_removed.cardinality();
 			} else {
 				return getHllCardinality(contextIndex, contextIndex_removed, var.getValue());
 			}
 		}
-	};
+	}
 
-	private double getHllCardinality(HyperLogLogCollector[][] index, HyperLogLogCollector[][] index_removed,
+	;
+
+	private double getHllCardinality(HLL[][] index, HLL[][] index_removed,
 			Value value1, Value value2) {
 
 		int value1IndexIntoAdded = Math.abs(value1.hashCode() % index.length);
 		int value2IndexIntoAdded = Math.abs(value2.hashCode() % index.length);
-		double cardinalityAdded = index[value1IndexIntoAdded][value2IndexIntoAdded].estimateCardinality();
+		double cardinalityAdded = index[value1IndexIntoAdded][value2IndexIntoAdded].cardinality();
 
 		int value1IndexIntoRemoved = Math.abs(value1.hashCode() % index_removed.length);
 		int value2IndexIntoRemoved = Math.abs(value2.hashCode() % index_removed.length);
-		double removedStatements = index_removed[value1IndexIntoRemoved][value2IndexIntoRemoved].estimateCardinality();
+		double removedStatements = index_removed[value1IndexIntoRemoved][value2IndexIntoRemoved].cardinality();
 
 		return cardinalityAdded - removedStatements;
 	}
 
-	private double getHllCardinality(Map<Integer, HyperLogLogCollector> index,
-			Map<Integer, HyperLogLogCollector> index_removed, Value value) {
+	private double getHllCardinality(Map<Integer, HLL> index,
+			Map<Integer, HLL> index_removed, Value value) {
 
 		int indexIntoMap = Math.abs(value.hashCode() % SINGLE_DIMENSION_INDEX_SIZE);
 
-		double cardinalityAdded = index.getOrDefault(indexIntoMap, EMPTY_HLL).estimateCardinality();
-		double cardinalityRemoved = index_removed.getOrDefault(indexIntoMap, EMPTY_HLL).estimateCardinality();
+		double cardinalityAdded = index.getOrDefault(indexIntoMap, EMPTY_HLL).cardinality();
+		double cardinalityRemoved = index_removed.getOrDefault(indexIntoMap, EMPTY_HLL).cardinality();
 
 		return cardinalityAdded - cardinalityRemoved;
 	}
@@ -249,9 +267,9 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 						StatementQueueItem poll = queue.poll();
 						queueSize.decrementAndGet();
 						Statement statement = poll.statement;
-						byte[] statementHash = HASH_FUNCTION
+						long statementHash = HASH_FUNCTION
 								.hashString(statement.toString(), StandardCharsets.UTF_8)
-								.asBytes();
+								.asLong();
 
 						if (poll.type == StatementQueueItem.Type.added) {
 
@@ -288,12 +306,12 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	synchronized private void handleStatement(Statement statement, byte[] statementHash, HyperLogLogCollector size,
-			Map<Integer, HyperLogLogCollector> subjectIndex, Map<Integer, HyperLogLogCollector> predicateIndex,
-			Map<Integer, HyperLogLogCollector> objectIndex, HyperLogLogCollector[][] subjectPredicateIndex,
-			HyperLogLogCollector[][] predicateObjectIndex, HyperLogLogCollector defaultContext,
-			Map<Integer, HyperLogLogCollector> contextIndex) {
-		size.add(statementHash);
+	synchronized private void handleStatement(Statement statement, long statementHash, HLL size,
+			Map<Integer, HLL> subjectIndex, Map<Integer, HLL> predicateIndex,
+			Map<Integer, HLL> objectIndex, HLL[][] subjectPredicateIndex,
+			HLL[][] predicateObjectIndex, HLL defaultContext,
+			Map<Integer, HLL> contextIndex) {
+		size.addRaw(statementHash);
 		int subjectHash = statement.getSubject().hashCode();
 		int predicateHash = statement.getPredicate().hashCode();
 		int objectHash = statement.getObject().hashCode();
@@ -306,7 +324,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
 
 		if (statement.getContext() == null) {
-			defaultContext.add(statementHash);
+			defaultContext.addRaw(statementHash);
 		} else {
 			indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());
 		}
@@ -327,18 +345,22 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	private void indexTwoValues(byte[] statementHash, HyperLogLogCollector[][] index, int indexHash, int indexHash2) {
-		index[Math.abs(indexHash % index.length)][Math.abs(indexHash2 % index.length)].add(statementHash);
+	private void indexTwoValues(long statementHash, HLL[][] index, int indexHash, int indexHash2) {
+		index[Math.abs(indexHash % index.length)][Math.abs(indexHash2 % index.length)].addRaw(statementHash);
 	}
 
-	private void indexOneValue(byte[] statementHash, Map<Integer, HyperLogLogCollector> index, int indexHash) {
+	private void indexOneValue(long statementHash, Map<Integer, HLL> index, int indexHash) {
 		index.compute(Math.abs(indexHash % SINGLE_DIMENSION_INDEX_SIZE), (key, val) -> {
 			if (val == null) {
-				val = HyperLogLogCollector.makeLatestCollector();
+				val = getHLL();
 			}
-			val.add(statementHash);
+			val.addRaw(statementHash);
 			return val;
 		});
+	}
+
+	private HLL getHLL() {
+		return new HLL(13/* log2m */, 5/* registerWidth */);
 	}
 
 	@Override

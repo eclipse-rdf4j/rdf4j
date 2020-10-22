@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -19,18 +21,16 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.GroupByCount;
 import org.eclipse.rdf4j.sail.shacl.planNodes.MaxCountFilter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Objects;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a sh:maxCount property nodeShape restriction.
@@ -87,8 +87,8 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 			String negationQuery = query + "\n" + query1 + "\n" + query2 + "\nFILTER(?d != ?e)";
 
 			PlanNode select = new Select(connectionsGroup.getAddedStatements(), negationQuery, "?a");
-			select = new ModifyTuple(select, (a) -> {
-				a.line.add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
+			select = new TupleMapper(select, (a) -> {
+				a.getLine().add(SimpleValueFactory.getInstance().createLiteral(">= 2"));
 
 				return a;
 			});
@@ -107,7 +107,7 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		PlanNode planAddedStatements1 = super.getPlanAddedStatements(connectionsGroup, null);
 
-		planAddedStatements1 = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), planAddedStatements1);
+		planAddedStatements1 = nodeShape.getTargetFilter(connectionsGroup, planAddedStatements1);
 
 		PlanNode mergeNode = new UnionNode(planAddedStatements, planAddedStatements1);
 
@@ -198,6 +198,6 @@ public class MaxCountPropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

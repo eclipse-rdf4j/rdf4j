@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * Abstract superclass for {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function}s that cast an argument
  * to an XML Schema datatype.
- * 
+ *
  * @author Jeen Broekstra
- * @see XMLSchema
+ * @see XSD
  */
 public abstract class CastFunction implements Function {
 
@@ -60,7 +60,7 @@ public abstract class CastFunction implements Function {
 
 	/**
 	 * Convert the supplied value to a literal of the function output datatype.
-	 * 
+	 *
 	 * @param vf the valueFactory to use
 	 * @param v  a value that is not a string-typed literal, and not a literal of the same datatype as the function
 	 *           output datatype.
@@ -71,14 +71,14 @@ public abstract class CastFunction implements Function {
 
 	/**
 	 * Get the specific XML Schema datatype which this function returns.
-	 * 
+	 *
 	 * @return an XML Schema datatype IRI
 	 */
 	protected abstract IRI getXsdDatatype();
 
 	/**
 	 * Returns a prefixed name representation of the specific datatype that this function returns
-	 * 
+	 *
 	 * @return a prefixed name, e.g. 'xsd:integer'.
 	 */
 	protected String getXsdName() {
@@ -87,7 +87,7 @@ public abstract class CastFunction implements Function {
 
 	/**
 	 * Verifies that the supplied lexical value is valid for the datatype.
-	 * 
+	 *
 	 * @param lexicalValue a lexical value
 	 * @return true if the lexical value is valid for the datatype, false otherwise.
 	 */
@@ -95,7 +95,7 @@ public abstract class CastFunction implements Function {
 
 	/**
 	 * Creates a {@link ValueExprEvaluationException} that signals a type error.
-	 * 
+	 *
 	 * @param arg   the function argument value.
 	 * @param cause root cause throwable. May be null.
 	 * @return a {@link ValueExprEvaluationException} with a standardized message and wrapped cause.

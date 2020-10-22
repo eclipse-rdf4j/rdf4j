@@ -7,15 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
+import java.io.OutputStream;
+import java.io.Writer;
+import java.net.URISyntaxException;
+
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
-import org.eclipse.rdf4j.rio.turtle.ArrangedWriter;
-
-import java.io.OutputStream;
-import java.io.Writer;
-import java.net.URISyntaxException;
 
 /**
  * An {@link RDFWriterFactory} for Turtle* writers.
@@ -37,12 +36,12 @@ public class TurtleStarWriterFactory implements RDFWriterFactory {
 	 */
 	@Override
 	public RDFWriter getWriter(OutputStream out) {
-		return new ArrangedWriter(new TurtleStarWriter(out));
+		return new TurtleStarWriter(out);
 	}
 
 	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
-		return new ArrangedWriter(new TurtleStarWriter(out, new ParsedIRI(baseURI)));
+		return new TurtleStarWriter(out, new ParsedIRI(baseURI));
 	}
 
 	/**
@@ -50,11 +49,11 @@ public class TurtleStarWriterFactory implements RDFWriterFactory {
 	 */
 	@Override
 	public RDFWriter getWriter(Writer writer) {
-		return new ArrangedWriter(new TurtleStarWriter(writer));
+		return new TurtleStarWriter(writer);
 	}
 
 	@Override
 	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
-		return new ArrangedWriter(new TurtleStarWriter(writer, new ParsedIRI(baseURI)));
+		return new TurtleStarWriter(writer, new ParsedIRI(baseURI));
 	}
 }

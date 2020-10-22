@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.elasticsearchstore.benchmark;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -24,17 +28,13 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
-import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 /**
  * @author Håvard Ottestad
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DeleteBenchmark {
 
-//	@Param({ "100", "1000", "10000" })
+	// @Param({ "100", "1000", "10000" })
 	public int NUMBER_OF_STATEMENTS = 10000;
 
 	private static EmbeddedElastic embeddedElastic;

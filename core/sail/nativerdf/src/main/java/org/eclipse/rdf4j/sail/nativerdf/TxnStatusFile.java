@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import org.eclipse.rdf4j.common.io.NioFile;
+import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import java.io.File;
 import java.io.IOException;
 
-import static java.nio.charset.StandardCharsets.US_ASCII;
+import org.eclipse.rdf4j.common.io.NioFile;
 
 /**
  * Writes transaction statuses to a file.
@@ -23,7 +23,7 @@ class TxnStatusFile {
 
 		/**
 		 * No active transaction. This occurs if no transaction has been started yet, or if all transactions have been
-		 * committed or rolled back.
+		 * committed or rolled back. An empty TxnStatus file also represents the NONE status.
 		 */
 		NONE(TxnStatus.NONE_BYTE),
 
@@ -58,7 +58,9 @@ class TxnStatusFile {
 			return onDisk;
 		}
 
-		private static final byte NONE_BYTE = (byte) 0b00000001;
+		private static final byte NONE_BYTE = (byte) 0b00000000;
+		private static final byte OLD_NONE_BYTE = (byte) 0b00000001;
+
 		private static final byte ACTIVE_BYTE = (byte) 0b00000010;
 		private static final byte COMMITTING_BYTE = (byte) 0b00000100;
 		private static final byte ROLLING_BACK_BYTE = (byte) 0b00001000;
@@ -82,10 +84,6 @@ class TxnStatusFile {
 	public TxnStatusFile(File dataDir) throws IOException {
 		File statusFile = new File(dataDir, FILE_NAME);
 		nioFile = new NioFile(statusFile, "rwd");
-
-		if (nioFile.size() == 0) {
-			setTxnStatus(TxnStatus.NONE);
-		}
 	}
 
 	public void close() throws IOException {
@@ -99,9 +97,11 @@ class TxnStatusFile {
 	 * @throws IOException If the transaction status could not be written to file.
 	 */
 	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
-		byte[] bytes = txnStatus.onDisk;
-		nioFile.truncate(bytes.length);
-		nioFile.writeBytes(bytes, 0);
+		if (txnStatus == TxnStatus.NONE) {
+			nioFile.truncate(0);
+		} else {
+			nioFile.writeBytes(txnStatus.onDisk, 0);
+		}
 	}
 
 	/**
@@ -118,6 +118,9 @@ class TxnStatusFile {
 
 		switch (bytes[0]) {
 		case TxnStatus.NONE_BYTE:
+			status = TxnStatus.NONE;
+			break;
+		case TxnStatus.OLD_NONE_BYTE:
 			status = TxnStatus.NONE;
 			break;
 		case TxnStatus.ACTIVE_BYTE:

@@ -12,9 +12,6 @@ import java.net.MalformedURLException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,9 +29,12 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
+
 /**
  * JUnit test for the RDFJSON Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class RDFJSONParserTestCase {

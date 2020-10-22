@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
  * Interface defining tags and attribute names that are used in SPARQL Results Documents. See
  * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a> for the definition of this
  * format.
- * 
+ *
  * @author Arjohn Kampman
  */
 interface SPARQLResultsXMLConstants {
@@ -57,4 +57,23 @@ interface SPARQLResultsXMLConstants {
 	public static final String UNBOUND_TAG = "unbound";
 
 	public static final String QNAME = "q:qname";
+
+	/* tag constants for serialization of RDF* values in results */
+
+	public static final String TRIPLE_TAG = "triple";
+
+	/* Stardog variant */
+	public static final String STATEMENT_TAG = "statement";
+
+	public static final String SUBJECT_TAG = "subject";
+	/* Stardog variant */
+	public static final String S_TAG = "s";
+
+	public static final String PREDICATE_TAG = "predicate";
+	/* Stardog variant */
+	public static final String P_TAG = "p";
+
+	public static final String OBJECT_TAG = "object";
+	/* Stardog variant */
+	public static final String O_TAG = "o";
 }

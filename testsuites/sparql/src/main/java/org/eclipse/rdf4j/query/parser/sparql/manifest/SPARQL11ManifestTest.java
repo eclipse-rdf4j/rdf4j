@@ -38,9 +38,10 @@ import junit.framework.TestSuite;
 /**
  * Functionality for creating a JUnit test suite out of a W3C Working Group-style manifest for SPARQL query and update
  * tests.
- * 
+ *
  * @author Jeen Broekstra
  */
+@Deprecated
 public class SPARQL11ManifestTest {
 
 	static final Logger logger = LoggerFactory.getLogger(SPARQL11ManifestTest.class);
@@ -49,7 +50,7 @@ public class SPARQL11ManifestTest {
 
 	/**
 	 * Creates a new {@link TestSuite} for execution of {@link SPARQLQueryTest} s.
-	 * 
+	 *
 	 * @param factory           a factory class that creates each individual test case.
 	 * @param manifestFile      url of the manifest file (may be remote or local).
 	 * @param approvedTestsOnly if <code>true</code>, use working group-approved tests only.
@@ -109,7 +110,7 @@ public class SPARQL11ManifestTest {
 
 	/**
 	 * Creates a new {@link TestSuite} for execution of {@link SPARQLUpdateConformanceTest} s.
-	 * 
+	 *
 	 * @param factory           a factory class that creates each individual test case.
 	 * @param manifestFile      url of the manifest file (may be remote or local).
 	 * @param approvedTestsOnly if <code>true</code>, use working group-approved tests only.
@@ -170,7 +171,7 @@ public class SPARQL11ManifestTest {
 
 	/**
 	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
-	 * 
+	 *
 	 * @param subManifestFile the url of a sub-manifest
 	 * @param excludedSubdirs an array of directory names. May be null.
 	 * @return <code>false</code> if the supplied list of excluded subdirs is not empty and contains a match for the

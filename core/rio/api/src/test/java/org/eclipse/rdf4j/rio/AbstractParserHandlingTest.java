@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Abstract tests to confirm consistent behaviour for the datatype and language handling settings.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class AbstractParserHandlingTest {
@@ -79,7 +79,7 @@ public abstract class AbstractParserHandlingTest {
 	 * <p>
 	 * This may be anything, but it must match with the given {@link DatatypeHandler}.
 	 */
-	private static final IRI KNOWN_DATATYPE_URI = XMLSchema.INTEGER;
+	private static final IRI KNOWN_DATATYPE_URI = XSD.INTEGER;
 
 	/**
 	 * Test value used for testing unknown language support.
@@ -117,7 +117,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
 	 * RDFParser returned by {@link #getParser()}.
-	 * 
+	 *
 	 * @param unknownDatatypeStatements A {@link Model} containing statements which all contain unknown datatypes.
 	 * @return An InputStream based on the given parameters.
 	 */
@@ -128,7 +128,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
 	 * RDFParser returned by {@link #getParser()}.
-	 * 
+	 *
 	 * @param knownDatatypeStatements A {@link Model} containing statements which all contain known datatypes.
 	 * @return An InputStream based on the given parameters.
 	 */
@@ -139,7 +139,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
 	 * RDFParser returned by {@link #getParser()}.
-	 * 
+	 *
 	 * @param unknownLanguageStatements A {@link Model} containing statements which all contain unknown language tags.
 	 * @return An InputStream based on the given parameters.
 	 */
@@ -150,7 +150,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
 	 * RDFParser returned by {@link #getParser()}.
-	 * 
+	 *
 	 * @param knownLanguageStatements A {@link Model} containing statements which all contain known language tags.
 	 * @return An InputStream based on the given parameters.
 	 */
@@ -161,7 +161,7 @@ public abstract class AbstractParserHandlingTest {
 	/**
 	 * Returns an {@link InputStream} containing the given RDF statements in a format that is recognised by the
 	 * RDFParser returned by {@link #getParser()}.
-	 * 
+	 *
 	 * @param RDFLangStringWithNoLanguageStatements A {@link Model} containing statements which all contain statements
 	 *                                              that have RDF langString with no language tag.
 	 * @return An InputStream based on the given parameters.
@@ -172,7 +172,7 @@ public abstract class AbstractParserHandlingTest {
 
 	/**
 	 * Concrete test classes can override this to return a new instance of the RDFParser that is being tested.
-	 * 
+	 *
 	 * @return A new instance of the RDFParser that is being tested.
 	 */
 	protected abstract RDFParser getParser();

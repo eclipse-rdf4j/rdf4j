@@ -1,16 +1,16 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 /**
  * The built-in SPARQL Functions. Keeping this public until {@link Expressions} is completed.
- * 
+ *
  * @see <a href= "http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#SparqlOps"> SPARQL Function Definitions</a>
  */
 @SuppressWarnings("javadoc") // acceptable, as this won't be public for long
@@ -28,6 +28,8 @@ public enum SparqlFunction implements SparqlOperator {
 	FLOOR("FLOOR"),
 	HOURS("HOURS"),
 	IF("IF"),
+	IN("IN", true),
+	NOT_IN("NOT IN", true),
 	IRI("IRI"),
 	IS_BLANK("isBLANK"),
 	IS_IRI("isIRI"),
@@ -70,13 +72,22 @@ public enum SparqlFunction implements SparqlOperator {
 	YEAR("YEAR");
 
 	private String function;
+	private boolean pad;
 
-	private SparqlFunction(String function) {
-		this.function = function;
+	SparqlFunction(String function) {
+		this(function, false);
 	}
 
-	@Override
+	SparqlFunction(String function, boolean pad) {
+		this.function = function;
+		this.pad = pad;
+	}
+
+	boolean pad() {
+		return this.pad;
+	}
+
 	public String getQueryString() {
-		return function;
+		return function + (pad ? " " : "");
 	}
 }

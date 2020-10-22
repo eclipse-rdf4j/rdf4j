@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -299,7 +299,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 				jg.writeObjectField("xml:lang", lit.getLanguage().orElse(null));
 			} else {
 				IRI datatype = lit.getDatatype();
-				boolean ignoreDatatype = datatype.equals(XMLSchema.STRING) && xsdStringToPlainLiteral();
+				boolean ignoreDatatype = datatype.equals(XSD.STRING) && xsdStringToPlainLiteral();
 				if (!ignoreDatatype) {
 					jg.writeObjectField("datatype", lit.getDatatype().stringValue());
 				}
@@ -352,6 +352,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		result.add(BasicQueryWriterSettings.JSONP_CALLBACK);
 		result.add(BasicWriterSettings.PRETTY_PRINT);
 		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+		result.add(BasicWriterSettings.ENCODE_RDF_STAR);
 
 		return result;
 	}

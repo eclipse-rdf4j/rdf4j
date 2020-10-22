@@ -13,7 +13,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLQueryTestCase;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 

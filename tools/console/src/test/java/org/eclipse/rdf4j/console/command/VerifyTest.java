@@ -7,7 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,23 +22,14 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 
 import org.eclipse.rdf4j.RDF4JException;
-import static org.junit.Assert.assertFalse;
-
+import org.eclipse.rdf4j.console.ConsoleIO;
+import org.eclipse.rdf4j.console.ConsoleState;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.eclipse.rdf4j.console.ConsoleIO;
-import org.eclipse.rdf4j.console.ConsoleState;
-import static org.mockito.ArgumentMatchers.anyString;
-
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 /**
  * Test verify command
- * 
+ *
  * @author Bart Hanssens
  */
 public class VerifyTest extends AbstractCommandTest {
@@ -53,7 +50,7 @@ public class VerifyTest extends AbstractCommandTest {
 
 	/**
 	 * Copy Turtle file from resource to temp directory
-	 * 
+	 *
 	 * @param str name of the resource file
 	 * @return path to file in temp directory
 	 * @throws IOException

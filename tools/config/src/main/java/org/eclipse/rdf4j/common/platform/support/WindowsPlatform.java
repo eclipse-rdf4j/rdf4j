@@ -78,7 +78,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Returns an application data directory in the "Application Data" user directory of Windows.
-	 * 
+	 *
 	 * @return directory
 	 */
 	@Override
@@ -99,7 +99,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Warns when the platform is not a Windows 9x, NT or 2000 platform.
-	 * 
+	 *
 	 * @return true when not Win9x/NT/2000
 	 */
 	@Deprecated
@@ -109,7 +109,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is windows 9x, or windows NT and higher.
-	 * 
+	 *
 	 * @return true when Win9x or higher
 	 */
 	@Deprecated
@@ -131,7 +131,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows NT environment.
-	 * 
+	 *
 	 * @return true when WinNT
 	 */
 	@Deprecated
@@ -141,7 +141,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows 2000 environment.
-	 * 
+	 *
 	 * @return true when Win2000
 	 */
 	@Deprecated
@@ -151,7 +151,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows XP environment.
-	 * 
+	 *
 	 * @return true wen WinXP
 	 */
 	@Deprecated
@@ -161,7 +161,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows 2003 environment.
-	 * 
+	 *
 	 * @return true when Win2003
 	 */
 	@Deprecated
@@ -171,7 +171,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Check whether this is an Windows Vista environment.
-	 * 
+	 *
 	 * @return true when Vista
 	 */
 	@Deprecated
@@ -181,7 +181,7 @@ public class WindowsPlatform extends AbstractPlatform {
 
 	/**
 	 * Returns appropriate command shell for the current windows shell.
-	 * 
+	 *
 	 * @return name of the command shell
 	 */
 	public String getCommandShell() {

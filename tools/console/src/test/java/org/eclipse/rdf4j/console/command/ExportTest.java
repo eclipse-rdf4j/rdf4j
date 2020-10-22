@@ -7,11 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import static org.mockito.Mockito.when;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-
-import com.google.common.io.Files;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,9 +21,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-
 import org.junit.Before;
 import org.junit.Test;
+
+import com.google.common.io.Files;
 
 /**
  * @author Bart Hanssens

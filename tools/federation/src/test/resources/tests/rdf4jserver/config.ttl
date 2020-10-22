@@ -10,7 +10,8 @@
       rep:repositoryType "fedx:FedXRepository" ;
       fedx:member [
          fedx:store "ResolvableRepository" ;
-         fedx:repositoryName "endpoint1" 
+         fedx:repositoryName "endpoint1" ;
+         fedx:writable true 
       ] ,
       [
          fedx:store "ResolvableRepository" ;

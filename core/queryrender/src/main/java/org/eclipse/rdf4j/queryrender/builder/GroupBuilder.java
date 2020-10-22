@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
  * <p>
  * Builder for creating a grouped set of query atoms and filters in a query.
  * </p>
- * 
+ *
  * @author Michael Grove
  * @deprecated use {@link org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder} instead.
  */

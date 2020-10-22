@@ -20,10 +20,14 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_LANG_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.NAMESPACE;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.OBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.PREDICATE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.QNAME;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.ROOT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.SUBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.TRIPLE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.URI_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_NAME_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_TAG;
@@ -42,10 +46,11 @@ import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.SESAMEQNAME;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -61,7 +66,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * An abstract class to implement the base functionality for both SPARQLBooleanXMLWriter and SPARQLResultsXMLWriter.
- * 
+ *
  * @author Peter Ansell
  */
 abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter {
@@ -117,7 +122,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
 	 * is set to <tt>true</tt>. If set to <tt>false</tt>, no indentation and newlines are added to the XML document.
 	 * This method has to be used before writing starts (that is, before {@link #startDocument} is called).
-	 * 
+	 *
 	 * @deprecated Use {@link #getWriterConfig()} .set(BasicWriterSettings.PRETTY_PRINT, prettyPrint) instead.
 	 */
 	@Deprecated
@@ -399,7 +404,9 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	private void writeValue(Value value) throws IOException {
-		if (value instanceof IRI) {
+		if (value instanceof Triple) {
+			writeTriple((Triple) value);
+		} else if (value instanceof IRI) {
 			writeURI((IRI) value);
 		} else if (value instanceof BNode) {
 			writeBNode((BNode) value);
@@ -412,11 +419,25 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		return namespaceTable.containsKey(nextUri.getNamespace());
 	}
 
+	private void writeTriple(Triple triple) throws IOException {
+		xmlWriter.startTag(TRIPLE_TAG);
+		xmlWriter.startTag(SUBJECT_TAG);
+		writeValue(triple.getSubject());
+		xmlWriter.endTag(SUBJECT_TAG);
+		xmlWriter.startTag(PREDICATE_TAG);
+		writeValue(triple.getPredicate());
+		xmlWriter.endTag(PREDICATE_TAG);
+		xmlWriter.startTag(OBJECT_TAG);
+		writeValue(triple.getObject());
+		xmlWriter.endTag(OBJECT_TAG);
+		xmlWriter.endTag(TRIPLE_TAG);
+	}
+
 	/**
 	 * Write a QName for the given URI if and only if the {@link BasicQueryWriterSettings#ADD_SESAME_QNAME} setting has
 	 * been set to true. By default it is false, to ensure that this implementation stays within the specification by
 	 * default.
-	 * 
+	 *
 	 * @param nextUri The prefixed URI to be written as a sesame qname attribute.
 	 */
 	private void writeQName(IRI nextUri) {
@@ -444,7 +465,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		// rdf:langString datatype is handled implicitly above
 		else {
 			IRI datatype = literal.getDatatype();
-			boolean ignoreDatatype = datatype.equals(XMLSchema.STRING) && xsdStringToPlainLiteral();
+			boolean ignoreDatatype = datatype.equals(XSD.STRING) && xsdStringToPlainLiteral();
 			if (!ignoreDatatype) {
 				if (isQName(datatype)) {
 					writeQName(datatype);

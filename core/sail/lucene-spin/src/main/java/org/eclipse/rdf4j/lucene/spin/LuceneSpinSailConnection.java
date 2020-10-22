@@ -22,23 +22,22 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
+import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
+import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer;
-import org.eclipse.rdf4j.sail.lucene.LuceneSailConnection;
-import org.eclipse.rdf4j.sail.lucene.SearchIndex;
-
 /**
  * This connection inherits Lucene index supporting methods from {@link LuceneSailConnection}.
- * 
+ *
  * @author sauermann
  * @author christian.huetter
  * @author jacek grzebyta
- * 
+ *
  * @deprecated since 3.0. The experimental LuceneSpinSail is scheduled to be removed by the next major release.
  */
 @Deprecated
@@ -76,8 +75,9 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				// we further only index statements where the Literal's datatype is
 				// accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.add(statement);
+				}
 			}
 		}
 
@@ -94,8 +94,9 @@ public class LuceneSpinSailConnection extends NotifyingSailConnectionWrapper {
 				// we further only indexed statements where the Literal's datatype
 				// is accepted
 				Literal literal = (Literal) statement.getObject();
-				if (luceneIndex.accept(literal))
+				if (luceneIndex.accept(literal)) {
 					buffer.remove(statement);
+				}
 			}
 		}
 	};

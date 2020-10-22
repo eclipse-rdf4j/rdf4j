@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.query.Binding;
 
 /**
  * An implementation of the {@link Binding} interface.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SimpleBinding implements Binding {
@@ -25,7 +25,7 @@ public class SimpleBinding implements Binding {
 
 	/**
 	 * Creates a binding object with the supplied name and value.
-	 * 
+	 *
 	 * @param name  The binding's name.
 	 * @param value The binding's value.
 	 */

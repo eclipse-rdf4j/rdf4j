@@ -1,5 +1,11 @@
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.Assert.assertEquals;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DCAT;
@@ -12,12 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.junit.Test;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
 
 public class BulkedExternalInnerJoinTest {
 
@@ -53,9 +53,9 @@ public class BulkedExternalInnerJoinTest {
 			tuples.forEach(System.out::println);
 
 			assertEquals("[http://b, http://www.w3.org/2000/01/rdf-schema#Resource]",
-					Arrays.toString(tuples.get(0).line.toArray()));
+					Arrays.toString(tuples.get(0).getLine().toArray()));
 			assertEquals("[http://d, http://www.w3.org/2000/01/rdf-schema#subPropertyOf]",
-					Arrays.toString(tuples.get(1).line.toArray()));
+					Arrays.toString(tuples.get(1).getLine().toArray()));
 
 		}
 	}

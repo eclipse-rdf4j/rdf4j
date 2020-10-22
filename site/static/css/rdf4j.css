@@ -1,0 +1,100 @@
+#header-wrapper {
+  background: #707070;
+  background-image: url(../images/header-bg.jpg);
+  background-size: cover;
+}
+
+#header-row {
+  padding-top: 20px;
+}
+
+.jumbotron h1 {
+  font-family: "DIN Condensed", "Arial Narrow OS", sans-serif;
+  color: black;
+}
+
+.shadowed {
+   padding: 6px;
+   border: 1px solid grey;
+   box-shadow: 5px 5px 2px grey;
+}
+
+.logo-vendor {
+  float: right;
+  padding-left: 6px;
+  padding-bottom: 6px;
+}
+
+td,th {
+  border: 1px solid #ccc;
+  padding: 0.6rem;
+}
+
+.featured-jumbotron h1:after {
+  /* divider */
+  border-bottom: 3px solid white;
+}
+
+
+div.doc-section {
+  float: none;
+  width: 100%;
+  margin-left: 0px;
+}
+
+h4.doc-section-header {
+  margin-top: 20px;
+  margin-bottom: 0px;
+}
+
+#TableOfContents ul {
+    padding-left: 1em;
+}
+
+.big-emoji {
+  float: left;
+  font-size: 9em;
+  line-height: 1em;
+  margin-right: 4px;
+}
+
+.doc-section-header a:link, .doc-section-header a:visited {
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  font-weight: medium;
+  background: #DA5800;
+  padding-top: 2px;
+  padding-left: 20px;
+  padding-right: 20px;
+  color: black;
+}
+
+.doc-section-content {
+  background: white;
+  padding: 6px;
+  box-shadow: 3px 3px 2px #888888;
+}
+
+/* This fixes the wrapping in pre+code blocks */
+pre code {
+  white-space: pre !important;
+}
+
+pre {
+  word-wrap: unset !important;
+}
+
+
+/* Auto Numbering */
+/* main {counter-reset: h1} */
+main {counter-reset: h2} 
+h2 {counter-reset: h3}
+h3 {counter-reset: h4}
+h4 {counter-reset: h5} 
+
+main[autonumbering] h2:before {counter-increment: h2; content: counter(h2) ". "}
+main[autonumbering] h3:before {counter-increment: h3; content: counter(h2) "." counter(h3) ". "}
+main[autonumbering] h4:before {counter-increment: h4; content: counter(h2) "." counter(h3) "." counter(h4) ". "}
+
+main[autonumbering] #TableOfContents ul { counter-reset: item }
+main[autonumbering] #TableOfContents li a:before { content: counters(item, ".") ". "; counter-increment: item }

@@ -7,20 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import org.junit.Before;
-import org.junit.Test;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * Test setting parameters
- * 
+ *
  * @author Bart Hanssens
  */
 public class SetParametersTest extends AbstractCommandTest {

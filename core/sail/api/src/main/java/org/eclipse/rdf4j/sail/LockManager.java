@@ -21,21 +21,21 @@ public interface LockManager {
 
 	/**
 	 * Determines if the SAIL is locked.
-	 * 
+	 *
 	 * @return <code>true</code> if the SAIL is already locked.
 	 */
 	boolean isLocked();
 
 	/**
 	 * Creates a lock in a SAIL if it does not yet exist.
-	 * 
+	 *
 	 * @return a newly acquired lock or null if the SAIL is already locked.
 	 */
 	Lock tryLock();
 
 	/**
 	 * Creates a lock in a SAIL if it does not yet exist.
-	 * 
+	 *
 	 * @return a newly acquired lock.
 	 * @throws SailLockedException if the directory is already locked.
 	 */
@@ -43,7 +43,7 @@ public interface LockManager {
 
 	/**
 	 * Revokes a lock owned by another process.
-	 * 
+	 *
 	 * @return <code>true</code> if a lock was successfully revoked.
 	 */
 	boolean revokeLock();

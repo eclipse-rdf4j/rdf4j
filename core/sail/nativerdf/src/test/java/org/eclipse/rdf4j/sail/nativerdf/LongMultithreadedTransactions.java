@@ -1,5 +1,10 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Random;
+import java.util.stream.IntStream;
+
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -13,12 +18,8 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.Random;
-import java.util.stream.IntStream;
 
 public class LongMultithreadedTransactions {
 
@@ -43,6 +44,7 @@ public class LongMultithreadedTransactions {
 	}
 
 	@Test
+	@Ignore
 	public void test() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -73,6 +75,7 @@ public class LongMultithreadedTransactions {
 	}
 
 	@Test
+	@Ignore
 	public void test1() {
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

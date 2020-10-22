@@ -42,7 +42,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
 
 /**
  * {@link RDFWriter} implementation for the RDF/JSON format
- * 
+ *
  * @author Peter Ansell p_ansell@yahoo.com
  */
 public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
@@ -118,7 +118,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	/**
 	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be serialised
 	 * to JSON if there are also non-null contexts in the contexts array
-	 * 
+	 *
 	 * @param object   The RDF value to serialise
 	 * @param contexts The set of contexts that are relevant to this object, including null contexts as they are found.
 	 * @param jg       the {@link JsonGenerator} to write to.
@@ -167,7 +167,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
-	 * 
+	 *
 	 * @param uriOrBnode The resource to serialise to a string
 	 * @return The string value of the sesame resource
 	 */
@@ -212,7 +212,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
-	 * 
+	 *
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {

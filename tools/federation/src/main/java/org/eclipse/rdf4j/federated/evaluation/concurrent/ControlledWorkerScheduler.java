@@ -28,15 +28,15 @@ import org.slf4j.LoggerFactory;
  * ControlledWorkerScheduler is a task scheduler that uses a FIFO queue for managing its process. Each instance has a
  * pool with a fixed number of worker threads. Once notified a worker picks the next task from the queue and executes
  * it. The results is then returned to the controlling instance retrieved from the task.
- * 
- * 
+ *
+ *
  * @author Andreas Schwarte
- * 
+ *
  * @see ControlledWorkerUnion
  * @see ControlledWorkerJoin
  * @see ControlledWorkerBoundJoin
  */
-public class ControlledWorkerScheduler<T> implements Scheduler<T> {
+public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAware {
 
 	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);
 
@@ -46,17 +46,21 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	private final int nWorkers;
 	private final String name;
+	private TaskWrapper taskWrapper;
 
 	/**
 	 * Construct a new instance with 20 workers.
+	 * 
+	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
 	 */
+	@Deprecated
 	public ControlledWorkerScheduler() {
 		this(20, "FedX Worker");
 	}
 
 	/**
 	 * Construct a new instance with the specified number of workers and the given name.
-	 * 
+	 *
 	 * @param nWorkers
 	 * @param name
 	 */
@@ -68,13 +72,19 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Schedule the specified parallel task.
-	 * 
+	 *
 	 * @param task the task to schedule
 	 */
 	@Override
 	public void schedule(ParallelTask<T> task) {
 
-		WorkerRunnable runnable = new WorkerRunnable(task);
+		Runnable runnable = new WorkerRunnable(task);
+
+		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+		// default the unmodified runnable is used
+		if (taskWrapper != null) {
+			runnable = taskWrapper.wrap(runnable);
+		}
 
 		Future<?> future = executor.submit(runnable);
 
@@ -91,7 +101,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 	/**
 	 * Schedule the given tasks and inform about finish using the same lock, i.e. all tasks are scheduled one after the
 	 * other.
-	 * 
+	 *
 	 * @param tasks
 	 * @param control
 	 */
@@ -148,7 +158,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Inform this scheduler that the specified control instance will no longer submit tasks.
-	 * 
+	 *
 	 * @param control
 	 */
 	public void informFinish(ParallelExecutor<T> control) {
@@ -164,9 +174,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Determine if there are still task running or queued for the specified control.
-	 * 
+	 *
 	 * @param control
-	 * 
+	 *
 	 * @return true, if there are unfinished tasks, false otherwise
 	 */
 	public boolean isRunning(ParallelExecutor<T> control) {
@@ -224,7 +234,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 
 	/**
 	 * Structure to maintain the status for a given control instance.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 */
 	protected class ControlStatus {
@@ -246,5 +256,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T> {
 			throw new FedXRuntimeException(e);
 		}
 
+	}
+
+	@Override
+	public void setTaskWrapper(TaskWrapper taskWrapper) {
+		this.taskWrapper = taskWrapper;
 	}
 }

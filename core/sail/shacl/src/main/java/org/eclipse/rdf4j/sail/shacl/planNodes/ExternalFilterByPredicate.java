@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.Arrays;
+import java.util.Set;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -16,9 +19,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.Arrays;
-import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -53,13 +53,13 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 			Tuple next = null;
 
-			CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<Tuple, SailException> parentIterator = parent.iterator();
 
 			void calculateNext() {
 				while (next == null && parentIterator.hasNext()) {
 					Tuple temp = parentIterator.next();
 
-					Value subject = temp.line.get(index);
+					Value subject = temp.getLine().get(index);
 
 					IRI matchedPredicate = matchesFilter(subject);
 

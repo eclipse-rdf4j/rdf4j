@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Default implementation of the {@link FedXCostModel}
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -42,22 +42,30 @@ public class DefaultFedXCostModel implements FedXCostModel {
 	@Override
 	public double estimateCost(TupleExpr tupleExpr, Set<String> joinVars) {
 
-		if (tupleExpr instanceof StatementSourcePattern)
+		if (tupleExpr instanceof StatementSourcePattern) {
 			return estimateCost((StatementSourcePattern) tupleExpr, joinVars);
-		if (tupleExpr instanceof ExclusiveStatement)
+		}
+		if (tupleExpr instanceof ExclusiveStatement) {
 			return estimateCost((ExclusiveStatement) tupleExpr, joinVars);
-		if (tupleExpr instanceof ExclusiveGroup)
+		}
+		if (tupleExpr instanceof ExclusiveGroup) {
 			return estimateCost((ExclusiveGroup) tupleExpr, joinVars);
-		if (tupleExpr instanceof NJoin)
+		}
+		if (tupleExpr instanceof NJoin) {
 			return estimateCost((NJoin) tupleExpr, joinVars);
-		if (tupleExpr instanceof NUnion)
+		}
+		if (tupleExpr instanceof NUnion) {
 			return estimateCost((NUnion) tupleExpr, joinVars);
-		if (tupleExpr instanceof FedXService)
+		}
+		if (tupleExpr instanceof FedXService) {
 			return estimateCost((FedXService) tupleExpr, joinVars);
-		if (tupleExpr instanceof Projection)
+		}
+		if (tupleExpr instanceof Projection) {
 			return estimateCost((Projection) tupleExpr, joinVars);
-		if (tupleExpr instanceof BindingSetAssignment)
+		}
+		if (tupleExpr instanceof BindingSetAssignment) {
 			return 0;
+		}
 		if (tupleExpr instanceof Extension) {
 			return 0;
 		}
@@ -76,9 +84,11 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		// use the same counting technique as for others
 		if (joinVars.size() > 0) {
 			int count = 0;
-			for (String var : group.getFreeVars())
-				if (!joinVars.contains(var))
+			for (String var : group.getFreeVars()) {
+				if (!joinVars.contains(var)) {
 					count++;
+				}
+			}
 			return 100 + (count / group.getExclusiveExpressions().size());
 		}
 
@@ -99,8 +109,9 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		// add some slight cost factor, if the subject in the query is not the same
 		additionalCost += computeAdditionPatternCost(group.getExclusiveExpressions());
 
-		if (!hasSelectiveStatement)
+		if (!hasSelectiveStatement) {
 			additionalCost += 4;
+		}
 
 //		if (hasExpensiveType)
 //			additionalCost += 1;
@@ -111,17 +122,17 @@ public class DefaultFedXCostModel implements FedXCostModel {
 
 	/**
 	 * If the subject is not the same for all triple patterns in the group, an additional cost of .5 is considered.
-	 * 
+	 *
 	 * <p>
 	 * Example:
 	 * </p>
-	 * 
+	 *
 	 * <pre>
 	 * ?x p o . ?x p2 o2 => cost is 0 
-	 * 
+	 *
 	 * ?x p ?s . ?s ?p2 val => additional cost is 0.5
 	 * </pre>
-	 * 
+	 *
 	 * @return
 	 */
 	private double computeAdditionPatternCost(List<ExclusiveTupleExpr> stmts) {
@@ -132,8 +143,9 @@ public class DefaultFedXCostModel implements FedXCostModel {
 				return 0.5;
 			}
 			String currentVar = QueryStringUtil.toString(((ExclusiveStatement) st).getSubjectVar());
-			if (!currentVar.equals(s) && s != null)
+			if (!currentVar.equals(s) && s != null) {
 				return 0.5;
+			}
 			s = currentVar;
 		}
 		return 0.0;
@@ -147,12 +159,15 @@ public class DefaultFedXCostModel implements FedXCostModel {
 
 		// special heuristic: if exclusive statement with one free variable, more selective than owned group
 		// with more than 3 free variable
-		if (owned.getFreeVarCount() <= 1 && joinVars.isEmpty())
+		if (owned.getFreeVarCount() <= 1 && joinVars.isEmpty()) {
 			count = 3;
+		}
 
-		for (String var : owned.getFreeVars())
-			if (!joinVars.contains(var))
+		for (String var : owned.getFreeVars()) {
+			if (!joinVars.contains(var)) {
 				count++;
+			}
+		}
 
 		return count;
 	}
@@ -168,10 +183,11 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		}
 
 		if (service.getNumberOfTriplePatterns() <= 1) {
-			if (joinVars.isEmpty() && service.getFreeVarCount() <= 1)
+			if (joinVars.isEmpty() && service.getFreeVarCount() <= 1) {
 				additionalCost = 3; // compare exclusive statement
-			else
+			} else {
 				additionalCost += 100; // compare all statements
+			}
 		}
 
 		return 0 + additionalCost + service.getFreeVarCount();
@@ -189,9 +205,11 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		/* currently the cost is the number of free vars that are executed in the join */
 
 		int count = 100;
-		for (String var : stmt.getFreeVars())
-			if (!joinVars.contains(var))
+		for (String var : stmt.getFreeVars()) {
+			if (!joinVars.contains(var)) {
 				count++;
+			}
+		}
 
 		return count;
 	}
@@ -203,8 +221,9 @@ public class DefaultFedXCostModel implements FedXCostModel {
 		double min = Double.MAX_VALUE;
 		for (TupleExpr t : nunion.getArgs()) {
 			double cost = estimateCost(t, joinVars);
-			if (cost < min)
+			if (cost < min) {
 				min = cost;
+			}
 		}
 
 		return min + nunion.getNumberOfArguments() - 1;

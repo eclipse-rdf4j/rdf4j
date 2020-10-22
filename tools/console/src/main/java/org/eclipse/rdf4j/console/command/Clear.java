@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -22,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
 
 /**
  * Clear command.
- * 
+ *
  * @author Dale Visser
  */
 public class Clear extends ConsoleCommand {
@@ -44,10 +43,10 @@ public class Clear extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
-	 * 
+	 *
 	 */
 	public Clear(ConsoleIO consoleIO, ConsoleState state) {
 		super(consoleIO, state);
@@ -73,7 +72,7 @@ public class Clear extends ConsoleCommand {
 
 	/**
 	 * Clear repository, either completely or only triples of specific contexts.
-	 * 
+	 *
 	 * @param repository repository to be cleared
 	 * @param contexts   array of contexts
 	 */

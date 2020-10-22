@@ -21,7 +21,6 @@ import java.util.Set;
 
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -31,7 +30,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -50,7 +49,7 @@ import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
  * allow comments to be used inside triple constructs that extend over multiple lines, but the author's own parser
  * deviates from this too.</li>
  * </ul>
- * 
+ *
  * @author Arjohn Kampman
  * @author Peter Ansell
  */
@@ -105,6 +104,7 @@ public class TurtleParser extends AbstractRDFParser {
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
+		result.add(TurtleParserSettings.ACCEPT_TURTLESTAR);
 		return result;
 	}
 
@@ -166,7 +166,7 @@ public class TurtleParser extends AbstractRDFParser {
 			lineNumber = 1;
 
 			// Allow at most 8 characters to be pushed back:
-			this.reader = new PushbackReader(reader, 8);
+			this.reader = new PushbackReader(reader, 10);
 
 			// Store normalized base URI
 			setBaseURI(baseURI);
@@ -569,6 +569,10 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted literal, integer, double and boolean.
 	 */
 	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
+		if (getParserConfig().get(TurtleParserSettings.ACCEPT_TURTLESTAR) && peekIsTripleValue()) {
+			return parseTripleValue();
+		}
+
 		int c = peekCodePoint();
 
 		if (c == '<') {
@@ -671,7 +675,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a quoted string, which is either a "normal string" or a """long string""".
-	 * 
+	 *
 	 * @return string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -711,7 +715,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Parses a "normal string". This method requires that the opening character has already been parsed.
-	 * 
+	 *
 	 * @return parsed string
 	 * @throws IOException
 	 * @throws RDFParseException
@@ -788,7 +792,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 	protected Literal parseNumber() throws IOException, RDFParseException {
 		StringBuilder value = getBuilder();
-		IRI datatype = XMLSchema.INTEGER;
+		IRI datatype = XSD.INTEGER;
 
 		int c = readCodePoint();
 
@@ -828,7 +832,7 @@ public class TurtleParser extends AbstractRDFParser {
 					}
 
 					// We're parsing a decimal or a double
-					datatype = XMLSchema.DECIMAL;
+					datatype = XSD.DECIMAL;
 				}
 			} else {
 				if (value.length() == 0) {
@@ -839,7 +843,7 @@ public class TurtleParser extends AbstractRDFParser {
 
 			// read optional exponent
 			if (c == 'e' || c == 'E') {
-				datatype = XMLSchema.DOUBLE;
+				datatype = XSD.DOUBLE;
 				appendCodepoint(value, c);
 
 				c = readCodePoint();
@@ -992,10 +996,10 @@ public class TurtleParser extends AbstractRDFParser {
 
 				if (value.equals("true")) {
 					unread(c);
-					return createLiteral("true", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("true", null, XSD.BOOLEAN, getLineNumber(), -1);
 				} else if (value.equals("false")) {
 					unread(c);
-					return createLiteral("false", null, XMLSchema.BOOLEAN, getLineNumber(), -1);
+					return createLiteral("false", null, XSD.BOOLEAN, getLineNumber(), -1);
 				}
 			}
 
@@ -1255,13 +1259,16 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IOException
 	 */
 	protected void unread(String string) throws IOException {
-		for (int i = string.codePointCount(0, string.length()); i >= 1; i--) {
+		int i = string.length();
+		while (i > 0) {
 			final int codePoint = string.codePointBefore(i);
 			if (Character.isSupplementaryCodePoint(codePoint)) {
 				final char[] surrogatePair = Character.toChars(codePoint);
 				reader.unread(surrogatePair);
+				i -= surrogatePair.length;
 			} else {
 				reader.unread(codePoint);
+				i--;
 			}
 		}
 	}
@@ -1330,7 +1337,7 @@ public class TurtleParser extends AbstractRDFParser {
 	/**
 	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but prevents
 	 * the additional char array garbage for BMP codepoints.
-	 * 
+	 *
 	 * @param dst       the destination in which to append the characters
 	 * @param codePoint the codepoint to be appended
 	 */

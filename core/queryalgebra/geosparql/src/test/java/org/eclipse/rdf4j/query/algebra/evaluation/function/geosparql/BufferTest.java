@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
-import static org.junit.Assert.assertNotNull;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertNotNull;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Test;
 
@@ -48,7 +48,7 @@ public class BufferTest {
 
 	@Test
 	public void testEvaluateWithDecimalRadius() {
-		Value result = buffer.evaluate(f, point, f.createLiteral("1.0", XMLSchema.DECIMAL), unit);
+		Value result = buffer.evaluate(f, point, f.createLiteral("1.0", XSD.DECIMAL), unit);
 		assertNotNull(result);
 	}
 
@@ -62,7 +62,7 @@ public class BufferTest {
 
 	@Test(expected = ValueExprEvaluationException.class)
 	public void testEvaluateWithInvalidRadius() {
-		buffer.evaluate(f, point, f.createLiteral("foobar", XMLSchema.DECIMAL), unit);
+		buffer.evaluate(f, point, f.createLiteral("foobar", XSD.DECIMAL), unit);
 	}
 
 	@Test(expected = ValueExprEvaluationException.class)

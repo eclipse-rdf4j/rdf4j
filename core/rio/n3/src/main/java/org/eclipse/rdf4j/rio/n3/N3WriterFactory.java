@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for N3 writers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class N3WriterFactory implements RDFWriterFactory {

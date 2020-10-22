@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 
 /**
  * A {@link QueryModelNode} for printing the bound filter vars (e.g. in a {@link FedXStatementPattern})
- * 
+ *
  * @author Andreas Schwarte
  *
  */

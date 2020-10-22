@@ -20,7 +20,7 @@ import com.google.common.cache.CacheBuilder;
  * Registry for currently active {@link EvaluationStrategy} objects. The internal registry uses soft references to allow
  * entries to be garbage-collected when no longer used. Currently, the primary purpose of this is to support
  * (de)serialization of objects (over the lifetime of the VM) that depend on an EvaluationStrategy
- * 
+ *
  * @author Jeen Broekstra
  */
 public class EvaluationStrategies {
@@ -29,7 +29,7 @@ public class EvaluationStrategies {
 
 	/**
 	 * Retrieve the EvaluationStrategy registered with the supplied key.
-	 * 
+	 *
 	 * @param key the key
 	 * @return the registered EvaluationStrategy, or <code>null</code> if no matching EvaluationStrategy can be found.
 	 */
@@ -39,7 +39,7 @@ public class EvaluationStrategies {
 
 	/**
 	 * Retrieve the registry key for the given EvaluationStrategy
-	 * 
+	 *
 	 * @param strategy the EvaluationStrategy for which to retrieve the registry key
 	 * @return the registry key with which the supplied strategy can be retrieved, or <code>null</code> if the supplied
 	 *         strategy is not in the registry.
@@ -64,7 +64,7 @@ public class EvaluationStrategies {
 	/**
 	 * Add a strategy to the registry and returns the registry key. If the strategy is already present, the operation
 	 * simply returns the key with which it is currently registered.
-	 * 
+	 *
 	 * @param strategy the EvaluationStrategy to register
 	 * @return the key with which the strategy is registered.
 	 */

@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import org.junit.Before;
-import org.junit.Test;
-
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import org.junit.Before;
+import org.junit.Test;
+
 /**
  * Test console width
- * 
+ *
  * @author Bart Hanssens
  */
 public class ConsoleWidthTest extends AbstractSettingTest {

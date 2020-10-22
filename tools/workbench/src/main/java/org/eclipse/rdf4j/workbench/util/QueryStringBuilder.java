@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 /**
  * Helper class for substituting in variables to query templates for the purpose of saving and retrieving user queries
  * to a repository local to the workbench.
- * 
+ *
  * @author Dale Visser
  */
 public class QueryStringBuilder {
@@ -23,7 +23,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Creates a new builder from the given template.
-	 * 
+	 *
 	 * @param template
 	 */
 	public QueryStringBuilder(final String template) {
@@ -46,7 +46,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Replace the repository variable with the current repository URL.
-	 * 
+	 *
 	 * @param paramText the $<...> formatted parameter name
 	 * @param uri       any object who's toString() returns a valid URI
 	 */
@@ -56,7 +56,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Replace instances of the old text with a copy of the new text.
-	 * 
+	 *
 	 * @param paramText parameter in the form "$<paramName>"
 	 * @param newText   the new text
 	 */
@@ -74,7 +74,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Place double quotes around the given string.
-	 * 
+	 *
 	 * @param value the string to add quotes to
 	 * @return a copy of the given strings quoted with double quotes
 	 */
@@ -84,7 +84,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Place double quotes around the given string and append an XSD data type.
-	 * 
+	 *
 	 * @param value the value to quote
 	 * @param type  the XSD data type name
 	 * @return a copy of the given string quoted with XSD data type appended
@@ -95,7 +95,7 @@ public class QueryStringBuilder {
 
 	/**
 	 * Place angle brackets around a URI or URL.
-	 * 
+	 *
 	 * @param uri an object whose toString() returns a URI or URL
 	 * @return a string quoting the given URI with angle brackets
 	 */

@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * The IRI function, as defined in <a href="http://www.w3.org/TR/sparql11-query/#SparqlOps">SPARQL 1.1 Query Language
  * for RDF</a>.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class IRIFunction extends UnaryValueOperator {

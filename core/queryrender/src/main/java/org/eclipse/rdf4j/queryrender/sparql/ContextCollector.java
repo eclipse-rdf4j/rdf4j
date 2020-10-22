@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * algebra. The context for a node is set on the highest node in the tree. That is, everything below it shares the same
  * context.
  * </p>
- * 
+ *
  * @author Blazej Bulka
  */
 public class ContextCollector extends AbstractQueryModelVisitor<Exception> {

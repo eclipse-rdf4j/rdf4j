@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import java.io.StringWriter;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -59,7 +60,7 @@ public class RDFXMLWriterTest extends RDFWriterTest {
 
 	/**
 	 * Write a statement with a literal that needs escaping as RDF/XML to a string
-	 * 
+	 *
 	 * @param useSingle  use single quotes
 	 * @param withinText quotes to entity within text
 	 * @return RDF/XML output as string

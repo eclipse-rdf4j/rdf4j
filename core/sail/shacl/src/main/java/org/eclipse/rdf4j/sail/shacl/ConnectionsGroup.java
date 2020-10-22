@@ -8,16 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-
 import java.io.Closeable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 
 /**
  *
@@ -29,13 +30,13 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @InternalUseOnly
 public class ConnectionsGroup implements Closeable {
 
-	private final ShaclSail sail;
-
 	private final SailConnection baseConnection;
 	private final SailConnection previousStateConnection;
 
 	private final Sail addedStatements;
 	private final Sail removedStatements;
+
+	private final ShaclSailConnection.Settings transactionSettings;
 
 	private final Stats stats;
 
@@ -46,16 +47,17 @@ public class ConnectionsGroup implements Closeable {
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
 	private final Map<PlanNode, BufferedSplitter> selectNodeCache = new HashMap<>();
 
-	ConnectionsGroup(ShaclSail sail, SailConnection baseConnection,
+	ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
-			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider) {
-		this.sail = sail;
+			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
+			ShaclSailConnection.Settings transactionSettings) {
 		this.baseConnection = baseConnection;
 		this.previousStateConnection = previousStateConnection;
 		this.addedStatements = addedStatements;
 		this.removedStatements = removedStatements;
 		this.stats = stats;
 		this.rdfsSubClassOfReasonerProvider = rdfsSubClassOfReasonerProvider;
+		this.transactionSettings = transactionSettings;
 	}
 
 	public SailConnection getPreviousStateConnection() {
@@ -81,17 +83,13 @@ public class ConnectionsGroup implements Closeable {
 		}
 	}
 
-	public ShaclSail getSail() {
-		return sail;
-	}
-
 	public SailConnection getBaseConnection() {
 		return baseConnection;
 	}
 
 	synchronized public PlanNode getCachedNodeFor(PlanNode select) {
 
-		if (!sail.isCacheSelectNodes()) {
+		if (!transactionSettings.isCacheSelectNodes()) {
 			return select;
 		}
 
@@ -106,6 +104,10 @@ public class ConnectionsGroup implements Closeable {
 
 	public Stats getStats() {
 		return stats;
+	}
+
+	public ShaclSailConnection.Settings getTransactionSettings() {
+		return transactionSettings;
 	}
 
 	interface RdfsSubClassOfReasonerProvider {

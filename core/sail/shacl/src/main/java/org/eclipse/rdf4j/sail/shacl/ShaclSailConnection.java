@@ -8,10 +8,21 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,20 +43,10 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
+import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author Heshan Jayasinghe
@@ -64,8 +65,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	Sail addedStatements;
 	Sail removedStatements;
 
-	private HashSet<Statement> addedStatementsSet = new HashSet<>();
-	private HashSet<Statement> removedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> addedStatementsSet = new HashSet<>();
+	private final HashSet<Statement> removedStatementsSet = new HashSet<>();
 
 	private boolean isShapeRefreshNeeded = false;
 	private boolean shapesModifiedInCurrentTransaction = false;
@@ -78,7 +79,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private boolean preparedHasRun = false;
 
-	private SailRepositoryConnection shapesRepoConnection;
+	private final SailRepositoryConnection shapesRepoConnection;
 
 	// write lock
 	private Lock writeLock;
@@ -87,6 +88,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private boolean connectionListenerActive = false;
 
 	private IsolationLevel currentIsolationLevel = null;
+
+	private Settings transactionSettings;
+	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			SailConnection previousStateConnection, SailConnection serializableConnection,
@@ -98,8 +102,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.previousStateSerializableConnection = previousStateSerializableConnection;
 		this.shapesRepoConnection = shapesRepoConnection;
 		this.sail = sail;
+		this.transactionSettings = getDefaultSettings(sail);
+	}
 
-		setupConnectionListener();
+	private Settings getDefaultSettings(ShaclSail sail) {
+		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled());
+	}
+
+	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		super.setTransactionSettings(settings);
+		this.transactionSettingsRaw = settings;
 	}
 
 	@Override
@@ -109,7 +122,18 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
+
 		currentIsolationLevel = level;
+
+		transactionSettings = getDefaultSettings(sail);
+		Arrays.stream(transactionSettingsRaw)
+				.filter(Objects::nonNull)
+				.forEach(setting -> {
+					if (setting instanceof ShaclSail.TransactionSettings.ValidationApproach) {
+						transactionSettings.validationApproach = (ShaclSail.TransactionSettings.ValidationApproach) setting;
+					}
+				});
+
 		assert addedStatements == null;
 		assert removedStatements == null;
 
@@ -120,27 +144,41 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		synchronized (sail) {
 			super.begin(level);
 			hasStatement(null, null, null, false); // actually force a transaction to start
-			shapesRepoConnection.begin(level);
-			previousStateConnection.begin(level);
+			shapesRepoConnection.begin(currentIsolationLevel);
+			previousStateConnection.begin(currentIsolationLevel);
 			previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start
-
 		}
 
 		stats.setBaseSailEmpty(isEmpty());
-		if (stats.isBaseSailEmpty()) {
+
+		if (transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
+				transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
 			removeConnectionListener(this);
-			connectionListenerActive = false;
+		} else if (stats.isBaseSailEmpty()) {
+			removeConnectionListener(this);
 		} else {
-			setupConnectionListener();
+			addConnectionListener(this);
 		}
 
 	}
 
-	private void setupConnectionListener() {
-		if (!connectionListenerActive && sail.isValidationEnabled()) {
-			addConnectionListener(this);
-
+	@Override
+	public void addConnectionListener(SailConnectionListener listener) {
+		if (!connectionListenerActive && isValidationEnabled()) {
+			super.addConnectionListener(this);
+			connectionListenerActive = true;
 		}
+	}
+
+	boolean isValidationEnabled() {
+		return transactionSettings.getValidationApproach() != ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+	}
+
+	@Override
+	public void removeConnectionListener(SailConnectionListener listener) {
+		super.removeConnectionListener(listener);
+		connectionListenerActive = false;
+
 	}
 
 	private Sail getNewMemorySail() {
@@ -156,6 +194,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if (!preparedHasRun) {
 			prepare();
 		}
+
 		long before = 0;
 		if (sail.isPerformanceLogging()) {
 			before = System.currentTimeMillis();
@@ -300,11 +339,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> validate(List<NodeShape> nodeShapes, boolean validateEntireBaseSail) {
+	private ValidationReport validate(List<NodeShape> nodeShapes, boolean validateEntireBaseSail) {
 
 		try {
-			if (!sail.isValidationEnabled()) {
-				return Collections.emptyList();
+			if (!isValidationEnabled()) {
+				return new ValidationReport(true);
 			}
 
 			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {
@@ -318,7 +357,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private void prepareValidation() {
 
-		if (!sail.isValidationEnabled()) {
+		if (!isValidationEnabled()) {
 			return;
 		}
 
@@ -332,23 +371,21 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	ConnectionsGroup getConnectionsGroup() {
 
-		return new ConnectionsGroup(sail, new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
+		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
 				previousStateConnection, addedStatements, removedStatements, stats,
-				this::getRdfsSubClassOfReasoner);
+				this::getRdfsSubClassOfReasoner, transactionSettings);
 	}
 
-	private static List<Tuple> performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
+	private ValidationReport performValidation(List<NodeShape> nodeShapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) {
 		long beforeValidation = 0;
-
-		ShaclSail sail = connectionsGroup.getSail();
 
 		if (sail.isPerformanceLogging()) {
 			beforeValidation = System.currentTimeMillis();
 		}
 
 		try {
-			Stream<Callable<List<Tuple>>> callableStream = nodeShapes
+			Stream<Callable<ValidationResultIterator>> callableStream = nodeShapes
 					.stream()
 					.flatMap(nodeShape -> nodeShape
 							.generatePlans(connectionsGroup, nodeShape, sail.isLogValidationPlans(),
@@ -358,7 +395,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger();
 						planNode.receiveLogger(validationExecutionLogger);
 
-						try (Stream<Tuple> stream = planNode.iterator().stream()) {
+						try (CloseableIteration<Tuple, SailException> iterator = planNode.iterator()) {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
@@ -370,7 +407,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								before = System.currentTimeMillis();
 							}
 
-							List<Tuple> collect = new ArrayList<>(stream.collect(Collectors.toList()));
+							ValidationResultIterator validationResults = new ValidationResultIterator(iterator,
+									sail.getEffectiveValidationResultsLimitPerConstraint());
+
 							validationExecutionLogger.flush();
 
 							if (sail.isPerformanceLogging()) {
@@ -387,34 +426,38 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 										propertyShape.toString());
 							}
 
-							boolean valid = collect.isEmpty();
+							if (sail.isLogValidationViolations()) {
+								List<Tuple> tuples = validationResults.getTuples();
+								if (!validationResults.conforms()) {
 
-							if (!valid && sail.isLogValidationViolations()) {
-								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
+									PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
 
-								logger.info(
-										"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-										propertyShape.getNodeShape().getId(), propertyShape.getId(),
-										collect.stream()
-												.map(a -> a.toString() + " -cause-> " + a.getCause())
-												.collect(Collectors.joining("\n\t\t")));
+									logger.info(
+											"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
+											propertyShape.getNodeShape().getId(), propertyShape.getId(),
+											tuples.stream()
+													.map(a -> a.toString() + " -cause-> " + a.getCause())
+													.collect(Collectors.joining("\n\t\t")));
+								}
 							}
 
-							return collect;
+							return validationResults;
 						}
 					});
 
-			if (sail.isParallelValidation()) {
+			List<ValidationResultIterator> validationResultIterators;
 
-				return callableStream
-						.map(sail::submitRunnableToExecutorService)
+			if (isParallelValidation()) {
+
+				validationResultIterators = callableStream
+						.map(this.sail::submitRunnableToExecutorService)
 						// Creating a list is needed to actually make things run multi-threaded, without this the
 						// laziness of java streams will make this run serially
 						.collect(Collectors.toList())
 						.stream()
-						.flatMap(f -> {
+						.map(f -> {
 							try {
-								return f.get().stream();
+								return f.get();
 							} catch (InterruptedException | ExecutionException e) {
 								throw new RuntimeException(e);
 							}
@@ -422,14 +465,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						.collect(Collectors.toList());
 
 			} else {
-				return callableStream.flatMap(c -> {
+				validationResultIterators = callableStream.map(c -> {
 					try {
-						return c.call().stream();
+						return c.call();
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
 				}).collect(Collectors.toList());
+
 			}
+
+			return new LazyValidationReport(validationResultIterators, sail.getValidationResultsLimitTotal());
 
 		} finally {
 			if (sail.isPerformanceLogging()) {
@@ -437,6 +483,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						System.currentTimeMillis() - beforeValidation);
 			}
 		}
+	}
+
+	private boolean isParallelValidation() {
+		// bulk validation should use little memory so should not run validation in parallel
+		return sail.isParallelValidation() && !isBulkValidation();
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
@@ -560,8 +611,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				before = System.currentTimeMillis();
 			}
 
-			boolean useSerializableValidation = sail.isSerializableValidation()
-					&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
+			boolean useSerializableValidation = sail.isSerializableValidation() &&
+					currentIsolationLevel == IsolationLevels.SNAPSHOT &&
+					!isBulkValidation() &&
+					isValidationEnabled();
 
 			if (useSerializableValidation) {
 				if (!(writeLock != null && writeLock.isActive())) {
@@ -569,7 +622,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			} else {
 				if (!(writeLock != null && writeLock.isActive())) {
-					readLock = sail.acquireReadlock();
+					readLock = sail.acquireReadLock();
 				}
 			}
 
@@ -582,14 +635,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			stats.setEmpty(isEmpty());
 
-			if (addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty() && !shapesModifiedInCurrentTransaction) {
+			if (connectionListenerActive && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()
+					&& !shapesModifiedInCurrentTransaction) {
 				if (!(stats.isBaseSailEmpty() && !stats.isEmpty())) {
 					logger.debug("Nothing has changed, nothing to validate.");
 					return;
 				}
 			}
 
-			if (shapesModifiedInCurrentTransaction && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+			if (shapesModifiedInCurrentTransaction && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()
+					&& !isBulkValidation()) {
 				// we can optimize which shapes to revalidate since no data has changed.
 				assert nodeShapesBeforeRefresh != nodeShapesAfterRefresh;
 
@@ -603,7 +658,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			prepareValidation();
 
-			List<Tuple> invalidTuples = null;
+			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
 				synchronized (sail) {
 
@@ -622,10 +677,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 //					readLock = sail.convertToReadLock(writeLock);
 //					writeLock = null;
 //				}
-				invalidTuples = validate(nodeShapesAfterRefresh, shapesModifiedInCurrentTransaction);
+
+				invalidTuples = validate(nodeShapesAfterRefresh,
+						shapesModifiedInCurrentTransaction || isBulkValidation());
 			}
 
-			boolean valid = invalidTuples.isEmpty();
+			boolean valid = invalidTuples.conforms();
 
 			if (sail.isPerformanceLogging()) {
 				logger.info("prepare() including validation excluding locking and super.prepare() took {} ms",
@@ -635,10 +692,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (!valid) {
 				throw new ShaclSailValidationException(invalidTuples);
 			}
+
 		} finally {
 
 			if (readLock != null) {
-				readLock = sail.releaseReadlock(readLock);
+				readLock = sail.releaseReadLock(readLock);
 			}
 			assert readLock == null;
 
@@ -650,14 +708,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	}
 
-	private List<Tuple> serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
-		List<Tuple> invalidTuples;
+	private boolean isBulkValidation() {
+		return transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+	}
+
+	private ValidationReport serializableValidation(List<NodeShape> nodeShapesAfterRefresh) {
 		try {
 			try {
-				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(sail,
+				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
 						new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner),
 						previousStateSerializableConnection, addedStatements, removedStatements, stats,
-						() -> getRdfsSubClassOfReasoner())) {
+						this::getRdfsSubClassOfReasoner, transactionSettings)) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
 					// actually force a transaction to start
@@ -682,8 +743,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 					serializableConnection.flush();
 
-					invalidTuples = performValidation(nodeShapesAfterRefresh,
-							shapesModifiedInCurrentTransaction, connectionsGroup);
+					return performValidation(nodeShapesAfterRefresh,
+							shapesModifiedInCurrentTransaction || isBulkValidation(), connectionsGroup);
 
 				} finally {
 					serializableConnection.rollback();
@@ -695,7 +756,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			rdfsSubClassOfReasoner = null;
 
 		}
-		return invalidTuples;
 	}
 
 	private void loadCachedNodeShapes() {
@@ -766,9 +826,30 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		loadCachedNodeShapes();
 		prepareValidation();
-		List<Tuple> validate = validate(this.nodeShapes, true);
+		ValidationReport validate = validate(this.nodeShapes, true);
 
 		return new ShaclSailValidationException(validate).getValidationReport();
+	}
+
+	public static class Settings {
+
+		private ShaclSail.TransactionSettings.ValidationApproach validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Auto;
+		private boolean cacheSelectedNodes = false;
+
+		public Settings(boolean cacheSelectNodes, boolean validationEnabled) {
+			this.cacheSelectedNodes = cacheSelectNodes;
+			if (!validationEnabled)
+				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+		}
+
+		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {
+			return validationApproach;
+		}
+
+		public boolean isCacheSelectNodes() {
+			return cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+		}
+
 	}
 
 }

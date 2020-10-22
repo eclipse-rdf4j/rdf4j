@@ -7,10 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
@@ -24,11 +30,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
-
 /**
  * @author Håvard Ottestad
  */
@@ -39,15 +40,20 @@ public class NotPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(NotPropertyShape.class);
 
 	NotPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource not) {
+			PathPropertyShape parent, Resource path, Resource not, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
-		List<List<PathPropertyShape>> collect = Factory.getPropertyShapesInner(connection, nodeShape, not, this)
+		List<List<PathPropertyShape>> collect = Factory
+				.getPropertyShapesInner(connection, nodeShape, not, this, shaclSail)
 				.stream()
+				.filter(s -> !s.deactivated)
 				.map(Collections::singletonList)
 				.collect(Collectors.toList());
 
 		orPropertyShape = new OrPropertyShape(id, connection, nodeShape, deactivated, this, null, collect);
+		if (orPropertyShape.deactivated) {
+			this.deactivated = true;
+		}
 
 	}
 
@@ -60,16 +66,19 @@ public class NotPropertyShape extends PathPropertyShape {
 		}
 
 		if (this.getPath() != null) {
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					overrideTargetNode, false, !negateThisPlan);
 
 			PlanNode parent = plan.getParent();
-
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(parent, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(parent, this);
 
 		} else {
 
-			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, printPlans,
+			EnrichWithShape plan = (EnrichWithShape) orPropertyShape.getPlan(connectionsGroup, false,
 					() -> getTargetsPlan(connectionsGroup, overrideTargetNode, !negateThisPlan), false, false);
 
 			// parents are the targets that are checked
@@ -86,7 +95,10 @@ public class NotPropertyShape extends PathPropertyShape {
 
 			// here we get all targets from targetsPlan that are not in parent
 			parent = new InnerJoin(targetsPlan, parent).getDiscardedLeft(BufferedPlanNode.class);
-
+			if (printPlans) {
+				String planAsGraphvizDot = getPlanAsGraphvizDot(parent, connectionsGroup);
+				logger.info(planAsGraphvizDot);
+			}
 			return new EnrichWithShape(parent, this);
 		}
 

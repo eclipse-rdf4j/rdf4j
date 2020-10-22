@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * An implementation of the StackableSail interface that wraps another Sail object and forwards any relevant calls to
  * the wrapped Sail.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NotifyingSailWrapper extends SailWrapper implements NotifyingSail {

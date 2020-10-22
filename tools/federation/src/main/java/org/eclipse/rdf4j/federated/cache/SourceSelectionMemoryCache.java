@@ -22,7 +22,7 @@ import com.google.common.collect.Maps;
 /**
  * An implementation of {@link SourceSelectionCache} which uses an in memory Guava {@link Cache} as data structure to
  * maintain information.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -37,7 +37,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param cacheSpec a Guava compatible {@link CacheBuilderSpec}, if <code>null</code> the
 	 *                  {@link #DEFAULT_CACHE_SPEC} is used
 	 */
@@ -62,8 +62,9 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		// check if we can infer something from other cached entries
 		// if endpoint does not have data for {?s foaf:name ?o}, it does also not have data for {?s foaf:name "Alan" }
 		if (subQuery.object() != null) {
-			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null), endpoint)
-					.equals(StatementSourceAssurance.NONE)) {
+			if (getAssurance(new SubQuery(subQuery.subject(), subQuery.predicate(), null, subQuery.contexts()),
+					endpoint)
+							.equals(StatementSourceAssurance.NONE)) {
 				return StatementSourceAssurance.NONE;
 			}
 		}
@@ -104,7 +105,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 
 	/**
 	 * Entry representing the state for a sub query
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -119,7 +120,7 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 		/**
 		 * The {@link StatementSourceAssurance} for the given {@link Endpoint},
 		 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS if unknown.
-		 * 
+		 *
 		 * @param e
 		 * @return
 		 */

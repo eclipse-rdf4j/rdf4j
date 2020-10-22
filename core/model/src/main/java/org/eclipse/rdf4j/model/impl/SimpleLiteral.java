@@ -16,18 +16,19 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
- * 
+ *
  * @author Arjohn Kampman
  * @author David Huynh
  */
-public class SimpleLiteral implements Literal {
+public class SimpleLiteral extends AbstractLiteral {
 
 	/*-----------*
 	 * Constants *
@@ -54,6 +55,12 @@ public class SimpleLiteral implements Literal {
 	 */
 	private IRI datatype;
 
+	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
+	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
+	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
+	// only used to stop this field from be serialised.
+	transient private Optional<XSD.Datatype> xsdDatatype = null;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -63,17 +70,17 @@ public class SimpleLiteral implements Literal {
 
 	/**
 	 * Creates a new plain literal with the supplied label.
-	 * 
+	 *
 	 * @param label The label for the literal, must not be <tt>null</tt>.
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(XMLSchema.STRING);
+		setDatatype(XSD.STRING);
 	}
 
 	/**
 	 * Creates a new plain literal with the supplied label and language tag.
-	 * 
+	 *
 	 * @param label    The label for the literal, must not be <tt>null</tt>.
 	 * @param language The language tag for the literal, must not be <tt>null</tt> and not be empty.
 	 */
@@ -84,7 +91,7 @@ public class SimpleLiteral implements Literal {
 
 	/**
 	 * Creates a new datatyped literal with the supplied label and datatype.
-	 * 
+	 *
 	 * @param label    The label for the literal, must not be <tt>null</tt>.
 	 * @param datatype The datatype for the literal.
 	 */
@@ -93,9 +100,22 @@ public class SimpleLiteral implements Literal {
 		if (RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			datatype = XMLSchema.STRING;
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
 		}
-		setDatatype(datatype);
+	}
+
+	protected SimpleLiteral(String label, XSD.Datatype datatype) {
+		setLabel(label);
+		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		} else if (datatype == null) {
+			setDatatype(XSD.Datatype.STRING);
+		} else {
+			setDatatype(datatype);
+		}
+
 	}
 
 	/*---------*
@@ -130,9 +150,22 @@ public class SimpleLiteral implements Literal {
 		this.datatype = datatype;
 	}
 
+	protected void setDatatype(XSD.Datatype datatype) {
+		this.datatype = datatype.getIri();
+		this.xsdDatatype = Optional.of(datatype);
+	}
+
 	@Override
 	public IRI getDatatype() {
 		return datatype;
+	}
+
+	public Optional<XSD.Datatype> getXsdDatatype() {
+		// we are caching the optional value, so null means that we haven't cached anything yet
+		if (xsdDatatype == null) {
+			xsdDatatype = XSD.Datatype.from(datatype);
+		}
+		return xsdDatatype;
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -159,11 +192,9 @@ public class SimpleLiteral implements Literal {
 				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
 			}
 			// If only one has a language, then return false
-			else if (getLanguage().isPresent() || other.getLanguage().isPresent()) {
-				return false;
+			else {
+				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
 			}
-
-			return true;
 		}
 
 		return false;
@@ -188,7 +219,7 @@ public class SimpleLiteral implements Literal {
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
-		} else if (XMLSchema.STRING.equals(datatype) || datatype == null) {
+		} else if (XSD.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);
 			sb.append('"').append(label).append('"');
 			return sb.toString();
@@ -207,51 +238,52 @@ public class SimpleLiteral implements Literal {
 
 	@Override
 	public boolean booleanValue() {
-		return XMLDatatypeUtil.parseBoolean(getLabel());
+		return XMLDatatypeUtil.parseBoolean(label);
 	}
 
 	@Override
 	public byte byteValue() {
-		return XMLDatatypeUtil.parseByte(getLabel());
+		return XMLDatatypeUtil.parseByte(label);
 	}
 
 	@Override
 	public short shortValue() {
-		return XMLDatatypeUtil.parseShort(getLabel());
+		return XMLDatatypeUtil.parseShort(label);
 	}
 
 	@Override
 	public int intValue() {
-		return XMLDatatypeUtil.parseInt(getLabel());
+		return XMLDatatypeUtil.parseInt(label);
 	}
 
 	@Override
 	public long longValue() {
-		return XMLDatatypeUtil.parseLong(getLabel());
+		return XMLDatatypeUtil.parseLong(label);
 	}
 
 	@Override
 	public float floatValue() {
-		return XMLDatatypeUtil.parseFloat(getLabel());
+		return XMLDatatypeUtil.parseFloat(label);
 	}
 
 	@Override
 	public double doubleValue() {
-		return XMLDatatypeUtil.parseDouble(getLabel());
+		return XMLDatatypeUtil.parseDouble(label);
 	}
 
 	@Override
 	public BigInteger integerValue() {
-		return XMLDatatypeUtil.parseInteger(getLabel());
+		return XMLDatatypeUtil.parseInteger(label);
 	}
 
 	@Override
 	public BigDecimal decimalValue() {
-		return XMLDatatypeUtil.parseDecimal(getLabel());
+		return XMLDatatypeUtil.parseDecimal(label);
 	}
 
 	@Override
 	public XMLGregorianCalendar calendarValue() {
-		return XMLDatatypeUtil.parseCalendar(getLabel());
+		return XMLDatatypeUtil.parseCalendar(label);
 	}
+
 }

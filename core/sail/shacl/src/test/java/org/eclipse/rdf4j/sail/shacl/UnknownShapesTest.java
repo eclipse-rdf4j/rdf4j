@@ -7,14 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.AppenderBase;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.junit.Test;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,12 +17,20 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.junit.Test;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 
 public class UnknownShapesTest {
 
 	@Test
-	public void testPropertyShapes() throws IOException {
+	public void testPropertyShapes() throws IOException, InterruptedException {
 		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
 				.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
 
@@ -44,6 +45,8 @@ public class UnknownShapesTest {
 			connection.commit();
 		}
 
+		Thread.sleep(100);
+
 		Set<String> relevantLog = newAppender.logged.stream()
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
 				.collect(Collectors.toSet());
@@ -57,7 +60,7 @@ public class UnknownShapesTest {
 	}
 
 	@Test
-	public void testComplexPath() throws IOException {
+	public void testComplexPath() throws IOException, InterruptedException {
 		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
 				.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
 
@@ -72,6 +75,8 @@ public class UnknownShapesTest {
 			connection.commit();
 		}
 
+		Thread.sleep(100);
+
 		Set<String> relevantLog = newAppender.logged.stream()
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
 				.map(s -> s.replaceAll("\r\n|\r|\n", " "))
@@ -79,9 +84,9 @@ public class UnknownShapesTest {
 				.collect(Collectors.toSet());
 
 		Set<String> expected = new HashSet<>(Arrays.asList(
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#PersonPropertyShape> sh:path [       sh:inversePath <http://example.com/ns#inverseThis>     ] .",
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape2> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#path> sh:inversePath <http://example.com/ns#inverseThis> .  <http://example.com/ns#PersonPropertyShape2> sh:path <http://example.com/ns#path> .",
-				"Unsupported SHACL feature with complex path. Only single predicate paths are supported. <http://example.com/ns#PersonPropertyShape3> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathList> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first>     \"one\";   <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .  <http://example.com/ns#PersonPropertyShape3> sh:path <http://example.com/ns#pathList> ."));
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#alternativePath> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#alternativePath> sh:path [       sh:alternativePath <http://example.com/ns#father>     ] .",
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#pathSequence> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathSequence> sh:path (<http://example.com/ns#parent> <http://example.com/ns#firstName>) .",
+				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#inverseOfWithComplex> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#inverseOfWithComplex> sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ] ."));
 
 		assertEquals(expected, relevantLog);
 	}

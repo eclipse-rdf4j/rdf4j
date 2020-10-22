@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -19,25 +26,33 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 /**
  * @author Håvard Ottestad
  */
 public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 
-	private final Set<String> languageIn;
 	private static final Logger logger = LoggerFactory.getLogger(LanguageInPropertyShape.class);
+
+	private final Set<String> languageIn;
+	private final List<String> languageRanges;
+	private final Set<String> lowerCaseLanguageIn;
 
 	LanguageInPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
 			PathPropertyShape parent, Resource path,
 			Resource languageIn) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 
-		this.languageIn = toList(connection, languageIn).stream().map(Value::stringValue).collect(Collectors.toSet());
+		this.languageIn = toList(connection, languageIn)
+				.stream()
+				.map(Value::stringValue)
+				.collect(Collectors.toSet());
+
+		this.languageRanges = new ArrayList<>(this.languageIn);
+
+		this.lowerCaseLanguageIn = this.languageIn.stream()
+				.filter(l -> !l.contains("*"))
+				.map(String::toLowerCase)
+				.collect(Collectors.toSet());
 	}
 
 	@Override
@@ -51,7 +66,8 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 		assert !negateSubPlans : "There are no subplans!";
 
 		PlanNode invalidValues = getGenericSingleObjectPlan(connectionsGroup, nodeShape,
-				(parent) -> new LanguageInFilter(parent, languageIn), this, overrideTargetNode, negateThisPlan);
+				(parent) -> new LanguageInFilter(parent, lowerCaseLanguageIn, languageRanges), this,
+				overrideTargetNode, negateThisPlan);
 
 		if (printPlans) {
 			String planAsGraphvizDot = getPlanAsGraphvizDot(invalidValues, connectionsGroup);
@@ -79,21 +95,21 @@ public class LanguageInPropertyShape extends AbstractSimplePropertyShape {
 			return false;
 		}
 		LanguageInPropertyShape that = (LanguageInPropertyShape) o;
-		return languageIn.equals(that.languageIn);
+		return lowerCaseLanguageIn.equals(that.lowerCaseLanguageIn);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), languageIn);
+		return Objects.hash(super.hashCode(), lowerCaseLanguageIn);
 	}
 
 	@Override
 	public String toString() {
 		return "LanguageInPropertyShape{" +
 				"languageIn=" + Arrays.toString(languageIn.toArray()) +
+				", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) +
 				", path=" + getPath() +
 				", id=" + id +
-
 				'}';
 	}
 }

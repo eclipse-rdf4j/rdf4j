@@ -8,6 +8,16 @@
 
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
@@ -19,20 +29,17 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.util.iterators.EmptyIterator;
 import org.eclipse.rdf4j.util.iterators.SingletonIterator;
 
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-
 /**
  * A LinkedHashModel or a TreeModel achieves fast data access at the cost of higher indexing time. The DynamicModel
- * postpones this cost until such access is actually needed. It stores all data in a LinkedHashSet and supports adding,
+ * postpones this cost until such access is actually needed. It stores all data in a LinkedHashMap and supports adding,
  * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
  * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
  * predicate).
+ *
+ * DynamicModel is thread safe to the extent that the underlying LinkedHashMap or Model is. The upgrade path is
+ * protected by the actual upgrade method being synchronized. The LinkedHashMap storage is not removed once upgraded, so
+ * concurrent reads that have started reading from the LinkedHashMap can continue to read even during an upgrade. We do
+ * make the LinkedHashMap unmodifiable to reduce the chance of there being a bug.
  *
  * @author Håvard Mikkelsen Ottestad
  */
@@ -42,7 +49,7 @@ public class DynamicModel implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private LinkedHashMap<Statement, Statement> statements = new LinkedHashMap<>();
+	private Map<Statement, Statement> statements = new LinkedHashMap<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
 	volatile private Model model = null;
@@ -304,8 +311,7 @@ public class DynamicModel implements Model {
 					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
 			if (foundStatement == null) {
-				return () -> new EmptyIterator<>();
-
+				return EmptyIterator::new;
 			}
 			return () -> new SingletonIterator<>(foundStatement);
 		} else if (model == null && subject == null && predicate == null && object == null && contexts != null
@@ -319,14 +325,18 @@ public class DynamicModel implements Model {
 
 	private void upgrade() {
 		if (model == null) {
-			synchronized (this) {
-				if (model == null) {
-					Model tempModel = modelFactory.createEmptyModel();
-					tempModel.addAll(statements.values());
-					statements = null;
-					model = tempModel;
-				}
-			}
+			synchronizedUpgrade();
+		}
+	}
+
+	synchronized private void synchronizedUpgrade() {
+		if (model == null) {
+			// make statements unmodifiable first, to increase chance of an early failure if the user is doing
+			// concurrent write with reads
+			statements = Collections.unmodifiableMap(statements);
+			Model tempModel = modelFactory.createEmptyModel();
+			tempModel.addAll(statements.values());
+			model = tempModel;
 		}
 	}
 

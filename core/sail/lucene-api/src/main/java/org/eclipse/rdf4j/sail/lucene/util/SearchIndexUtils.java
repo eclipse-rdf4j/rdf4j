@@ -7,15 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.util;
 
-import java.util.Properties;
-import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.DEFAULT_INDEX_CLASS;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEX_CLASS_KEY;
+
+import java.util.Properties;
+
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 
 /**
  * This is utility class with tool useful for manipulation on the {@link SearchIndex}.
- * 
+ *
  * @author jacek grzebyta
  * @version 2.3
  */

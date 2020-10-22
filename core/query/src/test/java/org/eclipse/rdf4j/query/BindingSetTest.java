@@ -13,7 +13,7 @@ import org.junit.Test;
 
 /**
  * Unit tests for BindingSet implementations.
- * 
+ *
  * @author jeen
  */
 public abstract class BindingSetTest<T extends BindingSet> {
@@ -37,7 +37,7 @@ public abstract class BindingSetTest<T extends BindingSet> {
 
 	/**
 	 * Creates two equal, but differently ordered, BindingSet objects.
-	 * 
+	 *
 	 * @return an array of two equal but differently ordered BindingSets.
 	 */
 	protected abstract T[] createTwoEqualReorderedBindingSets();

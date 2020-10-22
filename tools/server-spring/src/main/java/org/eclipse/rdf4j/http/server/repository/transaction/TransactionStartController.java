@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static javax.servlet.http.HttpServletResponse.SC_CREATED;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +21,8 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -38,15 +41,15 @@ import org.springframework.web.servlet.mvc.AbstractController;
 
 /**
  * Handles requests for transaction creation on a repository.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TransactionStartController extends AbstractController {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionStartController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_POST });
+		setSupportedMethods(METHOD_POST);
 	}
 
 	@Override
@@ -74,26 +77,55 @@ public class TransactionStartController extends AbstractController {
 		ProtocolUtil.logRequestParameters(request);
 		Map<String, Object> model = new HashMap<>();
 
-		IsolationLevel isolationLevel = null;
+		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
+
+		final IsolationLevel[] isolationLevel = { null };
+
+		// process legacy isolation level param for backward compatibility with older clients
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
 		if (isolationLevelString != null) {
 			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
 
-			// FIXME this needs to be adapted to accommodate custom isolation levels
-			// from third party stores.
 			for (IsolationLevel standardLevel : IsolationLevels.values()) {
 				if (standardLevel.getURI().equals(level)) {
-					isolationLevel = standardLevel;
+					isolationLevel[0] = standardLevel;
 					break;
 				}
 			}
 		}
 
+		request.getParameterMap().forEach((k, v) -> {
+			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
+				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, "");
+
+				// FIXME we should make the isolation level an SPI impl as well so that it will work with non-standard
+				// isolation levels
+				if (settingsName.equals(IsolationLevels.NONE.getName())) {
+					isolationLevel[0] = IsolationLevels.valueOf(v[0]);
+					transactionSettings.add(isolationLevel[0]);
+				} else {
+					TransactionSettingRegistry.getInstance()
+							.get(settingsName)
+							.flatMap(factory -> factory.getTransactionSetting(v[0]))
+							.ifPresent(transactionSettings::add);
+				}
+			}
+		});
+
 		Transaction txn = null;
 		boolean allGood = false;
 		try {
 			txn = new Transaction(repository);
-			txn.begin(isolationLevel);
+
+			if (transactionSettings.isEmpty()) {
+				if (isolationLevel[0] == null) {
+					txn.begin();
+				} else {
+					txn.begin(isolationLevel[0]);
+				}
+			} else {
+				txn.begin(transactionSettings.toArray(new TransactionSetting[0]));
+			}
 
 			UUID txnId = txn.getID();
 

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -89,7 +88,7 @@ public class JSONLDWriterTest extends RDFWriterTest {
 	public void testRoundTripNamespaces() throws Exception {
 		IRI uri1 = vf.createIRI(exNs, "uri1");
 		IRI uri2 = vf.createIRI(exNs, "uri2");
-		Literal plainLit = vf.createLiteral("plain", XMLSchema.STRING);
+		Literal plainLit = vf.createLiteral("plain", XSD.STRING);
 
 		Statement st1 = vf.createStatement(uri1, uri2, plainLit);
 

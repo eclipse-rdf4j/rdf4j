@@ -14,9 +14,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.base.AbstractRepository;
 
 /**
  * <p>
@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.repository.RepositoryResolverClient;
  * from having to provide implementation details in its configuration data. Instead, it only has to provide an
  * unambiguous local identifier to the proxy.
  * </p>
- * 
+ *
  * @author Dale Visser
  */
 public class ProxyRepository extends AbstractRepository implements RepositoryResolverClient {
@@ -53,7 +53,7 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 
 	/**
 	 * Creates a repository instance that proxies to a repository of the give ID.
-	 * 
+	 *
 	 * @param proxiedIdentity id of the proxied repository
 	 */
 	public ProxyRepository(String proxiedIdentity) {
@@ -63,7 +63,7 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 
 	/**
 	 * Creates a repository instance that proxies to the given repository.
-	 * 
+	 *
 	 * @param resolver        manager that the proxied repository is associated with
 	 * @param proxiedIdentity id of the proxied repository
 	 */

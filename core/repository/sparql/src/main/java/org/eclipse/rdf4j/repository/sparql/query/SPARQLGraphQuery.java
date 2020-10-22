@@ -16,13 +16,14 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 /**
  * Parses RDF results in the background.
- * 
+ *
  * @author James Leigh
  * @author Andreas Schwarte
  */
@@ -59,5 +60,10 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 
 	private String getQueryString() {
 		return QueryStringUtil.getGraphQueryString(queryString, getBindings());
+	}
+
+	@Override
+	public Explanation explain(Explanation.Level level) {
+		throw new UnsupportedOperationException();
 	}
 }

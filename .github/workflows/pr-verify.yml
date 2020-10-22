@@ -4,30 +4,29 @@ on: pull_request
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [1.8, 11]
-
+        jdk: [1.8, 15]
     steps:
     - uses: actions/checkout@v1
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
         java-version: ${{ matrix.jdk }}  
-    - uses: actions/cache@v1
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-maven-
+          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Verify formatting
-      run: mvn -B formatter:validate
+      run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
-      run: mvn -B clean install -DskipTests  
+      run: mvn -B clean install -Pquick,\!formatting
     - name: Run tests
-      run: mvn -B verify -Pcompliance --file pom.xml
+      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
     - name: Print test failures
       if: failure()
       run: ./printTestResults.sh

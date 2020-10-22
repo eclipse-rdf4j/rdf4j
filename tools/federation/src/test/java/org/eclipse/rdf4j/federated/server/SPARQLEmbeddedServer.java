@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 /**
  * An embedded http server for SPARQL query testing. Initializes a memory store repository for each specified
  * reposiotoryId.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
@@ -150,7 +150,7 @@ public class SPARQLEmbeddedServer extends EmbeddedServer implements Server {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param i the index of the repository, starting with 1
 	 * @return the repository
 	 */

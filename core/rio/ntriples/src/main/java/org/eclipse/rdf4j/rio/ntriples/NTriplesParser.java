@@ -18,7 +18,6 @@ import java.util.Collection;
 import java.util.HashSet;
 
 import org.apache.commons.io.input.BOMInputStream;
-
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -33,14 +32,14 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 /**
  * RDF parser for N-Triples files. A specification of NTriples can be found in
  * <a href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the RDF Test Cases document. This parser
  * is not thread-safe, therefore its public methods are synchronized.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class NTriplesParser extends AbstractRDFParser {
@@ -65,7 +64,7 @@ public class NTriplesParser extends AbstractRDFParser {
 
 	/**
 	 * Creates a new NTriplesParser that will use the supplied <tt>ValueFactory</tt> to create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	public NTriplesParser(ValueFactory valueFactory) {
@@ -83,7 +82,7 @@ public class NTriplesParser extends AbstractRDFParser {
 
 	/**
 	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined in the RDFParser interface.
-	 * 
+	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>. The InputStream is
 	 *                supposed to contain 7-bit US-ASCII characters, as per the N-Triples specification.
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
@@ -110,7 +109,7 @@ public class NTriplesParser extends AbstractRDFParser {
 
 	/**
 	 * Implementation of the <tt>parse(Reader, String)</tt> method defined in the RDFParser interface.
-	 * 
+	 *
 	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI The URI associated with the data in the Reader, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
@@ -146,8 +145,8 @@ public class NTriplesParser extends AbstractRDFParser {
 
 			while (c != -1) {
 				if (c == '#') {
-					// Comment, ignore
-					c = skipLine(c);
+					// Comment
+					c = parseComment(c);
 				} else if (c == '\r' || c == '\n') {
 					// Empty line, ignore
 					c = skipLine(c);
@@ -212,9 +211,17 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Reads characters from reader until the first EOL has been read. The first character after the EOL is returned. In
 	 * case the end of the character stream has been reached, -1 is returned.
 	 */
-	protected int skipLine(int c) throws IOException {
+	protected int skipLine(int c, StringBuilder sb) throws IOException {
 		while (c != -1 && c != '\r' && c != '\n') {
 			c = readCodePoint();
+			// make sure c is not EOF
+			if (sb != null && c != -1) {
+				sb.append(Character.toChars(c));
+			}
+		}
+		// delete last appended char as it is the line break, unless `c` is EOF and then we did not append it
+		if (sb != null && c != -1) {
+			sb.deleteCharAt(sb.length() - 1);
 		}
 
 		// c is equal to -1, \r or \n. In case of a \r, we should
@@ -239,6 +246,19 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 
 		return c;
+	}
+
+	protected int skipLine(int c) throws IOException {
+		return skipLine(c, null);
+	}
+
+	private int parseComment(int c) throws IOException {
+		StringBuilder sb = new StringBuilder(100);
+		int res = skipLine(c, sb);
+		if (rdfHandler != null) {
+			rdfHandler.handleComment(sb.toString());
+		}
+		return res;
 	}
 
 	private int parseTriple(int c) throws IOException, RDFParseException, RDFHandlerException {
@@ -539,7 +559,7 @@ public class NTriplesParser extends AbstractRDFParser {
 
 	/**
 	 * Reads the next Unicode code point.
-	 * 
+	 *
 	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
 	 * @throws IOException
 	 */
@@ -619,7 +639,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Return a buffer of zero length and non-zero capacity. The same buffer is reused for each thing which is parsed.
 	 * This reduces the heap churn substantially. However, you have to watch out for side-effects and convert the buffer
 	 * to a {@link String} before the buffer is reused.
-	 * 
+	 *
 	 * @return a buffer of zero length and non-zero capacity.
 	 */
 	private StringBuilder getBuffer() {
@@ -633,7 +653,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Return a buffer for the use of parsing literal language tags. The buffer is of zero length and non-zero capacity.
 	 * The same buffer is reused for each tag which is parsed. This reduces the heap churn substantially. However, you
 	 * have to watch out for side-effects and convert the buffer to a {@link String} before the buffer is reused.
-	 * 
+	 *
 	 * @return a buffer of zero length and non-zero capacity, for the use of parsing literal language tags.
 	 */
 	private StringBuilder getLanguageTagBuffer() {
@@ -647,7 +667,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Return a buffer for the use of parsing literal datatype URIs. The buffer is of zero length and non-zero capacity.
 	 * The same buffer is reused for each datatype which is parsed. This reduces the heap churn substantially. However,
 	 * you have to watch out for side-effects and convert the buffer to a {@link String} before the buffer is reused.
-	 * 
+	 *
 	 * @return a buffer of zero length and non-zero capacity, for the user of parsing literal datatype URIs.
 	 */
 	private StringBuilder getDatatypeUriBuffer() {

@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -17,7 +21,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
@@ -35,7 +39,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
  * Custom (non-manifest) tests for SPARQL/JSON parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class SPARQLJSONParserCustomTest {
@@ -104,13 +108,13 @@ public class SPARQLJSONParserCustomTest {
 	private final IRI testBindingValueIRI = SimpleValueFactory.getInstance().createIRI("http://example.com/Obj1");
 
 	private final Literal testBindingValueNotANumber = SimpleValueFactory.getInstance()
-			.createLiteral("NaN", XMLSchema.DOUBLE);
+			.createLiteral("NaN", XSD.DOUBLE);
 
 	private final Literal testBindingValueLiteralNumber = SimpleValueFactory.getInstance()
-			.createLiteral("42", XMLSchema.INTEGER);
+			.createLiteral("42", XSD.INTEGER);
 
 	private final Literal testBindingValueLiteralUnquotedControlChar = SimpleValueFactory.getInstance()
-			.createLiteral("42\u0009", XMLSchema.STRING);
+			.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
 	public void setUp() throws Exception {

@@ -7,15 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.LexicalValueComparator;
-import org.eclipse.rdf4j.model.util.PatternIterator;
-
 import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.ArrayList;
@@ -30,6 +21,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.LexicalValueComparator;
+import org.eclipse.rdf4j.model.util.PatternIterator;
 
 /**
  * A Red-Black tree based {@link Model} implementation. The model is sorted according to the lexical ordering of terms.

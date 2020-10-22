@@ -23,7 +23,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 
 	/**
 	 * Creates a new ConvertingIterator that operates on the supplied source type itertor.
-	 * 
+	 *
 	 * @param iter The source type itertor for this <tt>ConvertingIterator</tt>, must not be <tt>null</tt>.
 	 */
 	protected ConvertingIterator(Iterator<? extends S> iter) {
@@ -38,7 +38,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 
 	/**
 	 * Checks whether the source type itertor contains more elements.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the source type itertor contains more elements, <tt>false</tt> otherwise.
 	 */
 	@Override
@@ -48,9 +48,9 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 
 	/**
 	 * Returns the next element from the source type itertor.
-	 * 
-	 * @throws                       java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException If the itertor has been closed.
+	 *
+	 * @throws java.util.NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException            If the itertor has been closed.
 	 */
 	@Override
 	public T next() {
@@ -59,7 +59,7 @@ public abstract class ConvertingIterator<S, T> implements Iterator<T> {
 
 	/**
 	 * Calls <tt>remove()</tt> on the underlying itertor.
-	 * 
+	 *
 	 * @throws UnsupportedOperationException If the wrapped itertor does not support the <tt>remove</tt> operation.
 	 * @throws IllegalStateException         If the itertor has been closed, or if {@link #next} has not yet been
 	 *                                       called, or {@link #remove} has already been called after the last call to

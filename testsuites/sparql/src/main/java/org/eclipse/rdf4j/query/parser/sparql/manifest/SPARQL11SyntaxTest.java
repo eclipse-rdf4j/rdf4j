@@ -23,11 +23,6 @@ import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestResult;
-import junit.framework.TestSuite;
-
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -50,11 +45,18 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import junit.framework.Test;
+import junit.framework.TestCase;
+import junit.framework.TestResult;
+import junit.framework.TestSuite;
+
 /**
  * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style manifest.
- * 
+ *
  * @author Jeen Broekstra
+ * @deprecated since 3.3.0 Use {@link SPARQL11SyntaxComplianceTest} instead.
  */
+@Deprecated
 public abstract class SPARQL11SyntaxTest extends TestCase {
 
 	/*-----------*

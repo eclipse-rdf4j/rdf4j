@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.query.resultio;
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -19,18 +21,16 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
-
 /**
  * Abstract test for QueryResultIO.
- * 
+ *
  * @author jeen
  * @author Peter Ansell
  */
@@ -206,7 +206,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 		MapBindingSet bs1 = new MapBindingSet();
 		// Note that the CSV format seems to ignore the datatype and assume it's xsd:integer
 		// so no other datatype works with it properly.
-		bs1.addBinding("a", vf.createLiteral("1984", XMLSchema.INTEGER));
+		bs1.addBinding("a", vf.createLiteral("1984", XSD.INTEGER));
 		bs1.addBinding("b", vf.createIRI("urn:test"));
 		bs1.addBinding("c", vf.createBNode("bnode1"));
 		bindings.add(bs1);
@@ -221,7 +221,6 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
 			QueryResultIO.writeTuple(new IteratingTupleQueryResult(bindingNames, bindings), getTupleFormat(), bos);
-			System.out.println(bos.toString());
 			try (ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray())) {
 				TupleQueryResult parsedBindings = QueryResultIO.parseTuple(bis, getTupleFormat());
 				assertEquals(bindingNames, parsedBindings.getBindingNames());

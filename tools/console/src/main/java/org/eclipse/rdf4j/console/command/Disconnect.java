@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
  * Disconnect command
- * 
+ *
  * @author Dale Visser
  */
 public class Disconnect extends ConsoleCommand {
@@ -38,7 +38,7 @@ public class Disconnect extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param close
@@ -50,7 +50,7 @@ public class Disconnect extends ConsoleCommand {
 
 	/**
 	 * Execute the command
-	 * 
+	 *
 	 * @param verbose
 	 */
 	public void execute(boolean verbose) {

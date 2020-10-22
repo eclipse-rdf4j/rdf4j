@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.RDF4JException;
  * A RuntimeException indicating that a specific Rio parser/writer configuration setting is not supported. A typical
  * cause of this exception is that a system property is used to specify a default setting, for a setting that does not
  * support this way of default specification.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class RioConfigurationException extends RDF4JException {

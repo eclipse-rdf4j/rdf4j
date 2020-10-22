@@ -7,20 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.query;
 
+import java.util.regex.Matcher;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
-
-import java.util.regex.Matcher;
 
 /**
  * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
  * {@link SPARQLBooleanQuery}.
- * 
+ *
  * @author Andreas Schwarte
  * @see SPARQLTupleQuery
  * @see SPARQLGraphQuery
@@ -32,7 +32,7 @@ public class QueryStringUtil {
 
 	/**
 	 * Retrieve a modified queryString into which all bindings of the given argument are replaced.
-	 * 
+	 *
 	 * @param queryString
 	 * @param bindings
 	 * @return the modified queryString
@@ -144,9 +144,9 @@ public class QueryStringUtil {
 	 * @return the provided StringBuilder
 	 */
 	public static StringBuilder appendValueAsString(StringBuilder sb, Value value) {
-		if (value == null)
+		if (value == null) {
 			return sb.append("UNDEF"); // see grammar for BINDINGs def
-		else if (value instanceof IRI) {
+		} else if (value instanceof IRI) {
 			return appendValue(sb, (IRI) value);
 		} else if (value instanceof Literal) {
 			return appendValue(sb, (Literal) value);
@@ -168,7 +168,7 @@ public class QueryStringUtil {
 		if (Literals.isLanguageLiteral(lit)) {
 			sb.append('@');
 			sb.append(lit.getLanguage().get());
-		} else if (!lit.getDatatype().equals(XMLSchema.STRING)) {
+		} else if (!lit.getDatatype().equals(XSD.STRING)) {
 			// Don't append type if it's xsd:string, this keeps it compatible with RDF 1.0
 			sb.append("^^<");
 			sb.append(lit.getDatatype().stringValue());

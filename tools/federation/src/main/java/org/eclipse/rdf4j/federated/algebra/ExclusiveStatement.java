@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Represents a StatementPattern that can only produce results at a single endpoint, the owner.
- * 
+ *
  * @author Andreas Schwarte
  */
 public class ExclusiveStatement extends FedXStatementPattern implements ExclusiveTupleExpr {
@@ -62,16 +62,17 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 			 */
 
 			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
-			if (t.usePreparedQuery()) {
+			if (t.usePreparedQuery(this, queryInfo)) {
 
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated
 				String preparedQuery;
 				try {
-					preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated);
+					preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
+							queryInfo.getDataset());
 				} catch (IllegalQueryException e1) {
 					// TODO there might be an issue with filters being evaluated => investigate
 					/* all vars are bound, this must be handled as a check query, can occur in joins */
-					if (t.hasStatements(this, bindings, queryInfo)) {
+					if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {
 						res = new SingleBindingSetIteration(bindings);
 						if (boundFilters != null) {
 							// make sure to insert any values from FILTER expressions that are directly

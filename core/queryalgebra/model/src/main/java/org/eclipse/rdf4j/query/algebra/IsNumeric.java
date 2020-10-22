@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * IsNumeric - Boolean operator determining if the supplied expression represents a numeric value.
- * 
+ *
  * @author Jeen
  */
 public class IsNumeric extends UnaryValueOperator {

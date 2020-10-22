@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.server.repository.statements;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
+
 import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
@@ -75,7 +76,7 @@ import org.xml.sax.SAXParseException;
 
 /**
  * Handles requests for manipulating the statements in a repository.
- * 
+ *
  * @author Herko ter Horst
  * @author Arjohn Kampman
  */
@@ -144,8 +145,9 @@ public class StatementsController extends AbstractController {
 			} catch (IOException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Error reading request message body", e);
 			}
-			if (sparqlUpdateString.isEmpty())
+			if (sparqlUpdateString.isEmpty()) {
 				sparqlUpdateString = null;
+			}
 		} else {
 			sparqlUpdateString = request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0];
 		}
@@ -276,14 +278,15 @@ public class StatementsController extends AbstractController {
 	}
 
 	private IRI createURIOrNull(Repository repository, String graphURI) {
-		if ("null".equals(graphURI))
+		if ("null".equals(graphURI)) {
 			return null;
+		}
 		return repository.getValueFactory().createIRI(graphURI);
 	}
 
 	/**
 	 * Get all statements and export them as RDF.
-	 * 
+	 *
 	 * @return a model and view for exporting the statements.
 	 */
 	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,

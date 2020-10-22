@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.Objects;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -23,8 +25,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -43,7 +43,17 @@ public class Select implements PlanNode {
 	public Select(SailConnection connection, String query, String... variables) {
 		assert variables.length > 0;
 		this.connection = connection;
-		this.query = "select " + String.join(" ", variables) + " where { " + query + "} order by ?a";
+		if (query.trim().equals("")) {
+			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
+
+			// empty set
+			query = "" +
+					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
+					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+		}
+
+		this.query = "select " + String.join(" ", variables) + " where { \n" + query.replaceAll("(?m)^", "\t")
+				+ "\n} order by ?a";
 		this.variables = variables;
 	}
 
@@ -51,7 +61,7 @@ public class Select implements PlanNode {
 	public CloseableIteration<Tuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
+			final CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
 			{
 

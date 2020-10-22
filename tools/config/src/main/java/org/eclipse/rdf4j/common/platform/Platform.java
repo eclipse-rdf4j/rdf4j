@@ -23,14 +23,14 @@ public interface Platform {
 
 	/**
 	 * Get a descriptive name for this platform.
-	 * 
+	 *
 	 * @return name of the platform
 	 */
 	public String getName();
 
 	/**
 	 * Returns the operating system dependent application data directory.
-	 * 
+	 *
 	 * @return application directory
 	 */
 	public File getOSApplicationDataDir();
@@ -38,7 +38,7 @@ public interface Platform {
 	/**
 	 * Returns the operating system dependent application data directory. This will be a sub-directory of the directory
 	 * returned by the no-argument version of this method.
-	 * 
+	 *
 	 * @param applicationName name of the application
 	 * @return application directory
 	 */
@@ -46,7 +46,7 @@ public interface Platform {
 
 	/**
 	 * Returns the directory for the current user.
-	 * 
+	 *
 	 * @return the current user home directory
 	 */
 	public File getUserHome();
@@ -54,7 +54,7 @@ public interface Platform {
 	/**
 	 * Returns the directory in which Aduna applications can store their application-dependent data, returns
 	 * 'getOSApplicationDataDir' unless the system property "aduna.platform.applicationdata.dir" has been set.
-	 * 
+	 *
 	 * @return the Aduna-specific application data directory
 	 */
 	public File getApplicationDataDir();
@@ -63,7 +63,7 @@ public interface Platform {
 	 * Returns the directory in which a specific application can store all its application-dependent data. This will be
 	 * a sub-directory of the directory returned by the no-argument version of this method. Note: the directory might
 	 * not exist yet.
-	 * 
+	 *
 	 * @see #getApplicationDataDir()
 	 * @param applicationName the name of the application for which to determine the directory
 	 * @return an application-specific data directory
@@ -72,7 +72,7 @@ public interface Platform {
 
 	/**
 	 * Get the directory relative to getApplicationDataDir() for the specified application.
-	 * 
+	 *
 	 * @param applicationName the name of the application
 	 * @return the directory relative to getApplicationDataDir() for the specified application
 	 */
@@ -80,21 +80,21 @@ public interface Platform {
 
 	/**
 	 * Check if case is preserved
-	 * 
+	 *
 	 * @return boolean
 	 */
 	public boolean dataDirPreserveCase();
 
 	/**
 	 * Check if whitespace is replaced
-	 * 
+	 *
 	 * @return boolean
 	 */
 	public boolean dataDirReplaceWhitespace();
 
 	/**
 	 * Check if colon is replaced
-	 * 
+	 *
 	 * @return boolean
 	 */
 	public boolean dataDirReplaceColon();

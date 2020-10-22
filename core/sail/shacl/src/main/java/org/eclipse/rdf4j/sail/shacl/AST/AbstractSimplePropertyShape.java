@@ -14,10 +14,10 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.InnerJoin;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ModifyTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
+import org.eclipse.rdf4j.sail.shacl.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
@@ -44,8 +44,8 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 			PlanNode planNode;
 
 			if (pathPropertyShape.getPath() == null) {
-				planNode = new ModifyTuple(overrideTargetNode.getPlanNode(), t -> {
-					t.line.add(t.line.get(0));
+				planNode = new TupleMapper(overrideTargetNode.getPlanNode(), t -> {
+					t.getLine().add(t.getLine().get(0));
 					return t;
 				});
 			} else {
@@ -64,9 +64,9 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 		if (pathPropertyShape.getPath() == null) {
 
-			PlanNode targets = new ModifyTuple(
+			PlanNode targets = new TupleMapper(
 					nodeShape.getPlanAddedStatements(connectionsGroup, null), t -> {
-						t.line.add(t.line.get(0));
+						t.getLine().add(t.getLine().get(0));
 						return t;
 					});
 
@@ -101,7 +101,7 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
-			PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), discardedRight);
+			PlanNode typeFilterPlan = nodeShape.getTargetFilter(connectionsGroup, discardedRight);
 
 			top = new UnionNode(top, typeFilterPlan);
 
@@ -135,6 +135,6 @@ public abstract class AbstractSimplePropertyShape extends PathPropertyShape {
 
 		plan = new Unique(new TrimTuple(plan, 0, 1));
 
-		return nodeShape.getTargetFilter(connectionsGroup.getBaseConnection(), plan);
+		return nodeShape.getTargetFilter(connectionsGroup, plan);
 	}
 }

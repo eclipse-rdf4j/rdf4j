@@ -69,9 +69,11 @@ import junit.framework.TestSuite;
 
 /**
  * A SPARQL query test suite, created by reading in a W3C working-group style manifest.
- * 
+ *
  * @author Jeen Broekstra
+ * @deprecated since 3.3.0. Use {@link SPARQL11QueryComplianceTest} instead.
  */
+@Deprecated
 public abstract class SPARQLQueryTest extends TestCase {
 
 	/*-----------*

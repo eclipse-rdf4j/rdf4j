@@ -14,18 +14,18 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedInt</tt> .
- * 
+ *
  * @author Jeen Broekstra
  */
 public class UnsignedIntCast extends IntegerCastFunction {
 
 	@Override
 	protected IRI getXsdDatatype() {
-		return XMLSchema.UNSIGNED_INT;
+		return XSD.UNSIGNED_INT;
 	}
 
 	@Override
@@ -37,7 +37,7 @@ public class UnsignedIntCast extends IntegerCastFunction {
 	protected Optional<Literal> createTypedLiteral(ValueFactory vf, BigInteger integerValue)
 			throws ArithmeticException {
 		if (integerValue.compareTo(BigInteger.ZERO) >= 0) {
-			return Optional.of(vf.createLiteral(String.valueOf(integerValue.intValueExact()), XMLSchema.UNSIGNED_INT));
+			return Optional.of(vf.createLiteral(String.valueOf(integerValue.intValueExact()), XSD.UNSIGNED_INT));
 		}
 		return Optional.empty();
 	}

@@ -61,7 +61,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 
 	/**
 	 * Gets the arguments of this n-ary operator.
-	 * 
+	 *
 	 * @return A copy of the current argument list.
 	 */
 	public List<? extends Expr> getArgs() {
@@ -70,7 +70,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 
 	/**
 	 * Gets the number of arguments of this n-ary operator.
-	 * 
+	 *
 	 * @return The number of arguments.
 	 */
 	public int getNumberOfArguments() {
@@ -79,7 +79,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 
 	/**
 	 * Gets the <tt>idx</tt>-th argument of this n-ary operator.
-	 * 
+	 *
 	 * @return The operator's arguments.
 	 */
 	public Expr getArg(final int idx) {

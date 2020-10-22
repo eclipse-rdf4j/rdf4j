@@ -11,17 +11,17 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An interface defining methods related to verification and normalization of typed literals and datatype URIs.
- * 
+ *
  * @author Peter Ansell
  */
 public interface DatatypeHandler {
 
 	/**
-	 * Identifier for datatypes defined in the {@link XMLSchema} vocabulary.
+	 * Identifier for datatypes defined in the {@link XSD} vocabulary.
 	 */
 	public static final String XMLSCHEMA = "org.eclipse.rdf4j.rio.datatypes.xmlschema";
 
@@ -32,28 +32,28 @@ public interface DatatypeHandler {
 
 	/**
 	 * Identifier for datatypes defined by DBPedia.
-	 * 
+	 *
 	 * @see <a href="http://mappings.dbpedia.org/index.php/DBpedia_Datatypes">DBPedia Datatypes</a>
 	 */
 	public static final String DBPEDIA = "org.eclipse.rdf4j.rio.datatypes.dbpedia";
 
 	/**
 	 * Identifier for datatypes defined in the Virtuoso Geometry vocabulary.
-	 * 
+	 *
 	 * @see <a href="http://docs.openlinksw.com/virtuoso/rdfsparqlgeospat.html">Virtuoso Geospatial</a>
 	 */
 	public static final String VIRTUOSOGEOMETRY = "org.eclipse.rdf4j.rio.datatypes.virtuosogeometry";
 
 	/**
 	 * Identifier for datatypes defined in the GeoSPARQL vocabulary.
-	 * 
+	 *
 	 * @see <a href="http://www.opengeospatial.org/standards/geosparql">GeoSPARQL</a>
 	 */
 	public static final String GEOSPARQL = "org.eclipse.rdf4j.rio.datatypes.geosparql";
 
 	/**
 	 * Checks if the given datatype URI is recognized by this datatype handler.
-	 * 
+	 *
 	 * @param datatypeUri The datatype URI to check.
 	 * @return True if the datatype is syntactically valid and could be used with {@link #verifyDatatype(String, IRI)}
 	 *         and {@link #normalizeDatatype(String, IRI, ValueFactory)}.
@@ -65,7 +65,7 @@ public interface DatatypeHandler {
 	 * <p>
 	 * This method must only be called after verifying that {@link #isRecognizedDatatype(IRI)} returns true for the
 	 * given datatype URI.
-	 * 
+	 *
 	 * @param literalValue Literal value matching the given datatype URI.
 	 * @param datatypeUri  A datatype URI that matched with {@link #isRecognizedDatatype(IRI)}
 	 * @return True if the datatype URI is recognized by this datatype handler, and it is verified to be syntactically
@@ -81,7 +81,7 @@ public interface DatatypeHandler {
 	 * This method must only be called after verifying that {@link #isRecognizedDatatype(IRI)} returns true for the
 	 * given datatype URI, and {@link #verifyDatatype(String, IRI)} also returns true for the given datatype URI and
 	 * literal value.
-	 * 
+	 *
 	 * @param literalValue Required literal value to use in the normalization process and to provide the value for the
 	 *                     resulting literal.
 	 * @param datatypeUri  The datatype URI which is to be normalized. This URI is available in normalized form from the
@@ -96,7 +96,7 @@ public interface DatatypeHandler {
 
 	/**
 	 * A unique key for this datatype handler to identify it in the DatatypeHandlerRegistry.
-	 * 
+	 *
 	 * @return A unique string key.
 	 */
 	public String getKey();

@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.config.SailRegistry;
 
 /**
  * A {@link RepositoryFactory} that creates {@link SailRepository}s based on RDF configuration data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailRepositoryFactory implements RepositoryFactory {
@@ -33,7 +33,7 @@ public class SailRepositoryFactory implements RepositoryFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see RepositoryFactory#getRepositoryType()
 	 */
 	public static final String REPOSITORY_TYPE = "openrdf:SailRepository";

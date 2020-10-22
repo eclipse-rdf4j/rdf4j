@@ -7,12 +7,23 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.BufferedSplitter;
@@ -28,12 +39,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
-
 /**
  * @author Håvard Ottestad
  */
@@ -44,12 +49,20 @@ public class OrPropertyShape extends PathPropertyShape {
 	private static final Logger logger = LoggerFactory.getLogger(OrPropertyShape.class);
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
-			PathPropertyShape parent, Resource path, Resource or) {
+			PathPropertyShape parent, Resource path, Resource or, ShaclSail shaclSail) {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = toList(connection, or).stream()
-				.map(v -> PropertyShape.Factory.getPropertyShapesInner(connection, nodeShape, (Resource) v, this))
+				.map(v -> PropertyShape.Factory
+						.getPropertyShapesInner(connection, nodeShape, (Resource) v, this, shaclSail)
+						.stream()
+						.filter(s -> !s.deactivated)
+						.collect(Collectors.toList()))
 				.collect(Collectors.toList());
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	OrPropertyShape(Resource id, SailRepositoryConnection connection, NodeShape nodeShape, boolean deactivated,
@@ -58,12 +71,22 @@ public class OrPropertyShape extends PathPropertyShape {
 		super(id, connection, nodeShape, deactivated, parent, path);
 		this.or = or;
 
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
+
 	}
 
 	public OrPropertyShape(Resource id, NodeShape nodeShape, boolean deactivated, PathPropertyShape parent, Path path,
 			List<List<PathPropertyShape>> or) {
 		super(id, nodeShape, deactivated, parent, path);
 		this.or = or;
+
+		if (!this.or.stream().flatMap(Collection::stream).findAny().isPresent()) {
+			logger.warn("sh:or contained no supported shapes: " + id);
+			this.deactivated = true;
+		}
 	}
 
 	@Override
@@ -110,7 +133,7 @@ public class OrPropertyShape extends PathPropertyShape {
 			targetNodesToValidate = new BufferedSplitter(new Unique(unionAll(collect)));
 
 		} else {
-			if (connectionsGroup.getSail().isCacheSelectNodes()) {
+			if (connectionsGroup.getTransactionSettings().isCacheSelectNodes()) {
 				targetNodesToValidate = new BufferedSplitter(overrideTargetNode.getPlanNode());
 			} else {
 				targetNodesToValidate = overrideTargetNode;
@@ -209,6 +232,12 @@ public class OrPropertyShape extends PathPropertyShape {
 		return or.stream().flatMap(a -> a.stream().map(PathPropertyShape::hasOwnPath)).anyMatch(a -> a);
 	}
 
+	public boolean childrenHasOwnPathRecursive() {
+		return or.stream()
+				.flatMap(a -> a.stream().map(PathPropertyShape::childrenHasOwnPathRecursive))
+				.anyMatch(a -> a);
+	}
+
 	private PlanNode unionAll(List<PlanNode> planNodes) {
 		return new Unique(new UnionNode(planNodes.toArray(new PlanNode[0])));
 	}
@@ -269,5 +298,68 @@ public class OrPropertyShape extends PathPropertyShape {
 
 		return new Unique(reduce.get());
 
+	}
+
+	public List<List<PathPropertyShape>> getOr() {
+		return or;
+	}
+
+	@Override
+	public String buildSparqlValidNodes(String targetVar) {
+
+		if (hasOwnPath()) {
+			// within property shape
+			String objectVariable = randomVariable();
+			String pathQuery1 = getPath().getQuery(targetVar, objectVariable, null);
+
+			String collect = or.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(objectVariable))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) || ( ", "( ",
+							" )"));
+
+			String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+					+ "\n\tFILTER(!(" + collect + "))\n})";
+
+			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
+
+			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+					+ randomVariable() + " "
+					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n})\n}";
+
+			return query;
+		} else if (!childrenHasOwnPathRecursive()) {
+
+			return or.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) || ( ", "( ",
+							" )"));
+		} else {
+			// within node shape
+			return or.stream()
+					.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.map(s -> s.replaceAll("(?m)^", "\t"))
+					.collect(
+							Collectors.joining("\n} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"\n}"));
+		}
+
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementPatterns() {
+		return or.stream().flatMap(Collection::stream).flatMap(PropertyShape::getStatementPatterns);
 	}
 }

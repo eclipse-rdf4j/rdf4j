@@ -8,14 +8,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
 
 import java.util.Optional;
-import org.eclipse.rdf4j.model.IRI;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.FN;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 /**
  * The SPARQL built-in {@link Function} SUBSTR, as defined in
  * <a href="http://www.w3.org/TR/sparql11-query/#func-substr">SPARQL Query Language for RDF</a>.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class Substring implements Function {
@@ -115,8 +115,8 @@ public class Substring implements Function {
 		Optional<String> language = literal.getLanguage();
 		if (language.isPresent()) {
 			return valueFactory.createLiteral(lexicalValue, language.get());
-		} else if (XMLSchema.STRING.equals(literal.getDatatype())) {
-			return valueFactory.createLiteral(lexicalValue, XMLSchema.STRING);
+		} else if (XSD.STRING.equals(literal.getDatatype())) {
+			return valueFactory.createLiteral(lexicalValue, XSD.STRING);
 		} else {
 			return valueFactory.createLiteral(lexicalValue);
 		}

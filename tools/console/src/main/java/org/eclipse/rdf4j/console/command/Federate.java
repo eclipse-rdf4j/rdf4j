@@ -54,7 +54,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 */
@@ -89,7 +89,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Check if all values are distinct
-	 * 
+	 *
 	 * @param plist
 	 * @return true if all values are distinct
 	 */
@@ -99,7 +99,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Add one or more repositories to a repository federation
-	 * 
+	 *
 	 * @param distinct
 	 * @param readonly  true when all
 	 * @param fedID
@@ -128,7 +128,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Validate members of a federation
-	 * 
+	 *
 	 * @param manager   repository manager
 	 * @param readonly  set to true if read-only repositories are OK
 	 * @param memberIDs IDs of the federated repositories
@@ -158,7 +158,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Log basic details about calls to federated repositories
-	 * 
+	 *
 	 * @param distinct
 	 * @param readonly
 	 * @param fedID
@@ -181,7 +181,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Get the value of an optional boolean parameter or the default
-	 * 
+	 *
 	 * @param parameters   set of parameters
 	 * @param name         name of the parameter
 	 * @param defaultValue default value
@@ -193,7 +193,7 @@ public class Federate extends ConsoleCommand {
 
 	/**
 	 * Get the value of an optional string parameter or the default
-	 * 
+	 *
 	 * @param parameters   set of parameters
 	 * @param name         parameter name
 	 * @param defaultValue default string value

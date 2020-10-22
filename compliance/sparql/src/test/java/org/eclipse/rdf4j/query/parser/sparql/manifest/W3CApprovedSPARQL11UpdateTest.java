@@ -7,41 +7,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
-import java.net.URL;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-
-import junit.framework.Test;
+import org.junit.Ignore;
 
 /**
  * @author Jeen Broekstra
  */
-public class W3CApprovedSPARQL11UpdateTest extends SPARQLUpdateConformanceTest {
+@Ignore("replaced by org.eclipse.rdf4j.sail.memory.MemorySPARQL11updateComplianceTest")
+@Deprecated
+public class W3CApprovedSPARQL11UpdateTest extends SPARQL11UpdateComplianceTest {
 
-	public W3CApprovedSPARQL11UpdateTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
-			Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs) {
-		super(testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI, resultNamedGraphs);
-	}
-
-	public static Test suite() throws Exception {
-
-		URL manifestUrl = SPARQL11ManifestTest.class.getResource("/testcases-sparql-1.1-w3c/manifest-all.ttl");
-
-		return SPARQL11ManifestTest.suite(new Factory() {
-
-			@Override
-			public W3CApprovedSPARQL11UpdateTest createSPARQLUpdateConformanceTest(String testURI, String name,
-					String requestFile, IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs,
-					IRI resultDefaultGraphURI, Map<String, IRI> resultNamedGraphs) {
-				return new W3CApprovedSPARQL11UpdateTest(testURI, name, requestFile, defaultGraphURI, inputNamedGraphs,
-						resultDefaultGraphURI, resultNamedGraphs);
-			}
-
-		}, manifestUrl.toString(), true);
+	public W3CApprovedSPARQL11UpdateTest(String displayName, String testURI, String name, String requestFile,
+			IRI defaultGraphURI, Map<String, IRI> inputNamedGraphs, IRI resultDefaultGraphURI,
+			Map<String, IRI> resultNamedGraphs) {
+		super(displayName, testURI, name, requestFile, defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
+				resultNamedGraphs);
 	}
 
 	@Override

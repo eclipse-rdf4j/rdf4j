@@ -28,7 +28,7 @@ public class ZipUtil {
 
 	/**
 	 * Test if an input stream is a zip input stream by checking the "magic number"
-	 * 
+	 *
 	 * @param in input stream
 	 * @return true if start of input stream matches magic number
 	 * @throws IOException
@@ -42,7 +42,7 @@ public class ZipUtil {
 
 	/**
 	 * Extract the contents of a zipfile to a directory.
-	 * 
+	 *
 	 * @param zipFile the zip file to extract
 	 * @param destDir the destination directory
 	 * @throws IOException when something untoward happens during the extraction process
@@ -55,7 +55,7 @@ public class ZipUtil {
 
 	/**
 	 * Extract the contents of a zipfile to a directory.
-	 * 
+	 *
 	 * @param zipFile the zip file to extract
 	 * @param destDir the destination directory
 	 * @throws IOException when something untoward happens during the extraction process
@@ -72,7 +72,7 @@ public class ZipUtil {
 
 	/**
 	 * Write an entry to a zip file.
-	 * 
+	 *
 	 * @param zipFile the zip file to read from
 	 * @param entry   the entry to process
 	 * @param destDir the file to write to

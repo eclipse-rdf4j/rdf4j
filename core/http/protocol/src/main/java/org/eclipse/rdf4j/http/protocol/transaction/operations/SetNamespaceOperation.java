@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
  * Operation that sets the namespace for a specific prefix.
- * 
+ *
  * @author Arjohn Kampman
  * @author Leo Sauermann
  */
 public class SetNamespaceOperation implements TransactionOperation, Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 7197096029612751574L;
 

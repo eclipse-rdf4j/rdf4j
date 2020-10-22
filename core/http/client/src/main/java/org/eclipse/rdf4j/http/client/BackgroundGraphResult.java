@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.rio.RDFParser;
 
 /**
  * Provides concurrent access to statements as they are being parsed.
- * 
+ *
  * @author James Leigh
  * @deprecated Use {@link org.eclipse.rdf4j.query.impl.BackgroundGraphResult} instead.
  */
 @Deprecated
 public class BackgroundGraphResult extends org.eclipse.rdf4j.query.impl.BackgroundGraphResult {
 	public BackgroundGraphResult(RDFParser parser, InputStream in, Charset charset, String baseURI) {
-		this(new QueueCursor<Statement>(10), parser, in, charset, baseURI);
+		this(new QueueCursor<>(10), parser, in, charset, baseURI);
 	}
 
 	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,

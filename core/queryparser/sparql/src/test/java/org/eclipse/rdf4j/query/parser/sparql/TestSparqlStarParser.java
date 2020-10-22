@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
@@ -76,8 +77,8 @@ public class TestSparqlStarParser {
 	 *            Var (name=_const_6a63478_uri, value=urn:A, anonymous)
 	 *            Var (name=_const_6a63479_uri, value=urn:B, anonymous)
 	 *            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	 *      SingletonSet	 
-	 *      
+	 *      SingletonSet
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -114,7 +115,7 @@ public class TestSparqlStarParser {
 	}
 
 	/*-
-	 * Expected tupleExpr like: 
+	 * Expected tupleExpr like:
 	 * Projection
 	 *    ProjectionElemList
 	 *      ProjectionElem "ref"
@@ -255,7 +256,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -293,7 +294,7 @@ public class TestSparqlStarParser {
 		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
 	}
 
-	/*- 
+	/*-
 	 * expected TupleExpr:
 	 * Projection
 	 *    ProjectionElemList
@@ -323,7 +324,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -352,7 +353,7 @@ public class TestSparqlStarParser {
 		assertEquals("obj var name should match", "o", triple.getObjectVar().getName());
 	}
 
-	/*- 
+	/*-
 	 * expected TupleExpr:
 	 * Projection
 	 *    ProjectionElemList
@@ -390,7 +391,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -467,7 +468,7 @@ public class TestSparqlStarParser {
 		Projection proj = (Projection) ((Reduced) q.getTupleExpr()).getArg();
 
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listTargetNames = new ArrayList<String>();
+		final ArrayList<String> listTargetNames = new ArrayList<>();
 		list.forEach(el -> {
 			listTargetNames.add(el.getTargetName());
 		});
@@ -476,7 +477,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect target predicate", listTargetNames.contains("predicate"));
 		assertTrue("expect target oobject", listTargetNames.contains("object"));
 
-		final ArrayList<String> listSourceNames = new ArrayList<String>();
+		final ArrayList<String> listSourceNames = new ArrayList<>();
 		list.forEach(el -> {
 			listSourceNames.add(el.getSourceName());
 		});
@@ -515,7 +516,7 @@ public class TestSparqlStarParser {
 	 * Modify
 	 * 	DeleteExpr:
 	 * 	  null
-	 * 	InsertExpr:   
+	 * 	InsertExpr:
 	 * 	  StatementPattern
 	 *        Var (name=_anon_e1b1cef8_f308_4217_886f_101bf31f3834, anonymous)
 	 *        Var (name=_const_c78aee8a_uri, value=urn:pred, anonymous)
@@ -532,7 +533,7 @@ public class TestSparqlStarParser {
 	 *          Var (name=s)
 	 *          Var (name=p)
 	 *          Var (name=o)
-	 *          	 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -586,7 +587,7 @@ public class TestSparqlStarParser {
 	 * Modify
 	 * 	InsertExpr:
 	 * 	  null
-	 * 	DeleteExpr:   
+	 * 	DeleteExpr:
 	 * 	  StatementPattern
 	 *        Var (name=_anon_e1b1cef8_f308_4217_886f_101bf31f3834, anonymous)
 	 *        Var (name=_const_c78aee8a_uri, value=urn:pred, anonymous)
@@ -603,7 +604,7 @@ public class TestSparqlStarParser {
 	 *          Var (name=s)
 	 *          Var (name=p)
 	 *          Var (name=o)
-	 *          	 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -689,7 +690,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -774,7 +775,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -837,7 +838,7 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 		List<ProjectionElem> list = proj.getProjectionElemList().getElements();
-		final ArrayList<String> listNames = new ArrayList<String>();
+		final ArrayList<String> listNames = new ArrayList<>();
 		list.forEach(el -> {
 			listNames.add(el.getTargetName());
 		});
@@ -859,5 +860,135 @@ public class TestSparqlStarParser {
 		assertEquals("subject var value", "urn:a", ref.getSubjectVar().getValue().toString());
 		assertEquals("predicate var name", "urn:b", ref.getPredicateVar().getValue().toString());
 		assertEquals("object var name", "urn:c", ref.getObjectVar().getValue().toString());
+	}
+
+	/*-
+	 * Expected UpdateExpr:
+	 * Modify
+	   SingletonSet
+	   Join
+	      TripleRef
+	         Var (name=_const_6a63498_uri, value=urn:a, anonymous)
+	         Var (name=_const_6a63499_uri, value=urn:b, anonymous)
+	         Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
+	         Var (name=_anon_ec2f43ed_6a93_44ff_ad7d_e1f403b4a5e9, anonymous)
+	      StatementPattern
+	         Var (name=_anon_ec2f43ed_6a93_44ff_ad7d_e1f403b4a5e9, anonymous)
+	         Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
+	         Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	 * @throws Exception
+	 */
+	@Test
+	public void testUpdateWithTripleRefEmptyHead() throws Exception {
+		String simpleSparqlUpdate = "insert {} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
+
+		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);
+
+		assertNotNull(q);
+		List<UpdateExpr> list = q.getUpdateExprs();
+		assertNotNull(list);
+		assertEquals("expect single update expr", 1, list.size());
+		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		Modify op = (Modify) list.get(0);
+		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertNotNull(op.getInsertExpr());
+		assertTrue("expect singleton", op.getInsertExpr() instanceof SingletonSet);
+
+		assertNotNull(op.getWhereExpr());
+		assertTrue("expect join in where", op.getWhereExpr() instanceof Join);
+		Join join = (Join) op.getWhereExpr();
+		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		TripleRef ref = (TripleRef) join.getLeftArg();
+		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		StatementPattern st = (StatementPattern) join.getRightArg();
+		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
+	}
+
+	/*-
+	 * Expected UpdateExpr:
+		Modify
+		   StatementPattern
+		      Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
+		      Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
+		      Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	 
+		   Extension
+		      ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
+		         ValueExprTripleRef
+		            Var (name=_const_6a63498_uri, value=urn:a, anonymous)
+		            Var (name=_const_6a63499_uri, value=urn:b, anonymous)
+		            Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
+		      Join
+		         TripleRef
+		            Var (name=_const_6a63498_uri, value=urn:a, anonymous)
+		            Var (name=_const_6a63499_uri, value=urn:b, anonymous)
+		            Var (name=_const_6a6349a_uri, value=urn:c, anonymous)
+		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
+		         StatementPattern
+		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
+		            Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
+		            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)	 
+	 * @throws Exception
+	 */
+	@Test
+	public void testUpdateWithTripleRefNonEmptyHead() throws Exception {
+		String simpleSparqlUpdate = "insert {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
+
+		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);
+		assertNotNull(q);
+		List<UpdateExpr> list = q.getUpdateExprs();
+		assertNotNull(list);
+		assertEquals("expect single update expr", 1, list.size());
+		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		Modify op = (Modify) list.get(0);
+		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertNotNull(op.getInsertExpr());
+		assertTrue("expect statement pattern", op.getInsertExpr() instanceof StatementPattern);
+		StatementPattern insetPattern = (StatementPattern) op.getInsertExpr();
+
+		assertNotNull(op.getWhereExpr());
+		assertTrue("expect extension in where", op.getWhereExpr() instanceof Extension);
+		Extension ext = (Extension) op.getWhereExpr();
+		ExtensionElem el = ext.getElements().get(0);
+		assertTrue("expect valueExprTripleRef", el.getExpr() instanceof ValueExprTripleRef);
+		assertEquals("expect same var", el.getName(), insetPattern.getSubjectVar().getName());
+		assertTrue("expect Join", ext.getArg() instanceof Join);
+		Join join = (Join) ext.getArg();
+		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		TripleRef ref = (TripleRef) join.getLeftArg();
+		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		StatementPattern st = (StatementPattern) join.getRightArg();
+		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
+
+	}
+
+	/*-
+	 * Expected UpdateExpr:
+		Modify
+	 * @throws Exception
+	 */
+	@Test
+	public void testUpdateExample() {
+		String update = "INSERT {?s ?p ?o} \r\n" +
+				"WHERE { <<?s ?p ?o>> <p:1> 0.9 }";
+		ParsedUpdate q = parser.parseUpdate(update, null);
+		assertNotNull(q);
+		List<UpdateExpr> list = q.getUpdateExprs();
+		assertNotNull(list);
+		assertEquals("expect single update expr", 1, list.size());
+		assertTrue("expect modify op", list.get(0) instanceof Modify);
+		Modify op = (Modify) list.get(0);
+		assertTrue("do not expect delete", null == op.getDeleteExpr());
+		assertNotNull(op.getInsertExpr());
+		assertTrue("expect statement pattern", op.getInsertExpr() instanceof StatementPattern);
+		assertNotNull(op.getWhereExpr());
+
+		assertTrue("expect join in where", op.getWhereExpr() instanceof Join);
+		Join join = (Join) op.getWhereExpr();
+		assertTrue("expect left is TripleRef", join.getLeftArg() instanceof TripleRef);
+		TripleRef ref = (TripleRef) join.getLeftArg();
+		assertTrue("expect right is StatementPattern", join.getRightArg() instanceof StatementPattern);
+		StatementPattern st = (StatementPattern) join.getRightArg();
+		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
 	}
 }

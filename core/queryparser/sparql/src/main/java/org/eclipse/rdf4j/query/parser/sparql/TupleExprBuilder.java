@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
-import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -88,19 +87,140 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
-import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
-import org.eclipse.rdf4j.query.parser.sparql.ast.*;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAvg;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBNodeFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingValue;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingsClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNode;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNodePropertyList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBound;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCeil;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCoalesce;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCollection;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCompare;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConcat;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstruct;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTContains;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCount;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDatatype;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDay;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTEncodeForURI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTExistsFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFalse;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFloor;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFunctionCall;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupConcat;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupCondition;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHavingClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHours;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRIFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIf;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIn;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInfix;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInlineData;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsBlank;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsIRI;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsNumeric;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLang;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLangMatches;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLimit;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLowerCase;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMD5;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMax;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMin;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinusGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinutes;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMonth;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNot;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotExistsFunc;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotIn;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNow;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNumericLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOffset;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOptionalGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderCondition;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathAlternative;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathElt;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathMod;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathOneInPropertySet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathSequence;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyList;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyListPath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQName;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRDFLiteral;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRand;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRegexExpression;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReplace;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRound;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA1;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA224;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA256;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA384;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA512;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSTRUUID;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSameTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSample;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSeconds;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrAfter;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrBefore;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrDt;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrEnds;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLang;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLen;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrStarts;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTString;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSubstr;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSum;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTimezone;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTz;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUUID;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnionGraphPattern;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpperCase;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTYear;
+import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
+import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * @author Arjohn Kampman
@@ -248,9 +368,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			tupleExpr = processHavingClause(havingClause, tupleExpr, group);
 		}
 
-		// process bindings clause
+		// process external VALUES clause
 		final ASTBindingsClause bindingsClause = node.getBindingsClause();
 		if (bindingsClause != null) {
+			// values clause should be treated as scoped to the where clause
+			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);
 			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 		}
 
@@ -422,8 +544,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				aliasesInProjection.add(alias);
 
 				ValueExpr valueExpr = castToValueExpr(child.jjtAccept(this, null));
-				if (valueExpr == null)
+				if (valueExpr == null) {
 					throw new VisitorException("Either TripleRef or Expression expected in projection.");
+				}
 
 				String targetName = alias;
 				String sourceName = alias;
@@ -930,8 +1053,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	protected ValueExpr castToValueExpr(Object node) {
-		if (node instanceof ValueExpr)
+		if (node instanceof ValueExpr) {
 			return (ValueExpr) node;
+		}
 		if (node instanceof TripleRef) {
 			TripleRef t = (TripleRef) node;
 			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar(), t.getPredicateVar(),
@@ -1051,12 +1175,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		// Filters are scoped to the graph pattern group and do not affect
-		// bindings external to the group
 		TupleExpr te = graphPattern.buildTupleExpr();
-
-		((GraphPatternGroupable) te).setGraphPatternGroup(true);
-
+		if (node.isScopeChange()) {
+			((VariableScopeChange) te).setVariableScopeChange(true);
+		}
 		parentGP.addRequiredTE(te);
 
 		graphPattern = parentGP;
@@ -1135,7 +1257,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		node.jjtGetChild(1).jjtAccept(this, null);
 		TupleExpr rightArg = graphPattern.buildTupleExpr();
 
-		parentGP.addRequiredTE(new Union(leftArg, rightArg));
+		Union union = new Union(leftArg, rightArg);
+		union.setVariableScopeChange(true);
+		parentGP.addRequiredTE(union);
 		graphPattern = parentGP;
 
 		return null;
@@ -1206,6 +1330,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 			}
 
+			// when using union to execute path expressions, the scope does not not change
+			union.setVariableScopeChange(false);
 			parentGP.addRequiredTE(union);
 			graphPattern = parentGP;
 		} else {
@@ -1252,6 +1378,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
+		// FIXME the entire path sequence processing needs to be separated out and more cleanly implemented, as it is
+		// currently a very messy operation involving way too many if...else conditions and strange edge case handling.
+
 		Var subjVar = mapValueExprToVar(data);
 
 		// check if we should invert subject and object.
@@ -1414,7 +1543,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						if (invertSequence) {
 							endVar = subjVar;
 							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
-							if (!(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
+							// or otherwise we'd create a reflexive path (possible in nested expressions)
+							if (subjVar.equals(startVar)
+									|| !(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
 								startVar = objVar;
 							}
 						}
@@ -1623,7 +1754,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				} else {
 					// upperbound is abitrary-length
 
-					result = new ArbitraryLengthPath(scope, subjVar, te, endVar, contextVar, lowerBound);
+					result = new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
+							lowerBound);
 				}
 			} else {
 				// create single path of fixed length.
@@ -1742,8 +1874,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		public void meet(Var var) {
 			if (toBeReplaced.equals(var)) {
 				QueryModelNode parent = var.getParentNode();
-				parent.replaceChildNode(var, replacement);
-				replacement.setParentNode(parent);
+				Var replacementVar = replacement.clone();
+				parent.replaceChildNode(var, replacementVar);
+				replacementVar.setParentNode(parent);
 			}
 		}
 	}
@@ -1785,10 +1918,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		for (int i = 0; i < childCount; i++) {
 			Object obj = node.jjtGetChild(i).jjtAccept(this, null);
-			if (obj instanceof ValueExpr)
+			if (obj instanceof ValueExpr) {
 				result.add((ValueExpr) obj);
-			else if (obj instanceof TripleRef) {
-				result.add((ValueExpr) ((TripleRef) obj).getExprVar());
+			} else if (obj instanceof TripleRef) {
+				result.add(((TripleRef) obj).getExprVar());
 			}
 		}
 

@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 /**
  * Utility methods for RDF* triples.
@@ -38,7 +38,7 @@ public class RDFStarUtil {
 	 * All other RDF* values are valid in RDF as well and remain unchanged.
 	 *
 	 * @param value a RDF* {@link Value} to encode.
-	 * @param       <T>
+	 * @param <T>
 	 * @return the RDF-compatible encoded value, if a {@link Triple} was supplied, or the supplied value otherwise.
 	 */
 	public static <T extends Value> T toRDFEncodedValue(T value) {
@@ -53,7 +53,7 @@ public class RDFStarUtil {
 	 * See {@link #toRDFEncodedValue(Value)}.
 	 *
 	 * @param encodedValue an RDF {@link Value} to convert to RDF*.
-	 * @param              <T>
+	 * @param <T>
 	 * @return the decoded RDF* triple, if a {@link Triple} encoded as {@link IRI} was supplied, or the supplied value
 	 *         otherwise.
 	 * @throws IllegalArgumentException if the supplied value looked like an RDF* triple encoded as an IRI but it could

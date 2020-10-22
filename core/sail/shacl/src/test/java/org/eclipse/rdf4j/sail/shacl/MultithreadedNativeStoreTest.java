@@ -1,5 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.File;
+import java.io.IOException;
+
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
@@ -8,9 +11,6 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
-
-import java.io.File;
-import java.io.IOException;
 
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
@@ -40,4 +40,5 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 		}
 		return nativeStore;
 	}
+
 }

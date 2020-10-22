@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} for Turtle writers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TurtleWriterFactory implements RDFWriterFactory {
@@ -36,12 +36,12 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	 */
 	@Override
 	public RDFWriter getWriter(OutputStream out) {
-		return new ArrangedWriter(new TurtleWriter(out));
+		return new TurtleWriter(out);
 	}
 
 	@Override
 	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
-		return new ArrangedWriter(new TurtleWriter(out, new ParsedIRI(baseURI)));
+		return new TurtleWriter(out, new ParsedIRI(baseURI));
 	}
 
 	/**
@@ -49,11 +49,11 @@ public class TurtleWriterFactory implements RDFWriterFactory {
 	 */
 	@Override
 	public RDFWriter getWriter(Writer writer) {
-		return new ArrangedWriter(new TurtleWriter(writer));
+		return new TurtleWriter(writer);
 	}
 
 	@Override
 	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
-		return new ArrangedWriter(new TurtleWriter(writer, new ParsedIRI(baseURI)));
+		return new TurtleWriter(writer, new ParsedIRI(baseURI));
 	}
 }

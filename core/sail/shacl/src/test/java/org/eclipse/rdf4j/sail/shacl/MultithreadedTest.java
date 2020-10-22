@@ -7,24 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.common.concurrent.locks.Properties;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.Sail;
-import org.junit.AfterClass;
-import org.junit.Test;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -38,6 +20,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConflictException;
+import org.junit.AfterClass;
+import org.junit.Test;
 
 public abstract class MultithreadedTest {
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -228,7 +228,8 @@ public abstract class MultithreadedTest {
 								try {
 									connection.commit();
 								} catch (RepositoryException e) {
-									if (!(e.getCause() instanceof ShaclSailValidationException)) {
+									if (!((e.getCause() instanceof ShaclSailValidationException)
+											|| e.getCause() instanceof SailConflictException)) {
 										throw e;
 									}
 									connection.rollback();
@@ -238,7 +239,7 @@ public abstract class MultithreadedTest {
 						})
 						.map(executorService::submit)
 						.collect(Collectors.toList()) // this terminates lazy evalutation, so that we can submit all our
-														// runnables before we start collecting them
+						// runnables before we start collecting them
 						.forEach(f -> {
 							try {
 								f.get();
@@ -419,7 +420,6 @@ public abstract class MultithreadedTest {
 			parse3 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
 		}
 
-		Random r = new Random();
 		ExecutorService executorService = null;
 		try {
 
@@ -432,14 +432,17 @@ public abstract class MultithreadedTest {
 					.mapToObj(transaction -> (Runnable) () -> {
 
 						try (SailRepositoryConnection connection = repository.getConnection()) {
-							ValueFactory vf = connection.getValueFactory();
 
 							connection.begin(isolationLevels);
 							connection.add(parse);
 
 							try {
 								connection.commit();
-							} catch (RepositoryException ignored) {
+							} catch (RepositoryException e) {
+								if (!((e.getCause() instanceof ShaclSailValidationException)
+										|| e.getCause() instanceof SailConflictException)) {
+									throw e;
+								}
 								connection.rollback();
 							}
 
@@ -448,7 +451,11 @@ public abstract class MultithreadedTest {
 
 							try {
 								connection.commit();
-							} catch (RepositoryException ignored) {
+							} catch (RepositoryException e) {
+								if (!((e.getCause() instanceof ShaclSailValidationException)
+										|| e.getCause() instanceof SailConflictException)) {
+									throw e;
+								}
 								connection.rollback();
 							}
 
@@ -457,7 +464,11 @@ public abstract class MultithreadedTest {
 
 							try {
 								connection.commit();
-							} catch (RepositoryException ignored) {
+							} catch (RepositoryException e) {
+								if (!((e.getCause() instanceof ShaclSailValidationException)
+										|| e.getCause() instanceof SailConflictException)) {
+									throw e;
+								}
 								connection.rollback();
 							}
 
@@ -466,7 +477,11 @@ public abstract class MultithreadedTest {
 
 							try {
 								connection.commit();
-							} catch (RepositoryException ignored) {
+							} catch (RepositoryException e) {
+								if (!((e.getCause() instanceof ShaclSailValidationException)
+										|| e.getCause() instanceof SailConflictException)) {
+									throw e;
+								}
 								connection.rollback();
 							}
 						}
@@ -476,7 +491,21 @@ public abstract class MultithreadedTest {
 					.forEach(f -> {
 						try {
 							f.get();
-						} catch (InterruptedException | ExecutionException e) {
+						} catch (Throwable e) {
+
+							Throwable temp = e;
+							while (temp != null) {
+								System.err.println(
+										"\n----------------------------------------------------------------------\nClass: "
+												+ temp.getClass().getCanonicalName() + "\nMessage: "
+												+ temp.getMessage());
+								temp.printStackTrace();
+								temp = temp.getCause();
+							}
+
+							System.err.println(
+									"\n######################################################################");
+
 							throw new RuntimeException(e);
 						}
 					});

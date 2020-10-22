@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.FedXTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.VariableExpr;
 import org.eclipse.rdf4j.federated.algebra.NTuple;
+import org.eclipse.rdf4j.federated.algebra.VariableExpr;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -56,7 +56,7 @@ import com.google.common.collect.Sets;
 
 /**
  * Various static functions for query handling and parsing (alegbra expression).
- * 
+ *
  * @author Andreas Schwarte
  */
 public class QueryAlgebraUtil {
@@ -65,15 +65,16 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @return whether there is at least one free variable
 	 */
 	public static boolean hasFreeVars(StatementPattern stmt, BindingSet bindings) {
 		for (Var var : stmt.getVarList()) {
-			if (!var.hasValue() && !bindings.hasBinding(var.getName()))
+			if (!var.hasValue() && !bindings.hasBinding(var.getName())) {
 				return true; // there is at least one free var
+			}
 		}
 		return false;
 	}
@@ -81,10 +82,10 @@ public class QueryAlgebraUtil {
 	/**
 	 * Return the {@link Value} of the variable which is either taken from the variable itself (bound) or from the
 	 * bindingsset (unbound).
-	 * 
+	 *
 	 * @param var
 	 * @param bindings the bindings, must not be null, use {@link EmptyBindingSet} instead
-	 * 
+	 *
 	 * @return the value or null
 	 */
 	public static Value getVarValue(Var var, BindingSet bindings) {
@@ -99,7 +100,7 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Convert the given {@link ArbitraryLengthPath} to a fresh {@link TupleExpr} where all provided bindings are bound.
-	 * 
+	 *
 	 * @param node
 	 * @param varNames
 	 * @param bindings
@@ -143,13 +144,13 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Construct a SELECT query for the provided statement.
-	 * 
+	 *
 	 * @param stmt
 	 * @param bindings
 	 * @param filterExpr
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 * 
+	 *
 	 * @return the SELECT query
 	 * @throws IllegalQueryException
 	 */
@@ -159,8 +160,9 @@ public class QueryAlgebraUtil {
 		Set<String> varNames = new HashSet<>();
 		TupleExpr expr = constructStatement(stmt, varNames, bindings);
 
-		if (varNames.isEmpty())
+		if (varNames.isEmpty()) {
 			throw new IllegalQueryException("SELECT query needs at least one projection!");
+		}
 
 		if (filterExpr != null) {
 			try {
@@ -173,8 +175,9 @@ public class QueryAlgebraUtil {
 		}
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(expr, projList);
 
@@ -184,13 +187,13 @@ public class QueryAlgebraUtil {
 	/**
 	 * Construct a SELECT query for the provided {@link ExclusiveGroup}. Note that bindings and filterExpr are applied
 	 * whenever possible.
-	 * 
+	 *
 	 * @param group      the expression for the query
 	 * @param bindings   the bindings to be applied
 	 * @param filterExpr a filter expression or null
 	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
 	 *                   beginning
-	 * 
+	 *
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
@@ -231,8 +234,9 @@ public class QueryAlgebraUtil {
 		}
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(expr, projList);
 
@@ -241,19 +245,19 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Construct a SELECT query expression for a bound union.
-	 * 
+	 *
 	 * Pattern:
-	 * 
+	 *
 	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
-	 * 
+	 *
 	 * Note that the filterExpr is not evaluated at the moment.
-	 * 
+	 *
 	 * @param stmt
 	 * @param unionBindings
 	 * @param filterExpr
 	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
 	 *                      in beginning
-	 * 
+	 *
 	 * @return the SELECT query
 	 */
 	public static TupleExpr selectQueryBoundUnion(StatementPattern stmt, List<BindingSet> unionBindings,
@@ -276,8 +280,9 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementId(stmt, Integer.toString(idx), varNames, unionBindings.get(idx)));
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(union, projList);
 
@@ -286,11 +291,11 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Construct a SELECT query for a grouped bound check.
-	 * 
+	 *
 	 * Pattern:
-	 * 
+	 *
 	 * SELECT DISTINCT ?o_1 .. ?o_N WHERE { { s1 p1 ?o_1 FILTER ?o_1=o1 } UNION ... UNION { sN pN ?o_N FILTER ?o_N=oN }}
-	 * 
+	 *
 	 * @param stmt
 	 * @param unionBindings
 	 * @return the SELECT query
@@ -312,8 +317,9 @@ public class QueryAlgebraUtil {
 		tmp.setRightArg(constructStatementCheckId(stmt, idx, varNames, unionBindings.get(idx)));
 
 		ProjectionElemList projList = new ProjectionElemList();
-		for (String var : varNames)
+		for (String var : varNames) {
 			projList.addElement(new ProjectionElem(var));
+		}
 
 		Projection proj = new Projection(union, projList);
 
@@ -345,7 +351,7 @@ public class QueryAlgebraUtil {
 	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
 	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement}
 	 * </p>
-	 * 
+	 *
 	 * @param exclusiveExpr
 	 * @param varNames
 	 * @param bindings
@@ -368,11 +374,11 @@ public class QueryAlgebraUtil {
 	/**
 	 * Construct the statement string, i.e. "s p o . " with bindings inserted wherever possible. Note that the free
 	 * variables are added to the varNames set for further evaluation.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatement(StatementPattern stmt, Set<String> varNames,
@@ -389,11 +395,11 @@ public class QueryAlgebraUtil {
 	 * Construct the statement string, i.e. "s p o . " with bindings inserted wherever possible. Variables are renamed
 	 * to "var_"+varId to identify query results in bound queries. Note that the free variables are also added to the
 	 * varNames set for further evaluation.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the {@link StatementPattern}
 	 */
 	protected static StatementPattern constructStatementId(StatementPattern stmt, String varID, Set<String> varNames,
@@ -409,7 +415,7 @@ public class QueryAlgebraUtil {
 	/**
 	 * Construct the statement string, i.e. "s p ?o_varID FILTER ?o_N=o ". This kind of statement pattern is necessary
 	 * to later on identify available results.
-	 * 
+	 *
 	 * @param stmt
 	 * @param varID
 	 * @param varNames
@@ -445,33 +451,34 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Clone the specified variable and attach bindings.
-	 * 
+	 *
 	 * @param var
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the variable
-	 * 
+	 *
 	 */
 	protected static Var appendVar(Var var, Set<String> varNames, BindingSet bindings) {
 		Var res = var.clone();
 		if (!var.hasValue()) {
-			if (bindings.hasBinding(var.getName()))
+			if (bindings.hasBinding(var.getName())) {
 				res.setValue(bindings.getValue(var.getName()));
-			else
+			} else {
 				varNames.add(var.getName());
+			}
 		}
 		return res;
 	}
 
 	/**
 	 * Clone the specified variable and attach bindings, moreover change name of variable by appending "_varId" to it.
-	 * 
+	 *
 	 * @param var
 	 * @param varID
 	 * @param varNames
 	 * @param bindings
-	 * 
+	 *
 	 * @return the variable
 	 */
 	protected static Var appendVarId(Var var, String varID, Set<String> varNames, BindingSet bindings) {
@@ -490,7 +497,7 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * A helper class to insert bindings in the {@link Var} nodes of the given {@link TupleExpr}.
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 *
 	 */
@@ -520,7 +527,7 @@ public class QueryAlgebraUtil {
 
 	/**
 	 * Computes the collection of free variables in the given {@link TupleExpr}.
-	 * 
+	 *
 	 * @param tupleExpr the expression
 	 * @return the free variables
 	 * @see VariableExpr
@@ -539,8 +546,9 @@ public class QueryAlgebraUtil {
 		if (tupleExpr instanceof NTuple) {
 			HashSet<String> freeVars = new HashSet<>();
 			NTuple ntuple = (NTuple) tupleExpr;
-			for (TupleExpr t : ntuple.getArgs())
+			for (TupleExpr t : ntuple.getArgs()) {
 				freeVars.addAll(getFreeVars(t));
+			}
 			return freeVars;
 		}
 
@@ -556,12 +564,15 @@ public class QueryAlgebraUtil {
 		if (tupleExpr instanceof StatementPattern) {
 			List<String> freeVars = new ArrayList<>();
 			StatementPattern st = (StatementPattern) tupleExpr;
-			if (st.getSubjectVar().getValue() == null)
+			if (st.getSubjectVar().getValue() == null) {
 				freeVars.add(st.getSubjectVar().getName());
-			if (st.getPredicateVar().getValue() == null)
+			}
+			if (st.getPredicateVar().getValue() == null) {
 				freeVars.add(st.getPredicateVar().getName());
-			if (st.getObjectVar().getValue() == null)
+			}
+			if (st.getObjectVar().getValue() == null) {
 				freeVars.add(st.getObjectVar().getName());
+			}
 			return freeVars;
 		}
 
@@ -575,8 +586,8 @@ public class QueryAlgebraUtil {
 		}
 
 		if (tupleExpr instanceof Extension) {
-			// for a BIND extension in our cost model we work with 0 free vars
-			return new ArrayList<String>();
+			// for a BIND extension in our cost model we use the binding names
+			return new ArrayList<>(tupleExpr.getBindingNames());
 		}
 
 		if (tupleExpr instanceof ArbitraryLengthPath) {
@@ -593,6 +604,6 @@ public class QueryAlgebraUtil {
 
 		log.debug("Type " + tupleExpr.getClass().getSimpleName()
 				+ " not supported for computing free vars. If you run into this, please report a bug.");
-		return new ArrayList<String>();
+		return new ArrayList<>();
 	}
 }

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.DatatypeHandler;
 
 /**
  * An implementation of a datatype handler that can process {@link RDF} built-in datatypes.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFDatatypeHandler implements DatatypeHandler {

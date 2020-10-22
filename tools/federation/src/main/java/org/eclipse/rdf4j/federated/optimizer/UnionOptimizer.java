@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Optimizer to flatten the UNION operations.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -49,8 +49,9 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 		// remove any tuple expressions that do not produce any result
 		List<TupleExpr> filtered = new ArrayList<>(args.size());
 		for (TupleExpr arg : args) {
-			if (arg instanceof EmptyResult)
+			if (arg instanceof EmptyResult) {
 				continue;
+			}
 			filtered.add(arg);
 		}
 
@@ -58,20 +59,16 @@ public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationExcept
 		// however, check if we only have zero or one argument first
 		if (filtered.isEmpty()) {
 			union.replaceWith(new EmptyNUnion(args, queryInfo));
-		}
-
-		else if (filtered.size() == 1) {
+		} else if (filtered.size() == 1) {
 			union.replaceWith(filtered.get(0));
-		}
-
-		else {
+		} else {
 			union.replaceWith(new NUnion(filtered, queryInfo));
 		}
 	}
 
 	/**
 	 * Add the union arguments to the args list, includes a recursion step for nested unions.
-	 * 
+	 *
 	 * @param union
 	 * @param args
 	 */

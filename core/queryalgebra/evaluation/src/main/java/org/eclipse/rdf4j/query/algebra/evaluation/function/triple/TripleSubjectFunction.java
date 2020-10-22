@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
  * Function returning the subject component of RDF* Triple reused the IRI of rdf:subject as name
- * 
+ *
  * @author damyan.ognyanov
  *
  */

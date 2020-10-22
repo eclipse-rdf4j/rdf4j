@@ -7,18 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import java.io.IOException;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
-
 import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 /**
  * @author Bart Hanssens
@@ -27,7 +26,7 @@ public class DistanceTest {
 
 	/**
 	 * Test distance between two cities, in meters.
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test
@@ -41,14 +40,14 @@ public class DistanceTest {
 
 		assertTrue("Value is not a literal", value instanceof Literal);
 		Literal l = (Literal) value;
-		assertTrue("Literal not of type double", l.getDatatype().equals(XMLSchema.DOUBLE));
+		assertTrue("Literal not of type double", l.getDatatype().equals(XSD.DOUBLE));
 
 		assertEquals("Distance Amsterdam-Brussels not correct", 173, l.doubleValue() / 1000, 0.5);
 	}
 
 	/**
 	 * Test if distance between cities is the same in both directions
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	@Test

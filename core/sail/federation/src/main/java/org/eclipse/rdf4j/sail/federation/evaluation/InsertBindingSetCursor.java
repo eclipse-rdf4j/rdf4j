@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * Adds more bindings to each of the results.
- * 
+ *
  * @author James Leigh
  */
 public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEvaluationException> {

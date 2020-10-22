@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.lucene.spin;
 
 import java.io.File;
-
 import java.io.IOException;
 import java.net.URL;
 import java.util.Properties;
@@ -34,7 +33,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Run unit test from {@link AbstractLuceneSailSpinTest} using {@link MemoryStore}.
- * 
+ *
  * @author Jacek Grzebyta
  * @author Mark Hale
  */

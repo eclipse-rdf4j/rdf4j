@@ -19,13 +19,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import junit.framework.TestCase;
-
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -49,7 +46,6 @@ import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -59,22 +55,23 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import junit.framework.TestCase;
 
 /**
  * Test suite for evaluation of SPARQL queries involving SERVICE clauses. The test suite starts up an embedded Jetty
  * server running RDF4J Server, which functions as the SPARQL endpoint to test against. The test is configured to
  * execute the W3C service tests located in rdf4j-sparql-testsuite/src/main/resources/testcases-service
- * 
+ *
  * @author Jeen Broekstra
  * @author Andreas Schwarte
  */
@@ -101,11 +98,13 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@Before
+	@Override
 	public void setUp() throws Exception {
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<String>(MAX_ENDPOINTS);
-		for (int i = 1; i <= MAX_ENDPOINTS; i++)
+		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
+		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			repositoryIds.add("endpoint" + i);
+		}
 		server = new SPARQLEmbeddedServer(repositoryIds);
 
 		try {
@@ -115,7 +114,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			throw e;
 		}
 
-		remoteRepositories = new ArrayList<HTTPRepository>(MAX_ENDPOINTS);
+		remoteRepositories = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl(i));
 			r.initialize();
@@ -128,7 +127,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Get the repository url, initialized repositories are called endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
-	 * 
+	 *
 	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
@@ -138,7 +137,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Get the repository, initialized repositories are called endpoint1 endpoint2 .. endpoint%MAX_ENDPOINTS%
-	 * 
+	 *
 	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
@@ -148,7 +147,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Prepare a particular test, and load the specified data. Note: the repositories are cleared before loading data
-	 * 
+	 *
 	 * @param localData    a local data file that is added to local repository, use null if there is no local data
 	 * @param endpointData a list of endpoint data files, dataFile at index is loaded to endpoint%i%, use empty list for
 	 *                     no remote data
@@ -156,9 +155,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 */
 	protected void prepareTest(String localData, List<String> endpointData) throws Exception {
 
-		if (endpointData.size() > MAX_ENDPOINTS)
+		if (endpointData.size() > MAX_ENDPOINTS) {
 			throw new RuntimeException(
 					"MAX_ENDPOINTs to low, " + endpointData.size() + " repositories needed. Adjust configuration");
+		}
 
 		if (localData != null) {
 			loadDataSet(localRepository, localData);
@@ -173,7 +173,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Load a dataset. Note: the repositories are cleared before loading data
-	 * 
+	 *
 	 * @param rep
 	 * @param datasetFile
 	 * @throws RDFParseException
@@ -185,8 +185,9 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		logger.debug("loading dataset...");
 		InputStream dataset = SPARQLServiceEvaluationTest.class.getResourceAsStream(datasetFile);
 
-		if (dataset == null)
+		if (dataset == null) {
 			throw new IllegalArgumentException("Datasetfile " + datasetFile + " not found.");
+		}
 
 		RepositoryConnection con = rep.getConnection();
 		try {
@@ -204,6 +205,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws java.lang.Exception
 	 */
 	@After
+	@Override
 	public void tearDown() throws Exception {
 		try {
 			localRepository.shutDown();
@@ -214,7 +216,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Verify that BIND clause alias from the SERVICE clause gets added to the result set.
-	 * 
+	 *
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/646">#646</a>
 	 */
 	@Test
@@ -243,7 +245,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	/**
 	 * Verify that all relevant variable names from the SERVICE clause get added to the result set when a BIND clause is
 	 * present.
-	 * 
+	 *
 	 * @see <a href="https://github.com/eclipse/rdf4j/issues/703">#703</a>
 	 */
 	@Test
@@ -456,7 +458,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files located on the class path.
-	 * 
+	 *
 	 * @param queryFile
 	 * @param expectedResultFile
 	 * @param checkOrder
@@ -497,7 +499,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Read the query string from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -514,7 +516,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Read the expected tuple query result from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -545,7 +547,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Read the expected graph query result from the specified resource
-	 * 
+	 *
 	 * @param resultFile
 	 * @return
 	 * @throws Exception
@@ -558,7 +560,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(SimpleValueFactory.getInstance());
 
-		Set<Statement> result = new LinkedHashSet<Statement>();
+		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
 		InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
@@ -573,7 +575,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Compare two tuple query results
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @param checkOrder
@@ -625,10 +627,10 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 			List<BindingSet> expectedBindings = Iterations.asList(expectedResultTable);
 
-			List<BindingSet> missingBindings = new ArrayList<BindingSet>(expectedBindings);
+			List<BindingSet> missingBindings = new ArrayList<>(expectedBindings);
 			missingBindings.removeAll(queryBindings);
 
-			List<BindingSet> unexpectedBindings = new ArrayList<BindingSet>(queryBindings);
+			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
 			StringBuilder message = new StringBuilder(128);
@@ -694,7 +696,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	/**
 	 * Compare two graphs
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @throws Exception

@@ -36,7 +36,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	/**
 	 * Gets the next element. Subclasses should implement this method so that it returns the next element.
-	 * 
+	 *
 	 * @return The next element, or <tt>null</tt> if no more elements are available.
 	 */
 	protected abstract E getNextElement() throws X;
@@ -71,7 +71,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	/**
 	 * Fetches the next element if it hasn't been fetched yet and stores it in {@link #nextElement}.
-	 * 
+	 *
 	 * @return The next element, or null if there are no more results.
 	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */

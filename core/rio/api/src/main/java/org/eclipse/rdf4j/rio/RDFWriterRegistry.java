@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 
 /**
  * A registry that keeps track of the available {@link RDFWriterFactory}s.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class RDFWriterRegistry extends FileFormatServiceRegistry<RDFFormat, RDFWriterFactory> {
@@ -26,7 +26,7 @@ public class RDFWriterRegistry extends FileFormatServiceRegistry<RDFFormat, RDFW
 
 	/**
 	 * Gets the default RDFWriterRegistry.
-	 * 
+	 *
 	 * @return The default registry.
 	 */
 	public static RDFWriterRegistry getInstance() {

@@ -14,7 +14,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.URIUtil;
-
 import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -29,17 +28,18 @@ import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.model.vocabulary.TIME;
 import org.eclipse.rdf4j.model.vocabulary.VCARD4;
 import org.eclipse.rdf4j.model.vocabulary.VOID;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Namespace prefix setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public final static String NAME = "prefixes";
 
 	public final static Set<Namespace> DEFAULT = new HashSet<>();
+
 	static {
 		DEFAULT.add(DCAT.NS);
 		DEFAULT.add(DCTERMS.NS);
@@ -55,7 +55,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 		DEFAULT.add(TIME.NS);
 		DEFAULT.add(VCARD4.NS);
 		DEFAULT.add(VOID.NS);
-		DEFAULT.add(XMLSchema.NS);
+		DEFAULT.add(XSD.NS);
 	}
 
 	@Override
@@ -68,7 +68,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * Default set of namespaces are well-known ones
 	 */
 	public Prefixes() {
@@ -77,7 +77,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public Prefixes(Set<Namespace> initValue) {
@@ -96,7 +96,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 
 	/**
 	 * Remove the namespace with specified prefix
-	 * 
+	 *
 	 * @param prefix
 	 */
 	private void clearNamespace(String prefix) {
@@ -113,7 +113,7 @@ public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	/**
 	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI E.g. 'dcterms
 	 * http://purl.org/dc/terms/'
-	 * 
+	 *
 	 * @param namespace
 	 */
 	private void setNamespace(String namespace) {

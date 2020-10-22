@@ -7,8 +7,12 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
-import com.google.common.collect.Lists;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
+
 import java.util.List;
+
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
@@ -26,14 +30,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.ALL_MATCHES;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SEARCH;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
 
 /**
  * This test class reproduces errors described in issues #220 and #235 with simplified IDE (#739).
@@ -212,18 +215,18 @@ public abstract class AbstractLuceneSailSpinTest {
 	 * prefix t: <urn:test.org/onto#>
 	 * prefix kw: <urn:test.org/key-words/>
 	 *
-	 * select ?term_string ?sub ?score where { 
-	 * (?term_string search:allMaches search:score) search:search (?sub ?score) . 
-	 * ?sub a t:Data . 
-	 *   { select ?term_string where 
-	 *       { 
-	 *       ?pred_map rdfs:label "keyWord" ; 
-	 *       t:column ?pred . 
-	 *       [] ?pred ?term . 
-	 *       bind(str(?term) as ?term_string) . 
-	 *       } 
+	 * select ?term_string ?sub ?score where {
+	 * (?term_string search:allMaches search:score) search:search (?sub ?score) .
+	 * ?sub a t:Data .
+	 *   { select ?term_string where
+	 *       {
+	 *       ?pred_map rdfs:label "keyWord" ;
+	 *       t:column ?pred .
+	 *       [] ?pred ?term .
+	 *       bind(str(?term) as ?term_string) .
+	 *       }
 	 *   }
-	 * } 
+	 * }
 	 * </code>
 	 *
 	 * @throws Exception

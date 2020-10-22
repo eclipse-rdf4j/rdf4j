@@ -21,14 +21,13 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
-import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import com.github.jsonldjava.core.DocumentLoader;
 import com.github.jsonldjava.core.JsonLdError;
 import com.github.jsonldjava.core.JsonLdOptions;
@@ -37,7 +36,7 @@ import com.github.jsonldjava.utils.JsonUtils;
 
 /**
  * An {@link RDFParser} that links to {@link JSONLDInternalTripleCallback}.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDParser extends AbstractRDFParser implements RDFParser {
@@ -53,7 +52,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
-	 * 
+	 *
 	 * @param valueFactory The ValueFactory to use
 	 */
 	public JSONLDParser(final ValueFactory valueFactory) {
@@ -100,7 +99,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Parse
-	 * 
+	 *
 	 * @param nextParser
 	 * @param baseURI
 	 * @throws IOException
@@ -145,7 +144,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
-	 * 
+	 *
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
 	private JsonFactory configureNewJsonFactory() {

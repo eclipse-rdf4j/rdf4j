@@ -10,11 +10,11 @@ package org.eclipse.rdf4j.rio.n3;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.turtle.TurtleParser;
+import org.eclipse.rdf4j.rio.n3.N3Parser;
 
 /**
  * An {@link RDFParserFactory} for N3 parsers.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class N3ParserFactory implements RDFParserFactory {
@@ -28,10 +28,10 @@ public class N3ParserFactory implements RDFParserFactory {
 	}
 
 	/**
-	 * Returns a new instance of {@link TurtleParser}.
+	 * Returns a new instance of {@link N3Parser}.
 	 */
 	@Override
 	public RDFParser getParser() {
-		return new TurtleParser();
+		return new N3Parser();
 	}
 }

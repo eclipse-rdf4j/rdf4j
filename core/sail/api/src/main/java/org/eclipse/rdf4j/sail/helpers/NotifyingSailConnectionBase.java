@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
 
 /**
  * Abstract Class offering base functionality for SailConnection implementations.
- * 
+ *
  * @author Arjohn Kampman
  * @author jeen
  */

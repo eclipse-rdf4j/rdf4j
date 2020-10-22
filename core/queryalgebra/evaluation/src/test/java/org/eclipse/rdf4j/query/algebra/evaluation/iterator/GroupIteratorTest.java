@@ -14,7 +14,7 @@ import java.util.Collections;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -42,12 +42,14 @@ public class GroupIteratorTest {
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 
 	private final static BindingSetAssignment EMPTY_ASSIGNMENT;
+
 	static {
 		EMPTY_ASSIGNMENT = new BindingSetAssignment();
 		EMPTY_ASSIGNMENT.setBindingSets(Collections.emptyList());
 	}
 
 	private final static BindingSetAssignment NONEMPTY_ASSIGNMENT;
+
 	static {
 		NONEMPTY_ASSIGNMENT = new BindingSetAssignment();
 		ArrayList<BindingSet> list = new ArrayList<>();
@@ -67,7 +69,7 @@ public class GroupIteratorTest {
 
 		assertThat(gi.next().getBinding("avg").getValue())
 				.describedAs("AVG on empty set should result in 0")
-				.isEqualTo(vf.createLiteral("0", XMLSchema.INTEGER));
+				.isEqualTo(vf.createLiteral("0", XSD.INTEGER));
 	}
 
 	@Test
@@ -128,7 +130,7 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(vf.createLiteral("5", XMLSchema.DECIMAL));
+		assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(vf.createLiteral("5", XSD.DECIMAL));
 	}
 
 	@Test
@@ -137,7 +139,7 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("count", new Count(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertThat(gi.next().getBinding("count").getValue()).isEqualTo(vf.createLiteral("9", XMLSchema.INTEGER));
+		assertThat(gi.next().getBinding("count").getValue()).isEqualTo(vf.createLiteral("9", XSD.INTEGER));
 	}
 
 	@Test
@@ -146,6 +148,6 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("sum", new Sum(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
-		assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(vf.createLiteral("45", XMLSchema.INTEGER));
+		assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(vf.createLiteral("45", XSD.INTEGER));
 	}
 }

@@ -56,6 +56,7 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
 
 - We use a line width of 120 characters.
 - We use Unix line endings (LF).
+- We require curly braces for every control statement body (e.g. if-else), even if it is a single line.
 - We use the following header comment on every Java file:
 
 ```
@@ -68,11 +69,24 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
  *******************************************************************************/
  ```
 
-**NB** for older existing source code, RDF4J uses a slightly different
+...of course, replace `${year}` with the actual current year (if you use
+Eclipse IDE, this will happen automatically). All RDF4J copyright headers
+record only the year a file was _first_ contributed, so there is no need
+to update the year of existing files if you modify those files.
+
+**NB** for older existing source code, RDF4J sometimes uses a slightly different
 copyright header, mentioning 'Aduna' as additional copyright holder . Please
 make sure you do not use that different header for any new contributions. 
 
+For import statements, the following conventions hold:
+
+- we do not use wildcard imports or wildcard static imports
+- we allow static imports where possible, but do not require their use
+- we apply a fixed ordering for import statements, following Eclipse conventions. Import statements are ordered in groups separated by a single empty line, in the following order: static imports, java.\*, javax.\*, org.\*, com.\*, everything else.
+
 There are various ways to apply these conventions to your code, depending on which editor/IDE you use.
+
+We use a single tab as the indentation in all XML files (including the `pom.xml` files). 
 
 ### Eclipse IDE users
 
@@ -87,34 +101,53 @@ Similarly, to apply templates:
 2. Click 'Import...' and find the file `eclipse-settings/codetemplates.xml`, located in the git repository root.
 3. Click OK. The templates will be automatically applied when necessary. 
 
-### Other IDEs / using the Maven formatter plugin
+For import organization, the Eclipse defaults should be fine, but you can make sure as follows:
 
-If you do not use Eclipse IDE, we still welcome your contributions of course. There are several ways in which you can configure your IDE to format according to our conventions. Some tools will have the Eclipse code conventions built in, or will have options to import Eclipse formatter settings. 
+1. go to 'Preferences' -> 'Java' -> 'Code Style' -> 'Organize Imports'. 
+2. Make sure the list of ordered groups corresponds to 'java', 'javax', 'org', 'com'.
+3. Make sure the numbers of (static) imports needed for wildcard imports are set suitable high (99 or more).
 
-In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/) for validation of all code changes against the coding conventions. 
+You can apply import organization by hitting Ctrl+Shift+O, or you can configure Eclipse to automtaically organize imports on save. This can be activated by going to 'Preferences' -> 'Java' -> 'Editor' -> 'Save Actions' and making sure the 'Organize imports' option checkbox is ticked.
+
+Finally, for XML formatting, the Eclipse defaults should be fine, but you can make sure as follows:
+
+1. go to 'Preferences' -> 'XML' -> 'XML Files' -> 'Editor'. 
+2. Make sure line width is set to 120, 'Indent using tabs' is active, and indentation size is set to 1. 
+
+### Other IDEs / using the Maven formatter and import sorting plugins
+
+If you do not use Eclipse IDE, we still welcome your contributions of course. There are several ways in which you can configure your IDE to format according to our conventions. Some tools will have the Eclipse code conventions built in, or will have options to import Eclipse formatter and import sorting settings. 
+
+In addition, the RDF4J project is configured to use the [formatter maven plugin](https://code.revelc.net/formatter-maven-plugin/), the [import sorting maven plugin](https://code.revelc.net/impsort-maven-plugin/index.html) and [XML Format plugin](https://acegi.github.io/xml-format-maven-plugin/) for validation of all code changes against the coding conventions, and compiling the project using Apache Maven will automatically activate these plugins and fix most formatting/import issues.
+
+The formatters are automatically run by maven during the `process-resources` phase, which means they will activate whenever you compile, verify, package or install the project using maven (see the [maven default lifecycle](https://maven.apache.org/ref/3.6.3/maven-core/lifecycles.html#default_Lifecycle) for more details).
 
 To validate your changes manually, run the following command:
 
 ```
-mvn formatter:validate
+mvn formatter:validate impsort:check xml-format:xml-check
 ```
 
-To reformat your code before committing, run:
-
+To reformat your code manually before committing, run:
 
 ```
-mvn formatter:format
+mvn formatter:format impsort:sort xml-format:xml-format
 ```
 
-### XML indentation
+or alternatively:
 
-We use a single tab as the indentation in all XML files (including the `pom.xml` files). This is not enforced by the build process, but we ask you to adjust your editors accordingly. If you wish, you can use the following command to check your xml files:
+```
+mvn process-resources
+```
 
-     mvn xml-format:xml-check
-     
-To reformat xml files in bulk, run:
+Please note: these maven plugins are meant as a tool to help you and 
+us to quickly check the most common formatting problems. They are _not_,
+however, intended to completely relieve you of responsibility for correct
+formatting, and won't necessarily cover all code conventions we follow. For
+example, the guideline that we don't allow wildcard import statements is not
+checked by these plugins. 
 
-     mvn xml-format:xml-format
+Having said all that, we appreciate your best effort, but if occassionally something slips through, that's no big deal: code conventions are there to help us as developers, not to make your life miserable :) 
      
 ## Workflow 
 

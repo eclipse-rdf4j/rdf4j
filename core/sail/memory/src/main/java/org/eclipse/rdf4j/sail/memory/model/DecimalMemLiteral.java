@@ -11,11 +11,11 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores a decimal value to avoid parsing.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DecimalMemLiteral extends MemLiteral {
@@ -33,7 +33,7 @@ public class DecimalMemLiteral extends MemLiteral {
 	 *--------------*/
 
 	public DecimalMemLiteral(Object creator, BigDecimal value) {
-		this(creator, value, XMLSchema.DECIMAL);
+		this(creator, value, XSD.DECIMAL);
 	}
 
 	public DecimalMemLiteral(Object creator, BigDecimal value, IRI datatype) {

@@ -60,8 +60,8 @@ public class LeftOuterJoin implements PlanNode {
 
 					if (nextRight != null) {
 
-						if (nextLeft.line.get(0) == nextRight.line.get(0)
-								|| nextLeft.line.get(0).equals(nextRight.line.get(0))) {
+						if (nextLeft.getLine().get(0) == nextRight.getLine().get(0)
+								|| nextLeft.getLine().get(0).equals(nextRight.getLine().get(0))) {
 							next = TupleHelper.join(nextLeft, nextRight);
 							prevLeft = nextLeft;
 							nextRight = null;

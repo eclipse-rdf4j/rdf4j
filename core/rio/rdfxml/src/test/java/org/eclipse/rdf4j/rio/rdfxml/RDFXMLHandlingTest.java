@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Test for error handling by RDFXML Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class RDFXMLHandlingTest extends AbstractParserHandlingTest {

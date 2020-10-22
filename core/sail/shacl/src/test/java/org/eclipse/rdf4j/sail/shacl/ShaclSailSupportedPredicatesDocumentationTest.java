@@ -8,16 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.junit.AfterClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import static junit.framework.TestCase.assertTrue;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -25,7 +16,18 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static junit.framework.TestCase.assertTrue;
+import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.junit.AfterClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 /**
  * @author Håvard Ottestad
@@ -56,7 +58,9 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 
 		Set<IRI> predicatesInUseInTest = parse.predicates()
 				.stream()
-				.filter(p -> p.getNamespace().equals(SHACL.NAMESPACE))
+				.filter(p -> (p.getNamespace().equals(SHACL.NAMESPACE) ||
+						p.getNamespace().equals(RSX.NAMESPACE) ||
+						p.getNamespace().equals(DASH.NAMESPACE)))
 				.collect(Collectors.toSet());
 
 		for (IRI predicate : predicatesInUseInTest) {

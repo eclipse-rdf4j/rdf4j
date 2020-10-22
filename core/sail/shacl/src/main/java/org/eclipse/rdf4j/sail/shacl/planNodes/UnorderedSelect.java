@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.Objects;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -19,8 +21,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -72,6 +72,9 @@ public class UnorderedSelect implements PlanNode {
 				Statement next = statements.next();
 				if (outputPattern == OutputPattern.SubjectObject) {
 					return new Tuple(next.getSubject(), next.getObject());
+				}
+				if (outputPattern == OutputPattern.ObjectSubject) {
+					return new Tuple(next.getObject(), next.getSubject());
 				}
 				if (outputPattern == OutputPattern.SubjectPredicateObject) {
 					return new Tuple(next.getSubject(), next.getPredicate(), next.getObject());
@@ -130,6 +133,7 @@ public class UnorderedSelect implements PlanNode {
 				"subject=" + Formatter.prefix(subject) +
 				", predicate=" + Formatter.prefix(predicate) +
 				", object=" + Formatter.prefix(object) +
+				", outputPattern=" + outputPattern +
 				'}';
 	}
 
@@ -172,6 +176,7 @@ public class UnorderedSelect implements PlanNode {
 
 	public enum OutputPattern {
 		SubjectObject,
+		ObjectSubject,
 		ObjectPredicateSubject,
 		SubjectPredicateObject
 	}

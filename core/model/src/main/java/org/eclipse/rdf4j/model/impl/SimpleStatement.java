@@ -13,14 +13,15 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractStatement;
 
 /**
  * A simple default implementation of the {@link Statement} interface for statements that don't have an associated
  * context. For statements that do have an associated context, {@link ContextStatement} can be used.
- * 
+ *
  * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory
  */
-public class SimpleStatement implements Statement {
+public class SimpleStatement extends AbstractStatement {
 
 	/*-----------*
 	 * Constants *
@@ -53,7 +54,7 @@ public class SimpleStatement implements Statement {
 	 * Note that creating SimpleStatement objects directly via this constructor is not the recommended approach.
 	 * Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by
 	 * using {@link org.eclipse.rdf4j.model.impl.SimpleValueFactory#getInstance()}) to create new Statement objects.
-	 * 
+	 *
 	 * @param subject   The statement's subject, must not be <tt>null</tt>.
 	 * @param predicate The statement's predicate, must not be <tt>null</tt>.
 	 * @param object    The statement's object, must not be <tt>null</tt>.
@@ -93,49 +94,4 @@ public class SimpleStatement implements Statement {
 		return null;
 	}
 
-	// Overrides Object.equals(Object), implements Statement.equals(Object)
-	@Override
-	public boolean equals(Object other) {
-		if (this == other) {
-			return true;
-		}
-
-		if (other instanceof Statement) {
-			Statement that = (Statement) other;
-
-			/*
-			 * We check object equality first since it's most likely to be different. In general the number of different
-			 * predicates and contexts in sets of statements are the smallest (and therefore most likely to be
-			 * identical), so these are checked last.
-			 */
-			return object.equals(that.getObject()) && subject.equals(that.getSubject())
-					&& predicate.equals(that.getPredicate()) && Objects.equals(getContext(), that.getContext());
-		}
-
-		return false;
-	}
-
-	// Overrides Object.hashCode(), implements Statement.hashCode()
-	@Override
-	public int hashCode() {
-		return Objects.hash(subject, predicate, object, getContext());
-	}
-
-	/**
-	 * Gives a String-representation of this Statement that can be used for debugging.
-	 */
-	@Override
-	public String toString() {
-		StringBuilder sb = new StringBuilder(256);
-
-		sb.append("(");
-		sb.append(getSubject());
-		sb.append(", ");
-		sb.append(getPredicate());
-		sb.append(", ");
-		sb.append(getObject());
-		sb.append(")");
-
-		return sb.toString();
-	}
 }

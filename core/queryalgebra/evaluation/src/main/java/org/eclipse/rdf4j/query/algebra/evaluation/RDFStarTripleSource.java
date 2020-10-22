@@ -18,7 +18,7 @@ public interface RDFStarTripleSource extends TripleSource {
 	/**
 	 * Gets all Triple nodes that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards.
-	 * 
+	 *
 	 * @param subj A Resource specifying the triple's subject, or <tt>null</tt> for a wildcard.
 	 * @param pred A URI specifying the triple's predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj  A Value specifying the triple's object, or <tt>null</tt> for a wildcard.

@@ -1,5 +1,12 @@
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -11,51 +18,49 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Stream;
-
 public class ShaclProperties {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclProperties.class);
 
-	List<Resource> clazz = new ArrayList<>(0);
-	List<Resource> or = new ArrayList<>(0);
-	List<Resource> and = new ArrayList<>(0);
-	List<Resource> not = new ArrayList<>(0);
-	Long minCount;
-	Long maxCount;
+	private final List<Resource> clazz = new ArrayList<>();
+	private final List<Resource> or = new ArrayList<>();
+	private final List<Resource> and = new ArrayList<>();
+	private final List<Resource> not = new ArrayList<>();
+	private Long minCount;
+	private Long maxCount;
 
-	Resource datatype;
-	Resource in;
+	private Resource datatype;
+	private Resource in;
+	private Value hasValue;
+	private Resource hasValueIn;
 
-	Long minLength;
-	Long maxLength;
+	private Long minLength;
+	private Long maxLength;
 
-	Resource languageIn;
-	Resource nodeKind;
+	private Resource languageIn;
+	private Resource nodeKind;
 
-	Resource path;
+	private Resource path;
 
-	Literal minExclusive;
-	Literal maxExclusive;
-	Literal minInclusive;
-	Literal maxInclusive;
+	private Literal minExclusive;
+	private Literal maxExclusive;
+	private Literal minInclusive;
+	private Literal maxInclusive;
 
-	List<String> pattern = new ArrayList<>(0);
-	String flags = "";
+	private final List<String> pattern = new ArrayList<>();
+	private String flags = "";
 
-	Set<Resource> targetClass = new HashSet<>(0);
-	TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
-	Set<IRI> targetSubjectsOf = new HashSet<>(0);
-	Set<IRI> targetObjectsOf = new HashSet<>(0);
+	private final Set<Resource> targetClass = new HashSet<>();
+	private final TreeSet<Value> targetNode = new TreeSet<>(new ValueComparator());
+	private final Set<IRI> targetSubjectsOf = new HashSet<>();
+	private final Set<IRI> targetObjectsOf = new HashSet<>();
+	private final List<Resource> targetShape = new ArrayList<>();
 
-	boolean deactivated = false;
+	private final List<Resource> target = new ArrayList<>();
 
-	boolean uniqueLang = false;
+	private boolean deactivated = false;
+
+	private boolean uniqueLang = false;
 
 	public ShaclProperties() {
 	}
@@ -183,6 +188,24 @@ public class ShaclProperties {
 					break;
 				case "http://www.w3.org/ns/shacl#property":
 					break;
+				case "http://www.w3.org/ns/shacl#target":
+					target.add((Resource) object);
+					break;
+				case "http://www.w3.org/ns/shacl#hasValue":
+					if (hasValue != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					hasValue = object;
+					break;
+				case "http://datashapes.org/dash#hasValueIn":
+					if (hasValueIn != null) {
+						throw new IllegalStateException(predicate + " already populated");
+					}
+					hasValueIn = (Resource) object;
+					break;
+				case "http://rdf4j.org/shacl-extensions#targetShape":
+					targetShape.add((Resource) object);
+					break;
 				default:
 					if (predicate.startsWith(SHACL.NAMESPACE)) {
 						logger.warn("Unsupported SHACL feature detected {} in statement {}",
@@ -294,5 +317,21 @@ public class ShaclProperties {
 
 	public boolean isUniqueLang() {
 		return uniqueLang;
+	}
+
+	public Value getHasValue() {
+		return hasValue;
+	}
+
+	public List<Resource> getTarget() {
+		return target;
+	}
+
+	public List<Resource> getTargetShape() {
+		return targetShape;
+	}
+
+	public Resource getHasValueIn() {
+		return hasValueIn;
 	}
 }

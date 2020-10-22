@@ -6,12 +6,12 @@ on:
       - master
 
 jobs:
-  verify:
+  build:
 
     runs-on: ubuntu-latest    
     strategy:
       matrix:
-        jdk: [1.8, 11]
+        jdk: [1.8, 15]
 
     steps:
     - uses: actions/checkout@v1
@@ -19,7 +19,14 @@ jobs:
       uses: actions/setup-java@v1
       with:
         java-version: ${{ matrix.jdk }}
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Build
-      run: mvn -B clean install -DskipTests
+      run: mvn -B clean install -Pquick,\!formatting
     - name: Compliance tests
-      run: mvn -B verify -Pcompliance --file pom.xml
+      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml

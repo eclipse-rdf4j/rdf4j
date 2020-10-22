@@ -1,4 +1,4 @@
-/******************************************************************************* 
+/*******************************************************************************
  * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -30,7 +30,7 @@ import org.junit.rules.Timeout;
 
 /**
  * Test cases for RDF* support in the Repository.
- * 
+ *
  * @author Jeen Broekstra
  *
  */
@@ -148,6 +148,19 @@ public abstract class RDFStarSupportTest {
 		assertThat(bs.getValue("b")).isEqualTo(RDF.TYPE);
 		assertThat(bs.getValue("c")).isEqualTo(RDF.ALT);
 
+	}
+
+	@Test
+	public void testSparqlStarUpdate() {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String update = "PREFIX foaf: <" + FOAF.NAMESPACE
+				+ ">\n INSERT { ?s foaf:age 23 } WHERE { <<?s foaf:name ?o>> ?b ?c .}";
+
+		testCon.prepareUpdate(update).execute();
+
+		assertThat(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(23), false));
 	}
 
 	protected abstract Repository createRepository();

@@ -12,24 +12,17 @@ ex:PersonShape
 	sh:targetClass rdfs:Resource ;
         rdfs:label "label" ;
         rdfs:subClassOf ex:HumanShape ;
-	sh:property ex:PersonPropertyShape, ex:PersonPropertyShape2,  ex:PersonPropertyShape3  .
+	sh:property ex:inverseOfWithComplex, ex:pathSequence, ex:alternativePath  .
 
-ex:PersonPropertyShape
-		sh:path [ sh:inversePath ex:inverseThis ]  ;
+ex:inverseOfWithComplex
+		sh:path [ sh:inversePath [sh:zeroOrMorePath ex:inverseThis] ]  ;
 		sh:minCount 1 .
 
 
-ex:PersonPropertyShape2
-		sh:path ex:path  ;
+ex:pathSequence
+		sh:path ( ex:parent ex:firstName )  ;
 		sh:minCount 1 .
 
-
-ex:path sh:inversePath ex:inverseThis  .
-
-
-ex:PersonPropertyShape3
-		sh:path ex:pathList  ;
+ex:alternativePath
+		sh:path [ sh:alternativePath ex:father ]  ;
 		sh:minCount 1 .
-
-ex:pathList rdf:first "one" ;
-        rdf:rest rdf:nil .

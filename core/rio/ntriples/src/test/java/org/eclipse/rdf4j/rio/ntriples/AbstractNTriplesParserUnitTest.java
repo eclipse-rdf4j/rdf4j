@@ -13,14 +13,19 @@ import static org.junit.Assert.fail;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.TreeSet;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Test;
@@ -460,6 +465,34 @@ public abstract class AbstractNTriplesParserUnitTest {
 			fail("Should have failed to parse invalid N-Triples bnode with '" + character
 					+ "' at the begining of the bnode label");
 		}
+	}
+
+	private static class CommentCollector extends StatementCollector {
+		final List<String> comments = new LinkedList<>();
+
+		public CommentCollector(Model model) {
+			super(model);
+		}
+
+		@Override
+		public void handleComment(String comment) throws RDFHandlerException {
+			comments.add(comment);
+		}
+	}
+
+	@Test
+	public void testHandleComment() throws Exception {
+		RDFParser ntriplesParser = createRDFParser();
+		Model model = new LinkedHashModel();
+		String commentStr = "some comment in it's own line";
+		CommentCollector cc = new CommentCollector(model);
+		ntriplesParser.setRDFHandler(cc);
+		ntriplesParser.parse(
+				new StringReader("<s:1> <p:1> <o:1> .\n#" + commentStr + "\n<s:2> <p:2> <o:2> ."),
+				"http://example/");
+		assertEquals(2, model.size());
+		assertEquals(new TreeSet<>(Arrays.asList("o:1", "o:2")), Models.objectStrings(model));
+		assertEquals(Arrays.asList(commentStr), cc.comments);
 	}
 
 	protected abstract RDFParser createRDFParser();

@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Used to create a lock in a directory.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -57,7 +57,7 @@ public class DirectoryLockManager implements LockManager {
 
 	/**
 	 * Determines if the directory is locked.
-	 * 
+	 *
 	 * @return <code>true</code> if the directory is already locked.
 	 */
 	@Override
@@ -67,7 +67,7 @@ public class DirectoryLockManager implements LockManager {
 
 	/**
 	 * Creates a lock in a directory if it does not yet exist.
-	 * 
+	 *
 	 * @return a newly acquired lock or null if the directory is already locked.
 	 */
 	@Override
@@ -111,7 +111,7 @@ public class DirectoryLockManager implements LockManager {
 
 	/**
 	 * Creates a lock in a directory if it does not yet exist.
-	 * 
+	 *
 	 * @return a newly acquired lock.
 	 * @throws SailLockedException if the directory is already locked.
 	 */
@@ -140,7 +140,7 @@ public class DirectoryLockManager implements LockManager {
 
 	/**
 	 * Revokes a lock owned by another process.
-	 * 
+	 *
 	 * @return <code>true</code> if a lock was successfully revoked.
 	 */
 	@Override
@@ -195,6 +195,7 @@ public class DirectoryLockManager implements LockManager {
 		return new Lock() {
 
 			private Thread hook;
+
 			{
 				try {
 					Thread hook = new Thread(this::delete);

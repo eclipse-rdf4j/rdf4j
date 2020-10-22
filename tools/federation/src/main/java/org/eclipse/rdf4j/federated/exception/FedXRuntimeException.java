@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.federated.exception;
 
 /**
  * Base class for any FedX Exception.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

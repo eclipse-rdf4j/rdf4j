@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.util.iterators.EmptyIterator;
 
 /**
  * Generic hash join implementation suitable for use by Sail implementations.
- * 
+ *
  * @author MJAHale
  */
 public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -66,11 +66,13 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	public HashJoinIteration(EvaluationStrategy strategy, Join join, BindingSet bindings)
 			throws QueryEvaluationException {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, false);
+		join.setAlgorithm(this);
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
 			throws QueryEvaluationException {
 		this(strategy, join.getLeftArg(), join.getRightArg(), bindings, true);
+		join.setAlgorithm(this);
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy, TupleExpr left, TupleExpr right, BindingSet bindings,
@@ -288,7 +290,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent list
-	 * 
+	 *
 	 * @return list
 	 */
 	protected Collection<BindingSet> makeIterationCache(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
@@ -297,7 +299,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent maps
-	 * 
+	 *
 	 * @return map
 	 */
 	protected Map<BindingSetHashKey, List<BindingSet>> makeHashTable(int initialSize) {
@@ -316,7 +318,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	/**
 	 * Utility methods to make it easier to inserted custom store dependent list
-	 * 
+	 *
 	 * @return list
 	 */
 	protected List<BindingSet> makeHashValue(int currentMaxListSize) {

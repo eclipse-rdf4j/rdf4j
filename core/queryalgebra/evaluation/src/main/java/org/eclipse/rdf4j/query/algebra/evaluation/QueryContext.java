@@ -23,7 +23,7 @@ public class QueryContext {
 
 	private static final String QUERY_PREPARER_ATTRIBUTE = QueryPreparer.class.getName();
 
-	private static final ThreadLocal<QueryContext> queryContext = new ThreadLocal<QueryContext>();
+	private static final ThreadLocal<QueryContext> queryContext = new ThreadLocal<>();
 
 	public static QueryContext getQueryContext() {
 		return queryContext.get();

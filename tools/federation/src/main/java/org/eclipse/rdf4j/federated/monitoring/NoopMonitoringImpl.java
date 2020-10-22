@@ -14,7 +14,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public class NoopMonitoringImpl implements Monitoring {
 
 	public NoopMonitoringImpl() {
-	};
+	}
+
+	;
 
 	@Override
 	public void monitorRemoteRequest(Endpoint e) {

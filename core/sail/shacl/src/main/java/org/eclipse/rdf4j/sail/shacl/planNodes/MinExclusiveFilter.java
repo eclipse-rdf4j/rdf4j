@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.math.BigDecimal;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-
-import java.math.BigDecimal;
 
 /**
  * @author Håvard Ottestad
@@ -27,7 +27,7 @@ public class MinExclusiveFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		Value literal = t.line.get(1);
+		Value literal = t.getLine().get(1);
 
 		if (literal instanceof Literal) {
 			BigDecimal bigDecimal = ((Literal) literal).decimalValue();

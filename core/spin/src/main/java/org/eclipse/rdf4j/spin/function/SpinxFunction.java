@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.spin.Argument;
 
@@ -89,6 +89,7 @@ public class SpinxFunction implements TransientFunction {
 
 	@Override
 	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+
 		Bindings bindings = scriptEngine.createBindings();
 		for (int i = 0; i < args.length; i++) {
 			Argument argument = arguments.get(i);
@@ -96,9 +97,9 @@ public class SpinxFunction implements TransientFunction {
 			Object jsArg;
 			if (arg instanceof Literal) {
 				Literal argLiteral = (Literal) arg;
-				if (XMLSchema.INTEGER.equals(argLiteral.getDatatype())) {
+				if (XSD.INTEGER.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.intValue();
-				} else if (XMLSchema.DECIMAL.equals(argLiteral.getDatatype())) {
+				} else if (XSD.DECIMAL.equals(argLiteral.getDatatype())) {
 					jsArg = argLiteral.doubleValue();
 				} else {
 					jsArg = argLiteral.getLabel();

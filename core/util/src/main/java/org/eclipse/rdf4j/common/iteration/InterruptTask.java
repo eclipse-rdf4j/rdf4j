@@ -12,7 +12,7 @@ import java.util.TimerTask;
 
 /**
  * TimerTask that keeps a weak reference to the supplied iteration and when activated, interrupts it.
- * 
+ *
  * @author Jeen Broekstra
  */
 class InterruptTask<E, X extends Exception> extends TimerTask {

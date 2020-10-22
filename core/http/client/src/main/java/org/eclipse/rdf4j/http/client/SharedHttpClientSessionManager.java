@@ -28,18 +28,15 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
- * 
+ *
  * @author James Leigh
  */
 public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
 	/**
-	 * FIXME: issue #1271, workaround for OpenJDK 8 bug. ScheduledThreadPoolExecutor with 0 core threads may cause 100%
-	 * CPU usage. Using 1 core thread instead of 0 (default) fixes the problem but wastes some resources.
-	 * 
-	 * @see <a href="https://bugs.openjdk.java.net/browse/JDK-8129861">JDK-8129861</a>
+	 * Configurable system property {@code org.eclipse.rdf4j.client.executors.corePoolSize} for specifying the
+	 * background executor core thread pool size.
 	 */
-	private static final int cores = (System.getProperty("org.eclipse.rdf4j.client.executors.jdkbug") != null) ? 1 : 0;
-	/**/
+	public static final String CORE_POOL_SIZE_PROPERTY = "org.eclipse.rdf4j.client.executors.corePoolSize";
 
 	private static final AtomicLong threadCount = new AtomicLong();
 
@@ -66,9 +63,10 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		this.executor = Executors.newScheduledThreadPool(cores, (Runnable runnable) -> {
+		final int corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
+		this.executor = Executors.newScheduledThreadPool(corePoolSize, (Runnable runnable) -> {
 			Thread thread = backingThreadFactory.newThread(runnable);
-			thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
+			thread.setName(String.format("rdf4j-SharedHttpClientSessionManager-%d", threadCount.getAndIncrement()));
 			thread.setDaemon(true);
 			return thread;
 		});
@@ -122,18 +120,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		this.httpClientBuilder = httpClientBuilder;
 	}
 
-	private CloseableHttpClient createHttpClient() {
-		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
-		if (nextHttpClientBuilder != null) {
-			return nextHttpClientBuilder.build();
-		}
-		return HttpClientBuilder.create()
-				.useSystemProperties()
-				.disableAutomaticRetries()
-				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-				.build();
-	}
-
 	@Override
 	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
 		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
@@ -171,10 +157,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		return session;
 	}
 
-	/*-----------------*
-	 * Get/set methods *
-	 *-----------------*/
-
 	@Override
 	public void shutDown() {
 		try {
@@ -207,11 +189,32 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	/**
 	 * No-op
-	 * 
+	 *
 	 * @deprecated Create a new instance instead of trying to reactivate an old instance.
 	 */
 	@Deprecated
 	public void initialize() {
 	}
 
+	/**
+	 * Get the {@link ScheduledExecutorService} used by this session manager.
+	 *
+	 * @return a {@link ScheduledExecutorService} used by all {@link SPARQLProtocolSession} and
+	 *         {@link RDF4JProtocolSession} instances created by this session manager.
+	 */
+	protected final ScheduledExecutorService getExecutorService() {
+		return this.executor;
+	}
+
+	private CloseableHttpClient createHttpClient() {
+		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
+		if (nextHttpClientBuilder != null) {
+			return nextHttpClientBuilder.build();
+		}
+		return HttpClientBuilder.create()
+				.useSystemProperties()
+				.disableAutomaticRetries()
+				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+				.build();
+	}
 }

@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -42,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * The NativeStore is designed for datasets between 100,000 and 100 million triples. On most operating systems, if there
  * is sufficient physical memory, the NativeStore will act like the MemoryStore, because the read/write commands will be
  * cached by the OS. This technique allows the NativeStore to operate quite well for millions of triples.
- * 
+ *
  * @author Arjohn Kampman
  * @author jeen
  */
@@ -76,6 +74,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	private volatile int namespaceIDCacheSize = ValueStore.NAMESPACE_ID_CACHE_SIZE;
 
 	private SailStore store;
+
+	// used to decide if store is writable, is true if the store was writable during initialization
+	private boolean isWritable;
 
 	/**
 	 * Data directory lock.
@@ -135,7 +136,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Sets the triple indexes for the native store, must be called before initialization.
-	 * 
+	 *
 	 * @param tripleIndexes An index strings, e.g. <tt>spoc,posc</tt>.
 	 */
 	public void setTripleIndexes(String tripleIndexes) {
@@ -187,6 +188,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
+		evalStratFactory.setTrackResultSize(isTrackResultSize());
 		return evalStratFactory;
 	}
 
@@ -213,7 +215,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
 	 * this instance is.
-	 * 
+	 *
 	 * @param resolver The SERVICE resolver to set.
 	 */
 	@Override
@@ -226,7 +228,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Initializes this NativeStore.
-	 * 
+	 *
 	 * @exception SailException If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
@@ -260,9 +262,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
 				FileUtils.writeStringToFile(versionFile, VERSION);
 			}
-			final NativeSailStore master = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
+			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
-			this.store = new SnapshotSailStore(master, () -> new MemoryOverflowModel() {
+			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
 
 				@Override
 				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
@@ -275,7 +277,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				public SailSource getExplicitSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use NativeSailStore directly
-						return master.getExplicitSailSource();
+						return mainStore.getExplicitSailSource();
 					} else {
 						return super.getExplicitSailSource();
 					}
@@ -285,7 +287,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 				public SailSource getInferredSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use NativeSailStore directly
-						return master.getInferredSailSource();
+						return mainStore.getInferredSailSource();
 					} else {
 						return super.getInferredSailSource();
 					}
@@ -297,6 +299,8 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 			throw new SailException(e);
 		}
+
+		isWritable = getDataDir().canWrite();
 
 		logger.debug("NativeStore initialized");
 	}
@@ -320,7 +324,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	@Override
 	public boolean isWritable() {
-		return getDataDir().canWrite();
+		return isWritable;
 	}
 
 	@Override
@@ -343,7 +347,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * {@link IsolationLevels#NONE} isolation. Store is either exclusively in {@link IsolationLevels#NONE} isolation
 	 * with potentially zero or more transactions, or exclusively in higher isolation mode with potentially zero or more
 	 * transactions.
-	 * 
+	 *
 	 * @param level indicating desired mode {@link IsolationLevels#NONE} or higher
 	 * @return Lock used to prevent Store from switching isolation modes
 	 * @throws SailException
@@ -372,7 +376,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	/**
 	 * Checks if any {@link IsolationLevels#NONE} isolation transactions are active.
-	 * 
+	 *
 	 * @return <code>true</code> if at least one transaction has direct access to the indexes
 	 */
 	boolean isIsolationDisabled() {

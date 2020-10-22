@@ -24,10 +24,11 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class TupleExprs {
@@ -60,12 +61,29 @@ public class TupleExprs {
 	}
 
 	/**
+	 * Verifies if the supplied {@link TupleExpr} represents a variable scope change.
+	 *
+	 * @param expr a {@link TupleExpr}
+	 * @return <code>true</code> if the {@link TupleExpr} implements {@link VariableScopeChange} and has its scope
+	 *         change flag set to <code>true</code>, <code>false</code> otherwise.
+	 */
+	public static boolean isVariableScopeChange(TupleExpr expr) {
+		if (expr instanceof VariableScopeChange) {
+			return ((VariableScopeChange) expr).isVariableScopeChange();
+		}
+		return false;
+	}
+
+	/**
 	 * Verifies if the supplied {@link TupleExpr} represents a group graph pattern.
-	 * 
+	 *
 	 * @param expr a {@link TupleExpr}
 	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
 	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
+	 *
+	 * @deprecated since 3.2. Use {@link #isVariableScopeChange(TupleExpr)} instead.
 	 */
+	@Deprecated
 	public static boolean isGraphPatternGroup(TupleExpr expr) {
 		if (expr instanceof GraphPatternGroupable) {
 			return ((GraphPatternGroupable) expr).isGraphPatternGroup();
@@ -76,7 +94,7 @@ public class TupleExprs {
 	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is a
 	 * {@link Join} or contains a {@link Join}, projections inside that Join's arguments will not be taken into account.
-	 * 
+	 *
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a projection (outside of a Join), <code>false</code>
 	 *         otherwise.
@@ -103,7 +121,7 @@ public class TupleExprs {
 
 	/**
 	 * Returns {@link TupleExpr} children of the given node.
-	 * 
+	 *
 	 * @param t a tuple expression.
 	 * @return a list of TupleExpr children.
 	 */
@@ -124,7 +142,7 @@ public class TupleExprs {
 	/**
 	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
 	 * to guarantee uniqueness.
-	 * 
+	 *
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.
 	 */
@@ -168,7 +186,7 @@ public class TupleExprs {
 
 	/**
 	 * Verifies if the supplied expression is a FILTER (NOT) EXISTS operation
-	 * 
+	 *
 	 * @param expr a tuple expression
 	 * @return true if the supplied expression is a FILTER (NOT) EXISTS operation, false otherwise.
 	 */

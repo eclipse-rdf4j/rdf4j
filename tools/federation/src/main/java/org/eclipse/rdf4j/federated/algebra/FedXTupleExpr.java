@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 /**
  * Interface marking known FedX algebra nodes.
- * 
+ *
  * @author Andreas Schwarte
  * @see StatementTupleExpr
  * @see ExclusiveTupleExpr

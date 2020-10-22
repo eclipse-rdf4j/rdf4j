@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.TreeSet;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,6 +20,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Stats;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
@@ -24,10 +29,6 @@ import org.eclipse.rdf4j.sail.shacl.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.TrimTuple;
 import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.planNodes.ValuesBackedNode;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.TreeSet;
 
 /**
  * sh:targetNode
@@ -38,8 +39,9 @@ public class TargetNode extends NodeShape {
 
 	private final TreeSet<Value> targetNodeSet;
 
-	TargetNode(Resource id, SailRepositoryConnection connection, boolean deactivated, TreeSet<Value> targetNode) {
-		super(id, connection, deactivated);
+	TargetNode(Resource id, ShaclSail shaclSail, SailRepositoryConnection connection, boolean deactivated,
+			TreeSet<Value> targetNode) {
+		super(id, shaclSail, connection, deactivated);
 		this.targetNodeSet = targetNode;
 		assert !this.targetNodeSet.isEmpty();
 	}
@@ -58,6 +60,7 @@ public class TargetNode extends NodeShape {
 	@Override
 	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 
 		return new ValuesBackedNode(targetNodeSet);
 
@@ -66,6 +69,7 @@ public class TargetNode extends NodeShape {
 	@Override
 	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
 			PlaneNodeWrapper planeNodeWrapper) {
+		assert planeNodeWrapper == null;
 		PlanNode parent = connectionsGroup.getCachedNodeFor(
 				new Select(connectionsGroup.getRemovedStatements(), getQuery("?a", "?c", null), "?a", "?c"));
 		return new Unique(new TrimTuple(parent, 0, 1));
@@ -111,7 +115,7 @@ public class TargetNode extends NodeShape {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(SailConnection shaclSailConnection, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
 		return new SetFilterNode(targetNodeSet, parent, 0, true);
 	}
 

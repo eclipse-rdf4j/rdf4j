@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text.csv;
 
-import com.opencsv.bean.CsvToBeanBuilder;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultParser;
@@ -15,14 +19,11 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
+import com.opencsv.bean.CsvToBeanBuilder;
 
 /**
  * SPARQL Results CSV format parser.
- * 
+ *
  * @author Jeen Broekstra
  * @author Andrew Rucker Jones
  */

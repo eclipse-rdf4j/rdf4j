@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.http.client.shacl;
 
+import java.io.IOException;
+import java.io.StringReader;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-
-import java.io.IOException;
-import java.io.StringReader;
 
 @InternalUseOnly
 class RemoteValidation {

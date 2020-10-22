@@ -7,6 +7,8 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
+import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEXEDFIELDS;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
@@ -27,7 +29,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSail.INDEXEDFIELDS;
 import org.eclipse.rdf4j.sail.lucene.SearchIndex;
 import org.eclipse.rdf4j.sail.lucene.SearchIndexQueryContextInitializer;
 import org.eclipse.rdf4j.sail.lucene.util.SearchIndexUtils;
@@ -41,7 +42,7 @@ import org.slf4j.LoggerFactory;
  * connection from baseSail by wrapped which modify SearchIndex.
  *
  * @author jacek grzebyta
- * 
+ *
  * @deprecated since 3.0. The experimental LuceneSpinSail is scheduled to be removed by the next major release.
  */
 @Deprecated
@@ -75,7 +76,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * By default parameters field is instantiated in constructor. Using this method replaces the existing field. If you
 	 * wish only add missing parameters use {@link #addAbsentParameters(java.util.Properties)}.
 	 * </p>
-	 * 
+	 *
 	 * @param parameters
 	 */
 	public void setParameters(Properties parameters) {
@@ -84,7 +85,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 	/**
 	 * Add only absent parameters from argument.
-	 * 
+	 *
 	 * @see Properties#putIfAbsent(java.lang.Object, java.lang.Object)
 	 * @param parameters
 	 */
@@ -98,9 +99,9 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 	 * Creates absolute path to Lucene Index. If the properties contains no absolute path to lucene index than it is
 	 * created here. The generic pattern of lisp-like pseudocode in that case is: <br/>
 	 * <code>
-	* (Paths/get (absolute datadir) + (or (getProperty parameters LuceneSail/LUCENE_DIR_KEY) "index/"))
-	* </code>
-	 * 
+	 * (Paths/get (absolute datadir) + (or (getProperty parameters LuceneSail/LUCENE_DIR_KEY) "index/"))
+	 * </code>
+	 *
 	 * @return
 	 */
 	private Path getAbsoluteLuceneIndexDir() {
@@ -172,7 +173,7 @@ public class LuceneSpinSail extends NotifyingSailWrapper {
 
 	/**
 	 * Copy of {@link LuceneSail#mapStatement(org.eclipse.rdf4j.model.Statement) }
-	 * 
+	 *
 	 * @param statement
 	 * @return
 	 */

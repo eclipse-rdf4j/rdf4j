@@ -19,20 +19,20 @@ import org.eclipse.rdf4j.query.algebra.Clear;
 import org.eclipse.rdf4j.query.algebra.Copy;
 import org.eclipse.rdf4j.query.algebra.Create;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Load;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Move;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAdd;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTClear;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCopy;
@@ -48,8 +48,8 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLoad;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMove;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuadsNotTriples;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdate;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
@@ -59,7 +59,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * Extension of TupleExprBuilder that builds Update Expressions.
  *
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
@@ -341,8 +341,9 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		deleteExpr.visit(collector);
 		for (Var var : collector.getCollectedVars()) {
 			// skip vars that are provided by ValueExprTripleRef - added as Extentsion
-			if (tripleVars.containsKey(var.getName()))
+			if (tripleVars.containsKey(var.getName())) {
 				continue;
+			}
 			if (var.isAnonymous() && !var.hasValue()) {
 				// blank node in delete pattern, not allowed by SPARQL spec.
 				throw new VisitorException("DELETE clause may not contain blank nodes");
@@ -396,6 +397,9 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 	@Override
 	public TupleExpr visit(ASTTripleRef node, Object data) throws VisitorException {
+		if (where == null) {
+			return super.visit(node, data);
+		}
 		TripleRef ret = new TripleRef();
 		ret.setSubjectVar(mapValueExprToVar(node.getSubj().jjtAccept(this, ret)));
 		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));

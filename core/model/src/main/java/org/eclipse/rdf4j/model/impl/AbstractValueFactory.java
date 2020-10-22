@@ -25,13 +25,13 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Abstract base class for {@link ValueFactory} implementations. It implements all basic {@link Value} creation methods
  * by using the default implementations ({@link SimpleBNode}, {@link SimpleIRI}, etc), and type-optimized subclasses
  * (e.g. {@link BooleanLiteral}, {@link NumericLiteral}) where possible.
- * 
+ *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
@@ -99,7 +99,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XMLSchema.STRING);
+		return new SimpleLiteral(value, XSD.Datatype.STRING);
 	}
 
 	@Override
@@ -157,38 +157,35 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#BYTE} as
-	 * parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#BYTE} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XMLSchema.BYTE);
+		return createIntegerLiteral(value, XSD.Datatype.BYTE);
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#SHORT} as
-	 * parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#SHORT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XMLSchema.SHORT);
+		return createIntegerLiteral(value, XSD.Datatype.SHORT);
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#INT} as parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#INT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XMLSchema.INT);
+		return createIntegerLiteral(value, XSD.Datatype.INT);
 	}
 
 	/**
-	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#LONG} as
-	 * parameters.
+	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#LONG} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XMLSchema.LONG);
+		return createIntegerLiteral(value, XSD.Datatype.LONG);
 	}
 
 	/**
@@ -198,36 +195,44 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
-	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#FLOAT} as parameters.
-	 */
-	@Override
-	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XMLSchema.FLOAT);
+	protected Literal createIntegerLiteral(Number value, XSD.Datatype datatype) {
+		return createNumericLiteral(value, datatype);
 	}
 
 	/**
-	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XMLSchema#DOUBLE} as parameters.
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#FLOAT} as parameters.
+	 */
+	@Override
+	public Literal createLiteral(float value) {
+		return createFPLiteral(value, XSD.Datatype.FLOAT);
+	}
+
+	/**
+	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#DOUBLE} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XMLSchema.DOUBLE);
+		return createFPLiteral(value, XSD.Datatype.DOUBLE);
 	}
 
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
-		return createIntegerLiteral(bigInteger, XMLSchema.INTEGER);
+		return createIntegerLiteral(bigInteger, XSD.INTEGER);
 	}
 
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
-		return createNumericLiteral(bigDecimal, XMLSchema.DECIMAL);
+		return createNumericLiteral(bigDecimal, XSD.DECIMAL);
 	}
 
 	/**
 	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
 	 */
 	protected Literal createFPLiteral(Number value, IRI datatype) {
+		return createNumericLiteral(value, datatype);
+	}
+
+	protected Literal createFPLiteral(Number value, XSD.Datatype datatype) {
 		return createNumericLiteral(value, datatype);
 	}
 
@@ -244,10 +249,20 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
+	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
 	/**
 	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar and the
 	 * appropriate datatype as parameters.
-	 * 
+	 *
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
 	 * @see XMLDatatypeUtil#qnameToURI(javax.xml.namespace.QName)

@@ -290,7 +290,7 @@ public abstract class RDFWriterTest {
 	 * One example of this is that {@link JSONLDMode#EXPAND} does not preserve namespace prefixes, causing the tests
 	 * here to be unnecessarily ignored. The fix for that is to override this method and set the mode to
 	 * {@link JSONLDMode#COMPACT} that does preserve namespaces.
-	 * 
+	 *
 	 * @param config The config object to modify.
 	 */
 	protected void setupWriterConfig(WriterConfig config) {
@@ -298,7 +298,7 @@ public abstract class RDFWriterTest {
 
 	/**
 	 * Override this method to setup custom settings for ParserConfig needed to pass tests.
-	 * 
+	 *
 	 * @param config The config object to modify.
 	 */
 	protected void setupParserConfig(ParserConfig config) {
@@ -640,7 +640,7 @@ public abstract class RDFWriterTest {
 
 	/**
 	 * Test specifically for bnode collisions of the form "a" -> "aa", with preserve BNode ids setting on.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -650,7 +650,7 @@ public abstract class RDFWriterTest {
 
 	/**
 	 * Test specifically for bnode collisions of the form "a" -> "aa", with preserve BNode ids setting off.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -686,7 +686,7 @@ public abstract class RDFWriterTest {
 
 	/**
 	 * Fuzz and performance test designed to find cases where parsers and/or writers are incompatible with each other.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -696,7 +696,7 @@ public abstract class RDFWriterTest {
 
 	/**
 	 * Tests raw parser performance, without checking for consistency, by not storing the resulting triples.
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test
@@ -1696,6 +1696,8 @@ public abstract class RDFWriterTest {
 			rdfWriter.handleStatement(st);
 		}
 		rdfWriter.endRDF();
+
+		logger.debug(new String(outputWriter.toByteArray()));
 		ByteArrayInputStream inputReader = new ByteArrayInputStream(outputWriter.toByteArray());
 		RDFParser rdfParser = rdfParserFactory.getParser();
 		setupParserConfig(rdfParser.getParserConfig());

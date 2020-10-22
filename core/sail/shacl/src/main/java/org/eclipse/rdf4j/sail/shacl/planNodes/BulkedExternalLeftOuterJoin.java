@@ -8,17 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
+import java.util.ArrayDeque;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.ArrayDeque;
 
 /**
  * @author Håvard Ottestad
@@ -38,9 +35,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, String... variables) {
 		this.leftNode = leftNode;
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
-		parsedQuery = queryParserFactory.getParser()
-				.parseQuery("select * where { VALUES (?a) {}" + query + "} order by ?a", null);
+		parsedQuery = parseQuery(query);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
@@ -102,15 +97,15 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					if (!right.isEmpty()) {
 						Tuple rightPeek = right.peekLast();
 
-						if (rightPeek.line.get(0) == leftPeek.line.get(0)
-								|| rightPeek.line.get(0).equals(leftPeek.line.get(0))) {
+						if (rightPeek.getLine().get(0) == leftPeek.getLine().get(0)
+								|| rightPeek.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 							// we have a join !
 							joined = TupleHelper.join(leftPeek, rightPeek);
 							right.removeLast();
 
 							Tuple rightPeek2 = right.peekLast();
 
-							if (rightPeek2 == null || !rightPeek2.line.get(0).equals(leftPeek.line.get(0))) {
+							if (rightPeek2 == null || !rightPeek2.getLine().get(0).equals(leftPeek.getLine().get(0))) {
 								// no more to join from right, pop left so we don't print it again.
 
 								left.removeLast();

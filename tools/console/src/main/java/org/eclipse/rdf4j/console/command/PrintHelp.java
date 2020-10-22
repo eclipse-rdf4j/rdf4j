@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.console.Help;
 
 /**
  * Prints available command and options to the console.
- * 
+ *
  * @author Dale Visser
  */
 public class PrintHelp extends ConsoleCommand {
@@ -40,7 +40,7 @@ public class PrintHelp extends ConsoleCommand {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param commands
 	 */

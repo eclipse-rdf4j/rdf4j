@@ -42,6 +42,9 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	protected final QueryInfo queryInfo;
 
 	private double resultSizeEstimate = -1;
+	private double costEstimate = -1;
+	private long resultSizeActual = -1;
+	private long totalTimeNanosActual = -1;
 
 	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
 		super();
@@ -143,6 +146,36 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 	}
 
 	@Override
+	public long getResultSizeActual() {
+		return resultSizeActual;
+	}
+
+	@Override
+	public void setResultSizeActual(long resultSizeActual) {
+		this.resultSizeActual = resultSizeActual;
+	}
+
+	@Override
+	public double getCostEstimate() {
+		return costEstimate;
+	}
+
+	@Override
+	public void setCostEstimate(double costEstimate) {
+		this.costEstimate = costEstimate;
+	}
+
+	@Override
+	public long getTotalTimeNanosActual() {
+		return totalTimeNanosActual;
+	}
+
+	@Override
+	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+		this.totalTimeNanosActual = totalTimeNanosActual;
+	}
+
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {
 
@@ -155,8 +188,9 @@ public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTuple
 						.getEndpointManager()
 						.getEndpoint(source.getEndpointID());
 				TripleSource t = ownedEndpoint.getTripleSource();
-				if (t.hasStatements(st, bindings, queryInfo))
+				if (t.hasStatements(st, bindings, queryInfo, queryInfo.getDataset())) {
 					return new SingleBindingSetIteration(bindings);
+				}
 			}
 		} catch (RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e);

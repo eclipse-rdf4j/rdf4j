@@ -22,7 +22,7 @@ import org.w3c.dom.NodeList;
 
 /**
  * XPath-based parser for NavigationModel configuration files.
- * 
+ *
  * @author Herko ter Horst
  */
 public class NavigationXmlParser {

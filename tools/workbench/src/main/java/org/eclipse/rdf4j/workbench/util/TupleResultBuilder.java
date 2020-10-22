@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
 
 /**
  * A small wrapper around {@link QueryResultWriter} to make it easier to generate results in servlets.
- * 
+ *
  * @author peter
  */
 public class TupleResultBuilder {
@@ -51,7 +51,7 @@ public class TupleResultBuilder {
 
 	/**
 	 * This must be called before calling {@link #namedResult(String, Object)} or {@link #result(Object...)}.
-	 * 
+	 *
 	 * @param variables one or more variable names
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
@@ -84,7 +84,7 @@ public class TupleResultBuilder {
 
 	/**
 	 * {@link #start(String...)} must be called before using this method.
-	 * 
+	 *
 	 * @param result a single result, one value for each variable, in the same order as the variable names were provided
 	 * @return this builder, for the convenience of chaining calls
 	 * @throws QueryResultHandlerException
@@ -92,8 +92,9 @@ public class TupleResultBuilder {
 	public TupleResultBuilder result(Object... result) throws QueryResultHandlerException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
 		for (int i = 0; i < result.length; i++) {
-			if (result[i] == null)
+			if (result[i] == null) {
 				continue;
+			}
 			bindingSet.addBinding(outputNamedResult(variables.get(i), result[i]));
 		}
 		out.handleSolution(bindingSet);
@@ -102,7 +103,7 @@ public class TupleResultBuilder {
 
 	/**
 	 * {@link #start(String...)} must be called before using this method.
-	 * 
+	 *
 	 * @param name   the variable name, from the set of provided variable names
 	 * @param result the result value associated with the given variable name
 	 * @return this builder, for the convenience of chaining calls
@@ -136,7 +137,7 @@ public class TupleResultBuilder {
 	 * {@link #namedResult(String, Object)} or {@link #result(Object...)}.
 	 * <p>
 	 * This must not be called if {@link #bool(boolean)} or {@link #endBoolean()} have been called.
-	 * 
+	 *
 	 * @return This object, for chaining with other calls.
 	 * @throws QueryResultHandlerException
 	 */

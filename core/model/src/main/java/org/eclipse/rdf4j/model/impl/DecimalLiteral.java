@@ -11,11 +11,11 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of {@link SimpleLiteral} that stores an integer value using a {@link BigDecimal} object.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class DecimalLiteral extends SimpleLiteral {
@@ -28,13 +28,19 @@ public class DecimalLiteral extends SimpleLiteral {
 	 * Creates an xsd:decimal literal with the specified value.
 	 */
 	protected DecimalLiteral(BigDecimal value) {
-		this(value, XMLSchema.DECIMAL);
+		this(value, XSD.DECIMAL);
 	}
 
 	/**
 	 * Creates a literal with the specified value and datatype.
 	 */
 	protected DecimalLiteral(BigDecimal value, IRI datatype) {
+		// TODO: maybe DecimalLiteral should not extend SimpleLiteral?
+		super(value.toPlainString(), datatype);
+		this.value = value;
+	}
+
+	protected DecimalLiteral(BigDecimal value, XSD.Datatype datatype) {
 		// TODO: maybe DecimalLiteral should not extend SimpleLiteral?
 		super(value.toPlainString(), datatype);
 		this.value = value;

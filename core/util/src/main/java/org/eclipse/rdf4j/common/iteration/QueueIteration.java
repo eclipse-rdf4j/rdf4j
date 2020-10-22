@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and after
  * converting the Exception to the required type using {@link #convert(Exception)}.
- * 
+ *
  * @author James Leigh
  */
 public abstract class QueueIteration<E, T extends Exception> extends LookAheadIteration<E, T> {
@@ -32,7 +32,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and default access policy.
-	 * 
+	 *
 	 * @param capacity the capacity of this queue
 	 */
 	protected QueueIteration(int capacity) {
@@ -41,7 +41,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	/**
 	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and the specified access policy.
-	 * 
+	 *
 	 * @param capacity the capacity of this queue
 	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
 	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
@@ -55,7 +55,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * Creates an <tt>QueueIteration</tt> with the given {@link BlockingQueue} as its backing queue.<br>
 	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
 	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
-	 * 
+	 *
 	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
 	 *              implementation for this cursor.
 	 */

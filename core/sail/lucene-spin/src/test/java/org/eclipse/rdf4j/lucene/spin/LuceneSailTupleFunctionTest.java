@@ -7,10 +7,10 @@
  */
 package org.eclipse.rdf4j.lucene.spin;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
 import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 
 import java.io.IOException;
 import java.net.URL;
@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
-import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
 import org.junit.Assert;
@@ -260,7 +259,7 @@ public class LuceneSailTupleFunctionTest {
 	 * construct {
 	 *   ?pred a <urn:ontology/Phrase> .
 	 *   ?pred <urn:ontology/label> ?label .
-	     *   ?pred <urn:ontology/score> ?score .
+	 *   ?pred <urn:ontology/score> ?score .
 	 * } where {
 	 *    ?pred search:matches[
 	 *       search:query "ornare";

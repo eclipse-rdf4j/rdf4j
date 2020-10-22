@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
 
-import static org.junit.Assert.assertEquals;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.junit.Test;
 
 /**
  * @author Pavel Mihaylov

@@ -19,19 +19,19 @@ import org.eclipse.rdf4j.repository.RepositoryResolver;
  * Graph information for a {@link ResolvableEndpoint} where the {@link Repository} is looked up using the configured
  * {@link RepositoryResolver}.
  * <p>
- * 
+ *
  * Format:
  * <p>
- * 
+ *
  * <pre>
  * &#64;prefix sd: &lt;http://www.w3.org/ns/sparql-service-description#&gt; .
  * &#64;prefix fedx: &lt;http://www.fluidops.com/config/fedx#&gt; .
- * 
+ *
  * &lt;http://myname&gt; a sd:Service ;
  *  	fedx:store "ResolvableRepository";
  *  	fedx:repositoryName "myRepoId"
  * </pre>
- * 
+ *
  * @author Andreas Schwarte
  * @see ResolvableEndpoint
  * @see ResolvableRepositoryProvider

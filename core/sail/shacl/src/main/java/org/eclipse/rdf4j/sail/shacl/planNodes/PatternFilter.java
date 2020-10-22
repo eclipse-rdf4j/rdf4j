@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-
 import java.util.regex.Pattern;
+
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Håvard Ottestad
@@ -64,7 +64,7 @@ public class PatternFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(Tuple t) {
-		Value literal = t.line.get(1);
+		Value literal = t.getLine().get(1);
 
 		return pattern.matcher(literal.stringValue()).matches();
 	}

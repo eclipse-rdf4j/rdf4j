@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.model.Resource;
 
 /**
  * General utility methods for OpenRDF/Sesame modules.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class OpenRDFUtil {
@@ -25,7 +25,7 @@ public class OpenRDFUtil {
 	 * supplying a <tt>null</tt>-Resource value (e.g.: matching all statements with no associated context). As we so far
 	 * haven't been able to prefer one over the other, methods operating on contexts currently throw
 	 * {@link IllegalArgumentException}s.
-	 * 
+	 *
 	 * @param contexts The parameter to check.
 	 * @throws IllegalArgumentException If the supplied contexts parameter is <tt>null</tt>.
 	 */

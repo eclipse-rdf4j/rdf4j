@@ -14,7 +14,6 @@ import java.util.Map;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -24,18 +23,16 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 /**
  * Evaluator tuple and graph queries
- * 
+ *
  * @author dale
  */
 public class TupleAndGraphQueryEvaluator {
@@ -55,7 +52,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param consoleIO
 	 * @param state
 	 * @param settings
@@ -68,7 +65,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Get console IO
-	 * 
+	 *
 	 * @return console IO
 	 */
 	protected ConsoleIO getConsoleIO() {
@@ -77,7 +74,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Get console State
-	 * 
+	 *
 	 * @return console state
 	 */
 	protected ConsoleState getConsoleState() {
@@ -86,7 +83,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Get console settings
-	 * 
+	 *
 	 * @return console settings
 	 */
 	protected Map<String, ConsoleSetting> getConsoleSettings() {
@@ -96,7 +93,7 @@ public class TupleAndGraphQueryEvaluator {
 	/**
 	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer. If writer is null, the console will be used
 	 * for output.
-	 * 
+	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @param writer      result writer or null
@@ -142,7 +139,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Evaluate SPARQL or SERQL graph query
-	 * 
+	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @param writer      RDFWriter to write the results to
@@ -182,7 +179,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Evaluate a boolean SPARQL or SERQL query
-	 * 
+	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @param writer
@@ -212,7 +209,7 @@ public class TupleAndGraphQueryEvaluator {
 
 	/**
 	 * Execute a SPARQL or SERQL update
-	 * 
+	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
 	 * @throws RepositoryException

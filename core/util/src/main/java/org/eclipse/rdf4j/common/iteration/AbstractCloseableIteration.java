@@ -31,7 +31,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 
 	/**
 	 * Checks whether this CloseableIteration has been closed.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the CloseableIteration has been closed, <tt>false</tt> otherwise.
 	 */
 	public final boolean isClosed() {
@@ -51,7 +51,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	/**
 	 * Called by {@link #close} when it is called for the first time. This method is only called once on each iteration.
 	 * By default, this method does nothing.
-	 * 
+	 *
 	 * @throws X
 	 */
 	protected void handleClose() throws X {

@@ -14,9 +14,12 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.Ignore;
 
 import junit.framework.Test;
 
+@Ignore("replaced by org.eclipse.rdf4j.sail.memory.MemorySPARQL11QueryComplianceTest")
+@Deprecated
 public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 
 	public static Test suite() throws Exception {
@@ -45,7 +48,7 @@ public class W3CApprovedSPARQL11QueryTest extends SPARQLQueryTest {
 						"sq03 - Subquery within graph pattern, graph variable is not bound",
 						// test case is incorrect wrt SPARQL 1.1 spec, see https://github.com/eclipse/rdf4j/issues/1978
 //						"agg empty group",
-//						"Aggregate over empty group resulting in a row with unbound variables" 
+//						"Aggregate over empty group resulting in a row with unbound variables"
 				};
 
 				return new W3CApprovedSPARQL11QueryTest(testURI, name, queryFileURL, resultFileURL, dataSet,

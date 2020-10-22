@@ -7,39 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.geosparql;
 
-import junit.framework.Test;
-
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-public class MemoryGeoSPARQLQueryTest extends SPARQLQueryTest {
+public class MemoryGeoSPARQLQueryTest extends GeoSPARQLManifestTest {
 
-	public static Test suite() throws Exception {
-		return GeoSPARQLManifestTest.suite(new Factory() {
-
-			@Override
-			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality) {
-				return createSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
-						false);
-			}
-
-			@Override
-			public SPARQLQueryTest createSPARQLQueryTest(String testURI, String name, String queryFileURL,
-					String resultFileURL, Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
-				return new MemoryGeoSPARQLQueryTest(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality,
-						checkOrder);
-			}
-
-		});
-	}
-
-	protected MemoryGeoSPARQLQueryTest(String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataSet, boolean laxCardinality, boolean checkOrder) {
-		super(testURI, name, queryFileURL, resultFileURL, dataSet, laxCardinality, checkOrder);
+	public MemoryGeoSPARQLQueryTest(String displayName, String testURI, String name, String queryFileURL,
+			String resultFileURL, Dataset dataset, boolean ordered) {
+		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
 	}
 
 	@Override

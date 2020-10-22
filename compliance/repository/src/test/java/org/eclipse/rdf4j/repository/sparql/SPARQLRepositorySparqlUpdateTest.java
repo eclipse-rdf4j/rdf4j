@@ -17,7 +17,7 @@ package org.eclipse.rdf4j.repository.sparql;
 //		throws Exception
 //	{
 //		server = new HTTPMemServer();
-//		
+//
 //		try {
 //			server.start();
 //			super.setUp();
@@ -46,7 +46,7 @@ package org.eclipse.rdf4j.repository.sparql;
 //	@Ignore
 //	@Test
 //	@Override
-//	public void testAutoCommitHandling() 
+//	public void testAutoCommitHandling()
 //	{
 //		// transaction isolation is not supported for HTTP connections. disabling test.
 //		System.err.println("temporarily disabled testAutoCommitHandling() for HTTPRepository");

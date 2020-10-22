@@ -25,7 +25,7 @@ public interface Command {
 
 	/**
 	 * Return the names of the settings used.
-	 * 
+	 *
 	 * @return string array of settings
 	 */
 	String[] usesSettings();

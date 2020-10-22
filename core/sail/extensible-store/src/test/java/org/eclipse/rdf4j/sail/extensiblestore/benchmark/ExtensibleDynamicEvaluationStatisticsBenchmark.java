@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.extensiblestore.benchmark;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -24,10 +28,10 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.concurrent.TimeUnit;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -42,6 +46,17 @@ import java.util.concurrent.TimeUnit;
 public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 
 	Model parse;
+
+	public static void main(String[] args) throws RunnerException {
+		Options opt = new OptionsBuilder()
+				.include("ExtensibleDynamicEvaluationStatisticsBenchmark") // adapt to control which benchmark tests to
+																			// run
+				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.forks(1)
+				.build();
+
+		new Runner(opt).run();
+	}
 
 	@Setup(Level.Iteration)
 	public void beforeClassIteration() throws IOException, InterruptedException {

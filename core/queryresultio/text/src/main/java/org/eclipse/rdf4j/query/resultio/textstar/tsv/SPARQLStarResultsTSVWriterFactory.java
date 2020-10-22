@@ -7,31 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
-
-import java.io.OutputStream;
-
 /**
- * {@link TupleQueryResultWriterFactory} for creating instances of {@link SPARQLStarResultsTSVWriter}.
  *
- * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - moved to
+ *             {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVWriterFactory}.
  */
-public class SPARQLStarResultsTSVWriterFactory implements TupleQueryResultWriterFactory {
-	/**
-	 * Returns {@link TupleQueryResultFormat#TSV_STAR}.
-	 */
-	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return TupleQueryResultFormat.TSV_STAR;
-	}
-
-	/**
-	 * Returns a new instance of {@link SPARQLStarResultsTSVWriter}.
-	 */
-	@Override
-	public TupleQueryResultWriter getWriter(OutputStream out) {
-		return new SPARQLStarResultsTSVWriter(out);
-	}
+@Deprecated
+public class SPARQLStarResultsTSVWriterFactory
+		extends org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVWriterFactory {
 }

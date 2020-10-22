@@ -7,12 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
@@ -139,7 +142,14 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin() throws RepositoryException {
 		try {
-			sailConnection.begin(getIsolationLevel());
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+
+			if (getIsolationLevel() != null) {
+				sailConnection.begin(getIsolationLevel());
+			} else {
+				sailConnection.begin();
+			}
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
@@ -148,7 +158,41 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public void begin(IsolationLevel level) throws RepositoryException {
 		try {
-			sailConnection.begin(level);
+			// always call receiveTransactionSettings(...) before calling begin();
+			sailConnection.setTransactionSettings(new TransactionSetting[0]);
+
+			if (level != null) {
+				sailConnection.begin(level);
+			} else {
+				sailConnection.begin();
+			}
+		} catch (SailException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Override
+	public void begin(TransactionSetting... settings) {
+		try {
+			// Asserts to catch any of these issues in our tests. These asserts don't run in production since they are
+			// slow. Nulls in the transaction settings or multiple isolation levels have undefined behaviour.
+			assert Arrays.stream(settings).noneMatch(Objects::isNull) : "No transaction settings should be null!";
+			assert Arrays.stream(settings)
+					.filter(setting -> setting instanceof IsolationLevel)
+					.count() <= 1 : "There should never be more than one isolation level";
+
+			sailConnection.setTransactionSettings(settings);
+
+			for (TransactionSetting setting : settings) {
+				if (setting instanceof IsolationLevel) {
+					sailConnection.begin((IsolationLevel) setting);
+					return;
+				}
+			}
+
+			// if none of the transaction settings are isolation levels
+			sailConnection.begin();
+
 		} catch (SailException e) {
 			throw new RepositoryException(e);
 		}
@@ -262,7 +306,6 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException {
 		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
-
 		return new SailUpdate(parsedUpdate, this);
 	}
 

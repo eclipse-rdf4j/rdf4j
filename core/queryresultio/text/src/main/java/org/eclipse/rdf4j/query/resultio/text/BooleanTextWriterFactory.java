@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 
 /**
  * A {@link BooleanQueryResultWriterFactory} for writers of plain text boolean query results.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class BooleanTextWriterFactory implements BooleanQueryResultWriterFactory {

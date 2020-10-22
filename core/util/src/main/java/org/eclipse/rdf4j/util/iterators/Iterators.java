@@ -24,7 +24,7 @@ public class Iterators {
 
 	/**
 	 * Get a List containing all elements obtained from the specified iterator.
-	 * 
+	 *
 	 * @param iter the iterator to get the elements from
 	 * @return a List containing all elements obtained from the specified iterator.
 	 */
@@ -36,7 +36,7 @@ public class Iterators {
 
 	/**
 	 * Adds all elements from the supplied iterator to the specified collection.
-	 * 
+	 *
 	 * @param iter       An iterator containing elements to add to the container.
 	 * @param collection The collection to add the elements to.
 	 * @return The <tt>collection</tt> object that was supplied to this method.
@@ -52,7 +52,7 @@ public class Iterators {
 	/**
 	 * Converts an iterator to a string by concatenating all of the string representations of objects in the iterator,
 	 * divided by a separator.
-	 * 
+	 *
 	 * @param iter      An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator The separator to insert between the object strings.
 	 * @return A String representation of the objects provided by the supplied iterator.
@@ -66,7 +66,7 @@ public class Iterators {
 	/**
 	 * Converts an iterator to a string by concatenating all of the string representations of objects in the iterator,
 	 * divided by a separator.
-	 * 
+	 *
 	 * @param iter      An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator The separator to insert between the object strings.
 	 * @param sb        A StringBuilder to append the iterator string to.
@@ -83,7 +83,7 @@ public class Iterators {
 
 	/**
 	 * Closes the given iterator if it implements {@link java.io.Closeable} else do nothing.
-	 * 
+	 *
 	 * @param iter The iterator to close.
 	 * @throws IOException If an underlying I/O error occurs.
 	 */
@@ -96,7 +96,7 @@ public class Iterators {
 	/**
 	 * Closes the given iterator, swallowing any IOExceptions, if it implements {@link java.io.Closeable} else do
 	 * nothing.
-	 * 
+	 *
 	 * @param iter The iterator to close.
 	 */
 	public static void closeSilently(Iterator<?> iter) {

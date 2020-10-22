@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.repository.event.RepositoryInterceptor;
  * Wrapper that notifies interceptors of events on Repositories before they happen. Any interceptor can block the
  * operation by returning true from the relevant notification method. To do so will also cause the notification process
  * to stop, i.e. no other interceptors will be notified. The order in which interceptors are notified is unspecified.
- * 
+ *
  * @author Herko ter Horst
  * @see InterceptingRepositoryConnectionWrapper
  */
@@ -108,8 +108,9 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 				conn = null;
 			}
 		}
-		if (conn == null)
+		if (conn == null) {
 			return null;
+		}
 
 		InterceptingRepositoryConnection iconn = new InterceptingRepositoryConnectionWrapper(this, conn);
 		for (RepositoryConnectionInterceptor conInterceptor : conInterceptors) {

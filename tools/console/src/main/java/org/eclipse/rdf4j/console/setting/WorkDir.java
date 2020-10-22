@@ -12,7 +12,7 @@ import java.nio.file.Paths;
 
 /**
  * Working directory setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class WorkDir extends ConsoleSetting<Path> {
@@ -25,7 +25,7 @@ public class WorkDir extends ConsoleSetting<Path> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * Default dir is system property user.dir (= current directory)
 	 */
 	public WorkDir() {
@@ -34,7 +34,7 @@ public class WorkDir extends ConsoleSetting<Path> {
 
 	/**
 	 * Constructor
-	 * 
+	 *
 	 * @param initValue
 	 */
 	public WorkDir(Path initValue) {

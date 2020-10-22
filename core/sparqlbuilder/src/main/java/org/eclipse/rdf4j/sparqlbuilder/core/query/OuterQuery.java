@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A non-subquery query.
- * 
+ *
  * @param <T> The query type. Used to support fluency.
  */
 @SuppressWarnings("unchecked")
@@ -29,7 +29,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 
 	/**
 	 * Set the base IRI of this query
-	 * 
+	 *
 	 * @param iri the base IRI
 	 * @return this
 	 */
@@ -41,7 +41,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 
 	/**
 	 * Set the Base clause of this query
-	 * 
+	 *
 	 * @param base the {@link Base} clause to set
 	 * @return this
 	 */
@@ -53,7 +53,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 
 	/**
 	 * Add prefix declarations to this query
-	 * 
+	 *
 	 * @param prefixes the prefixes to add
 	 * @return this
 	 */
@@ -66,7 +66,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 
 	/**
 	 * Set the Prefix declarations of this query
-	 * 
+	 *
 	 * @param prefixes the {@link PrefixDeclarations} to set
 	 * @return this
 	 */

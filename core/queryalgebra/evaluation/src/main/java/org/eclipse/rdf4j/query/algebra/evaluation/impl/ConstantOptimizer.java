@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A query optimizer that optimizes constant value expressions.
- * 
+ *
  * @author James Leigh
  * @author Arjohn Kampman
  */
@@ -248,7 +248,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		/**
 		 * Determines if the provided zero-arg function is a function that should return a constant value for the entire
 		 * query execution (e.g NOW()), or if it should generate a new value for every call (e.g. RAND()).
-		 * 
+		 *
 		 * @param functionCall a zero-arg function call.
 		 * @return <code>true<code> iff the provided function returns a constant value for the query execution, <code>false</code>
 		 *         otherwise.

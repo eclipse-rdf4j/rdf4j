@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryLockedException;
-import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailLockedException;
@@ -34,22 +34,22 @@ import org.eclipse.rdf4j.sail.StackableSail;
  * <p>
  * Creating a repository object of this type is very easy. For example, the following code creates and initializes a
  * main-memory store with RDF Schema semantics:
- * 
+ *
  * <pre>
  * Repository repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
  * repository.initialize();
  * </pre>
- * 
+ *
  * Or, alternatively:
- * 
+ *
  * <pre>
  * Sail sailStack = new MemoryStore();
  * sailStack = new ForwardChainingRDFSInferencer(sailStack);
- * 
+ *
  * Repository repository = new SailRepository(sailStack);
  * repository.initialize();
  * </pre>
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailRepository extends AbstractRepository implements FederatedServiceResolverClient,
@@ -67,7 +67,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 
 	/**
 	 * Creates a new repository object that operates on the supplied Sail.
-	 * 
+	 *
 	 * @param sail A Sail object.
 	 */
 	public SailRepository(Sail sail) {
@@ -165,7 +165,7 @@ public class SailRepository extends AbstractRepository implements FederatedServi
 
 	/**
 	 * Gets the Sail object that is on top of the Sail stack that this repository operates on.
-	 * 
+	 *
 	 * @return A Sail object.
 	 */
 	public Sail getSail() {

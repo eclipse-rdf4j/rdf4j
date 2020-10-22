@@ -7,9 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.hdt;
 
-import org.eclipse.rdf4j.rio.hdt.CRC16;
-import java.nio.charset.StandardCharsets;
 import static org.junit.Assert.assertEquals;
+
+import java.nio.charset.StandardCharsets;
+
 import org.junit.Test;
 
 /**

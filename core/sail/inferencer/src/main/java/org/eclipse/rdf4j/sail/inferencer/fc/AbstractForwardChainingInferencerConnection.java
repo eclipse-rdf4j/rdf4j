@@ -25,14 +25,14 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 		implements SailConnectionListener {
 
 	/*-----------*
-	* Constants *
-	*-----------*/
+	 * Constants *
+	 *-----------*/
 
 	static private final Logger logger = LoggerFactory.getLogger(AbstractForwardChainingInferencerConnection.class);
 
 	/*-----------*
-	* Variables *
-	*-----------*/
+	 * Variables *
+	 *-----------*/
 
 	private Sail sail;
 
@@ -49,8 +49,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	protected int totalInferred;
 
 	/*--------------*
-	* Constructors *
-	*--------------*/
+	 * Constructors *
+	 *--------------*/
 
 	public AbstractForwardChainingInferencerConnection(Sail sail, InferencerConnection con) {
 		super(con);
@@ -59,8 +59,8 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	}
 
 	/*---------*
-	* Methods *
-	*---------*/
+	 * Methods *
+	 *---------*/
 
 	// Called by base sail
 	@Override
@@ -114,14 +114,11 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 
 	@Override
 	public void begin() throws SailException {
-		this.begin(null);
+		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
-		if (level == null) {
-			level = sail.getDefaultIsolationLevel();
-		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
 				sail.getSupportedIsolationLevels());

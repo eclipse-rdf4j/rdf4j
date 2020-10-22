@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trig;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -36,7 +37,7 @@ import org.junit.rules.Timeout;
 
 /**
  * Custom (non-manifest) tests for TriG parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class TriGParserCustomTest {
@@ -194,7 +195,7 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertEquals(13, Rio.createParser(RDFFormat.TRIG).getSupportedSettings().size());
+		assertThat(Rio.createParser(RDFFormat.TRIG).getSupportedSettings()).hasSize(14);
 	}
 
 	@Test

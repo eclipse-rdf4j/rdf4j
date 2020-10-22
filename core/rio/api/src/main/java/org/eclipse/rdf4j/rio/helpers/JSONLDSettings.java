@@ -7,12 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import com.github.jsonldjava.core.DocumentLoader;
 import org.eclipse.rdf4j.rio.RioSetting;
+
+import com.github.jsonldjava.core.DocumentLoader;
 
 /**
  * Settings that can be passed to JSONLD Parsers and Writers.
- * 
+ *
  * @author Peter Ansell
  * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
  */
@@ -25,7 +26,7 @@ public class JSONLDSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.compact_arrays}.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> COMPACT_ARRAYS = new BooleanRioSetting(
@@ -35,7 +36,7 @@ public class JSONLDSettings {
 	 * If specified, it is used to retrieve remote documents and contexts; otherwise the processor's built-in loader is
 	 * used.
 	 */
-	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<DocumentLoader>(
+	public static final RioSetting<DocumentLoader> DOCUMENT_LOADER = new ClassRioSetting<>(
 			"org.eclipse.rdf4j.rio.jsonld.document_loader", "Document loader", null);
 
 	/**
@@ -46,7 +47,7 @@ public class JSONLDSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.optimize}.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> OPTIMIZE = new BooleanRioSetting("org.eclipse.rdf4j.rio.jsonld.optimize",
@@ -54,14 +55,14 @@ public class JSONLDSettings {
 
 	/**
 	 * If set to true, the JSON-LD processor may emit blank nodes for triple predicates, otherwise they will be omitted.
-	 * 
+	 *
 	 * Note: the use of blank node identifiers to label properties is obsolete, and may be removed in a future version
 	 * of JSON-LD,
 	 * <p>
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf}.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(
@@ -75,7 +76,7 @@ public class JSONLDSettings {
 	 * Defaults to false for RDF compatibility.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.use_native_types}.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> USE_NATIVE_TYPES = new BooleanRioSetting(
@@ -88,7 +89,7 @@ public class JSONLDSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.use_rdf_type}.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#data-structures">JSONLD Data Structures</a>
 	 */
 	public static final RioSetting<Boolean> USE_RDF_TYPE = new BooleanRioSetting(
@@ -98,10 +99,10 @@ public class JSONLDSettings {
 	 * The {@link JSONLDMode} that the writer will use to reorganise the JSONLD document after it is created.
 	 * <p>
 	 * Defaults to {@link JSONLDMode#EXPAND} to provide maximum RDF compatibility.
-	 * 
+	 *
 	 * @see <a href="http://json-ld.org/spec/latest/json-ld-api/#features">JSONLD Features</a>
 	 */
-	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<JSONLDMode>(
+	public static final RioSetting<JSONLDMode> JSONLD_MODE = new RioSettingImpl<>(
 			"org.eclipse.rdf4j.rio.jsonld_mode", "JSONLD Mode", JSONLDMode.EXPAND);
 
 	/**

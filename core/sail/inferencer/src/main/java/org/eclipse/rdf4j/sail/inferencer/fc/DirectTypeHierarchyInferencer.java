@@ -42,20 +42,20 @@ import org.slf4j.LoggerFactory;
  * sesame:directType}.
  * <p>
  * The semantics of this inferencer are defined as follows:
- * 
+ *
  * <pre>
  *    Class A is a direct subclass of B iff:
  *       1. A is a subclass of B and;
  *       2. A and B are not equa and;
- *       3. there is no class C (unequal A and B) such that 
+ *       3. there is no class C (unequal A and B) such that
  *          A is a subclass of C and C of B.
- *   
+ *
  *    Property P is a direct subproperty of Q iff:
  *       1. P is a subproperty of Q and;
  *       2. P and Q are not equal and;
  *       3. there is no property R (unequal P and Q) such that
  *          P is a subproperty of R and R of Q.
- *   
+ *
  *    Resource I is of direct type T iff:
  *       1. I is of type T and
  *       2. There is no class U (unequal T) such that:
@@ -68,7 +68,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	private static final Logger logger = LoggerFactory.getLogger(DirectTypeHierarchyInferencer.class);
 
 	/*-----------*
-	 * Constants * 
+	 * Constants *
 	 *-----------*/
 
 	private static final ParsedGraphQuery DIRECT_SUBCLASSOF_MATCHER;
@@ -116,7 +116,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	}
 
 	/*--------------*
-	 * Constructors * 
+	 * Constructors *
 	 *--------------*/
 
 	public DirectTypeHierarchyInferencer() {
@@ -128,7 +128,7 @@ public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
 	}
 
 	/*---------*
-	 * Methods * 
+	 * Methods *
 	 *---------*/
 
 	@Override

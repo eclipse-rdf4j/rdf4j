@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.contextaware.ContextAwareRepository;
 
 /**
  * A {@link RepositoryFactory} that creates {@link ContextAwareRepository}s based on RDF configuration data.
- * 
+ *
  * @author James Leigh
  */
 public class ContextAwareFactory implements RepositoryFactory {
@@ -26,7 +26,7 @@ public class ContextAwareFactory implements RepositoryFactory {
 
 	/**
 	 * The type of repositories that are created by this factory.
-	 * 
+	 *
 	 * @see RepositoryFactory#getRepositoryType()
 	 */
 	public static final String REPOSITORY_TYPE = "openrdf:ContextAwareRepository";

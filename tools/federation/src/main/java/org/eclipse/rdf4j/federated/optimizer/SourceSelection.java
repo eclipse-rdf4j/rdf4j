@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Perform source selection during optimization
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -69,12 +69,12 @@ public class SourceSelection {
 
 	/**
 	 * Perform source selection for the provided statements using cache or remote ASK queries.
-	 * 
+	 *
 	 * Remote ASK queries are evaluated in parallel using the concurrency infrastructure of FedX. Note, that this method
 	 * is blocking until every source is resolved.
-	 * 
+	 *
 	 * The statement patterns are replaced by appropriate annotations in this optimization.
-	 * 
+	 *
 	 * @param stmts
 	 */
 	public void doSourceSelection(List<StatementPattern> stmts) {
@@ -91,7 +91,7 @@ public class SourceSelection {
 
 			stmtToSources.put(stmt, new ArrayList<>());
 
-			SubQuery q = new SubQuery(stmt);
+			SubQuery q = new SubQuery(stmt, queryInfo.getDataset());
 
 			// check for each current federation member (cache or remote ASK)
 			for (Endpoint e : endpoints) {
@@ -127,19 +127,17 @@ public class SourceSelection {
 
 			if (sources.size() > 1) {
 				StatementSourcePattern stmtNode = new StatementSourcePattern(stmt, queryInfo);
-				for (StatementSource s : sources)
+				for (StatementSource s : sources) {
 					stmtNode.addStatementSource(s);
+				}
 				stmt.replaceWith(stmtNode);
-			}
-
-			else if (sources.size() == 1) {
+			} else if (sources.size() == 1) {
 				stmt.replaceWith(new ExclusiveStatement(stmt, sources.get(0), queryInfo));
-			}
-
-			else {
-				if (log.isDebugEnabled())
+			} else {
+				if (log.isDebugEnabled()) {
 					log.debug("Statement " + QueryStringUtil.toString(stmt)
 							+ " does not produce any results at the provided sources, replacing node with EmptyStatementPattern.");
+				}
 				stmt.replaceWith(new EmptyStatementPattern(stmt));
 			}
 		}
@@ -147,21 +145,23 @@ public class SourceSelection {
 
 	/**
 	 * Retrieve a set of relevant sources for this query.
-	 * 
+	 *
 	 * @return the relevant sources
 	 */
 	public Set<Endpoint> getRelevantSources() {
 		Set<Endpoint> endpoints = new HashSet<>();
-		for (List<StatementSource> sourceList : stmtToSources.values())
-			for (StatementSource source : sourceList)
+		for (List<StatementSource> sourceList : stmtToSources.values()) {
+			for (StatementSource source : sourceList) {
 				endpoints
 						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));
+			}
+		}
 		return endpoints;
 	}
 
 	/**
 	 * Add a source to the given statement in the map (synchronized through map)
-	 * 
+	 *
 	 * @param stmt
 	 * @param source
 	 */
@@ -179,7 +179,7 @@ public class SourceSelection {
 		 * Execute the given list of tasks in parallel, and block the thread until all tasks are completed.
 		 * Synchronization is achieved by means of a latch. Results are added to the map of the source selection
 		 * instance. Errors are reported as {@link OptimizationException} instances.
-		 * 
+		 *
 		 * @param tasks
 		 */
 		public static void run(SourceSelection sourceSelection, List<CheckTaskPair> tasks, SourceSelectionCache cache) {
@@ -201,16 +201,18 @@ public class SourceSelection {
 		/**
 		 * Execute the given list of tasks in parallel, and block the thread until all tasks are completed.
 		 * Synchronization is achieved by means of a latch
-		 * 
+		 *
 		 * @param tasks
 		 */
 		private void executeRemoteSourceSelection(List<CheckTaskPair> tasks, SourceSelectionCache cache) {
-			if (tasks.isEmpty())
+			if (tasks.isEmpty()) {
 				return;
+			}
 
 			latch = new CountDownLatch(tasks.size());
-			for (CheckTaskPair task : tasks)
+			for (CheckTaskPair task : tasks) {
 				scheduler.schedule(new ParallelCheckTask(task.e, task.t, task.queryInfo, this));
+			}
 
 			try {
 				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
@@ -230,15 +232,17 @@ public class SourceSelection {
 				sb.append(
 						errors.size() + " errors were reported while optimizing query " + getQueryInfo().getQueryID());
 
-				for (Exception e : errors)
+				for (Exception e : errors) {
 					sb.append("\n" + ExceptionUtil.getExceptionString("Error occured", e));
+				}
 
 				log.debug(sb.toString());
 
 				Exception ex = errors.get(0);
 				errors.clear();
-				if (ex instanceof OptimizationException)
+				if (ex instanceof OptimizationException) {
 					throw (OptimizationException) ex;
+				}
 
 				throw new OptimizationException(ex.getMessage(), ex);
 			}
@@ -246,7 +250,8 @@ public class SourceSelection {
 
 		@Override
 		public void run() {
-			/* not needed */ }
+			/* not needed */
+		}
 
 		@Override
 		public void addResult(CloseableIteration<BindingSet, QueryEvaluationException> res) {
@@ -262,7 +267,8 @@ public class SourceSelection {
 
 		@Override
 		public void done() {
-			/* not needed */ }
+			/* not needed */
+		}
 
 		@Override
 		public boolean isFinished() {
@@ -289,7 +295,7 @@ public class SourceSelection {
 
 	/**
 	 * Task for sending an ASK request to the endpoints (for source selection)
-	 * 
+	 *
 	 * @author Andreas Schwarte
 	 */
 	protected static class ParallelCheckTask extends ParallelTaskBase<BindingSet> {
@@ -312,13 +318,15 @@ public class SourceSelection {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = false;
-				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo);
+				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo, queryInfo.getDataset());
 
 				SourceSelection sourceSelection = control.sourceSelection;
-				sourceSelection.cache.updateInformation(new SubQuery(stmt), endpoint, hasResults);
+				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,
+						hasResults);
 
-				if (hasResults)
+				if (hasResults) {
 					sourceSelection.addSource(stmt, new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));
+				}
 
 				return null;
 			} catch (Exception e) {

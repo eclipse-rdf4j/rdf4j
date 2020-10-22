@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-
 import java.util.ArrayList;
+
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Håvard Ottestad
@@ -18,12 +18,12 @@ import java.util.ArrayList;
 public class TupleHelper {
 	public static Tuple join(Tuple left, Tuple right) {
 
-		ArrayList<Value> newLine = new ArrayList<>(left.line.size() + right.line.size() - 1);
+		ArrayList<Value> newLine = new ArrayList<>(left.getLine().size() + right.getLine().size() - 1);
 
-		newLine.addAll(left.line);
+		newLine.addAll(left.getLine());
 
-		for (int i = 1; i < right.line.size(); i++) {
-			newLine.add(right.line.get(i));
+		for (int i = 1; i < right.getLine().size(); i++) {
+			newLine.add(right.getLine().get(i));
 		}
 
 		Tuple tuple = new Tuple(newLine);

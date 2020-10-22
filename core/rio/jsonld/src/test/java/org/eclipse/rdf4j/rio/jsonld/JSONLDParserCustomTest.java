@@ -7,7 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.jsonld;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.Reader;
 import java.io.StringReader;
@@ -19,12 +23,13 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
+import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.junit.Before;
@@ -36,11 +41,9 @@ import org.junit.rules.ExpectedException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.github.jsonldjava.core.DocumentLoader;
 
-import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
-
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDParserCustomTest {
@@ -115,9 +118,9 @@ public class JSONLDParserCustomTest {
 	private final IRI testPredicate = F.createIRI("http://example.com/prop1");
 	private final IRI testObjectIRI = F.createIRI("http://example.com/Obj1");
 
-	private final Literal testObjectLiteralNotANumber = F.createLiteral("NaN", XMLSchema.DOUBLE);
-	private final Literal testObjectLiteralNumber = F.createLiteral("42", XMLSchema.INTEGER);
-	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XMLSchema.STRING);
+	private final Literal testObjectLiteralNotANumber = F.createLiteral("NaN", XSD.DOUBLE);
+	private final Literal testObjectLiteralNumber = F.createLiteral("42", XSD.INTEGER);
+	private final Literal testObjectLiteralUnquotedControlChar = F.createLiteral("42\u0009", XSD.STRING);
 
 	@Before
 	public void setUp() throws Exception {
@@ -356,7 +359,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -374,7 +377,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNotNull(cause.getLocation().getSourceRef());
 			assertEquals(source, cause.getLocation().getSourceRef());
 		}
@@ -391,7 +394,7 @@ public class JSONLDParserCustomTest {
 			assertTrue(e.getCause() instanceof JsonProcessingException);
 			JsonProcessingException cause = (JsonProcessingException) e.getCause();
 			assertEquals(2, cause.getLocation().getLineNr());
-			assertEquals(1, cause.getLocation().getColumnNr());
+			assertEquals(3, cause.getLocation().getColumnNr());
 			assertNull(cause.getLocation().getSourceRef());
 		}
 	}

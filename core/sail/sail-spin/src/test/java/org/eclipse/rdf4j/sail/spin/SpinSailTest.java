@@ -7,7 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.spin;
 
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.concurrent.Callable;
+import java.util.stream.Stream;
+
+import javax.script.ScriptEngineManager;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -32,16 +43,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.concurrent.Callable;
-import java.util.stream.Stream;
-
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 public class SpinSailTest {
 
@@ -145,8 +146,12 @@ public class SpinSailTest {
 
 	@Test
 	public void testSpinxRule() throws Exception {
-		loadStatements("testSpinxRule.ttl");
-		assertStatements("testSpinxRule-expected.ttl");
+		try {
+			loadStatements("testSpinxRule.ttl");
+			assertStatements("testSpinxRule-expected.ttl");
+		} catch (UnsupportedOperationException e) {
+			assert new ScriptEngineManager().getEngineByName("javascript") == null;
+		}
 	}
 
 	@Ignore("This test shows how the SpinSail fails on transactional workloads.")

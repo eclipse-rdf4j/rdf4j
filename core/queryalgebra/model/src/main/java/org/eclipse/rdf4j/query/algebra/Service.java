@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * The SERVICE keyword as defined in <a href="http://www.w3.org/TR/sparql11-federated- query/#defn_service" >SERVICE
  * definition</a>. The service expression is evaluated at the specified service URI. If the service reference is a
  * variable, a value for this variable must be available at evaluation time (e.g. from earlier computations).
- * 
+ *
  * @author Andreas Schwarte
  */
 public class Service extends UnaryTupleOperator {
@@ -103,7 +103,7 @@ public class Service extends UnaryTupleOperator {
 
 	/**
 	 * The SERVICE expression, either complete or just the expression e.g. "SERVICE <url> { ... }" becomes " ... "
-	 * 
+	 *
 	 * @param serviceExpressionString the inner expression as SPARQL String representation
 	 */
 	public void setExpressionString(String serviceExpressionString) {
@@ -119,7 +119,7 @@ public class Service extends UnaryTupleOperator {
 
 	/**
 	 * Returns an ASK query string using no projection vars.
-	 * 
+	 *
 	 * @return an ASK query string
 	 */
 	public String getAskQueryString() {
@@ -129,16 +129,18 @@ public class Service extends UnaryTupleOperator {
 	/**
 	 * Returns a SELECT query string using the provided projection vars. The variables are inserted into the
 	 * preparedSelectQueryString in the SELECT clause.
-	 * 
+	 *
 	 * @param projectionVars
 	 * @return SELECT query string, utilizing the given projection variables
 	 */
 	public String getSelectQueryString(Set<String> projectionVars) {
-		if (projectionVars.isEmpty())
+		if (projectionVars.isEmpty()) {
 			return preparedSelectQueryString.replace("%PROJECTION_VARS%", "*");
+		}
 		StringBuilder sb = new StringBuilder();
-		for (String var : projectionVars)
+		for (String var : projectionVars) {
 			sb.append(" ?").append(var);
+		}
 		return preparedSelectQueryString.replace("%PROJECTION_VARS%", sb.toString());
 	}
 
@@ -193,7 +195,7 @@ public class Service extends UnaryTupleOperator {
 	/**
 	 * Compute the variable names occurring in the service expression using tree traversal, since these are necessary
 	 * for building the SPARQL query.
-	 * 
+	 *
 	 * @return the set of variable names in the given service expression
 	 */
 	private Set<String> computeServiceVars(TupleExpr serviceExpression) {
@@ -255,13 +257,14 @@ public class Service extends UnaryTupleOperator {
 
 	/**
 	 * Compute the prefix string only once to avoid computation overhead during evaluation.
-	 * 
+	 *
 	 * @param prefixDeclarations
 	 * @return a Prefix String or an empty string if there are no prefixes
 	 */
 	private String computePrefixString(Map<String, String> prefixDeclarations) {
-		if (prefixDeclarations == null)
+		if (prefixDeclarations == null) {
 			return "";
+		}
 
 		StringBuilder sb = new StringBuilder();
 		for (String prefix : prefixDeclarations.keySet()) {
@@ -274,7 +277,7 @@ public class Service extends UnaryTupleOperator {
 	/**
 	 * Parses a service expression to just have the inner expression, e.g. from something like "SERVICE &lt;url&gt; {
 	 * ... }" becomes " ... ", also applies {@link String#trim()} to remove leading/tailing space
-	 * 
+	 *
 	 * @param serviceExpression
 	 * @return the inner expression of the given service expression
 	 */
@@ -300,4 +303,5 @@ public class Service extends UnaryTupleOperator {
 	public String getBaseURI() {
 		return baseURI;
 	}
+
 }

@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -20,6 +22,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.IncompatibleOperationException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.DeleteData;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -47,6 +51,8 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 @SuppressWarnings("deprecation")
 public class SPARQLParser implements QueryParser {
@@ -56,6 +62,8 @@ public class SPARQLParser implements QueryParser {
 		try {
 
 			ParsedUpdate update = new ParsedUpdate(updateStr);
+
+			SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
 
 			ASTUpdateSequence updateSequence = SyntaxTreeBuilder.parseUpdateSequence(updateStr);
 
@@ -119,6 +127,24 @@ public class SPARQLParser implements QueryParser {
 
 					// add individual update expression to ParsedUpdate sequence
 					// container
+
+					String datablock = "";
+					if (updateExpr instanceof InsertData) {
+						InsertData insertDataExpr = (InsertData) updateExpr;
+						parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, null);
+						parser.setLineNumberOffset(insertDataExpr.getLineNumberOffset());
+						datablock = insertDataExpr.getDataBlock();
+					} else if (updateExpr instanceof DeleteData) {
+						DeleteData deleteDataExpr = (DeleteData) updateExpr;
+						parser.setLineNumberOffset(deleteDataExpr.getLineNumberOffset());
+						parser.setAllowBlankNodes(false);
+						datablock = deleteDataExpr.getDataBlock();
+					}
+
+					if (!datablock.equals("")) {
+						parser.parse(new StringReader(datablock), "");
+					}
+
 					update.addUpdateExpr(updateExpr);
 
 					// associate updateExpr with the correct dataset (if any)
@@ -128,7 +154,7 @@ public class SPARQLParser implements QueryParser {
 			} // end for
 
 			return update;
-		} catch (ParseException | TokenMgrError | VisitorException e) {
+		} catch (RDFParseException | ParseException | TokenMgrError | VisitorException | IOException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 

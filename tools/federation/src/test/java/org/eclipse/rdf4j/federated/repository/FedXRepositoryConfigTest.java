@@ -7,27 +7,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.repository;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Models.subject;
+
 import java.io.InputStream;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import com.github.jsonldjava.shaded.com.google.common.collect.Sets;
-
 public class FedXRepositoryConfigTest {
 
 	@Test
 	public void testParseConfig() throws Exception {
-
 		Model model = readConfig("/tests/rdf4jserver/config.ttl");
 
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
@@ -36,19 +35,14 @@ public class FedXRepositoryConfigTest {
 		Assertions.assertNull(config.getDataConfig());
 
 		Model members = config.getMembers();
-		Assertions.assertEquals(2, members.filter(null, FEDX.STORE, null).size()); // 2 members
-		Assertions.assertEquals(Sets.newHashSet("endpoint1", "endpoint2"),
-				members.filter(null, FEDX.REPOSITORY_NAME, null)
-						.objects()
-						.stream()
-						.map(v -> v.stringValue())
-						.collect(Collectors.toSet()));
+		assertThat(members.filter(null, FEDX.STORE, null).size()).isEqualTo(2);
 
+		assertThat(members.filter(null, FEDX.REPOSITORY_NAME, null).objects().stream().map(Value::stringValue))
+				.containsExactly("endpoint1", "endpoint2");
 	}
 
 	@Test
 	public void testParseConfig_DataConfig() throws Exception {
-
 		Model model = readConfig("/tests/rdf4jserver/config-withDataConfig.ttl");
 
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
@@ -62,7 +56,6 @@ public class FedXRepositoryConfigTest {
 
 	@Test
 	public void testExport() throws Exception {
-
 		Model model = readConfig("/tests/rdf4jserver/config.ttl");
 
 		FedXRepositoryConfig config = new FedXRepositoryConfig();
@@ -72,13 +65,10 @@ public class FedXRepositoryConfigTest {
 		Model export = new TreeModel();
 		Resource implNode = config.export(export);
 
-		Assertions.assertEquals(2, export.filter(implNode, FedXRepositoryConfig.MEMBER, null).size()); // 2 members
-		Assertions.assertEquals(Sets.newHashSet("endpoint1", "endpoint2"),
-				export.filter(null, FEDX.REPOSITORY_NAME, null)
-						.objects()
-						.stream()
-						.map(v -> v.stringValue())
-						.collect(Collectors.toSet()));
+		assertThat(export.filter(implNode, FedXRepositoryConfig.MEMBER, null).size()).isEqualTo(2);
+
+		assertThat(export.filter(null, FEDX.REPOSITORY_NAME, null).objects().stream().map(Value::stringValue))
+				.containsExactly("endpoint1", "endpoint2");
 	}
 
 	protected Model readConfig(String configResource) throws Exception {
@@ -88,7 +78,7 @@ public class FedXRepositoryConfigTest {
 	}
 
 	protected Resource implNode(Model model) {
-		return Models.subject(model.filter(null, RepositoryConfigSchema.REPOSITORYTYPE, null)).get();
+		return subject(model.filter(null, RepositoryConfigSchema.REPOSITORYTYPE, null)).get();
 	}
 
 }

@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
-import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
+import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -17,7 +17,7 @@ import static org.junit.Assert.fail;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
@@ -71,7 +71,7 @@ public class QueryEvaluationUtilTest {
 	private Literal arg2unknown;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		arg1simple = f.createLiteral("abc");
 		arg2simple = f.createLiteral("b");
 
@@ -81,30 +81,30 @@ public class QueryEvaluationUtilTest {
 		arg1cy = f.createLiteral("abc", "cy");
 		arg2cy = f.createLiteral("b", "cy");
 
-		arg1string = f.createLiteral("abc", XMLSchema.STRING);
-		arg2string = f.createLiteral("b", XMLSchema.STRING);
+		arg1string = f.createLiteral("abc", XSD.STRING);
+		arg2string = f.createLiteral("b", XSD.STRING);
 
-		arg1year = f.createLiteral("2007", XMLSchema.GYEAR);
-		arg2year = f.createLiteral("2009", XMLSchema.GYEAR);
+		arg1year = f.createLiteral("2007", XSD.GYEAR);
+		arg2year = f.createLiteral("2009", XSD.GYEAR);
 
-		arg1dateTime = f.createLiteral("2009-01-01T20:20:20Z", XMLSchema.DATETIME);
-		arg2dateTime = f.createLiteral("2007-01-01T20:20:20+02:00", XMLSchema.DATETIME);
+		arg1dateTime = f.createLiteral("2009-01-01T20:20:20Z", XSD.DATETIME);
+		arg2dateTime = f.createLiteral("2007-01-01T20:20:20+02:00", XSD.DATETIME);
 
 		arg1int = f.createLiteral(10);
 		arg2int = f.createLiteral(1);
 
-		arg1duration = f.createLiteral("P1Y30DT1H1M1S", XMLSchema.DURATION);
-		arg2duration = f.createLiteral("P1Y31DT1H1M1S", XMLSchema.DURATION);
+		arg1duration = f.createLiteral("P1Y30DT1H1M1S", XSD.DURATION);
+		arg2duration = f.createLiteral("P1Y31DT1H1M1S", XSD.DURATION);
 
-		arg1yearMonthDuration = f.createLiteral("P1M", XMLSchema.YEARMONTHDURATION);
-		arg2yearMonthDuration = f.createLiteral("P1Y1M", XMLSchema.YEARMONTHDURATION);
+		arg1yearMonthDuration = f.createLiteral("P1M", XSD.YEARMONTHDURATION);
+		arg2yearMonthDuration = f.createLiteral("P1Y1M", XSD.YEARMONTHDURATION);
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
 	}
 
 	@Test
-	public void testCompatibleArguments() throws Exception {
+	public void testCompatibleArguments() {
 
 		assertTrue(QueryEvaluationUtil.compatibleArguments(arg1simple, arg2simple));
 		assertFalse(QueryEvaluationUtil.compatibleArguments(arg1simple, arg2en));
@@ -141,7 +141,7 @@ public class QueryEvaluationUtilTest {
 	}
 
 	@Test
-	public void testCompareEQ() throws Exception {
+	public void testCompareEQ() {
 		assertCompareTrue(arg1simple, arg1simple, EQ);
 		assertCompareTrue(arg1en, arg1en, EQ);
 		assertCompareTrue(arg2cy, arg2cy, EQ);
@@ -223,7 +223,7 @@ public class QueryEvaluationUtilTest {
 	}
 
 	@Test
-	public void testCompareNE() throws Exception {
+	public void testCompareNE() {
 		assertCompareFalse(arg1simple, arg1simple, NE);
 		assertCompareFalse(arg1en, arg1en, NE);
 		assertCompareFalse(arg1cy, arg1cy, NE);
@@ -303,7 +303,7 @@ public class QueryEvaluationUtilTest {
 	}
 
 	@Test
-	public void testCompareLT() throws Exception {
+	public void testCompareLT() {
 		assertCompareFalse(arg1simple, arg1simple, LT);
 		assertCompareException(arg1en, arg1en, LT);
 		assertCompareFalse(arg1string, arg1string, LT);
@@ -395,18 +395,18 @@ public class QueryEvaluationUtilTest {
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
 	 */
-	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op) throws Exception {
+	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op) {
 		assertCompareException(lit1, lit2, op, true);
 	}
 
 	/**
 	 * Assert that there is an exception as a result of comparing the two literals with the given operator.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
 	 */
-	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op, boolean strict) throws Exception {
+	private void assertCompareException(Literal lit1, Literal lit2, CompareOp op, boolean strict) {
 		try {
 			boolean returnValue = QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict);
 			fail("Did not receive expected ValueExprEvaluationException (return value was " + returnValue + ") for "
@@ -416,37 +416,37 @@ public class QueryEvaluationUtilTest {
 		}
 	}
 
-	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op) throws Exception {
+	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op) {
 		assertCompareFalse(lit1, lit2, op, true);
 	}
 
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns false.
-	 * 
+	 *
 	 * @param lit1 The left literal
 	 * @param lit2 The right literal
 	 * @param op   The operator for the comparison
 	 */
-	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op, boolean strict) throws Exception {
+	private void assertCompareFalse(Literal lit1, Literal lit2, CompareOp op, boolean strict) {
 		assertFalse("Compare did not return false for " + lit1.toString() + op.getSymbol() + lit2.toString(),
 				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
-	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op) throws Exception {
+	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op) {
 		assertCompareTrue(lit1, lit2, op, true);
 	}
 
 	/**
 	 * Assert that there is no exception as a result of comparing the two literals with the given operator and it
 	 * returns true.
-	 * 
+	 *
 	 * @param lit1   The left literal
 	 * @param lit2   The right literal
 	 * @param op     The operator for the comparison
 	 * @param strict boolean switch between strict and extended comparison
 	 */
-	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op, boolean strict) throws Exception {
+	private void assertCompareTrue(Literal lit1, Literal lit2, CompareOp op, boolean strict) {
 		assertTrue("Compare did not return true for " + lit1.toString() + op.getSymbol() + lit2.toString(),
 				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}

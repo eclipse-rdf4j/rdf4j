@@ -3,7 +3,8 @@
 
 <http://endpoint1> a sd:Service ;
 	fedx:store "ResolvableRepository" ;
-	fedx:repositoryName "endpoint1" .
+	fedx:repositoryName "endpoint1" ;
+        fedx:writable true.
 	
 <http://endpoint2> a sd:Service ;
 	fedx:store "ResolvableRepository" ;

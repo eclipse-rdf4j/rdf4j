@@ -8,27 +8,79 @@
 
 package org.eclipse.rdf4j.sail.shacl.AST;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.Stats;
-
-import java.util.Objects;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.planNodes.UnorderedSelect;
 
 /**
  * The AST (Abstract Syntax Tree) node that represents a simple path for exactly one predicate. Currently there is no
  * support for complex paths.
  *
  * @author Heshan Jayasinghe
+ * @author Håvard M. Ottestad
  */
 public class SimplePath extends Path {
 
 	private final IRI path;
 
-	SimplePath(IRI id) {
+	public SimplePath(IRI id) {
 		super(id);
 		this.path = id;
 
+	}
+
+	@Override
+	public PlanNode getPlan(ConnectionsGroup connectionsGroup, boolean printPlans,
+			PlanNodeProvider overrideTargetNode, boolean negateThisPlan, boolean negateSubPlans) {
+		return connectionsGroup
+				.getCachedNodeFor(new Sort(new UnorderedSelect(connectionsGroup.getBaseConnection(), null,
+						path, null, UnorderedSelect.OutputPattern.SubjectObject)));
+	}
+
+	@Override
+	public PlanNode getPlanAddedStatements(ConnectionsGroup connectionsGroup,
+			PlaneNodeWrapper planeNodeWrapper) {
+
+		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getAddedStatements(), null,
+				path, null, UnorderedSelect.OutputPattern.SubjectObject);
+		if (planeNodeWrapper != null) {
+			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+		}
+		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+	}
+
+	@Override
+	public PlanNode getPlanRemovedStatements(ConnectionsGroup connectionsGroup,
+			PlaneNodeWrapper planeNodeWrapper) {
+		PlanNode unorderedSelect = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null,
+				path, null, UnorderedSelect.OutputPattern.SubjectObject);
+		if (planeNodeWrapper != null) {
+			unorderedSelect = planeNodeWrapper.wrap(unorderedSelect);
+		}
+		return connectionsGroup.getCachedNodeFor(new Sort(unorderedSelect));
+	}
+
+	@Override
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public List<Path> getPaths() {
+		throw new UnsupportedOperationException();
 	}
 
 	@Override
@@ -74,5 +126,12 @@ public class SimplePath extends Path {
 	@Override
 	public String toString() {
 		return path.toString();
+	}
+
+	@Override
+	public Stream<StatementPattern> getStatementsPatterns(Var start, Var end) {
+		return Stream
+				.of(new StatementPattern(start, new Var(UUID.randomUUID().toString(), path), end));
+
 	}
 }

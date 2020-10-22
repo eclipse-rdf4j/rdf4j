@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.After;
 import org.junit.Before;
@@ -52,7 +52,7 @@ public class TestDateTimeCast {
 		try {
 			Literal result = dtCast.evaluate(f, plainLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.DATETIME, result.getDatatype());
+			assertEquals(XSD.DATETIME, result.getDatatype());
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
 		}
@@ -60,11 +60,11 @@ public class TestDateTimeCast {
 
 	@Test
 	public void testCastDateLiteral() {
-		Literal dateLit = f.createLiteral("1999-09-09", XMLSchema.DATE);
+		Literal dateLit = f.createLiteral("1999-09-09", XSD.DATE);
 		try {
 			Literal result = dtCast.evaluate(f, dateLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.DATETIME, result.getDatatype());
+			assertEquals(XSD.DATETIME, result.getDatatype());
 
 		} catch (ValueExprEvaluationException e) {
 			fail(e.getMessage());
@@ -78,7 +78,7 @@ public class TestDateTimeCast {
 		try {
 			Literal result = dtCast.evaluate(f, dtLit);
 			assertNotNull(result);
-			assertEquals(XMLSchema.DATETIME, result.getDatatype());
+			assertEquals(XSD.DATETIME, result.getDatatype());
 			assertFalse(result.getLanguage().isPresent());
 			assertEquals(lexVal, result.getLabel());
 		} catch (ValueExprEvaluationException e) {

@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
-import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -31,7 +31,7 @@ import org.junit.Test;
 
 /**
  * Tests to monitor QueryJoinOptimizer behaviour.
- * 
+ *
  * @author Mark
  */
 public class QueryJoinOptimizerTest {

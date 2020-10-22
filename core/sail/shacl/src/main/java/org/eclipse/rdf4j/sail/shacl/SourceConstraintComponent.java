@@ -9,36 +9,69 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public enum SourceConstraintComponent {
-	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT),
-	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT),
-	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT),
-	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT),
-	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT),
-	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT),
-	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT),
-	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT),
-	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT),
-	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT),
-	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT),
-	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT),
-	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT),
-	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT),
-	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT),
-	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT),
-	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT),
-	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT);
+	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),
+	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),
+
+	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+
+	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+
+	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+
+	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other, true),
+	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other, false),
+	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other, false),
+	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased, false),
+
+	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
+
+	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+
+	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical, true);
 
 	private final IRI iri;
+	private final ConstraintType constraintType;
+	private final boolean producesValidationResultValue;
 
-	SourceConstraintComponent(IRI iri) {
+	SourceConstraintComponent(IRI iri, ConstraintType constraintType, boolean producesValidationResultValue) {
 		this.iri = iri;
+		this.constraintType = constraintType;
+		this.producesValidationResultValue = producesValidationResultValue;
 	}
 
 	public IRI getIri() {
 		return iri;
 	}
 
+	public ConstraintType getConstraintType() {
+		return constraintType;
+	}
+
+	public enum ConstraintType {
+		ValueType,
+		Cardinality,
+		ValueRange,
+		StringBased,
+		PropertyPair,
+		Logical,
+		ShapeBased,
+		Other;
+
+	}
+
+	public boolean producesValidationResultValue() {
+		return producesValidationResultValue;
+	}
 }

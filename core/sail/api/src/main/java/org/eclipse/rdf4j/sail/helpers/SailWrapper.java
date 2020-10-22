@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
 /**
  * An implementation of the StackableSail interface that wraps another Sail object and forwards any relevant calls to
  * the wrapped Sail.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SailWrapper implements StackableSail, FederatedServiceResolverClient {
@@ -131,4 +131,5 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 		verifyBaseSailSet();
 		return baseSail.getDefaultIsolationLevel();
 	}
+
 }

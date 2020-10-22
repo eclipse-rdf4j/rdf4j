@@ -7,20 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
-
-import org.junit.Before;
-import org.junit.Test;
-
-import org.mockito.ArgumentCaptor;
-
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.ArgumentCaptor;
+
 /**
  * Test namespace prefixes setting
- * 
+ *
  * @author Bart Hanssens
  */
 public class PrefixesTest extends AbstractSettingTest {

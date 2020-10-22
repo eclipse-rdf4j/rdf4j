@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Execute the nested loop join in a synchronous fashion, using grouped requests, i.e. group bindings into one SPARQL
  * request using the UNION operator
- * 
+ *
  * @author Andreas Schwarte
  */
 public class SynchronousBoundJoin extends SynchronousJoin {
@@ -63,8 +63,9 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			BindingSet b = leftIter.next();
 			totalBindings++;
 			hasFreeVars = stmt.hasFreeVarsFor(b);
-			if (!hasFreeVars)
+			if (!hasFreeVars) {
 				stmt = new CheckStatementPattern(stmt, queryInfo);
+			}
 			rightQueue.put(strategy.evaluate(stmt, b));
 		}
 
@@ -74,17 +75,18 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 
 			/*
 			 * XXX idea:
-			 * 
+			 *
 			 * make nBindings dependent on the number of intermediate results of the left argument.
-			 * 
+			 *
 			 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
 			 * requests.
-			 * 
+			 *
 			 */
-			if (totalBindings > 10)
+			if (totalBindings > 10) {
 				nBindings = nBindingsCfg;
-			else
+			} else {
 				nBindings = 3;
+			}
 
 			bindings = new ArrayList<>(nBindings);
 

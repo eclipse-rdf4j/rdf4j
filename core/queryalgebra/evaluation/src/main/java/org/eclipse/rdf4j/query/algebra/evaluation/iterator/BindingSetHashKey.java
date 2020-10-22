@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * Compact and efficient representation of a binding set for use as a key in hash maps.
- * 
+ *
  * @author MJAHale
  */
 public class BindingSetHashKey implements Serializable {

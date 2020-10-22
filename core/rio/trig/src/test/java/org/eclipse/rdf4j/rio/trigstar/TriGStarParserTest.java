@@ -7,6 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.Collection;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -15,23 +25,13 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.Reader;
-import java.io.StringReader;
-import java.util.Collection;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * @author Pavel Mihaylov
@@ -70,8 +70,8 @@ public class TriGStarParserTest {
 		IRI b = vf.createIRI("http://example.com/b");
 		IRI c = vf.createIRI("http://example.com/c");
 		IRI valid = vf.createIRI("http://example.com/valid");
-		Literal abcDate = vf.createLiteral("1999-08-16", XMLSchema.DATE);
-		Literal birthDate = vf.createLiteral("1908-03-18", XMLSchema.DATE);
+		Literal abcDate = vf.createLiteral("1999-08-16", XSD.DATE);
+		Literal birthDate = vf.createLiteral("1908-03-18", XSD.DATE);
 		Literal titleEn = vf.createLiteral("Example book", "en");
 		Literal titleDe = vf.createLiteral("Beispielbuch", "de");
 		Literal titleEnUs = vf.createLiteral("Example Book", "en-US");

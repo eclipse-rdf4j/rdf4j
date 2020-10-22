@@ -7,6 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -20,7 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -28,14 +36,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 
 /**
  * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
@@ -615,7 +615,7 @@ public abstract class SailIsolationLevelTest {
 	}
 
 	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
-		Literal lit = vf.createLiteral(Integer.toString(i), XMLSchema.INTEGER);
+		Literal lit = vf.createLiteral(Integer.toString(i), XSD.INTEGER);
 		connection.addStatement(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
 				vf.createIRI("http://test#context_" + i));
 	}

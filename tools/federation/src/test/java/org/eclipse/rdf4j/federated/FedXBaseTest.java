@@ -61,8 +61,9 @@ public abstract class FedXBaseTest {
 	@BeforeAll
 	public static void initLogging() throws Exception {
 
-		if (System.getProperty("log4j.configurationFile") == null)
+		if (System.getProperty("log4j.configurationFile") == null) {
 			System.setProperty("log4j.configurationFile", "file:build/test/log4j-debug.properties");
+		}
 
 		log = LoggerFactory.getLogger(FedXBaseTest.class);
 	}
@@ -75,7 +76,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 * 
+	 *
 	 * @param queryFile
 	 * @param expectedResultFile
 	 * @param checkOrder
@@ -156,7 +157,7 @@ public abstract class FedXBaseTest {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param localName
 	 * @return the IRI in the instance's {@link #defaultNamespace}
 	 */
@@ -164,13 +165,17 @@ public abstract class FedXBaseTest {
 		return iri(defaultNamespace, localName);
 	}
 
-	protected IRI iri(String namespace, String localName) {
+	protected static IRI iri(String namespace, String localName) {
 		return vf.createIRI(namespace, localName);
+	}
+
+	protected static IRI fullIri(String fullIri) {
+		return vf.createIRI(fullIri);
 	}
 
 	/**
 	 * Read the query string from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -182,7 +187,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read resource from classpath as string, e.g. /tests/basic/data01endpoint1.ttl
-	 * 
+	 *
 	 * @param resource
 	 * @return
 	 * @throws IOException
@@ -198,7 +203,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read the expected tuple query result from the specified resource
-	 * 
+	 *
 	 * @param queryResource
 	 * @return
 	 * @throws RepositoryException
@@ -209,8 +214,9 @@ public abstract class FedXBaseTest {
 
 		if (tqrFormat != null) {
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			if (in == null)
+			if (in == null) {
 				throw new IOException("File could not be opened: " + resultFile);
+			}
 
 			try {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
@@ -231,7 +237,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Read the expected graph query result from the specified resource
-	 * 
+	 *
 	 * @param resultFile
 	 * @return
 	 * @throws Exception
@@ -284,9 +290,9 @@ public abstract class FedXBaseTest {
 	}
 
 	/**
-	 * 
+	 *
 	 * Note: metod can only be used after initialization phase
-	 * 
+	 *
 	 * @return the current {@link FederationContext}
 	 */
 	protected abstract FederationContext federationContext();
@@ -297,7 +303,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Compare two tuple query results
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @param checkOrder
@@ -391,7 +397,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * Compare two graphs
-	 * 
+	 *
 	 * @param queryResult
 	 * @param expectedResult
 	 * @throws Exception
@@ -419,7 +425,7 @@ public abstract class FedXBaseTest {
 
 	/**
 	 * A builder for {@link TupleQueryResult}s.
-	 * 
+	 *
 	 * @author as
 	 *
 	 */
@@ -434,7 +440,7 @@ public abstract class FedXBaseTest {
 
 		/**
 		 * Add the {@link BindingSet} to the result.
-		 * 
+		 *
 		 * @param b
 		 * @return
 		 * @throws IllegalArgumentException if the provided binding names is not a subset of the defined result binding
@@ -443,10 +449,11 @@ public abstract class FedXBaseTest {
 		public SimpleTupleQueryResultBuilder add(BindingSet b) throws IllegalArgumentException {
 
 			// check if the binding names are a subset of defined binding names
-			if (!bindingNames.containsAll(b.getBindingNames()))
+			if (!bindingNames.containsAll(b.getBindingNames())) {
 				throw new IllegalArgumentException(
 						"Provided binding set does must be a subset of defined binding names: " + bindingNames
 								+ ". Was: " + b.getBindingNames());
+			}
 			this.bindings.add(b);
 			return this;
 		}

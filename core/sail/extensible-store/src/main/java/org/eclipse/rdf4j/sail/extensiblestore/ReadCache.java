@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
-import org.apache.commons.collections4.map.ReferenceMap;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -18,9 +21,8 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 public class ReadCache implements DataStructureInterface {
 
@@ -30,10 +32,8 @@ public class ReadCache implements DataStructureInterface {
 
 	final int STATEMENTS_PER_CACHE_ITEM_LIMIT = 100000;
 
-	// ReferenceMap defaults to hard reference for key and soft reference for value. This means that a value may be
-	// garbage collected, but unlike a weak ref it will only be garbage collected if we run out of memory. This is a
-	// memory sensitive cache.
-	ReferenceMap<PartialStatement, List<ExtensibleStatement>> cache = new ReferenceMap<>();
+	// A soft values-based cache of unlimited size. We currently handle retention and removal manually.
+	Cache<PartialStatement, List<ExtensibleStatement>> cache = CacheBuilder.newBuilder().softValues().build();
 
 	// The cache ticket is incremented every time the cache is cleared. A getStatements operation retrieves the current
 	// cacheTicket when the iteration is opened. When the iteration is closed it checks the retrieved ticket against the
@@ -121,7 +121,7 @@ public class ReadCache implements DataStructureInterface {
 
 	synchronized private CloseableIteration<? extends ExtensibleStatement, SailException> getCached(
 			PartialStatement partialStatement) {
-		List<ExtensibleStatement> statements = cache.get(partialStatement);
+		List<ExtensibleStatement> statements = cache.getIfPresent(partialStatement);
 
 		if (statements != null) {
 
@@ -172,10 +172,7 @@ public class ReadCache implements DataStructureInterface {
 	}
 
 	synchronized public void clearCache() {
-		if (!cache.isEmpty()) {
-			cache.clear();
-		}
-
+		cache.invalidateAll();
 		// overflow is not a problem since we use == to compare in submitToCache
 		cacheTicket++;
 	}

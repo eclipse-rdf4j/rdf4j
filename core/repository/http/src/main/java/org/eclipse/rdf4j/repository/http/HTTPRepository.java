@@ -17,11 +17,12 @@ import java.util.regex.Pattern;
 import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
-import org.eclipse.rdf4j.http.client.SessionManagerDependent;
-import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -36,12 +37,14 @@ import org.eclipse.rdf4j.repository.base.AbstractRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 
 /**
- * A repository that serves as a proxy for a remote repository on a Sesame Server. Methods in this class may throw the
- * specific RepositoryException subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
+ * A repository that serves as a client for a remote repository on an RDF4J Server. Methods in this class may throw the
+ * specific {@link RepositoryException} subclass {@link UnauthorizedException}, the semantics of which is defined by the
+ * HTTP protocol.
  * <p>
- * This repository proxy uses a <a href="http://docs.rdf4j.org/rest-api/">Sesame-specific extension of the SPARQL 1.1
- * Protocol</a> to communicate with the server. For communicating with a non-Sesame-based SPARQL endpoint, it is
- * recommend to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository SPARQLRepository} instead.
+ * This repository client uses a <a href="https://rdf4j.org/documentation/reference/rest-api/">RDF4J-specific extension
+ * of the SPARQL 1.1 Protocol</a> to communicate with the server. For communicating with a SPARQL endpoint that is not
+ * based on RDF4J, it is recommended to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository
+ * SPARQLRepository} instead.
  *
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
@@ -57,10 +60,10 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/**
 	 * The HTTP client that takes care of the client-server communication.
 	 */
-	private volatile HttpClientSessionManager client;
+	private volatile HttpClientSessionManager sessionManager;
 
 	/** dependent life cycle */
-	private volatile SharedHttpClientSessionManager dependentClient;
+	private volatile SharedHttpClientSessionManager dependentSessionManager;
 
 	private String username;
 
@@ -79,10 +82,6 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	private volatile Boolean compatibleMode = null;
 
 	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	private HTTPRepository() {
 		super();
@@ -103,14 +102,10 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		if (matcher.matches() && matcher.groupCount() == 1) {
 			this.serverURL = matcher.group(1);
 		} else {
-			throw new IllegalArgumentException("URL must be to a Sesame Repository (not just the server)");
+			throw new IllegalArgumentException("URL must be to a RDF4J Repository (not just the server)");
 		}
 		this.repositoryURL = repositoryURL;
 	}
-
-	/*
-	 * ---------------* public methods * ---------------
-	 */
 
 	@Override
 	public void setDataDir(final File dataDir) {
@@ -124,12 +119,12 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	@Override
 	public HttpClientSessionManager getHttpClientSessionManager() {
-		HttpClientSessionManager result = client;
+		HttpClientSessionManager result = sessionManager;
 		if (result == null) {
 			synchronized (this) {
-				result = client;
+				result = sessionManager;
 				if (result == null) {
-					result = client = dependentClient = new SharedHttpClientSessionManager();
+					result = sessionManager = dependentSessionManager = new SharedHttpClientSessionManager();
 				}
 			}
 		}
@@ -139,11 +134,11 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	@Override
 	public void setHttpClientSessionManager(HttpClientSessionManager client) {
 		synchronized (this) {
-			this.client = client;
+			this.sessionManager = client;
 			// If they set a client, we need to check whether we need to
 			// shutdown any existing dependentClient
-			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
-			dependentClient = null;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentSessionManager;
+			dependentSessionManager = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
 			}
@@ -152,7 +147,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Get the additional HTTP headers which will be used
-	 * 
+	 *
 	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
 	 */
 	public Map<String, String> getAdditionalHttpHeaders() {
@@ -163,7 +158,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
 	 * unusual server configurations. This will only take effect on connections subsequently returned by
 	 * {@link #getConnection()}.
-	 * 
+	 *
 	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
 	 */
 	public void setAdditionalHttpHeaders(Map<String, String> additionalHttpHeaders) {
@@ -181,16 +176,16 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	@Override
 	public void setHttpClient(HttpClient httpClient) {
-		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
-		if (toSetDependentClient == null) {
+		SharedHttpClientSessionManager toSetDependentSessionManager = dependentSessionManager;
+		if (toSetDependentSessionManager == null) {
 			getHttpClientSessionManager();
-			toSetDependentClient = dependentClient;
+			toSetDependentSessionManager = dependentSessionManager;
 		}
 		// The strange lifecycle results in the possibility that the
-		// dependentClient will be null due to a call to setSesameClient, so add
+		// dependentSessionManger will be null due to a call to setHttpClient, so add
 		// a null guard here for that possibility
-		if (toSetDependentClient != null) {
-			toSetDependentClient.setHttpClient(httpClient);
+		if (toSetDependentSessionManager != null) {
+			toSetDependentSessionManager.setHttpClient(httpClient);
 		}
 	}
 
@@ -240,7 +235,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * overriding the {@link SPARQLProtocolSession} 's default preference. Setting this parameter is not necessary in
 	 * most cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
 	 * efficient format available.
-	 * 
+	 *
 	 * @param format the preferred {@link TupleQueryResultFormat}. If set to 'null' no explicit preference will be
 	 *               stated.
 	 */
@@ -250,7 +245,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Indicates the current preferred {@link TupleQueryResultFormat}.
-	 * 
+	 *
 	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
@@ -265,7 +260,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 * <p>
 	 * Use with caution: if set to a format that does not support context serialization any context info contained in
 	 * the query result will be lost.
-	 * 
+	 *
 	 * @param format the preferred {@link RDFFormat}. If set to 'null' no explicit preference will be stated.
 	 */
 	public void setPreferredRDFFormat(final RDFFormat format) {
@@ -274,7 +269,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Indicates the current preferred {@link RDFFormat}.
-	 * 
+	 *
 	 * @return The preferred format, of 'null' if no explicit preference is defined.
 	 */
 	public RDFFormat getPreferredRDFFormat() {
@@ -283,7 +278,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Set the username and password to use for authenticating with the remote repository.
-	 * 
+	 *
 	 * @param username the username. Setting this to null will disable authentication.
 	 * @param password the password. Setting this to null will disable authentication.
 	 */
@@ -308,22 +303,22 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	@Override
 	protected void shutDownInternal() throws RepositoryException {
 		try {
-			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;
-			dependentClient = null;
+			SharedHttpClientSessionManager toCloseDependentClient = dependentSessionManager;
+			dependentSessionManager = null;
 			if (toCloseDependentClient != null) {
 				toCloseDependentClient.shutDown();
 			}
 		} finally {
 			// remove reference but do not shut down, client may be shared by
 			// other repos.
-			client = null;
+			sessionManager = null;
 		}
 	}
 
 	/**
-	 * Creates a new HTTPClient object. Subclasses may override to return a more specific HTTPClient subtype.
-	 * 
-	 * @return a HTTPClient object.
+	 * Creates a new {@link RDF4JProtocolSession} object.
+	 *
+	 * @return a {@link RDF4JProtocolSession} object.
 	 */
 	protected RDF4JProtocolSession createHTTPClient() {
 		// initialize HTTP client
@@ -347,8 +342,8 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when communicating
-	 * with an older Sesame Server).
-	 * 
+	 * with an older RDF4J Server).
+	 *
 	 * @return <code>true</code> if the Server does not support the extended transaction protocol, <code>false</code>
 	 *         otherwise.
 	 * @throws RepositoryException if something went wrong while querying the server for the protocol version.

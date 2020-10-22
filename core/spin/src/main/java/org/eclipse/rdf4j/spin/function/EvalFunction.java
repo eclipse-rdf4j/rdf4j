@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -37,8 +39,6 @@ import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.spin.SpinParser;
-
-import java.util.Set;
 
 public class EvalFunction extends AbstractSpinFunction implements Function {
 
@@ -117,11 +117,11 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 	}
 
 	private boolean isQuery(Resource r, TripleSource store) throws RDF4JException {
-		try (CloseableIteration<? extends URI, QueryEvaluationException> typeIter = TripleSources.getObjectURIs(r,
+		try (CloseableIteration<? extends IRI, QueryEvaluationException> typeIter = TripleSources.getObjectURIs(r,
 				RDF.TYPE,
 				store)) {
 			while (typeIter.hasNext()) {
-				URI type = typeIter.next();
+				IRI type = typeIter.next();
 				if (SP.SELECT_CLASS.equals(type) || SP.ASK_CLASS.equals(type) || SPIN.TEMPLATES_CLASS.equals(type)) {
 					return true;
 				}
@@ -133,10 +133,10 @@ public class EvalFunction extends AbstractSpinFunction implements Function {
 
 	protected static void addArguments(Query query, Value... args) throws ValueExprEvaluationException {
 		for (int i = 1; i < args.length; i += 2) {
-			if (!(args[i] instanceof URI)) {
-				throw new ValueExprEvaluationException("Argument " + i + " must be a URI");
+			if (!(args[i] instanceof IRI)) {
+				throw new ValueExprEvaluationException("Argument " + i + " must be a IRI");
 			}
-			query.setBinding(((URI) args[i]).getLocalName(), args[i + 1]);
+			query.setBinding(((IRI) args[i]).getLocalName(), args[i + 1]);
 		}
 	}
 }

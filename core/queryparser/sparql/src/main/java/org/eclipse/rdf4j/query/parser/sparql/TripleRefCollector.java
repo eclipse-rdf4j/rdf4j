@@ -12,10 +12,9 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 // constructs a map from variable name to TripleRef or ValueExprTripleRef for processing extensions
 public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeException> {
@@ -26,7 +25,7 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 		return collector.getTripleRefs();
 	}
 
-	private Map<String, Object> tripleRefs = new HashMap<String, Object>();
+	private Map<String, Object> tripleRefs = new HashMap<>();
 
 	public Map<String, Object> getTripleRefs() {
 		return tripleRefs;
@@ -54,7 +53,8 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 			tripleRefs.put(((TripleRef) node).getExprVar().getName(), (TripleRef) node);
 		} else if (node instanceof ValueExprTripleRef) {
 			tripleRefs.put(((ValueExprTripleRef) node).getExtVarName(), node);
-		} else
+		} else {
 			super.meetOther(node);
+		}
 	}
 }

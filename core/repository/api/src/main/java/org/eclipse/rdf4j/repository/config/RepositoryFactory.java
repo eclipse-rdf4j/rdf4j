@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.repository.Repository;
 /**
  * A RepositoryFactory takes care of creating and initializing a specific type of {@link Repository}s based on RDF
  * configuration data.
- * 
+ *
  * @author Arjohn Kampman
  */
 public interface RepositoryFactory {
@@ -28,7 +28,7 @@ public interface RepositoryFactory {
 
 	/**
 	 * Returns a Repository instance that has been initialized using the supplied configuration data.
-	 * 
+	 *
 	 * @param config TODO
 	 * @return The created (but un-initialized) repository.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration

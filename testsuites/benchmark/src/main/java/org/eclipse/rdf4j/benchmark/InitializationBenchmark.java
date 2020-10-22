@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.benchmark;
 
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -15,8 +17,6 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
-
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author Håvard Mikkelsen Ottestad

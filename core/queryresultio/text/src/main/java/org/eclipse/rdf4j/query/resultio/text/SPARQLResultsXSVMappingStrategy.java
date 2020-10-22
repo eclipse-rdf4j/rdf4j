@@ -7,19 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text;
 
-import com.opencsv.bean.BeanField;
-import com.opencsv.bean.MappingStrategy;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
-import org.eclipse.rdf4j.query.BindingSet;
-
 import java.beans.PropertyDescriptor;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.BindingSet;
+
+import com.opencsv.bean.BeanField;
+import com.opencsv.bean.MappingStrategy;
 
 /**
  * This serves as a base class for mapping strategies for character separated inputs. Specifically, it is meant for
@@ -96,14 +97,14 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 
 		if (XMLDatatypeUtil.isValidInteger(valueString)) {
 			if (XMLDatatypeUtil.isValidNegativeInteger(valueString)) {
-				dataType = XMLSchema.NEGATIVE_INTEGER;
+				dataType = XSD.NEGATIVE_INTEGER;
 			} else {
-				dataType = XMLSchema.INTEGER;
+				dataType = XSD.INTEGER;
 			}
 		} else if (XMLDatatypeUtil.isValidDecimal(valueString)) {
-			dataType = XMLSchema.DECIMAL;
+			dataType = XSD.DECIMAL;
 		} else if (XMLDatatypeUtil.isValidDouble(valueString)) {
-			dataType = XMLSchema.DOUBLE;
+			dataType = XSD.DOUBLE;
 		}
 
 		return dataType != null ? valueFactory.createLiteral(valueString, dataType)

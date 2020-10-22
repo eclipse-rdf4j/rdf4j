@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 
 public interface GraphQuery extends Query {
 
-	public GraphQueryResult evaluate() throws QueryEvaluationException;
+	GraphQueryResult evaluate() throws QueryEvaluationException;
 
-	public void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException;
+	void evaluate(RDFHandler handler) throws QueryEvaluationException, RDFHandlerException;
 }

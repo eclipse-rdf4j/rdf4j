@@ -43,4 +43,5 @@ public class Reduced extends UnaryTupleOperator {
 	public Reduced clone() {
 		return (Reduced) super.clone();
 	}
+
 }

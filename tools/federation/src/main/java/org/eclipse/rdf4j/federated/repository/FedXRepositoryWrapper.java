@@ -21,16 +21,16 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 /**
  * Wrapper for the {@link FedXRepository} in order to allow for lazy initialization.
- * 
+ *
  * <p>
  * The wrapper is used from {@link FedXRepositoryFactory} in environments with a {@link RepositoryManager}, e.g. in the
  * RDF4J workbench. The background is that the RDF4J repository manager requires control over the repository instance.
  * </p>
- * 
+ *
  * <p>
  * The data directory and the {@link RepositoryResolver} are handled by RDF4J {@link RepositoryManager}.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  * @see FedXFactory
  *
@@ -109,6 +109,10 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 			if (members != null) {
 				factory.withMembers(members);
+			}
+
+			if (fedXConfig.getConfig() != null) {
+				factory.withConfig(fedXConfig.getConfig());
 			}
 
 			fedxRepo = factory.create();

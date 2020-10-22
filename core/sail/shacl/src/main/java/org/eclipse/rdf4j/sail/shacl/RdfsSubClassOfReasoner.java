@@ -8,15 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -26,6 +17,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Statements;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
@@ -37,8 +39,8 @@ public class RdfsSubClassOfReasoner {
 
 	private static final Logger logger = LoggerFactory.getLogger(RdfsSubClassOfReasoner.class);
 
-	private final Collection<Statement> subClassOfStatements = new ArrayList<>();
-	private final Collection<Resource> types = new ArrayList<>();
+	private final Collection<Statement> subClassOfStatements = new HashSet<>();
+	private final Collection<Resource> types = new HashSet<>();
 
 	private final Map<Resource, Set<Resource>> forwardChainCache = new HashMap<>();
 	private final Map<Resource, Set<Resource>> backwardsChainCache = new HashMap<>();
@@ -71,7 +73,7 @@ public class RdfsSubClassOfReasoner {
 	}
 
 	private void addSubClassOfStatement(Statement st) {
-		subClassOfStatements.add(st);
+		subClassOfStatements.add(Statements.stripContext(st));
 		types.add(st.getSubject());
 		types.add((Resource) st.getObject());
 	}
@@ -153,6 +155,12 @@ public class RdfsSubClassOfReasoner {
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
 		try (Stream<? extends Statement> stream = shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false)
+				.stream()) {
+			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
+		}
+
+		try (Stream<? extends Statement> stream = shaclSailConnection
+				.getStatements(null, RDFS.SUBCLASSOF, null, false, RDF4J.SHACL_SHAPE_GRAPH)
 				.stream()) {
 			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
 		}

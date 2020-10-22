@@ -55,6 +55,7 @@ import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.CoreConnectionPNames;
 import org.apache.http.params.HttpParams;
+import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
@@ -127,10 +128,6 @@ import org.slf4j.LoggerFactory;
  */
 public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
 	protected static final Charset UTF8 = StandardCharsets.UTF_8;
 
 	/**
@@ -159,10 +156,6 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	final static Logger logger = LoggerFactory.getLogger(SPARQLProtocolSession.class);
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	private ValueFactory valueFactory;
 
 	private String queryURL;
@@ -187,10 +180,6 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	private Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
 	public SPARQLProtocolSession(HttpClient client, ExecutorService executor) {
 		this.httpClient = client;
 		this.httpContext = new HttpClientContext();
@@ -214,10 +203,6 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 		this.maximumUrlLength = maximumUrlLength;
 	}
-
-	/*-----------------*
-	 * Get/set methods *
-	 *-----------------*/
 
 	@Override
 	public final HttpClient getHttpClient() {
@@ -252,8 +237,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Sets the preferred format for encoding tuple query results. The {@link TupleQueryResultFormat#BINARY binary}
-	 * format is preferred by default.
+	 * Sets the preferred format for encoding tuple query results.
 	 *
 	 * @param format The preferred {@link TupleQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
 	 *               preferred.
@@ -263,7 +247,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Gets the preferred {@link TupleQueryResultFormat} for encoding tuple query results.
+	 * Gets the preferred {@link TupleQueryResultFormat} for encoding tuple query results. The
+	 * {@link TupleQueryResultFormat#SPARQL SPARQL/XML} format is preferred by default.
 	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
@@ -272,8 +257,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Sets the preferred format for encoding RDF documents. The {@link RDFFormat#TURTLE Turtle} format is preferred by
-	 * default.
+	 * Sets the preferred format for encoding RDF documents.
 	 *
 	 * @param format The preferred {@link RDFFormat}, or <tt>null</tt> to indicate no specific format is preferred.
 	 */
@@ -282,7 +266,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Gets the preferred {@link RDFFormat} for encoding RDF documents.
+	 * Gets the preferred {@link RDFFormat} for encoding RDF documents. The {@link RDFFormat#TURTLE Turtle} format is
+	 * preferred by default.
 	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
@@ -291,8 +276,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Sets the preferred format for encoding boolean query results. The {@link BooleanQueryResultFormat#TEXT binary}
-	 * format is preferred by default.
+	 * Sets the preferred format for encoding boolean query results.
 	 *
 	 * @param format The preferred {@link BooleanQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
 	 *               preferred.
@@ -302,7 +286,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	/**
-	 * Gets the preferred {@link BooleanQueryResultFormat} for encoding boolean query results.
+	 * Gets the preferred {@link BooleanQueryResultFormat} for encoding boolean query results. The
+	 * {@link BooleanQueryResultFormat#TEXT binary} format is preferred by default.
 	 *
 	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
 	 */
@@ -1101,7 +1086,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		throw new RepositoryException("Unsupported content-type for SHACL Validation Report: "
-				+ Arrays.toString(response.getHeaders("Content-Type")));
+				+ Arrays.toString(response.getHeaders("Content-Type"))
+				+ "! If the format seems correct, then you may need a maven dependency for that.");
 
 	}
 
@@ -1200,5 +1186,14 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			params = new BasicHttpParams();
 		}
 		params.setIntParameter(CoreConnectionPNames.SO_TIMEOUT, (int) timeout);
+	}
+
+	/**
+	 * Get the {@link HttpContext} used for sending HTTP requests.
+	 *
+	 * @return the {@link HttpContext} instance used for all protocol session requests.
+	 */
+	protected HttpContext getHttpContext() {
+		return this.httpContext;
 	}
 }

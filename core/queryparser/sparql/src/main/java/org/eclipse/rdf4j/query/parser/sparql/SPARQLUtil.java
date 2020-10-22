@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 
 /**
  * SPARQL-related utility methods.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class SPARQLUtil {
@@ -33,7 +33,7 @@ public class SPARQLUtil {
 
 	/**
 	 * Decodes an encoded SPARQL string. Any \-escape sequences are substituted with their decoded value.
-	 * 
+	 *
 	 * @param s An encoded SPARQL string.
 	 * @return The unencoded string.
 	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded SPARQL string.

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * A RDFHandler that can be used to collect reported statements in collections.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class StatementCollector extends ContextStatementCollector {

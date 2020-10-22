@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
 	/**
-	 * 
+	 *
 	 */
 	private final StrictEvaluationStrategy evaluationStrategyImpl;
 

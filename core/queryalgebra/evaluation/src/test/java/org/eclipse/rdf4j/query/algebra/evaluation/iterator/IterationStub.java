@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> implements Serializable {
 
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 1L;
 

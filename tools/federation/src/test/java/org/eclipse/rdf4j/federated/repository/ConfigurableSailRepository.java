@@ -17,12 +17,12 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Specialized {@link SailRepository} that allows configuration of various behaviors, e.g. fail after N operations.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
 public class ConfigurableSailRepository extends SailRepository implements RepositorySettings {
-	int failAfter = -1; // fail after x operations, -1 means inactive
+	volatile int failAfter = -1; // fail after x operations, -1 means inactive
 	boolean writable = true;
 
 	/**

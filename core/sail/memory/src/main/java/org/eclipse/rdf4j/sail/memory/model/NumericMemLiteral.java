@@ -9,11 +9,11 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores a numeric value to avoid parsing.
- * 
+ *
  * @author David Huynh
  * @author Arjohn Kampman
  */
@@ -41,27 +41,27 @@ public class NumericMemLiteral extends MemLiteral {
 	}
 
 	public NumericMemLiteral(Object creator, byte number) {
-		this(creator, number, XMLSchema.BYTE);
+		this(creator, number, XSD.BYTE);
 	}
 
 	public NumericMemLiteral(Object creator, short number) {
-		this(creator, number, XMLSchema.SHORT);
+		this(creator, number, XSD.SHORT);
 	}
 
 	public NumericMemLiteral(Object creator, int number) {
-		this(creator, number, XMLSchema.INT);
+		this(creator, number, XSD.INT);
 	}
 
 	public NumericMemLiteral(Object creator, long n) {
-		this(creator, n, XMLSchema.LONG);
+		this(creator, n, XSD.LONG);
 	}
 
 	public NumericMemLiteral(Object creator, float n) {
-		this(creator, n, XMLSchema.FLOAT);
+		this(creator, n, XSD.FLOAT);
 	}
 
 	public NumericMemLiteral(Object creator, double n) {
-		this(creator, n, XMLSchema.DOUBLE);
+		this(creator, n, XSD.DOUBLE);
 	}
 
 	/*---------*

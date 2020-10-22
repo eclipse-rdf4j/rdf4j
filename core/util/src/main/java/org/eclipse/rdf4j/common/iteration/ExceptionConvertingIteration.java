@@ -32,7 +32,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 
 	/**
 	 * Creates a new ExceptionConvertingIteration that operates on the supplied iteration.
-	 * 
+	 *
 	 * @param iter The Iteration that this <tt>ExceptionConvertingIteration</tt> operates on, must not be <tt>null</tt>.
 	 */
 	protected ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
@@ -50,7 +50,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 
 	/**
 	 * Checks whether the underlying Iteration contains more elements.
-	 * 
+	 *
 	 * @return <tt>true</tt> if the underlying Iteration contains more elements, <tt>false</tt> otherwise.
 	 * @throws X
 	 */
@@ -72,10 +72,10 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 
 	/**
 	 * Returns the next element from the wrapped Iteration.
-	 * 
+	 *
 	 * @throws X
-	 * @throws                       java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException If the Iteration has been closed.
+	 * @throws java.util.NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException            If the Iteration has been closed.
 	 */
 	@Override
 	public E next() throws X {
@@ -96,7 +96,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 
 	/**
 	 * Calls <tt>remove()</tt> on the underlying Iteration.
-	 * 
+	 *
 	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <tt>remove</tt> operation.
 	 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
 	 *                                       called, or {@link #remove} has already been called after the last call to

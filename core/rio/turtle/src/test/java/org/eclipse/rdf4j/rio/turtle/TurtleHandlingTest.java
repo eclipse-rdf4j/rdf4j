@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 
 /**
  * Test for error handling by Turtle Parser.
- * 
+ *
  * @author Peter Ansell
  */
 public class TurtleHandlingTest extends AbstractParserHandlingTest {

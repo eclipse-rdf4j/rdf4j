@@ -113,7 +113,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	/**
 	 * If the iteration is interrupted by its time limit, this method is called to generate and throw the appropriate
 	 * exception.
-	 * 
+	 *
 	 * @throws X The generic class of exceptions thrown by this method.
 	 */
 	protected abstract void throwInterruptedException() throws X;

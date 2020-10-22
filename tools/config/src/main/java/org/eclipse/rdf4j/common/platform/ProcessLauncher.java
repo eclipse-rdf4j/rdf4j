@@ -43,7 +43,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command line.
-	 * 
+	 *
 	 * @param commandLine command line
 	 */
 	public ProcessLauncher(String commandLine) {
@@ -52,7 +52,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command line and base directory
-	 * 
+	 *
 	 * @param commandLine command line
 	 * @param baseDir     base directory
 	 */
@@ -63,7 +63,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command array.
-	 * 
+	 *
 	 * @param commandArray command as array of strings
 	 */
 	public ProcessLauncher(String[] commandArray) {
@@ -72,7 +72,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs a new ProcessLauncher with the given command array and base directory.
-	 * 
+	 *
 	 * @param commandArray command as array of strings
 	 * @param baseDir      base directory
 	 */
@@ -83,7 +83,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs new process launcher with the given command element list.
-	 * 
+	 *
 	 * @param commandList command list
 	 */
 	public ProcessLauncher(ArrayList<?> commandList) {
@@ -92,7 +92,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Constructs new process launcher with the given command element list and base directory.
-	 * 
+	 *
 	 * @param commandList command list
 	 * @param baseDir     base directory
 	 */
@@ -102,8 +102,8 @@ public final class ProcessLauncher {
 
 	/**
 	 * Turn a list of objects into an array of strings
-	 * 
-	 * @param      <T>
+	 *
+	 * @param <T>
 	 * @param list list of objects
 	 * @return array of strings
 	 */
@@ -124,14 +124,14 @@ public final class ProcessLauncher {
 
 		/**
 		 * Send to standard output
-		 * 
+		 *
 		 * @param output text to output
 		 */
 		public void standardOutput(char[] output);
 
 		/**
 		 * Send to standard error
-		 * 
+		 *
 		 * @param output test to output
 		 */
 		public void errorOutput(char[] output);
@@ -139,7 +139,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Add a listener for output from the to-be-launched process.
-	 * 
+	 *
 	 * @param listener output listener
 	 */
 	public void addOutputListener(OutputListener listener) {
@@ -148,7 +148,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Fire error output event
-	 * 
+	 *
 	 * @param err
 	 */
 	private void fireErr(char[] err) {
@@ -163,7 +163,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Fire standard output event
-	 * 
+	 *
 	 * @param out
 	 */
 	private void fireOut(char[] out) {
@@ -178,7 +178,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get standard output, in case no listeners were registered - never returns null.
-	 * 
+	 *
 	 * @return standard output as string
 	 */
 	public String getStandardOutput() {
@@ -191,7 +191,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get error output, in case no listeners were registered - never returns null.
-	 * 
+	 *
 	 * @return standard error as string
 	 */
 	public String getErrorOutput() {
@@ -203,7 +203,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Get the commandline that is used to launch the process.
-	 * 
+	 *
 	 * @return command line
 	 */
 	public String getCommandLine() {
@@ -225,7 +225,7 @@ public final class ProcessLauncher {
 
 	/**
 	 * Check whether execution has finished.
-	 * 
+	 *
 	 * @return true when finished
 	 */
 	public boolean hasFinished() {
@@ -316,7 +316,7 @@ public final class ProcessLauncher {
 
 		/**
 		 * Constructor
-		 * 
+		 *
 		 * @param in            inputstream
 		 * @param isErrorOutput true if standard error
 		 */

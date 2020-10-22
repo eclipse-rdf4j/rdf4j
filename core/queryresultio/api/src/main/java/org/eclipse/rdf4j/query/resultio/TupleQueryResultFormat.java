@@ -12,13 +12,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 
 /**
  * Represents the concept of an tuple query result serialization format. Tuple query result formats are identified by a
  * {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
  * can specify a (default) character encoding.
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TupleQueryResultFormat extends QueryResultFormat {
@@ -45,6 +46,14 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 			Arrays.asList("srx", "xml"), SPARQL_RESULTS_XML_URI, NO_RDF_STAR);
 
 	/**
+	 * SPARQL* Query Results XML Format (like SPARQL/XML but with native RDF* support).
+	 */
+	@Experimental
+	public static final TupleQueryResultFormat SPARQL_STAR = new TupleQueryResultFormat("SPARQL*/XML",
+			Arrays.asList("application/x-sparqlstar-results+xml"), StandardCharsets.UTF_8,
+			Arrays.asList("srxs"), null, SUPPORTS_RDF_STAR);
+
+	/**
 	 * Binary RDF results table format.
 	 */
 	public static final TupleQueryResultFormat BINARY = new TupleQueryResultFormat("BINARY",
@@ -60,7 +69,8 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	/**
 	 * SPARQL* Query Results JSON Format (like SPARQL JSON but with RDF* support).
 	 */
-	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL/JSON*",
+	@Experimental
+	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL*/JSON",
 			Arrays.asList("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
 			Arrays.asList("srjs"), null, SUPPORTS_RDF_STAR);
 
@@ -100,15 +110,41 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	/**
 	 * Creates a new TupleQueryResultFormat object.
 	 *
+	 * @param name     The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
+	 *                 format.
+	 * @param fileExt  The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
+	 */
+	public TupleQueryResultFormat(String name, String mimeType, String fileExt) {
+		this(name, mimeType, null, fileExt, NO_RDF_STAR);
+	}
+
+	/**
+	 * Creates a new TupleQueryResultFormat object.
+	 *
 	 * @param name            The name of the format, e.g. "SPARQL/XML".
 	 * @param mimeType        The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the
 	 *                        SPARQL/XML format.
 	 * @param fileExt         The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
 	 * @param supportsRDFStar <tt>True</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively
 	 *                        and <tt>false</tt> otherwise.
+	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, String mimeType, String fileExt, boolean supportsRDFStar) {
 		this(name, mimeType, null, fileExt, supportsRDFStar);
+	}
+
+	/**
+	 * Creates a new TupleQueryResultFormat object.
+	 *
+	 * @param name     The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeType The MIME type of the format, e.g. <tt>application/sparql-results+xml</tt> for the SPARQL/XML
+	 *                 format.
+	 * @param charset  The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExt  The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
+	 */
+	public TupleQueryResultFormat(String name, String mimeType, Charset charset, String fileExt) {
+		this(name, mimeType, charset, fileExt, NO_RDF_STAR);
 	}
 
 	/**
@@ -121,11 +157,28 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 * @param fileExt         The (default) file extension for the format, e.g. <tt>srx</tt> for SPARQL/XML.
 	 * @param supportsRDFStar <tt>True</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively
 	 *                        and <tt>false</tt> otherwise.
+	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, String mimeType, Charset charset, String fileExt,
 			boolean supportsRDFStar) {
 		super(name, mimeType, charset, fileExt);
 		this.supportsRDFStar = supportsRDFStar;
+	}
+
+	/**
+	 * Creates a new TupleQueryResultFormat object.
+	 *
+	 * @param name           The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
+	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+	 *                       the format.
+	 * @param charset        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the
+	 *                       list is interpreted as the default file extension for the format.
+	 */
+	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
+			Collection<String> fileExtensions) {
+		this(name, mimeTypes, charset, fileExtensions, NO_RDF_STAR);
 	}
 
 	/**
@@ -140,11 +193,31 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 *                        the list is interpreted as the default file extension for the format.
 	 * @param supportsRDFStar <tt>True</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively
 	 *                        and <tt>false</tt> otherwise.
+	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, boolean supportsRDFStar) {
 		super(name, mimeTypes, charset, fileExtensions);
 		this.supportsRDFStar = supportsRDFStar;
+	}
+
+	/**
+	 * Creates a new TupleQueryResultFormat object.
+	 *
+	 * @param name           The name of the format, e.g. "SPARQL/XML".
+	 * @param mimeTypes      The MIME types of the format, e.g. <tt>application/sparql-results+xml</tt> for the
+	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+	 *                       the format.
+	 * @param charset        The default character encoding of the format. Specify <tt>null</tt> if not applicable.
+	 * @param fileExtensions The format's file extensions, e.g. <tt>srx</tt> for SPARQL/XML files. The first item in the
+	 *                       list is interpreted as the default file extension for the format.
+	 * @param standardURI    The standard URI that has been assigned to this format by a standards organisation or null
+	 *                       if it does not currently have a standard URI.
+	 * @since 3.2.0
+	 */
+	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
+			Collection<String> fileExtensions, IRI standardURI) {
+		this(name, mimeTypes, charset, fileExtensions, standardURI, NO_RDF_STAR);
 	}
 
 	/**
@@ -161,6 +234,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 *                        if it does not currently have a standard URI.
 	 * @param supportsRDFStar <tt>True</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively
 	 *                        and <tt>false</tt> otherwise.
+	 * @since 3.2.0
 	 */
 	public TupleQueryResultFormat(String name, Collection<String> mimeTypes, Charset charset,
 			Collection<String> fileExtensions, IRI standardURI, boolean supportsRDFStar) {
@@ -174,6 +248,8 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 
 	/**
 	 * Return <tt>true</tt> if the TupleQueryResultFormat supports the encoding of RDF* triples natively.
+	 *
+	 * @since 3.2.0
 	 */
 	public boolean supportsRDFStar() {
 		return supportsRDFStar;

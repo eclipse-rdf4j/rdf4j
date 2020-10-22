@@ -59,17 +59,17 @@ import org.xml.sax.XMLReader;
  * <li>Call the parse method.
  * </ul>
  * Example code:
- * 
+ *
  * <pre>
  * // Use the SAX2-compliant Xerces parser:
  * System.setProperty(&quot;org.xml.sax.driver&quot;, &quot;org.apache.xerces.parsers.SAXParser&quot;);
- * 
+ *
  * RDFParser parser = new RDFXMLParser();
  * parser.setRDFHandler(myRDFHandler);
  * parser.setParseErrorListener(myParseErrorListener);
  * parser.setVerifyData(true);
  * parser.stopAtFirstError(false);
- * 
+ *
  * // Parse the data from inputStream, resolving any
  * // relative URIs against http://foo/bar:
  * parser.parse(inputStream, &quot;http://foo/bar&quot;);
@@ -79,13 +79,13 @@ import org.xml.sax.XMLReader;
  * <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/limits.html">limits</a> and using the
  * <a href="https://docs.oracle.com/javase/tutorial/jaxp/limits/using.html">jaxp.properties file</a> if you get one of
  * the following errors:
- * 
+ *
  * <pre>
- *  
+ *
  * JAXP00010001: The parser has encountered more than "64000" entity expansions in this document
  * JAXP00010004: The accumulated size of entities is ... that exceeded the "50,000,000" limit
  * </pre>
- * 
+ *
  * As a work-around, try passing <code>-Djdk.xml.totalEntitySizeLimit=0 -DentityExpansionLimit=0</code> to the JVM.
  *
  * @see org.eclipse.rdf4j.model.ValueFactory
@@ -142,7 +142,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Creates a new RDFXMLParser that will use the supplied <tt>ValueFactory</tt> to create RDF model objects.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	public RDFXMLParser(ValueFactory valueFactory) {
@@ -172,7 +172,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Returns whether the parser is currently in a mode to parse stand-alone RDF documents.
-	 * 
+	 *
 	 * @see #setParseStandAloneDocuments
 	 */
 	public boolean getParseStandAloneDocuments() {
@@ -181,7 +181,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
@@ -207,7 +207,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
@@ -497,7 +497,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * Retrieves the resource of a node element (subject or object) using relevant attributes (rdf:ID, rdf:about and
 	 * rdf:nodeID) from its attributes list.
-	 * 
+	 *
 	 * @return a resource or a bNode.
 	 */
 	private Resource getNodeResource(Atts atts) throws RDFParseException {
@@ -719,7 +719,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * Retrieves the object resource of a property element using relevant attributes (rdf:resource and rdf:nodeID) from
 	 * its attributes list.
-	 * 
+	 *
 	 * @return a resource or a bNode.
 	 */
 	private Resource getPropertyResource(Atts atts) throws RDFParseException {
@@ -866,7 +866,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * property element. If the name is equal to one of the disallowed names (RDF, ID, about, parseType, resource and
 	 * li), an error is generated. If the name is not defined in the RDF namespace, but it claims that it is from this
 	 * namespace, a warning is generated.
-	 * 
+	 *
 	 * @param setting
 	 */
 	private void checkPropertyEltName(String namespaceURI, String localName, String qName, RioSetting<Boolean> setting)
@@ -949,7 +949,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Reports a stament to the configured RDFHandlerException.
-	 * 
+	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.

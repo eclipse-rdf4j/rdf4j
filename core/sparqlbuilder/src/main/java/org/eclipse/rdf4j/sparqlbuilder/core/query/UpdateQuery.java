@@ -1,10 +1,10 @@
 /*******************************************************************************
-Copyright (c) 2018 Eclipse RDF4J contributors.
-All rights reserved. This program and the accompanying materials
-are made available under the terms of the Eclipse Distribution License v1.0
-which accompanies this distribution, and is available at
-http://www.eclipse.org/org/documents/edl-v10.php.
-*******************************************************************************/
+ Copyright (c) 2018 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * A SPARQL Update query
- * 
+ *
  * @param <T> The type of update query. Used to support fluency.
  *
  * @see <a href="https://www.w3.org/TR/sparql11-update/"> SPARQL Update Query</a>
@@ -37,7 +37,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 	/**
 	 * Set the base IRI of this query
-	 * 
+	 *
 	 * @param iri the base IRI
 	 * @return this
 	 */
@@ -49,7 +49,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 	/**
 	 * Set the Base clause of this query
-	 * 
+	 *
 	 * @param base the {@link Base} clause to set
 	 * @return this
 	 */
@@ -61,7 +61,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 	/**
 	 * Add prefix declarations to this query
-	 * 
+	 *
 	 * @param prefixes the prefixes to add
 	 * @return this
 	 */
@@ -74,7 +74,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 	/**
 	 * Set the Prefix declarations of this query
-	 * 
+	 *
 	 * @param prefixes the {@link PrefixDeclarations} to set
 	 * @return this
 	 */

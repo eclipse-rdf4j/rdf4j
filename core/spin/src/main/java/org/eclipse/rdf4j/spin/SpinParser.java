@@ -7,10 +7,24 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin;
 
-import com.google.common.base.Function;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.collect.Sets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -26,12 +40,13 @@ import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.model.vocabulary.SPL;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -132,25 +147,10 @@ import org.eclipse.rdf4j.spin.function.TupleFunctionParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.SortedSet;
-import java.util.TreeSet;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import com.google.common.base.Function;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.Sets;
 
 public class SpinParser {
 
@@ -283,7 +283,7 @@ public class SpinParser {
 				return ((Literal) v).intValue();
 			} catch (NumberFormatException e) {
 				throw new MalformedSpinException("Value for " + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY
-						+ " must be of datatype " + XMLSchema.INTEGER + ": " + ruleProp);
+						+ " must be of datatype " + XSD.INTEGER + ": " + ruleProp);
 			}
 		} else {
 			throw new MalformedSpinException(
@@ -680,7 +680,7 @@ public class SpinParser {
 	}
 
 	public static List<IRI> orderArguments(Set<IRI> args) {
-		SortedSet<IRI> sortedArgs = new TreeSet<IRI>(
+		SortedSet<IRI> sortedArgs = new TreeSet<>(
 				(IRI uri1, IRI uri2) -> uri1.getLocalName().compareTo(uri2.getLocalName()));
 		sortedArgs.addAll(args);
 
@@ -1829,9 +1829,10 @@ public class SpinParser {
 		DataVisitor() {
 			appendPrefix(RDF.PREFIX, RDF.NAMESPACE);
 			appendPrefix(RDFS.PREFIX, RDFS.NAMESPACE);
+			appendPrefix(RDF4J.PREFIX, RDF4J.NAMESPACE);
 			appendPrefix(SESAME.PREFIX, SESAME.NAMESPACE);
 			appendPrefix(OWL.PREFIX, OWL.NAMESPACE);
-			appendPrefix(XMLSchema.PREFIX, XMLSchema.NAMESPACE);
+			appendPrefix(XSD.PREFIX, XSD.NAMESPACE);
 			appendPrefix(FN.PREFIX, FN.NAMESPACE);
 			buf.append(" ");
 		}

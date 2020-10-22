@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Writer;
+
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.Writer;
 
 /**
  * An extension of {@link TurtleWriter} that writes RDF* documents in the Turtle* format by including the RDF* triples.

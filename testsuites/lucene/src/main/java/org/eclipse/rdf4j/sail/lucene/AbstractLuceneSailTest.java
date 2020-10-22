@@ -121,7 +121,6 @@ public abstract class AbstractLuceneSailTest {
 
 		// create a Repository wrapping the LuceneSail
 		repository = new SailRepository(sail);
-		repository.initialize();
 
 		// add some statements to it
 		try (RepositoryConnection connection = repository.getConnection()) {
@@ -410,8 +409,9 @@ public abstract class AbstractLuceneSailTest {
 						boolean matches;
 						for (int resultSetID = 0; resultSetID < expectedResultSet.size(); resultSetID++) {
 							// ignore results that matched before
-							if (matched.contains(resultSetID))
+							if (matched.contains(resultSetID)) {
 								continue;
+							}
 
 							// assume it matches
 							matches = true;
@@ -635,12 +635,14 @@ public abstract class AbstractLuceneSailTest {
 								i.remove();
 							}
 						}
-						if (snippet.contains(notexpected))
+						if (snippet.contains(notexpected)) {
 							fail("snippet '" + snippet + "' contained value '" + notexpected + "' from predicate "
 									+ PREDICATE_2);
-						if (!foundexpected)
+						}
+						if (!foundexpected) {
 							fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
 									+ snippet);
+						}
 
 						// there should be a score
 						assertNotNull(bindings.getValue("Score"));
@@ -700,9 +702,10 @@ public abstract class AbstractLuceneSailTest {
 								i.remove();
 							}
 						}
-						if (!foundexpected)
+						if (!foundexpected) {
 							fail("did not find any of the expected strings " + expectedSnippetPart + " in the snippet "
 									+ snippet);
+						}
 
 						// there should be a score
 						assertNotNull(bindings.getValue("Score"));

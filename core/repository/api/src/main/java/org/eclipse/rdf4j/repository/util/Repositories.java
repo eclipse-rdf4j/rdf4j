@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 
 /**
  * Utility for dealing with {@link Repository} and {@link RepositoryConnection} objects.
- * 
+ *
  * @author Peter Ansell
  */
 public final class Repositories {
@@ -37,7 +37,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Consumer}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
+	 *
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Consumer} that performs an action on the connection.
 	 * @throws RepositoryException              If there was an exception dealing with the Repository.
@@ -55,7 +55,7 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Consumer}.
-	 * 
+	 *
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Consumer} that performs an action on the connection.
 	 * @throws RepositoryException              If there was an exception dealing with the Repository.
@@ -74,7 +74,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Consumer}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
+	 *
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Consumer} that performs an action on the connection.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -95,7 +95,7 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Consumer}.
-	 * 
+	 *
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Consumer} that performs an action on the connection.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -117,7 +117,7 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Consumer}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
+	 *
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Consumer} that performs an action on the connection.
 	 */
@@ -129,7 +129,7 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Consumer}.
-	 * 
+	 *
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Consumer} that performs an action on the connection.
 	 */
@@ -143,8 +143,8 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function.
@@ -177,8 +177,8 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function.
@@ -205,8 +205,8 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
-	 * @param                  <T> The type of the return value.
+	 *
+	 * @param <T>              The type of the return value.
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -230,8 +230,8 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
-	 * 
-	 * @param                  <T> The type of the return value.
+	 *
+	 * @param <T>              The type of the return value.
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
@@ -256,8 +256,8 @@ public final class Repositories {
 	 * Opens a {@link RepositoryConnection} to the given Repository within a transaction, sends the connection to the
 	 * given {@link Function}, before either rolling back the transaction if it failed, or committing the transaction if
 	 * it was successful.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
@@ -270,8 +270,8 @@ public final class Repositories {
 	/**
 	 * Opens a {@link RepositoryConnection} to the given Repository without opening a transaction, sends the connection
 	 * to the given {@link Function}.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
 	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
@@ -285,8 +285,8 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Select query on the given Repository within a transaction and passes the results to the given
 	 * {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Select query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -312,8 +312,8 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Select query on the given Repository without opening a transaction and passes the results to
 	 * the given {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Select query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -339,7 +339,7 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Select query on the given Repository within a transaction and passes the results to the given
 	 * {@link TupleQueryResultHandler}.
-	 * 
+	 *
 	 * @param repository The {@link Repository} to open a connection to.
 	 * @param query      The SPARQL Select query to execute.
 	 * @param handler    A {@link TupleQueryResultHandler} that consumes the results.
@@ -361,7 +361,7 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Select query on the given Repository without opening a transaction and passes the results to
 	 * the given {@link TupleQueryResultHandler}.
-	 * 
+	 *
 	 * @param repository The {@link Repository} to open a connection to.
 	 * @param query      The SPARQL Select query to execute.
 	 * @param handler    A {@link TupleQueryResultHandler} that consumes the results.
@@ -383,8 +383,8 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Construct or Describe query on the given Repository within a transaction and passes the results
 	 * to the given {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Construct or Describe query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -410,8 +410,8 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Construct or Describe query on the given Repository without opening a transaction and passes
 	 * the results to the given {@link Function} with the result from the function returned by the method.
-	 * 
-	 * @param                 <T> The type of the return value.
+	 *
+	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param query           The SPARQL Construct or Describe query to execute.
 	 * @param processFunction A {@link Function} that performs an action on the results of the query and returns a
@@ -437,7 +437,7 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Construct or Describe query on the given Repository within a transaction and passes the results
 	 * to the given {@link RDFHandler}.
-	 * 
+	 *
 	 * @param repository The {@link Repository} to open a connection to.
 	 * @param query      The SPARQL Construct or Describe query to execute.
 	 * @param handler    An {@link RDFHandler} that consumes the results.
@@ -458,7 +458,7 @@ public final class Repositories {
 	/**
 	 * Performs a SPARQL Construct or Describe query on the given Repository without opening a transaction and passes
 	 * the results to the given {@link RDFHandler}.
-	 * 
+	 *
 	 * @param repository The {@link Repository} to open a connection to.
 	 * @param query      The SPARQL Construct or Describe query to execute.
 	 * @param handler    An {@link RDFHandler} that consumes the results.
@@ -480,7 +480,7 @@ public final class Repositories {
 	/**
 	 * Creates a {@link Supplier} of {@link RepositoryException} objects that be passed to
 	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
-	 * 
+	 *
 	 * @param message The message to be used for the exception
 	 * @return A {@link Supplier} that will create {@link RepositoryException} objects with the given message.
 	 */

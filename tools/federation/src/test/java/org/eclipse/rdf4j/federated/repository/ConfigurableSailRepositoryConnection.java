@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 
 /**
  * Specialized {@link SailRepositoryConnection} that can be used with {@link ConfigurableSailRepository}
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -141,9 +141,11 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 			rep.operationsCount.set(0);
 		}
 
-		if (isWrite && !rep.writable)
+		if (isWrite && !rep.writable) {
 			throw new FailingRepositoryException("Operation failed, not writable");
-		if (rep.failAfter != -1 && _operationsCount > rep.failAfter)
+		}
+		if (rep.failAfter != -1 && _operationsCount > rep.failAfter) {
 			throw new FailingRepositoryException("Operation failed");
+		}
 	}
 }

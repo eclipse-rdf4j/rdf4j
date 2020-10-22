@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
  * An {@link RDFWriterFactory} that creates instances of {@link JSONLDWriter}.
- * 
+ *
  * @author Peter Ansell
  */
 public class JSONLDWriterFactory implements RDFWriterFactory {

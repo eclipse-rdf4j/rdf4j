@@ -16,7 +16,7 @@ import com.google.common.base.Objects;
 
 /**
  * A MemoryStore-specific implementation of {@link Triple}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class MemTriple implements Triple, MemResource {

@@ -41,9 +41,9 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
-import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
 import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
@@ -53,7 +53,7 @@ import org.xml.sax.XMLReader;
 
 /**
  * A parser that can parse RDF files that are in the <a href="http://www.w3.org/2004/03/trix/">TriX format</a> .
- * 
+ *
  * @author Arjohn Kampman
  */
 public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
@@ -75,7 +75,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * Creates a new TriXParser that will use the supplied ValueFactory to create objects for resources, bNodes,
 	 * literals and statements.
-	 * 
+	 *
 	 * @param valueFactory A ValueFactory.
 	 */
 	public TriXParser(ValueFactory valueFactory) {
@@ -111,7 +111,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
@@ -136,7 +136,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
-	 * 
+	 *
 	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
 	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.

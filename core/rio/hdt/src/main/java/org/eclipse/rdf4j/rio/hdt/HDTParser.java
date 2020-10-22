@@ -18,36 +18,33 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.io.input.CountingInputStream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RioSetting;
-
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**
  * RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
- * 
+ *
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
  * with HDT-It 1.0.
- * 
+ *
  * The most important parts are the Dictionaries containing the actual values (S, P, O part of a triple), and the
  * Triples containing the numeric references to construct the triples.
- * 
+ *
  * Since objects in one triple are often subjects in another triple, these "shared" parts are stored in a shared
  * Dictionary, which may significantly reduce the file size.
- * 
+ *
  * File structure:
- * 
+ *
  * <pre>
  * +---------------------+
  * | Global              |
@@ -59,9 +56,9 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
  * | Triples             |
  * +---------------------+
  * </pre>
- * 
+ *
  * @author Bart Hanssens
- * 
+ *
  * @see <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT draft (2015)</a>
  * @see <a href="https://www.w3.org/Submission/2011/03/">W3C Member Submission (2011)</a>
  */
@@ -207,7 +204,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	/**
 	 * Get part of triple from shared HDT Dictionary or (if not found) from specific HDT Dictionary
-	 * 
+	 *
 	 * @param pos    position
 	 * @param size   size of shared Dictionary
 	 * @param shared shared Dictionary
@@ -226,7 +223,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	/**
 	 * Create subject IRI or blank node
-	 * 
+	 *
 	 * @param b byte buffer
 	 * @return IRI or blank node
 	 */
@@ -237,7 +234,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	/**
 	 * Create predicate IRI
-	 * 
+	 *
 	 * @param b byte buffer
 	 * @return IRI
 	 */
@@ -247,7 +244,7 @@ public class HDTParser extends AbstractRDFParser {
 
 	/**
 	 * Create object (typed) literal, IRI or blank node
-	 * 
+	 *
 	 * @param b byte buffer
 	 * @return literal, IRI or blank node
 	 */

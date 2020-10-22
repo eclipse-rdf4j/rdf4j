@@ -13,14 +13,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.net.URL;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Locale;
+import java.util.*;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -140,9 +137,7 @@ public class RDFXMLParserTest {
 		try (final InputStream in = this.getClass()
 				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-external-param-entity.rdf");) {
 			parser.parse(in, "");
-		}
-
-		catch (RDFParseException e) {
+		} catch (RDFParseException e) {
 			assertEquals(
 					"DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. [line 2, column 10]",
 					e.getMessage());
@@ -195,5 +190,37 @@ public class RDFXMLParserTest {
 		assertEquals(0, el.getErrors().size());
 		assertEquals(1, el.getFatalErrors().size());
 		assertEquals("[Rio fatal] Content is not allowed in prolog. (1, 1)", el.getFatalErrors().get(0));
+	}
+
+	@Test
+	public void testInsertUsedContextPrefixes() {
+
+		Set<Statement> inputCollection = new LinkedHashSet<>();
+		StatementCollector inputCollector = new StatementCollector(inputCollection);
+		parser.setRDFHandler(inputCollector);
+
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/rdfxml/rdfxml-namespace-addition.rdf");) {
+			parser.parse(in, "");
+		} catch (RDFParseException | IOException e) {
+			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());
+		}
+
+		String[] expectedLiteral = new String[2];
+
+		String s1 = "(http://mycorp.example.com/papers/NobelPaper1, http://test.org/testing/somedata, \"<test:datapart xmlns:test=\"http://test.org/testing/\">Literal</test:datapart>\n"
+				+
+				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
+				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
+				"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>)";
+		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\")";
+		expectedLiteral[0] = s1;
+		expectedLiteral[1] = s2;
+
+		int ind = 0;
+		for (Statement s : inputCollection) {
+			assertEquals(s.toString(), expectedLiteral[ind]);
+			ind += 1;
+		}
 	}
 }

@@ -24,7 +24,7 @@ public class Intersection extends BinaryTupleOperator {
 
 	/**
 	 * Creates a new intersection operator that operates on the two specified arguments.
-	 * 
+	 *
 	 * @param leftArg  The left argument of the intersection operator.
 	 * @param rightArg The right argument of the intersection operator.
 	 */

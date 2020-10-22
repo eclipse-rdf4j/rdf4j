@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.common.platform.support.PosixGnomePlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixKDEPlatform;
 import org.eclipse.rdf4j.common.platform.support.PosixPlatform;
 import org.eclipse.rdf4j.common.platform.support.WindowsPlatform;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +25,7 @@ public class PlatformFactory {
 
 	/**
 	 * Returns the Platform instance corresponding with the current platform.
-	 * 
+	 *
 	 * @return factory
 	 */
 	public static PlatformFactory getInstance() {
@@ -112,7 +111,7 @@ public class PlatformFactory {
 
 	/**
 	 * Detect gnome environments.
-	 * 
+	 *
 	 * @return true when Gnome session
 	 */
 	private boolean isGnome() {
@@ -139,7 +138,7 @@ public class PlatformFactory {
 
 	/**
 	 * Detect KDE environments.
-	 * 
+	 *
 	 * @return true when KDE
 	 */
 	private boolean isKDE() {
@@ -166,7 +165,7 @@ public class PlatformFactory {
 
 	/**
 	 * Get system environment variable
-	 * 
+	 *
 	 * @param propertyName
 	 * @return system environment variable
 	 */
@@ -181,7 +180,7 @@ public class PlatformFactory {
 
 	/**
 	 * Main
-	 * 
+	 *
 	 * @param args arguments
 	 */
 	public static void main(String[] args) {

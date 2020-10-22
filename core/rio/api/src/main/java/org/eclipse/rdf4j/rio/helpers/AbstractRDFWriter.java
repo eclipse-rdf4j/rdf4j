@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 
 /**
  * Base class for {@link RDFWriter}s offering common functionality for RDF writers.
- * 
+ *
  * @author Peter Ansell
  */
 public abstract class AbstractRDFWriter implements RDFWriter {
@@ -121,7 +121,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Consume a statement.
-	 * 
+	 *
 	 * Extending classes must override this method instead of overriding {@link #handleStatement(Statement)} in order to
 	 * benefit from automatic handling of RDF* conversion or encoding.
 	 *
@@ -133,7 +133,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * See if writing has started
-	 * 
+	 *
 	 * @return {@code true} if writing has started, {@code false} otherwise
 	 */
 	protected boolean isWritingStarted() {
@@ -142,7 +142,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 
 	/**
 	 * Verify that writing has started.
-	 * 
+	 *
 	 * @throws RDFHandlerException if writing has not yet started.
 	 */
 	protected void checkWritingStarted() {

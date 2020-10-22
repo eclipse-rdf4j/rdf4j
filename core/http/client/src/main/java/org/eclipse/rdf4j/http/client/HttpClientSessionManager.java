@@ -11,7 +11,7 @@ import org.apache.http.client.HttpClient;
 
 /**
  * Manager for remote HTTP sessions using a {@link HttpClient}.
- * 
+ *
  * @author James Leigh
  */
 @SuppressWarnings("deprecation")

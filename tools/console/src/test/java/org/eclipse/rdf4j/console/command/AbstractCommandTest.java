@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
-
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -48,11 +47,9 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
-
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
@@ -64,7 +61,7 @@ public class AbstractCommandTest {
 
 	/*
 	 * Switch off .silent() to debug specific tests and reenable it afterwards.
-	 * 
+	 *
 	 * Note, .silent() was added in Mockito 2, so has been removed until we update.
 	 */
 	@Rule
@@ -98,7 +95,7 @@ public class AbstractCommandTest {
 
 	/**
 	 * Copy file from resource to a specific path
-	 * 
+	 *
 	 * @param fromRes file to load from resources
 	 * @param toFile  target file
 	 * @throws IOException
@@ -112,7 +109,7 @@ public class AbstractCommandTest {
 
 	/**
 	 * Load triples or quads from a resource file into the repository
-	 * 
+	 *
 	 * @param repId repository ID
 	 * @param data  URL of the resource
 	 * @param file  name of the file
@@ -130,7 +127,7 @@ public class AbstractCommandTest {
 
 	/**
 	 * Add one or more repositories to the repository manager, and load some content (if any).
-	 * 
+	 *
 	 * @param command    command / directory to load data from
 	 * @param identities name of the repository / file to load
 	 * @throws IOException
@@ -160,7 +157,7 @@ public class AbstractCommandTest {
 
 	/***
 	 * Add a new repository to the manager.
-	 * 
+	 *
 	 * @param configStream input stream of the repository configuration
 	 * @return ID of the repository as string
 	 * @throws IOException
@@ -192,7 +189,7 @@ public class AbstractCommandTest {
 
 	/**
 	 * Set working dir setting to root of temporarily folder
-	 * 
+	 *
 	 * @param cmd console command
 	 */
 	protected void setWorkingDir(ConsoleCommand cmd) {
