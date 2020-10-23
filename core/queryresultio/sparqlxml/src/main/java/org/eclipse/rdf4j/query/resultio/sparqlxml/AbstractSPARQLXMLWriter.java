@@ -34,6 +34,7 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Writer;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -102,6 +103,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		super(out);
 		this.xmlWriter = new XMLWriter(out);
 		this.xmlWriter.setPrettyPrint(true);
+	}
+
+	protected AbstractSPARQLXMLWriter(Writer writer) {
+		this(new XMLWriter(writer));
 	}
 
 	protected AbstractSPARQLXMLWriter(XMLWriter xmlWriter) {

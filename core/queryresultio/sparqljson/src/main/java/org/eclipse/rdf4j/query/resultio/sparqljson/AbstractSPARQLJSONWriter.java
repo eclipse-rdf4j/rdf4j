@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
@@ -81,6 +82,14 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		super(out);
 		try {
 			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		} catch (IOException e) {
+			throw new IllegalArgumentException(e);
+		}
+	}
+
+	protected AbstractSPARQLJSONWriter(Writer writer) {
+		try {
+			jg = JSON_FACTORY.createGenerator(writer);
 		} catch (IOException e) {
 			throw new IllegalArgumentException(e);
 		}

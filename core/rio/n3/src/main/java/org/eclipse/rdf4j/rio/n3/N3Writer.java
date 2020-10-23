@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.rio.n3;
 
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
@@ -32,7 +34,7 @@ public class N3Writer implements RDFWriter {
 	 * Variables *
 	 *-----------*/
 
-	private TurtleWriter ttlWriter;
+	private final TurtleWriter ttlWriter;
 
 	/**
 	 * A collection of configuration options for this writer.
@@ -59,7 +61,7 @@ public class N3Writer implements RDFWriter {
 	 * @param baseIRI used to relativize IRIs to relative IRIs.
 	 */
 	public N3Writer(OutputStream out, ParsedIRI baseIRI) {
-		ttlWriter = new TurtleWriter(out, baseIRI);
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
 	}
 
 	/**

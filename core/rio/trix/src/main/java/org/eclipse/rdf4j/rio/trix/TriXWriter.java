@@ -48,7 +48,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	 * Variables *
 	 *-----------*/
 
-	private XMLWriter xmlWriter;
+	private final XMLWriter xmlWriter;
 
 	private boolean inActiveContext = false;
 
