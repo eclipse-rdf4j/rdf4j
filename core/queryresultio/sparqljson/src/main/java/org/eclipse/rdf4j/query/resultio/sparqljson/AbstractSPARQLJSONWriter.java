@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
@@ -44,7 +46,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter {
+abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
 
 	private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
@@ -58,10 +60,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		JSON_FACTORY.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
 		JSON_FACTORY.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 	}
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	protected boolean firstTupleWritten = false;
 
@@ -77,13 +75,20 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected final JsonGenerator jg;
 
+	private final Writer writer;
+
 	protected AbstractSPARQLJSONWriter(OutputStream out) {
-		super(out);
+		writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		try {
-			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+			jg = JSON_FACTORY.createGenerator(writer);
 		} catch (IOException e) {
 			throw new IllegalArgumentException(e);
 		}
+	}
+
+	@Override
+	public Writer getWriter() {
+		return writer;
 	}
 
 	@Override

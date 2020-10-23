@@ -162,6 +162,13 @@ public class XMLWriter {
 	}
 
 	/**
+	 * @return the writer
+	 */
+	public Writer getWriter() {
+		return _writer;
+	}
+
+	/**
 	 * Sets the string that should be used for indentation when pretty-printing is enabled. The default indentation
 	 * string is a tab character.
 	 *
@@ -197,7 +204,7 @@ public class XMLWriter {
 	 * Finishes writing and flushes the OutputStream or Writer that this XMLWriter is writing to.
 	 */
 	public void endDocument() throws IOException {
-		_writer.flush();
+		getWriter().flush();
 	}
 
 	/**
@@ -393,7 +400,7 @@ public class XMLWriter {
 	 * Writes a string.
 	 */
 	protected void _write(String s) throws IOException {
-		_writer.write(s);
+		getWriter().write(s);
 	}
 
 	/**

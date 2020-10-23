@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
+import java.io.Writer;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
@@ -92,6 +93,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.ByteSink;
+import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -685,15 +688,24 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
 
-				// Check if we can pass through to the output stream directly
+				// Check if we can pass through to the writer directly
 				if (handler instanceof TupleQueryResultWriter) {
 					TupleQueryResultWriter tqrWriter = (TupleQueryResultWriter) handler;
 					if (tqrWriter.getTupleQueryResultFormat().equals(format)) {
-						OutputStream out = tqrWriter.getOutputStream().orElse(null);
-						if (out != null) {
-							InputStream in = response.getEntity().getContent();
-							IOUtils.copy(in, out);
-							return;
+						if (tqrWriter instanceof CharSink) {
+							Writer w = ((CharSink) tqrWriter).getWriter();
+							if (w != null) {
+								InputStream in = response.getEntity().getContent();
+								IOUtils.copy(in, w, getResponseCharset(response).orElse(format.getCharset()));
+								return;
+							}
+						} else if (tqrWriter instanceof ByteSink) {
+							OutputStream out = ((ByteSink) tqrWriter).getOutputStream();
+							if (out != null) {
+								InputStream in = response.getEntity().getContent();
+								IOUtils.copy(in, out);
+								return;
+							}
 						}
 					}
 				}
@@ -853,15 +865,24 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats)
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
-				// Check if we can pass through to the output stream directly
+				// Check if we can pass through to the writer directly
 				if (handler instanceof RDFWriter) {
 					RDFWriter rdfWriter = (RDFWriter) handler;
 					if (rdfWriter.getRDFFormat().equals(format)) {
-						OutputStream out = rdfWriter.getOutputStream().orElse(null);
-						if (out != null) {
-							InputStream in = response.getEntity().getContent();
-							IOUtils.copy(in, out);
-							return;
+						if (rdfWriter instanceof CharSink) {
+							Writer w = ((CharSink) rdfWriter).getWriter();
+							if (w != null) {
+								InputStream in = response.getEntity().getContent();
+								IOUtils.copy(in, w, getResponseCharset(response).orElse(format.getCharset()));
+								return;
+							}
+						} else if (rdfWriter instanceof ByteSink) {
+							OutputStream out = ((ByteSink) rdfWriter).getOutputStream();
+							if (out != null) {
+								InputStream in = response.getEntity().getContent();
+								IOUtils.copy(in, out);
+								return;
+							}
 						}
 					}
 				}
@@ -1137,6 +1158,35 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 
 		return null;
+	}
+
+	/**
+	 * Gets the character encoding specified in the HTTP headers of the supplied response, if any. For example, if the
+	 * response headers contain <tt>Content-Type: application/xml;charset=UTF-8</tt>, this method will return
+	 * {@link StandardCharsets#UTF_8 UTF-8} as the character encoding.
+	 * 
+	 * @param response the response to get the character encoding from.
+	 * @return the response character encoding, {@link Optional#empty()} if it can not be determined.
+	 */
+	protected Optional<Charset> getResponseCharset(HttpResponse response) {
+		Header[] headers = response.getHeaders("Content-Type");
+		for (Header header : headers) {
+			HeaderElement[] headerElements = header.getElements();
+
+			for (HeaderElement element : headerElements) {
+				NameValuePair charsetParam = element.getParameterByName("charset");
+				if (charsetParam != null) {
+					try {
+						Charset charset = Charset.forName(charsetParam.getValue());
+						logger.debug("response charset is {}", charset);
+						return Optional.ofNullable(charset);
+					} catch (IllegalArgumentException e) {
+						// continue
+					}
+				}
+			}
+		}
+		return Optional.empty();
 	}
 
 	protected ErrorInfo getErrorInfo(HttpResponse response) throws RepositoryException {

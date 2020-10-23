@@ -7,12 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -44,25 +42,7 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 
 	private boolean writingStarted;
 
-	private final OutputStream outputStream;
-
 	protected Consumer<Statement> statementConsumer;
-
-	/**
-	 * Default constructor.
-	 */
-	protected AbstractRDFWriter() {
-		this(null);
-	}
-
-	protected AbstractRDFWriter(OutputStream out) {
-		this.outputStream = out;
-	}
-
-	@Override
-	public Optional<OutputStream> getOutputStream() {
-		return Optional.ofNullable(outputStream);
-	}
 
 	@Override
 	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {

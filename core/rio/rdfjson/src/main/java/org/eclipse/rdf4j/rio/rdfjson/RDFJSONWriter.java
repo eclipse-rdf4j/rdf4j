@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -43,7 +44,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell p_ansell@yahoo.com
  */
-public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
+public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
 	private Writer writer;
 
@@ -54,7 +55,6 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
-		super(out);
 		this.outputStream = out;
 		this.actualFormat = actualFormat;
 	}
@@ -62,6 +62,11 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	public RDFJSONWriter(final Writer writer, final RDFFormat actualFormat) {
 		this.writer = writer;
 		this.actualFormat = actualFormat;
+	}
+
+	@Override
+	public Writer getWriter() {
+		return writer;
 	}
 
 	@Override
