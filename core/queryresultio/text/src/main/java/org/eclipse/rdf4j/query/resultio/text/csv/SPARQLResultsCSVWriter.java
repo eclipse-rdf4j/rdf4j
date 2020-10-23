@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.rio.CharSink;
 
 /**
  * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
@@ -35,7 +36,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
  * @author Jeen Broekstra
  */
-public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
+public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 
 	private Writer writer;
 
@@ -45,12 +46,15 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsCSVWriter(OutputStream out) {
-		super(out);
-		writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024);
+		this(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024));
 	}
 
 	public SPARQLResultsCSVWriter(Writer writer) {
 		this.writer = writer;
+	}
+
+	public Writer getWriter() {
+		return writer;
 	}
 
 	@Override

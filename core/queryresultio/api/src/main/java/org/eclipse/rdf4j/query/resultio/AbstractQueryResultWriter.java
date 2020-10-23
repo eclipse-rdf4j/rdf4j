@@ -7,11 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
-import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -28,26 +26,8 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 
 	private WriterConfig writerConfig = new WriterConfig();
-	private final OutputStream outputStream;
 
 	private boolean encodeRDFStar;
-
-	/**
-	 * Default constructor.
-	 *
-	 */
-	protected AbstractQueryResultWriter() {
-		this(null);
-	}
-
-	protected AbstractQueryResultWriter(OutputStream out) {
-		this.outputStream = out;
-	}
-
-	@Override
-	public Optional<OutputStream> getOutputStream() {
-		return Optional.ofNullable(outputStream);
-	}
 
 	@Override
 	public void setWriterConfig(WriterConfig config) {

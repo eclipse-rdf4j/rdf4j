@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
@@ -69,7 +70,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter {
+abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
 
 	/*-----------*
 	 * Variables *
@@ -100,7 +101,6 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 *--------------*/
 
 	protected AbstractSPARQLXMLWriter(OutputStream out) {
-		super(out);
 		this.xmlWriter = new XMLWriter(out);
 		this.xmlWriter.setPrettyPrint(true);
 	}
@@ -114,9 +114,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		this.xmlWriter.setPrettyPrint(true);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	public Writer getWriter() {
+		return xmlWriter.getWriter();
+	}
 
 	/**
 	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
