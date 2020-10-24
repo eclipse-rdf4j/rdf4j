@@ -11,9 +11,7 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.StringReader;
-import java.io.Writer;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
@@ -60,6 +58,10 @@ import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 import org.eclipse.rdf4j.RDF4JConfigException;
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.io.ByteSink;
+import org.eclipse.rdf4j.common.io.CharSink;
+import org.eclipse.rdf4j.common.io.Sink;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -89,12 +91,9 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserRegistry;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.rio.ByteSink;
-import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -102,7 +101,6 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
-import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
@@ -689,25 +687,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 								"Server responded with an unsupported file format: " + mimeType));
 
 				// Check if we can pass through to the writer directly
-				if (handler instanceof TupleQueryResultWriter) {
-					TupleQueryResultWriter tqrWriter = (TupleQueryResultWriter) handler;
-					if (tqrWriter.getTupleQueryResultFormat().equals(format)) {
-						if (tqrWriter instanceof CharSink) {
-							Writer w = ((CharSink) tqrWriter).getWriter();
-							if (w != null) {
-								InputStream in = response.getEntity().getContent();
-								IOUtils.copy(in, w, getResponseCharset(response).orElse(format.getCharset()));
-								return;
-							}
-						} else if (tqrWriter instanceof ByteSink) {
-							OutputStream out = ((ByteSink) tqrWriter).getOutputStream();
-							if (out != null) {
-								InputStream in = response.getEntity().getContent();
-								IOUtils.copy(in, out);
-								return;
-							}
-						}
-					}
+				if (handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
+					return;
 				}
 
 				// we need to parse the result and re-serialize.
@@ -865,26 +846,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats)
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
+
 				// Check if we can pass through to the writer directly
-				if (handler instanceof RDFWriter) {
-					RDFWriter rdfWriter = (RDFWriter) handler;
-					if (rdfWriter.getRDFFormat().equals(format)) {
-						if (rdfWriter instanceof CharSink) {
-							Writer w = ((CharSink) rdfWriter).getWriter();
-							if (w != null) {
-								InputStream in = response.getEntity().getContent();
-								IOUtils.copy(in, w, getResponseCharset(response).orElse(format.getCharset()));
-								return;
-							}
-						} else if (rdfWriter instanceof ByteSink) {
-							OutputStream out = ((ByteSink) rdfWriter).getOutputStream();
-							if (out != null) {
-								InputStream in = response.getEntity().getContent();
-								IOUtils.copy(in, out);
-								return;
-							}
-						}
-					}
+				if (handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
+					return;
 				}
 
 				// we need to parse the result and re-serialize.
@@ -899,6 +864,31 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		} finally {
 			EntityUtils.consumeQuietly(response.getEntity());
 		}
+	}
+
+	/**
+	 * Pass through response content directly to the supplied sink if possible.
+	 * 
+	 * @param response       the {@link HttpResponse} with the content.
+	 * @param responseFormat the format of the response.
+	 * @param sink           the {@link Sink} to pass the content through to.
+	 * @return {@code true} if the content was passed through, {@code false} otherwise.
+	 * @throws IOException
+	 */
+	private boolean passThrough(HttpResponse response, FileFormat responseFormat, Sink sink)
+			throws IOException {
+		if (responseFormat.equals(sink.getFileFormat())) {
+			InputStream in = response.getEntity().getContent();
+			if (sink instanceof CharSink) {
+				IOUtils.copy(in, ((CharSink) sink).getWriter(),
+						getResponseCharset(response).orElse(responseFormat.getCharset()));
+				return true;
+			} else if (sink instanceof ByteSink) {
+				IOUtils.copy(in, ((ByteSink) sink).getOutputStream());
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private HttpResponse sendGraphQueryViaHttp(HttpUriRequest method, boolean requireContext, Set<RDFFormat> rdfFormats)
@@ -1168,7 +1158,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * @param response the response to get the character encoding from.
 	 * @return the response character encoding, {@link Optional#empty()} if it can not be determined.
 	 */
-	protected Optional<Charset> getResponseCharset(HttpResponse response) {
+	Optional<Charset> getResponseCharset(HttpResponse response) {
 		Header[] headers = response.getHeaders("Content-Type");
 		for (Header header : headers) {
 			HeaderElement[] headerElements = header.getElements();

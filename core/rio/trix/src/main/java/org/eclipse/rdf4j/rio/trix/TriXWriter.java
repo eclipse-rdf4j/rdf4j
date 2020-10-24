@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,7 +31,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -45,20 +45,12 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  */
 public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	private final XMLWriter xmlWriter;
 
 	private boolean inActiveContext = false;
 
 	private boolean convertRDFStar;
 	private Resource currentContext = null;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new TriXWriter that will write to the supplied OutputStream.
@@ -211,5 +203,4 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink
 			return context1.equals(context2);
 		}
 	}
-
 }

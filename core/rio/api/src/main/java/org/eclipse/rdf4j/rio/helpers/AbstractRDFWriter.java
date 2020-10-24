@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.io.Sink;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
@@ -28,7 +30,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
  *
  * @author Peter Ansell
  */
-public abstract class AbstractRDFWriter implements RDFWriter {
+public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 
 	/**
 	 * Mapping from namespace prefixes to namespace names.
@@ -58,6 +60,11 @@ public abstract class AbstractRDFWriter implements RDFWriter {
 	@Override
 	public WriterConfig getWriterConfig() {
 		return this.writerConfig;
+	}
+
+	@Override
+	public FileFormat getFileFormat() {
+		return getRDFFormat();
 	}
 
 	/*

@@ -5,23 +5,23 @@
  * which accompanies this distribution, and is available at 
  * http://www.eclipse.org/org/documents/edl-v10.php. 
  *******************************************************************************/
-package org.eclipse.rdf4j.rio;
+package org.eclipse.rdf4j.common.io;
 
-import java.io.OutputStream;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 
 /**
- * A ByteSink write data as raw bytes directly to an {@link OutputStream}.
+ * 
+ * A Sink writes data in a particular {@link FileFormat}.
  * 
  * @author Jeen Broekstra
  * @since 3.5.0
  */
-public interface ByteSink {
+public interface Sink {
 
 	/**
-	 * get the {@link OutputStream} used by this {@link ByteSink}.
+	 * Get the {@link FileFormat} this sink uses.
 	 * 
-	 * @return an {@link OutputStream}
-	 * @since 3.5.0
+	 * @return a {@link FileFormat}.
 	 */
-	OutputStream getOutputStream();
+	FileFormat getFileFormat();
 }

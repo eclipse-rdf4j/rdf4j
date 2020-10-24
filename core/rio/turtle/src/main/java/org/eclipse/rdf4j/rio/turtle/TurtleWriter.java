@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.io.IndentingWriter;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -42,7 +43,6 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.rio.CharSink;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -107,7 +107,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out     The OutputStream to write the Turtle document to. The writer will use
+	 * @param out     The OutputStream to write the Turtle document to.
 	 * @param baseIRI
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {

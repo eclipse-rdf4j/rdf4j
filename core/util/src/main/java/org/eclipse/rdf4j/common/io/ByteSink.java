@@ -5,24 +5,24 @@
  * which accompanies this distribution, and is available at 
  * http://www.eclipse.org/org/documents/edl-v10.php. 
  *******************************************************************************/
-package org.eclipse.rdf4j.rio;
+package org.eclipse.rdf4j.common.io;
 
-import java.io.Writer;
+import java.io.OutputStream;
 
 /**
- * A CharSink writes data as characters to a {@link Writer}.
+ * A ByteSink writes data as raw bytes directly to an {@link OutputStream}.
  * 
  * @author Jeen Broekstra
  * @since 3.5.0
- * @see ByteSink
  */
-public interface CharSink {
+public interface ByteSink extends Sink {
 
 	/**
-	 * get the {@link Writer} used by this {@link CharSink}.
+	 * get the {@link OutputStream} used by this {@link ByteSink}.
 	 * 
-	 * @return an {@link Writer}
+	 * @return an {@link OutputStream}
 	 * @since 3.5.0
 	 */
-	Writer getWriter();
+	OutputStream getOutputStream();
+
 }

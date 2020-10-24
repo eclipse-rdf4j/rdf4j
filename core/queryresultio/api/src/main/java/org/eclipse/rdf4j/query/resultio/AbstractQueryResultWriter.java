@@ -11,6 +11,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.io.Sink;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -23,7 +25,7 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
  *
  * @author Peter Ansell
  */
-public abstract class AbstractQueryResultWriter implements QueryResultWriter {
+public abstract class AbstractQueryResultWriter implements QueryResultWriter, Sink {
 
 	private WriterConfig writerConfig = new WriterConfig();
 
@@ -42,6 +44,11 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		return Collections.emptyList();
+	}
+
+	@Override
+	public FileFormat getFileFormat() {
+		return getQueryResultFormat();
 	}
 
 	@Override
