@@ -43,7 +43,11 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	 *--------------*/
 
 	public BooleanTextWriter(OutputStream out) {
-		writer = new OutputStreamWriter(out, StandardCharsets.US_ASCII);
+		this(new OutputStreamWriter(out, StandardCharsets.US_ASCII));
+	}
+
+	public BooleanTextWriter(Writer writer) {
+		this.writer = writer;
 	}
 
 	/*---------*

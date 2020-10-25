@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -38,10 +39,10 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in XML-serialized RDF format.
  */
-public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
+public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
-	protected ParsedIRI baseIRI;
-	protected Writer writer;
+	protected final ParsedIRI baseIRI;
+	protected final Writer writer;
 	protected String defaultNamespace;
 	protected boolean headerWritten = false;
 	protected Resource lastWrittenSubject = null;
@@ -64,7 +65,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
-		super(out);
 		this.baseIRI = baseIRI;
 		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		namespaceTable = new LinkedHashMap<>();
@@ -94,6 +94,11 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
+	}
+
+	@Override
+	public Writer getWriter() {
+		return writer;
 	}
 
 	protected void writeHeader() throws IOException {
