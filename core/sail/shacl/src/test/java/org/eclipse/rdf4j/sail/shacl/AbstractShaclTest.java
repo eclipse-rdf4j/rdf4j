@@ -79,7 +79,7 @@ abstract public class AbstractShaclTest {
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
 
-	/*		"test-cases/and-or/datatypeNodeShape",
+			"test-cases/and-or/datatypeNodeShape",
 		"test-cases/class/allObjects",
 		"test-cases/class/allSubjects",
 		"test-cases/class/and",
@@ -215,7 +215,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValue/targetShapeAndOr2",
 		"test-cases/hasValueIn/targetShapeOr",
 		"test-cases/hasValueIn/or",
-		"test-cases/class/simpleNested",*/
+		"test-cases/class/simpleNested",
 		"test-cases/qualifiedShape/minCountSimple",
 		"test-cases/qualifiedShape/maxCountSimple"
 
@@ -767,6 +767,9 @@ abstract public class AbstractShaclTest {
 					}
 				});
 				parse.remove(null, RDF.TYPE, RDFS.CLASS);
+
+				// this helps with one test where the schema is in the shacl file
+				parse.remove(null, RDFS.SUBCLASSOF, null);
 
 				// we add inferred NodeShape and PropertyShape, easier to remove when comparing
 				parse.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);

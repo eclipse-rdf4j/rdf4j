@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -299,18 +300,21 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.MAX_INCLUSIVE,
 				SHACL.CLASS,
 				SHACL.TARGET_NODE,
-//				SHACL.DEACTIVATED,
+				SHACL.DEACTIVATED,
 				SHACL.TARGET_SUBJECTS_OF,
 				SHACL.IN,
 				SHACL.UNIQUE_LANG,
 				SHACL.NOT,
 				SHACL.TARGET_OBJECTS_OF,
 				SHACL.HAS_VALUE,
-//				SHACL.TARGET_PROP,
+				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
 				SHACL.NODE,
-				DASH.hasValueIn
-//				RSX.targetShape
+				SHACL.QUALIFIED_MAX_COUNT,
+				SHACL.QUALIFIED_MIN_COUNT,
+				SHACL.QUALIFIED_VALUE_SHAPE,
+				DASH.hasValueIn,
+				RSX.targetShape
 		);
 	}
 
