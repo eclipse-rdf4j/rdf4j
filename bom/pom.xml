@@ -381,6 +381,12 @@
 				<artifactId>rdf4j-sparql-testsuite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
+			<!-- third party dependencies -->
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-simple</artifactId>
+				<version>${slf4j.version}</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 </project>
