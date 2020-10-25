@@ -91,7 +91,7 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	}
 
 	@Override
-	public Writer getWriter() {
+	public final Writer getWriter() {
 		return writer;
 	}
 
