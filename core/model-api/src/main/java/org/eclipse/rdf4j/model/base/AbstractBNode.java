@@ -20,8 +20,6 @@ public abstract class AbstractBNode implements BNode {
 
 	private static final long serialVersionUID = -437354568418943981L;
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	@Override
 	public String stringValue() {
 		return getID();
@@ -42,8 +40,6 @@ public abstract class AbstractBNode implements BNode {
 	public String toString() {
 		return "_:" + getID();
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static class GenericBNode extends AbstractBNode {
 

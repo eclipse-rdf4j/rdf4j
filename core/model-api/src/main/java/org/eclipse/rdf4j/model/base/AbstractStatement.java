@@ -25,8 +25,6 @@ public abstract class AbstractStatement implements Statement {
 
 	private static final long serialVersionUID = 2087591563645988076L;
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	@Override
 	public boolean equals(Object o) {
 
@@ -42,8 +40,8 @@ public abstract class AbstractStatement implements Statement {
 	}
 
 	@Override
-	public int hashCode() {
-		return Objects.hash(getSubject(), getPredicate(), getObject(), getContext()); // !!! avoid array creation
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
+		return Objects.hash(getSubject(), getPredicate(), getObject(), getContext());
 	}
 
 	@Override
@@ -55,8 +53,6 @@ public abstract class AbstractStatement implements Statement {
 				+ (getContext() == null ? "" : ", " + getContext())
 				+ ")";
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static class GenericStatement extends AbstractStatement {
 

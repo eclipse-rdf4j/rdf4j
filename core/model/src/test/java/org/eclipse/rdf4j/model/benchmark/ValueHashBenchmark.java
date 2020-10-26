@@ -45,12 +45,10 @@ public class ValueHashBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		new Runner(new OptionsBuilder()
-				.include(ValueHashBenchmark.class.getSimpleName() + ".hashTriple")
+				.include(ValueHashBenchmark.class.getSimpleName())
 				.build()
 		).run();
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
 	private ValueFactory factory = new BenchmarkValueFactory();
@@ -233,8 +231,6 @@ public class ValueHashBenchmark {
 			statementContext.hashCode();
 		}
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	private static String string(String string) {
 		return new String(string); // force unique object creation

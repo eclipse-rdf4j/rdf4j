@@ -23,8 +23,6 @@ public abstract class AbstractIRI implements IRI {
 
 	private static final long serialVersionUID = 7799969821538513046L;
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	@Override
 	public String stringValue() {
 		return getNamespace() + getLocalName();
@@ -33,20 +31,18 @@ public abstract class AbstractIRI implements IRI {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof IRI
-				&& toString().equals(o.toString()); // !!! use stringValue()
+				&& toString().equals(o.toString()); // TODO stringValue() (https://github.com/eclipse/rdf4j/issues/2565)
 	}
 
 	@Override
 	public int hashCode() {
-		return toString().hashCode(); // !!! use stringValue()
+		return toString().hashCode(); // TODO stringValue() (https://github.com/eclipse/rdf4j/issues/2565)
 	}
 
 	@Override
 	public String toString() {
 		return stringValue();
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static class GenericIRI extends AbstractIRI {
 
@@ -62,7 +58,7 @@ public abstract class AbstractIRI implements IRI {
 		}
 
 		GenericIRI(String namespace, String localName) {
-			this.iri = namespace + localName; // !!! concatenation performance impact?
+			this.iri = namespace + localName;
 			this.split = namespace.length();
 		}
 
@@ -82,11 +78,27 @@ public abstract class AbstractIRI implements IRI {
 		}
 
 		private int split() {
-			return (split > 0) ? split
-					: (split = iri.indexOf('#') + 1) > 0 ? split
-							: (split = iri.lastIndexOf('/') + 1) > 0 ? split
-									: (split = iri.lastIndexOf(':') + 1) > 0 ? split
-											: 0; // unexpected: colon presence already tested in factory methods
+			if (split > 0) {
+
+				return split;
+
+			} else if ((split = iri.indexOf('#') + 1) > 0) {
+
+				return split;
+
+			} else if ((split = iri.lastIndexOf('/') + 1) > 0) {
+
+				return split;
+
+			} else if ((split = iri.lastIndexOf(':') + 1) > 0) {
+
+				return split;
+
+			} else {
+
+				return 0; // unexpected: colon presence already tested in factory methods
+
+			}
 		}
 
 	}

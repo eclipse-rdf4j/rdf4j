@@ -43,8 +43,6 @@ public class ValueCreationBenchmark {
 		).run();
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
 	private ValueFactory factory = new BenchmarkValueFactory();
 
@@ -201,8 +199,6 @@ public class ValueCreationBenchmark {
 			factory.createStatement(iri, iri, iri, iri);
 		}
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	private XMLGregorianCalendar calendar(String string) {
 		try {

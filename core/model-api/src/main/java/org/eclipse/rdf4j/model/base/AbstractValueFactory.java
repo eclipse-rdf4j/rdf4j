@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -51,8 +52,6 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	private static final Literal TRUE = new BooleanLiteral(true);
 	private static final Literal FALSE = new BooleanLiteral(false);
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	private final AtomicLong nodeID = new AtomicLong(ThreadLocalRandom.current().nextLong());
 
 	@Override
@@ -63,9 +62,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public BNode createBNode(String nodeID) {
 
-		if (nodeID == null) {
-			throw new NullPointerException("null nodeID");
-		}
+		Objects.requireNonNull(nodeID, "null nodeID");
 
 		return new GenericBNode(nodeID);
 	}
@@ -73,9 +70,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public IRI createIRI(String iri) {
 
-		if (iri == null) {
-			throw new NullPointerException("null iri");
-		}
+		Objects.requireNonNull(iri, "null iri");
 
 		if (iri.indexOf(':') < 0) {
 			throw new IllegalArgumentException("missing colon in absolute IRI");
@@ -87,13 +82,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public IRI createIRI(String namespace, String localName) {
 
-		if (namespace == null) {
-			throw new NullPointerException("null namespace");
-		}
-
-		if (localName == null) {
-			throw new NullPointerException("null localName");
-		}
+		Objects.requireNonNull(namespace, "null namespace");
+		Objects.requireNonNull(localName, "null localName");
 
 		if (namespace.indexOf(':') < 0) {
 			throw new IllegalArgumentException("missing colon in absolute namespace IRI");
@@ -105,9 +95,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String label) {
 
-		if (label == null) {
-			throw new NullPointerException("null label");
-		}
+		Objects.requireNonNull(label, "null label");
 
 		return new TypedLiteral(label);
 	}
@@ -115,9 +103,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String label, IRI datatype) {
 
-		if (label == null) {
-			throw new NullPointerException("null label");
-		}
+		Objects.requireNonNull(label, "null label");
 
 		if (reserved(datatype)) {
 			throw new IllegalArgumentException("reserved datatype <" + datatype + ">");
@@ -129,13 +115,8 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(String label, String language) {
 
-		if (label == null) {
-			throw new NullPointerException("null label");
-		}
-
-		if (language == null) {
-			throw new NullPointerException("null language");
-		}
+		Objects.requireNonNull(label, "null label");
+		Objects.requireNonNull(language, "null language");
 
 		if (label.isEmpty()) {
 			throw new IllegalArgumentException("empty language tag");
@@ -182,9 +163,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
 
-		if (bigInteger == null) {
-			throw new NullPointerException("null bigInteger value");
-		}
+		Objects.requireNonNull(bigInteger, "null bigIntegr");
 
 		return new IntegerLiteral(bigInteger);
 	}
@@ -192,9 +171,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
 
-		if (bigDecimal == null) {
-			throw new NullPointerException("null bigDecimal value");
-		}
+		Objects.requireNonNull(bigDecimal, "null bigDecimal");
 
 		return new DecimalLiteral(bigDecimal);
 	}
@@ -202,9 +179,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(XMLGregorianCalendar calendar) {
 
-		if (calendar == null) {
-			throw new NullPointerException("null calendar");
-		}
+		Objects.requireNonNull(calendar, "null calendar");
 
 		return new CalendarLiteral(calendar);
 	}
@@ -212,9 +187,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(Date date) {
 
-		if (date == null) {
-			throw new NullPointerException("null date");
-		}
+		Objects.requireNonNull(date, "null date");
 
 		final GregorianCalendar calendar = new GregorianCalendar();
 
@@ -226,17 +199,9 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Triple createTriple(Resource subject, IRI predicate, Value object) {
 
-		if (subject == null) {
-			throw new NullPointerException("null subject");
-		}
-
-		if (predicate == null) {
-			throw new NullPointerException("null predicate");
-		}
-
-		if (object == null) {
-			throw new NullPointerException("null object");
-		}
+		Objects.requireNonNull(subject, "null subject");
+		Objects.requireNonNull(predicate, "null predicate");
+		Objects.requireNonNull(object, "null object");
 
 		return new GenericTriple(subject, predicate, object);
 	}
@@ -244,17 +209,9 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object) {
 
-		if (subject == null) {
-			throw new NullPointerException("null subject");
-		}
-
-		if (predicate == null) {
-			throw new NullPointerException("null predicate");
-		}
-
-		if (object == null) {
-			throw new NullPointerException("null object");
-		}
+		Objects.requireNonNull(subject, "null subject");
+		Objects.requireNonNull(predicate, "null predicate");
+		Objects.requireNonNull(object, "null object");
 
 		return new GenericStatement(subject, predicate, object, null);
 	}
@@ -262,17 +219,9 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
 
-		if (subject == null) {
-			throw new NullPointerException("null subject");
-		}
-
-		if (predicate == null) {
-			throw new NullPointerException("null predicate");
-		}
-
-		if (object == null) {
-			throw new NullPointerException("null object");
-		}
+		Objects.requireNonNull(subject, "null subject");
+		Objects.requireNonNull(predicate, "null predicate");
+		Objects.requireNonNull(object, "null object");
 
 		return new GenericStatement(subject, predicate, object, context);
 	}

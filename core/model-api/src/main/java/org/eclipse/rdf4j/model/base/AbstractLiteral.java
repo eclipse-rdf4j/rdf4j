@@ -88,8 +88,6 @@ public abstract class AbstractLiteral implements Literal {
 		return RDF_LANGSTRING.equals(datatype);
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	/**
 	 * Converts this literal to a value.
 	 *
@@ -221,8 +219,6 @@ public abstract class AbstractLiteral implements Literal {
 
 		return px && py && x.get().equalsIgnoreCase(y.get()) || !px && !py;
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static class TypedLiteral extends AbstractLiteral {
 

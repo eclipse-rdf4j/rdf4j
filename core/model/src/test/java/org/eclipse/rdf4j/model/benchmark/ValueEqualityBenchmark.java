@@ -47,8 +47,6 @@ public class ValueEqualityBenchmark {
 		).run();
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
 	private ValueFactory factory = new BenchmarkValueFactory();
 
@@ -307,8 +305,6 @@ public class ValueEqualityBenchmark {
 			}
 		}
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	private static String string(String string) {
 		return new String(string); // force unique object creation

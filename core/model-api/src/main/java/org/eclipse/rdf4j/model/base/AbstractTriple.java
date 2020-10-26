@@ -25,8 +25,6 @@ public abstract class AbstractTriple implements Triple {
 
 	private static final long serialVersionUID = 2661609986803671844L;
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	@Override
 	public String stringValue() {
 		return "<<" + getSubject() + " " + getPredicate() + " " + getObject() + ">>";
@@ -46,16 +44,14 @@ public abstract class AbstractTriple implements Triple {
 	}
 
 	@Override
-	public int hashCode() {
-		return Objects.hash(getSubject(), getPredicate(), getObject()); // !!! avoid array creation
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
+		return Objects.hash(getSubject(), getPredicate(), getObject());
 	}
 
 	@Override
 	public String toString() {
 		return stringValue();
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	static class GenericTriple extends AbstractTriple {
 

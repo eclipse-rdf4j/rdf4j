@@ -31,8 +31,6 @@ public abstract class AbstractNamespace implements Namespace {
 			Comparator.comparing(Namespace::getPrefix).thenComparing(Namespace::getName)
 	);
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	@Override
 	public int compareTo(Namespace o) {
 		return COMPARATOR.compare(this, o);
@@ -46,8 +44,8 @@ public abstract class AbstractNamespace implements Namespace {
 	}
 
 	@Override
-	public int hashCode() {
-		return Objects.hash(getPrefix(), getName()); // !!! avoid array creation
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
+		return Objects.hash(getPrefix(), getName());
 	}
 
 	@Override
