@@ -991,4 +991,17 @@ public class TestSparqlStarParser {
 		StatementPattern st = (StatementPattern) join.getRightArg();
 		assertEquals("expect same Var", ref.getExprVar().getName(), st.getSubjectVar().getName());
 	}
+
+	/*-
+	 * Expected to do not throw exception about use of BNodes in DELETE
+	 * see https://github.com/eclipse/rdf4j/issues/2618
+	 * @throws Exception
+	 */
+	@Test
+	public void testDeleteWhereRDFStar() {
+		String update = "DELETE\r\n" +
+				"WHERE { << <u:1> <u:2> <u:3> >> ?p ?o }";
+		ParsedUpdate q = parser.parseUpdate(update, null);
+		assertNotNull(q);
+	}
 }
