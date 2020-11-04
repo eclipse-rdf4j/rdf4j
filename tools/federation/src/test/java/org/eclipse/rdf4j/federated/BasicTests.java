@@ -10,11 +10,14 @@ package org.eclipse.rdf4j.federated;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -22,11 +25,13 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 public class BasicTests extends SPARQLBaseTest {
@@ -246,5 +251,184 @@ public class BasicTests extends SPARQLBaseTest {
 
 		}
 
+	}
+
+	@Test
+	public void testPassThroughHandler_MultiSourceQuery() throws Exception {
+
+		/* test query with custom RDF handler */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query
+			TupleQuery tq = conn
+					.prepareTupleQuery(
+							"SELECT ?person ?interest WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name ; <http://xmlns.com/foaf/0.1/interest> ?interest }");
+			tq.setBinding("name", l("Alan"));
+
+			AtomicBoolean started = new AtomicBoolean(false);
+			AtomicInteger numberOfResults = new AtomicInteger(0);
+
+			tq.evaluate(new AbstractTupleQueryResultHandler() {
+
+				@Override
+				public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+					if (started.get()) {
+						throw new IllegalStateException("Must not start query result twice.");
+					}
+					started.set(true);
+
+					/*
+					 * Expected trace looks like this java.lang.Exception at
+					 * org.eclipse.rdf4j.federated.BasicTests$1.startQueryResult(BasicTests.java:276) at
+					 * org.eclipse.rdf4j.query.QueryResults.report(QueryResults.java:263) at
+					 * org.eclipse.rdf4j.federated.structures.FedXTupleQuery.evaluate(FedXTupleQuery.java:69)
+					 */
+					Assertions.assertEquals(QueryResults.class.getName(),
+							new Exception().getStackTrace()[1].getClassName());
+
+				}
+
+				@Override
+				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
+					Assertions.assertEquals(bs.getValue("person"), iri("http://example.org/", "a"));
+					Assertions.assertEquals(bs.getValue("interest").stringValue(), "SPARQL 1.1 Basic Federated Query");
+					numberOfResults.incrementAndGet();
+				};
+			});
+
+			Assertions.assertTrue(started.get());
+			Assertions.assertEquals(1, numberOfResults.get());
+		}
+	}
+
+	@Test
+	public void testPassThroughHandler_SingleSourceQuery() throws Exception {
+
+		/* test query with custom RDF handler */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name . }");
+			tq.setBinding("name", l("Alan"));
+
+			AtomicBoolean started = new AtomicBoolean(false);
+			AtomicInteger numberOfResults = new AtomicInteger(0);
+
+			tq.evaluate(new AbstractTupleQueryResultHandler() {
+
+				@Override
+				public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+					if (started.get()) {
+						throw new IllegalStateException("Must not start query result twice.");
+					}
+					started.set(true);
+
+					/*
+					 * Expected trace is expected to come from some original repository (e.g. SPARQL) => we explicitly
+					 * do not expect QueryResults#report to be the second element (compare test
+					 * testPassThroughHandler_MultiSourceQuery)
+					 */
+					Assertions.assertNotEquals(QueryResults.class, new Exception().getStackTrace()[1].getClass());
+
+				}
+
+				@Override
+				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
+					Assertions.assertEquals(bs.getValue("person"), iri("http://example.org/", "a"));
+					numberOfResults.incrementAndGet();
+				};
+			});
+
+			Assertions.assertTrue(started.get());
+			Assertions.assertEquals(1, numberOfResults.get());
+		}
+	}
+
+	@Test
+	public void testPassThroughHandler_EmptyResult() throws Exception {
+
+		/* test query with custom RDF handler */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query
+			TupleQuery tq = conn
+					.prepareTupleQuery(
+							"SELECT ?person ?interest WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name ; <http://xmlns.com/foaf/0.1/interest> ?interest }");
+			tq.setBinding("name", l("NotExist"));
+
+			AtomicBoolean started = new AtomicBoolean(false);
+
+			tq.evaluate(new AbstractTupleQueryResultHandler() {
+
+				@Override
+				public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+					if (started.get()) {
+						throw new IllegalStateException("Must not start query result twice.");
+					}
+					started.set(true);
+
+					Assertions.assertEquals(Lists.newArrayList("person", "interest"), bindingNames);
+				}
+
+				@Override
+				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
+					throw new IllegalStateException("Expected empty result");
+				};
+			});
+
+			Assertions.assertTrue(started.get());
+		}
+	}
+
+	@Test
+	public void testPassThroughHandler_emptySingleSourceQuery() throws Exception {
+
+		/* test query with custom RDF handler */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+
+			// SELECT query
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name . }");
+			tq.setBinding("name", l("notExist"));
+
+			AtomicBoolean started = new AtomicBoolean(false);
+			AtomicInteger numberOfResults = new AtomicInteger(0);
+
+			tq.evaluate(new AbstractTupleQueryResultHandler() {
+
+				@Override
+				public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+					if (started.get()) {
+						throw new IllegalStateException("Must not start query result twice.");
+					}
+					started.set(true);
+
+					/*
+					 * Expected trace is expected to come from some original repository (e.g. SPARQL) => we explicitly
+					 * do not expect QueryResults#report to be the second element (compare test
+					 * testPassThroughHandler_MultiSourceQuery)
+					 */
+					Assertions.assertNotEquals(QueryResults.class, new Exception().getStackTrace()[1].getClass());
+
+				}
+
+				@Override
+				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
+					throw new IllegalStateException("Expected empty result");
+				};
+			});
+
+			Assertions.assertTrue(started.get());
+			Assertions.assertEquals(0, numberOfResults.get());
+		}
 	}
 }
