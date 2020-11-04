@@ -11,7 +11,9 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.StringReader;
+import java.io.Writer;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
@@ -877,16 +879,21 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	private boolean passThrough(HttpResponse response, FileFormat responseFormat, Sink sink)
 			throws IOException {
-		if (responseFormat.equals(sink.getFileFormat())) {
+		if (sink.acceptsFileFormat(responseFormat)) {
 			InputStream in = response.getEntity().getContent();
 			if (sink instanceof CharSink) {
-				IOUtils.copy(in, ((CharSink) sink).getWriter(),
+				Writer out = ((CharSink) sink).getWriter();
+				IOUtils.copy(in, out,
 						getResponseCharset(response).orElse(responseFormat.getCharset()));
+				out.flush();
 				return true;
 			} else if (sink instanceof ByteSink) {
-				IOUtils.copy(in, ((ByteSink) sink).getOutputStream());
+				OutputStream out = ((ByteSink) sink).getOutputStream();
+				IOUtils.copy(in, out);
+				out.flush();
 				return true;
 			}
+
 		}
 		return false;
 	}

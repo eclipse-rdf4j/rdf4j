@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqlxml;
 import java.io.OutputStream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
@@ -35,6 +36,11 @@ public class SPARQLStarResultsXMLWriter extends SPARQLResultsXMLWriter {
 	@Override
 	public final TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.SPARQL_STAR;
+	}
+
+	@Override
+	public boolean acceptsFileFormat(FileFormat format) {
+		return super.acceptsFileFormat(format) || TupleQueryResultFormat.SPARQL.equals(format);
 	}
 
 }
