@@ -11,11 +11,13 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -288,9 +290,22 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		return and
-				.stream()
+		StatementPattern subject = new StatementPattern(
+				new Var("?this"),
+				new Var(UUID.randomUUID().toString()),
+				new Var(UUID.randomUUID().toString())
+		);
+
+		StatementPattern object = new StatementPattern(
+				new Var(UUID.randomUUID().toString()),
+				new Var(UUID.randomUUID().toString()),
+				new Var("?this")
+		);
+
+		Stream<StatementPattern> statementPatternStream = and.stream()
 				.flatMap(Collection::stream)
 				.flatMap(PropertyShape::getStatementPatterns);
+
+		return Stream.concat(statementPatternStream, Stream.of(subject, object));
 	}
 }
