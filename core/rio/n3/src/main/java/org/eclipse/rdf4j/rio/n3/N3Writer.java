@@ -8,11 +8,14 @@
 package org.eclipse.rdf4j.rio.n3;
 
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Optional;
 
+import org.eclipse.rdf4j.common.io.CharSink;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -26,13 +29,13 @@ import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
  * An implementation of the RDFWriter interface that writes RDF documents in N3 format. Note: the current implementation
  * simply wraps a {@link TurtleWriter} and writes documents in Turtle format, which is a subset of N3.
  */
-public class N3Writer implements RDFWriter {
+public class N3Writer implements RDFWriter, CharSink {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private TurtleWriter ttlWriter;
+	private final TurtleWriter ttlWriter;
 
 	/**
 	 * A collection of configuration options for this writer.
@@ -59,7 +62,7 @@ public class N3Writer implements RDFWriter {
 	 * @param baseIRI used to relativize IRIs to relative IRIs.
 	 */
 	public N3Writer(OutputStream out, ParsedIRI baseIRI) {
-		ttlWriter = new TurtleWriter(out, baseIRI);
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8), baseIRI);
 	}
 
 	/**
@@ -84,6 +87,11 @@ public class N3Writer implements RDFWriter {
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	@Override
+	public Writer getWriter() {
+		return ttlWriter.getWriter();
+	}
 
 	@Override
 	public RDFFormat getRDFFormat() {
@@ -138,7 +146,8 @@ public class N3Writer implements RDFWriter {
 	}
 
 	@Override
-	public Optional<OutputStream> getOutputStream() {
-		return ttlWriter.getOutputStream();
+	public FileFormat getFileFormat() {
+		return getRDFFormat();
 	}
+
 }

@@ -18,6 +18,9 @@ import org.eclipse.rdf4j.model.Value;
  *
  * @author Alessandro Bollini
  * @since 3.5.0
+ * 
+ * @implNote Wherever feasible, in order to avoid severe performance degradation of the {@link #equals(Object)} method,
+ *           concrete subclasses should override {@link #stringValue()} to provide a constant pre-computed value
  */
 public abstract class AbstractIRI implements IRI {
 

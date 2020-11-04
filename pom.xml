@@ -577,7 +577,7 @@
 			<dependency>
 				<groupId>junit</groupId>
 				<artifactId>junit</artifactId>
-				<version>4.12</version>
+				<version>4.13.1</version>
 				<scope>test</scope>
 			</dependency>
 			<dependency>
@@ -858,35 +858,6 @@
 								<path>${project.build.directory}/${project.artifactId}-${project.version}.jar</path>
 							</file>
 						</newVersion>
-						<oldVersions>
-							<dependency>
-								<groupId>${project.groupId}</groupId>
-								<artifactId>rdf4j-model</artifactId>
-								<version>${project.version}</version>
-							</dependency>
-							<dependency>
-								<groupId>${project.groupId}</groupId>
-								<artifactId>rdf4j-util</artifactId>
-								<version>${project.version}</version>
-							</dependency>
-						</oldVersions>
-						<newVersions>
-							<dependency>
-								<groupId>${project.groupId}</groupId>
-								<artifactId>rdf4j-model-api</artifactId>
-								<version>${project.version}</version>
-							</dependency>
-							<dependency>
-								<groupId>${project.groupId}</groupId>
-								<artifactId>rdf4j-model</artifactId>
-								<version>${project.version}</version>
-							</dependency>
-							<dependency>
-								<groupId>${project.groupId}</groupId>
-								<artifactId>rdf4j-util</artifactId>
-								<version>${project.version}</version>
-							</dependency>
-						</newVersions>
 						<parameter>
 							<onlyModified>true</onlyModified>
 							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>

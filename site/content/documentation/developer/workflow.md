@@ -63,9 +63,10 @@ will always be possible to merge your issue branch into `develop` later if
 necessary. However, if you start from `develop`, merging into `master` will not
 be possible, and you're therefore committed to the next minor/major release.
 
-RDF4J uses 'squash and merge' as its pull request merge strategy, to preserve a
-clean history. Read more about our strategy and the motivation for in this
-article: [RDF4J merge strategy](/documentation/developer/merge-strategy/).
+RDF4J uses 'merge-commits' as its pull request merge strategy. We aim to
+achieve a clean but accurate history. Read more about our strategy and the
+motivation for it in this article: [RDF4J merge
+strategy](/documentation/developer/merge-strategy/).
 
 ### Patch Requests
 
@@ -80,10 +81,9 @@ If the change is a bug fix, contains no new features, and does not change any pu
 5. Any modifications can be made to the _issue_ branch as recommended.
 6. Once any necessary changes have been made, project committers can mark the PR as approved.
 7. Project committers should then determine what patch release this fix will be included in by updating the milestone label of both the PR and the issue.
-8. Once a Pull Request is approved and scheduled, it can be merged into the `master` branch, using 'squash and merge'.
+8. Once a Pull Request is approved and scheduled, it can be merged into the `master` branch.
 9. After a PR has been merged into the `master` branch, the `master` branch should
-then be merged into the `develop` branch by the project committer that merged the PR,
-any conflicts (such as due to new features) should be resolved. This merge should happen using a merge-commit.
+then be merged into the `develop` branch by the project committer that merged the PR, any conflicts (such as due to new features) should be resolved.
 
 ### Feature Requests
 
@@ -95,7 +95,7 @@ should be merged into the `develop` branch.
 Project committers that are contributing to a branch should periodically
 pull changes from the `develop` branch (by either rebasing or merging) to minimize conflicts later on.
 Once a feature is complete a PR should be created using the feature branch and target the `develop` branch.
-Then follow similar steps to a patch request to schedule and merge into `develop`, using 'squash and merge'.
+Then follow similar steps to a patch request to schedule and merge into `develop`.
 
 Minor and major releases require a formal [release
 review](https://www.eclipse.org/projects/handbook/#release-review), and because

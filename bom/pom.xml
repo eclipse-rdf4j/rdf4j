@@ -30,6 +30,11 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-model-vocabulary</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-model</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -375,6 +380,12 @@
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sparql-testsuite</artifactId>
 				<version>${project.version}</version>
+			</dependency>
+			<!-- third party dependencies -->
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-simple</artifactId>
+				<version>${slf4j.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

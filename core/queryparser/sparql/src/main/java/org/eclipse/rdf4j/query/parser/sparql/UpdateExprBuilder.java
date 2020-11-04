@@ -146,6 +146,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		where = graphPattern.buildTupleExpr();
 		graphPattern = parentGP;
+		Map<String, Object> tripleVars = TripleRefCollector.process(where);
 
 		TupleExpr deleteExpr = where.clone();
 
@@ -154,6 +155,11 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		VarCollector collector = new VarCollector();
 		deleteExpr.visit(collector);
 		for (Var var : collector.getCollectedVars()) {
+			// skip vars that are provided by ValueExprTripleRef - added as Extentsion
+			if (tripleVars.containsKey(var.getName())) {
+				continue;
+			}
+
 			if (var.isAnonymous() && !var.hasValue()) {
 				throw new VisitorException("DELETE WHERE may not contain blank nodes");
 			}

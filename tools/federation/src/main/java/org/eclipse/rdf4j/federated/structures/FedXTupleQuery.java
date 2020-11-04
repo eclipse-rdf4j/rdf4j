@@ -7,15 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.structures;
 
+import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 
@@ -48,8 +51,26 @@ public class FedXTupleQuery extends SailTupleQuery {
 	@Override
 	public void evaluate(TupleQueryResultHandler handler)
 			throws QueryEvaluationException, TupleQueryResultHandlerException {
+
+		// attach the handler to the query to allow pass through of results
+		// for single source queries
+		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
+		PassThroughTupleExpr passThroughTupleExpr = new PassThroughTupleExpr(tupleExpr,
+				handler);
+		delegate.getParsedQuery().setTupleExpr(passThroughTupleExpr);
+
 		FedXUtil.applyQueryBindings(this);
-		delegate.evaluate(handler);
+		TupleQueryResult tqr = delegate.evaluate();
+
+		if (!passThroughTupleExpr.isPassedThrough()) {
+			// if the result is not passed through to the handler directly,
+			// we need to make sure to report the result. Note that only
+			// SingleSourceQuery instances can be passed through
+			QueryResults.report(tqr, handler);
+		} else {
+			// to be absolutely sure that everything is closed
+			tqr.close();
+		}
 	}
 
 	/*

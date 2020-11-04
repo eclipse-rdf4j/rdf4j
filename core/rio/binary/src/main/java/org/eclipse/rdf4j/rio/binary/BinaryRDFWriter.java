@@ -32,6 +32,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.io.ByteSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -47,7 +48,7 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 /**
  * @author Arjohn Kampman
  */
-public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
+public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter, ByteSink {
 
 	private final BlockingQueue<Statement> statementQueue;
 
@@ -66,7 +67,6 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	public BinaryRDFWriter(OutputStream out, int bufferSize) {
-		super(out);
 		this.out = new DataOutputStream(new BufferedOutputStream(out));
 		this.statementQueue = new ArrayBlockingQueue<>(bufferSize);
 		this.valueFreq = new HashMap<>(3 * bufferSize);
@@ -76,6 +76,11 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.BINARY;
+	}
+
+	@Override
+	public OutputStream getOutputStream() {
+		return out;
 	}
 
 	@Override
@@ -298,4 +303,5 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter {
 		}
 		out.write(buf, 0, stringBytes);
 	}
+
 }

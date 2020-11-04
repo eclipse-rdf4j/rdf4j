@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Writer;
 
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
@@ -28,6 +29,10 @@ public class SPARQLResultsJSONWriter extends AbstractSPARQLJSONWriter implements
 
 	public SPARQLResultsJSONWriter(OutputStream out) {
 		super(out);
+	}
+
+	public SPARQLResultsJSONWriter(Writer writer) {
+		super(writer);
 	}
 
 	/*---------*

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -63,6 +64,13 @@ public class TriGStarWriter extends TriGWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TRIGSTAR;
+	}
+
+	@Override
+	public boolean acceptsFileFormat(FileFormat format) {
+		// since TriG* is a superset of regular TriG, this Sink also accepts regular TriG
+		// serialization
+		return super.acceptsFileFormat(format) || RDFFormat.TRIG.equals(format);
 	}
 
 	@Override
