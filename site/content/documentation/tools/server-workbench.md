@@ -35,7 +35,7 @@ There is a [known issue](https://github.com/eclipse/rdf4j/issues/391) affecting 
 
 To resolve issues where the request body is not getting properly interpreted as UTF-8, it is necessary to configure Tomcat to use its built-in SetCharacterEncodingFilter. More details are available at the [Tomcat wiki](https://cwiki.apache.org/confluence/display/TOMCAT/Character+Encoding#CharacterEncoding-Q3). Un-commenting the <filter> and <filter-mapping> elements for setCharacterEncodingFilter in `$CATALINA_BASE/conf/web.xml`, and restarting the server, should be the only necessary steps.
 
-## Application directory configuration
+### Application directory configuration
 
 The RDF4J Server and Workbench store configuration files and repository data in a single directory (with subdirectories). On Windows machines, this directory is `%APPDATA%\RDF4J\` by default, where `%APPDATA%` is the application data directory of the user that runs the application. For example, in case the application runs under the ‘LocalService’ user account on Windows XP, the directory is `C:\Documents and Settings\LocalService\Application Data\RDF4J\`. On Linux/UNIX, the default location is `$HOME/.RDF4J/`, for example `/home/tomcat/.rdf4j/`. We will refer to this data directory as `[RDF4J_DATA]` in the rest of this manual.
 
@@ -44,9 +44,26 @@ The location of this data directory can be reconfigured using the Java system pr
     set JAVA_OPTS=-Dorg.eclipse.rdf4j.appdata.basedir=\path\to\other\dir\ (on Windows)
     export JAVA_OPTS='-Dorg.eclipse.rdf4j.appdata.basedir=/path/to/other/dir/' (on Linux/UNIX)
 
-If you are using Apache Tomcat as a Windows Service you should use the Windows Services configuration tool to set this property. Other users can either edit the Tomcat startup script or set the property some other way.
 
 One easy way to find out what the directory is in a running instance of the RDF4J Server, is to go to http://localhost:8080/rdf4j-server/home/overview.view in your browser and click on ‘System’ in the navigation menu on the left. The data directory will be listed as one of the configuration settings of the current server.
+
+#### Tomcat as a Windows service
+
+If you are using Apache Tomcat as a Windows Service you should use the Windows Services configuration tool to set this property. Other users can either edit the Tomcat startup script or set the property some other way.
+
+#### Tomcat as a systemd service
+
+On Linux systems, systemd may impose additional restrictions on the location of the data directory. If the server seems to have started successfully, but the `[RDF4J-DATA]` directory remains empty - i.e. no `server` nor `workbench` subdirectories are being created - the tomcat service configuration needs to be adapted.
+
+For example: Tomcat 9 on Debian with `/var/rdf4j/` as the data directory requires an additional `ReadWritePaths` in the `/etc/systemd/system/tomcat9.service` file, 
+followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` to apply this change.
+
+```ini
+ [Service]
+
+ReadWritePaths=/var/rdf4j/
+```
+
 
 ### Repository Configuration
 
