@@ -173,43 +173,43 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			Path path = getTargetChain().getPath().get();
 
 			String sparql = hasValueIn
-				.stream()
-				.map(value -> {
-					Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
+					.stream()
+					.map(value -> {
+						Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
 
-					if (value instanceof IRI) {
-						return "BIND(<" + value + "> as ?" + objectVar.getName() + ")\n"
-							+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
-					}
-					if (value instanceof Literal) {
-						return "BIND(" + value.toString() + " as ?" + objectVar.getName() + ")\n"
-							+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
-					}
+						if (value instanceof IRI) {
+							return "BIND(<" + value + "> as ?" + objectVar.getName() + ")\n"
+									+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+						}
+						if (value instanceof Literal) {
+							return "BIND(" + value.toString() + " as ?" + objectVar.getName() + ")\n"
+									+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+						}
 
-					throw new UnsupportedOperationException(
-						"value was unsupported type: " + value.getClass().getSimpleName());
-				})
-				.collect(
-					Collectors.joining("} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
-						"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
-						"}"));
+						throw new UnsupportedOperationException(
+								"value was unsupported type: " + value.getClass().getSimpleName());
+					})
+					.collect(
+							Collectors.joining("} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+									"}"));
 			return sparql;
 
 		} else {
 
 			String sparql = hasValueIn
-				.stream()
-				.map(value -> {
-					if (value instanceof IRI) {
-						return "?" + subject.getName() + " = <" + value + ">";
-					} else if (value instanceof Literal) {
-						return "?" + subject.getName() + " = " + value;
-					}
-					throw new UnsupportedOperationException(
-						"value was unsupported type: " + value.getClass().getSimpleName());
-				})
-				.reduce((a, b) -> a + " || " + b)
-				.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
+					.stream()
+					.map(value -> {
+						if (value instanceof IRI) {
+							return "?" + subject.getName() + " = <" + value + ">";
+						} else if (value instanceof Literal) {
+							return "?" + subject.getName() + " = " + value;
+						}
+						throw new UnsupportedOperationException(
+								"value was unsupported type: " + value.getClass().getSimpleName());
+					})
+					.reduce((a, b) -> a + " || " + b)
+					.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
 			return sparql;
 
 		}
