@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.OutputStream;
 
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
@@ -34,5 +35,12 @@ public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter impleme
 	@Override
 	public TupleQueryResultFormat getQueryResultFormat() {
 		return getTupleQueryResultFormat();
+	}
+
+	@Override
+	public boolean acceptsFileFormat(FileFormat format) {
+		// since SPARQL*/JSON is a superset of regular SPARQL/JSON, this Sink also accepts regular SPARQL/JSON
+		// serialization
+		return super.acceptsFileFormat(format) || TupleQueryResultFormat.JSON.equals(format);
 	}
 }
