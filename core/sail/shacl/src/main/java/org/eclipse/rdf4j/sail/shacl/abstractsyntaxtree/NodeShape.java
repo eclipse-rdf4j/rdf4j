@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
 import java.io.StringWriter;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -249,19 +250,29 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		return constraintComponents
-				.stream()
-				.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, new Var("someVarName"),
-						rdfsSubClassOfReasoner, Scope.nodeShape))
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+		String sparql = constraintComponents
+			.stream()
+			.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, new Var("someVarName"),
+				rdfsSubClassOfReasoner, Scope.nodeShape))
+			.reduce((a, b) -> a + "\n" + b)
+			.orElse("");
+		return sparql;
 	}
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, new Var("someVarName"),
-						rdfsSubClassOfReasoner, Scope.nodeShape));
+
+
+		StatementPattern subjectPattern = new StatementPattern(object, new Var(UUID.randomUUID().toString()), new Var(UUID.randomUUID().toString()));
+		StatementPattern objectPattern = new StatementPattern(new Var(UUID.randomUUID().toString()), new Var(UUID.randomUUID().toString()), object);
+
+
+		Stream<StatementPattern> statementPatternStream = constraintComponents.stream()
+			.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, new Var("someVarName"),
+				rdfsSubClassOfReasoner, Scope.nodeShape));
+
+		return Stream.concat(statementPatternStream, Stream.of(subjectPattern, objectPattern));
+
 	}
 }

@@ -274,7 +274,6 @@ public class HasValuePropertyShape extends PathPropertyShape {
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
 		return getPath().getStatementsPatterns(new Var("?this"), new Var(UUID.randomUUID().toString(), hasValue));
-
 	}
 
 	@Override

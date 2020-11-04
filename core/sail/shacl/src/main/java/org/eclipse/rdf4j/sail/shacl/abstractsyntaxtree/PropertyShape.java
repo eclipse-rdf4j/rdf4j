@@ -295,11 +295,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	@Override
 	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		return constraintComponents.stream()
-				.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-						Scope.propertyShape))
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+		String sparql = constraintComponents.stream()
+			.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+				Scope.propertyShape))
+			.reduce((a, b) -> a + "\n" + b)
+			.orElse("");
+		return sparql;
 	}
 
 	@Override

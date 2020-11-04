@@ -1,11 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EqualsJoinValue;
@@ -32,25 +27,33 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ShiftToProperty
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class OrConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> or;
 
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache, ShaclSail shaclSail) {
+								 Cache cache, ShaclSail shaclSail) {
 		super(id);
 		or = HelperTool.toList(connection, id, Resource.class)
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> {
-					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache, false, shaclSail);
-					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, connection, cache, shaclSail);
-					}
-					throw new IllegalStateException("Unknown shape type for " + p.getId());
-				})
-				.collect(Collectors.toList());
+			.stream()
+			.map(r -> new ShaclProperties(r, connection))
+			.map(p -> {
+				if (p.getType() == SHACL.NODE_SHAPE) {
+					return NodeShape.getInstance(p, connection, cache, false, shaclSail);
+				} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+					return PropertyShape.getInstance(p, connection, cache, shaclSail);
+				}
+				throw new IllegalStateException("Unknown shape type for " + p.getId());
+			})
+			.collect(Collectors.toList());
 	}
 
 	public OrConstraintComponent(OrConstraintComponent orConstraintComponent) {
@@ -89,13 +92,13 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren, Scope scope) {
+												 boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new UnsupportedOperationException("Not implemented yet");
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+														PlanNodeProvider overrideTargetNode, Scope scope) {
 		// if (scope == Scope.nodeShape) {
 
 		PlanNodeProvider planNodeProvider;
@@ -104,26 +107,26 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 			planNodeProvider = overrideTargetNode;
 		} else {
 			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, scope), "",
-					p -> {
-						assert p != null;
-					});
+				p -> {
+					assert p != null;
+				});
 		}
 
 		PlanNode orPlanNodes = or.stream()
-				.map(or -> or.generateTransactionalValidationPlan(
-						connectionsGroup,
-						logValidationPlans,
-						planNodeProvider,
-						scope
+			.map(or -> or.generateTransactionalValidationPlan(
+				connectionsGroup,
+				logValidationPlans,
+				planNodeProvider,
+				scope
 				)
-				)
-				.map(p -> {
-					return (PlanNode) new DebugPlanNode(p, "", p1 -> {
-						assert p1 != null;
-					});
-				})
-				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
-				.orElse(new EmptyNode());
+			)
+			.map(p -> {
+				return (PlanNode) new DebugPlanNode(p, "", p1 -> {
+					assert p1 != null;
+				});
+			})
+			.reduce((a, b) -> new EqualsJoinValue(a, b, true))
+			.orElse(new EmptyNode());
 
 		PlanNode invalid = new Unique(orPlanNodes);
 
@@ -140,21 +143,21 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+				.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
 			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
 		} else {
 			allTargets = getTargetChain()
-					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, scope, true);
+				.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getPlanNode(connectionsGroup, scope, true);
 
 		}
 
 		PlanNode planNode = or.stream()
-				.map(or -> or.getAllTargetsPlan(connectionsGroup, scope))
-				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+			.map(or -> or.getAllTargetsPlan(connectionsGroup, scope))
+			.reduce(UnionNode::new)
+			.orElse(new EmptyNode());
 
 		return new Unique(new UnionNode(allTargets, planNode));
 	}
@@ -164,9 +167,9 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 		OrConstraintComponent constraintComponent = new OrConstraintComponent(this);
 		constraintComponent.or = or.stream()
-				.map(ConstraintComponent::deepClone)
-				.map(a -> ((Shape) a))
-				.collect(Collectors.toList());
+			.map(ConstraintComponent::deepClone)
+			.map(a -> ((Shape) a))
+			.collect(Collectors.toList());
 		return constraintComponent;
 	}
 
@@ -227,12 +230,86 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 //		}
 //	}
 
+
 	@Override
-	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+
+		List<? extends Class<? extends Shape>> type = or
+			.stream()
+			.map(s -> {
+				if (s instanceof NodeShape) {
+					return NodeShape.class;
+				}
+				if (s instanceof PropertyShape) {
+					return PropertyShape.class;
+				}
+				throw new IllegalStateException("Unknown shape type: " + s.getClass());
+			})
+			.distinct()
+			.collect(Collectors.toList());
+
+		if (type.size() > 1) {
+			throw new UnsupportedOperationException("OrConstraintComponent found both NodeShape and PropertyShape as children");
+		}
+
+		Class<? extends Shape> aClass = type.get(0);
+
+		if (scope == Scope.nodeShape) {
+
+			return "";
+		} else if (scope == Scope.propertyShape) {
+
+			if (aClass == PropertyShape.class) {
+				return "";
+			} else {
+
+
+				Path path = getTargetChain().getPath().get();
+			String objectVariable = randomVariable();
+
+				String collect = or
+					.stream()
+					.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope))
+					.reduce((a, b) -> a + " || " + b).orElse("");
+
+				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+
+
+				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+					+ "\n\tFILTER(!(" + collect + "))\n})";
+
+
+				String pathQuery2 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+
+				query = "{\n" +
+					AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " +
+					"" + query.replaceAll("(?m)^", "\t") + " \n" +
+					"} UNION {\n" +
+					"\t " + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n" +
+					"\t ?" + subject.getName() + " " + randomVariable() + " " + randomVariable() + ".\n" +
+					"\t FILTER(NOT EXISTS {\n " +
+					"" + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n" +
+					"})\n" +
+					"}";
+
+				return query;
+			}
+		} else {
+			throw new UnsupportedOperationException("Unknown scope: " + scope);
+		}
+
+
+	}
+
+	private String randomVariable() {
+		return "?"+ UUID.randomUUID().toString().replace("-", "");
+	}
+
+	@Override
+	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		return or.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-						Scope.nodeShape));
+			.flatMap(shape -> shape.getStatementPatterns_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope));
 	}
 
 }
