@@ -91,7 +91,7 @@ public class TargetShape extends NodeShape {
 
 	}
 
-	private PlanNode getInnerPlanRemovedOrAdded(ConnectionsGroup connectionsGroup, SailConnection removedStatements) {
+	private PlanNode getInnerPlanRemovedOrAdded(ConnectionsGroup connectionsGroup, SailConnection connection) {
 
 		// @formatter:off
 		/*
@@ -107,7 +107,7 @@ public class TargetShape extends NodeShape {
 
 			PlanNode statementsThatMatchPattern = new TrimTuple(
 					new UnorderedSelect(
-							removedStatements,
+							connection,
 							null,
 							((IRI) statementPattern.getPredicateVar().getValue()),
 							(statementPattern.getObjectVar().getValue()),
@@ -140,7 +140,8 @@ public class TargetShape extends NodeShape {
 	@Override
 	public String getQuery(String subjectVariable, String objectVariable,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return targetShape.buildSparqlValidNodes(subjectVariable);
+		String s = targetShape.buildSparqlValidNodes(subjectVariable);
+		return s;
 
 	}
 
