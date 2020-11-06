@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -326,9 +327,9 @@ public class OrPropertyShape extends PathPropertyShape {
 			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
 
 			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
-					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
-					+ randomVariable() + " "
-					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n" +
+					"\t" + targetVar + " " + randomVariable() + " " + randomVariable() + ".\n" +
+					"\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
 					+ " \n})\n}";
 
 			return query;
@@ -359,6 +360,23 @@ public class OrPropertyShape extends PathPropertyShape {
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		return or.stream().flatMap(Collection::stream).flatMap(PropertyShape::getStatementPatterns);
+
+		StatementPattern subject = new StatementPattern(
+				new Var("?this"),
+				new Var(UUID.randomUUID().toString()),
+				new Var(UUID.randomUUID().toString())
+		);
+
+		StatementPattern object = new StatementPattern(
+				new Var(UUID.randomUUID().toString()),
+				new Var(UUID.randomUUID().toString()),
+				new Var("?this")
+		);
+
+		Stream<StatementPattern> statementPatternStream = or.stream()
+				.flatMap(Collection::stream)
+				.flatMap(PropertyShape::getStatementPatterns);
+
+		return Stream.concat(statementPatternStream, Stream.of(subject, object));
 	}
 }

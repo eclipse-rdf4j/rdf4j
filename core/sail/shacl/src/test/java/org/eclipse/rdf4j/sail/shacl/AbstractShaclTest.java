@@ -361,10 +361,7 @@ abstract public class AbstractShaclTest {
 						if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 							throw sailException;
 						}
-						exception = true;
-						logger.debug(sailException.getMessage());
 
-						printResults(sailException);
 					}
 				}
 
