@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.IsolationLevels;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -431,6 +433,48 @@ abstract class Changeset implements SailSink, ModelFactory {
 					.stream(statements.spliterator(), false)
 					.collect(Collectors.toList());
 		}
+	}
+
+	synchronized Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+
+		// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
+		// for functionally complete first.
+		Stream<Triple> approvedSubjectTriples = approved.parallelStream()
+				.filter(st -> st.getSubject() instanceof Triple)
+				.map(st -> (Triple) st.getSubject())
+				.filter(t -> {
+					if (subj != null && !subj.equals(t.getSubject())) {
+						return false;
+					}
+					if (pred != null && !pred.equals(t.getPredicate())) {
+						return false;
+					}
+					if (obj != null && !obj.equals(t.getObject())) {
+						return false;
+					}
+					return true;
+				});
+
+		Stream<Triple> approvedObjectTriples = approved.parallelStream()
+				.filter(st -> st.getObject() instanceof Triple)
+				.map(st -> (Triple) st.getObject())
+				.filter(t -> {
+					if (subj != null && !subj.equals(t.getSubject())) {
+						return false;
+					}
+					if (pred != null && !pred.equals(t.getPredicate())) {
+						return false;
+					}
+					if (obj != null && !obj.equals(t.getObject())) {
+						return false;
+					}
+					return true;
+				});
+
+		return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
 	}
 
 	synchronized void removeApproved(Statement next) {
