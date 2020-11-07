@@ -257,11 +257,11 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 		if (scope == Scope.nodeShape) {
 
-			return "";
+			throw  new UnsupportedOperationException();
 		} else if (scope == Scope.propertyShape) {
 
 			if (aClass == PropertyShape.class) {
-				return "";
+				throw  new UnsupportedOperationException();
 			} else {
 
 				Path path = getTargetChain().getPath().get();
@@ -279,7 +279,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
 						+ "\n\tFILTER(!(" + collect + "))\n})";
 
-				String pathQuery2 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+				String pathQuery2 = path.getTargetQueryFragment(subject, new Var(UUID.randomUUID().toString().replace("-", "")), rdfsSubClassOfReasoner);
 
 				query = "{\n" +
 						AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " +
@@ -311,13 +311,13 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 
 		StatementPattern subjectPattern = new StatementPattern(
 				object,
-				new Var(UUID.randomUUID().toString()),
-				new Var(UUID.randomUUID().toString())
+				new Var(UUID.randomUUID().toString().replace("-", "")),
+				new Var(UUID.randomUUID().toString().replace("-", ""))
 		);
 
 		StatementPattern objectPattern = new StatementPattern(
-				new Var(UUID.randomUUID().toString()),
-				new Var(UUID.randomUUID().toString()),
+				new Var(UUID.randomUUID().toString().replace("-", "")),
+				new Var(UUID.randomUUID().toString().replace("-", "")),
 				object
 		);
 

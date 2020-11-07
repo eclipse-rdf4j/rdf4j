@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvide
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 
 public class AndConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> and;
@@ -135,26 +138,104 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
 
+
+
 	@Override
 	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+														RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+
+		List<? extends Class<? extends Shape>> type = and
+			.stream()
+			.map(s -> {
+				if (s instanceof NodeShape) {
+					return NodeShape.class;
+				}
+				if (s instanceof PropertyShape) {
+					return PropertyShape.class;
+				}
+				throw new IllegalStateException("Unknown shape type: " + s.getClass());
+			})
+			.distinct()
+			.collect(Collectors.toList());
+
+		if (type.size() > 1) {
+			throw new UnsupportedOperationException(
+				"OrConstraintComponent found both NodeShape and PropertyShape as children");
+		}
+
+		Class<? extends Shape> aClass = type.get(0);
+
 		if (scope == Scope.nodeShape) {
 
-			return "";
+			throw  new UnsupportedOperationException();
 		} else if (scope == Scope.propertyShape) {
 
-			return "";
+			if (aClass == PropertyShape.class) {
+				throw  new UnsupportedOperationException();
+			} else {
+
+				Path path = getTargetChain().getPath().get();
+				String objectVariable = randomVariable();
+
+				String collect = and
+					.stream()
+					.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
+						rdfsSubClassOfReasoner, scope))
+					.reduce((a, b) -> a + " && " + b)
+					.orElse("");
+
+				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+
+				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+					+ "\n\tFILTER(!(" + collect + "))\n})";
+
+				String pathQuery2 = path.getTargetQueryFragment(subject, new Var(UUID.randomUUID().toString().replace("-", "")), rdfsSubClassOfReasoner);
+
+				query = "{\n" +
+					AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " +
+					"" + query.replaceAll("(?m)^", "\t") + " \n" +
+					"} UNION {\n" +
+					"\t " + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n" +
+					"\t ?" + subject.getName() + " " + randomVariable() + " " + randomVariable() + ".\n" +
+					"\t FILTER(NOT EXISTS {\n " +
+					"" + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n" +
+					"})\n" +
+					"}";
+
+				return query;
+			}
 		} else {
 			throw new UnsupportedOperationException("Unknown scope: " + scope);
 		}
 
 	}
 
+	private String randomVariable() {
+		return "?" + UUID.randomUUID().toString().replace("-", "");
+	}
+
 	@Override
 	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		return and.stream()
-				.flatMap(shape -> shape.getStatementPatterns_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-						scope));
+																				   RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+
+		StatementPattern subjectPattern = new StatementPattern(
+			object,
+			new Var(UUID.randomUUID().toString().replace("-", "")),
+			new Var(UUID.randomUUID().toString().replace("-", ""))
+		);
+
+		StatementPattern objectPattern = new StatementPattern(
+			new Var(UUID.randomUUID().toString().replace("-", "")),
+			new Var(UUID.randomUUID().toString().replace("-", "")),
+			object
+		);
+
+		Stream<StatementPattern> statementPatternStream = and.stream()
+			.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, new Var("someVarName"),
+				rdfsSubClassOfReasoner, Scope.nodeShape));
+
+		return Stream.concat(statementPatternStream, Stream.of(subjectPattern, objectPattern));
+
 	}
 }

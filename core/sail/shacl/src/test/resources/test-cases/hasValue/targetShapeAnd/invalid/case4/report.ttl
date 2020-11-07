@@ -9,13 +9,12 @@
   sh:conforms false;
   <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode [];
-      sh:value [];
-      sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:focusNode ex:a;
+      sh:resultPath ex:info2;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:knows;
-          sh:class ex:Person
+          sh:path ex:info2;
+          sh:minCount 1
         ]
     ] .

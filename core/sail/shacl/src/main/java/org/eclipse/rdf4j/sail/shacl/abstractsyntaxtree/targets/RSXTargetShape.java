@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.Cons
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class RSXTargetShape extends Target {
@@ -75,14 +76,14 @@ public class RSXTargetShape extends Target {
 
 		List<Var> vars = Arrays.asList(new Var("temp1"), new Var("someVarName"));
 
-		return new TargetChainRetriever(
+		return new Unique(new TargetChainRetriever(
 				connectionsGroup,
 				collect,
 				null,
 				query,
 				vars,
 				scope
-		);
+		));
 
 	}
 

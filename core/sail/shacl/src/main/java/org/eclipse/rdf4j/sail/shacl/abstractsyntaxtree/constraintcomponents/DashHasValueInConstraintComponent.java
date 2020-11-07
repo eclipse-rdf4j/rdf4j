@@ -157,10 +157,11 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 		if (getTargetChain().getPath().isPresent()) {
 			Path path = getTargetChain().getPath().get();
+			return path.getStatementPatterns(subject, object, rdfsSubClassOfReasoner);
 
-			return hasValueIn
-					.stream()
-					.flatMap(value -> path.getStatementPatterns(subject, object, rdfsSubClassOfReasoner));
+//			return hasValueIn
+//					.stream()
+//					.flatMap(value -> path.getStatementPatterns(subject, object, rdfsSubClassOfReasoner));
 		}
 
 		throw new IllegalStateException("Dunno what to do here!");
@@ -175,15 +176,15 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			String sparql = hasValueIn
 					.stream()
 					.map(value -> {
-						Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
+//						Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
 
 						if (value instanceof IRI) {
-							return "BIND(<" + value + "> as ?" + objectVar.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+							return "BIND(<" + value + "> as ?" + object.getName() + ")\n"
+									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 						}
 						if (value instanceof Literal) {
-							return "BIND(" + value.toString() + " as ?" + objectVar.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, objectVar, rdfsSubClassOfReasoner);
+							return "BIND(" + value.toString() + " as ?" + object.getName() + ")\n"
+									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 						}
 
 						throw new UnsupportedOperationException(

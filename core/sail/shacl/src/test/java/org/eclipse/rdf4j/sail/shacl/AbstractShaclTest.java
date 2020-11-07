@@ -78,7 +78,7 @@ abstract public class AbstractShaclTest {
 	// @formatter:off
 	// formatter doesn't understand that the trailing ) needs to be on a new line.
 	private static final List<String> testCasePaths = Stream.of(
-/*
+
 			"test-cases/and-or/datatypeNodeShape",
 		"test-cases/class/allObjects",
 		"test-cases/class/allSubjects",
@@ -218,8 +218,6 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/simpleNested",
 		"test-cases/qualifiedShape/minCountSimple",
 		"test-cases/qualifiedShape/maxCountSimple"
-*/
-		"test-cases/hasValueIn/targetShapeOr"
 
 		)
 		.distinct()
