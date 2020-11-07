@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -169,22 +170,22 @@ public abstract class RDFStarSupportTest {
 	public void testRdfStarAddAndRetrieveSparql() throws InterruptedException {
 
 		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+
 		Literal literal = vf.createLiteral("I am a triple ;-D");
 
 		testCon.begin();
 		testCon.add(insertedTriple, RDF.TYPE, literal);
 
+		TupleQuery query = testCon.prepareTupleQuery(
+				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
+
 		assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
-		assertEquals(1, testCon.prepareTupleQuery(
-				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}")
-				.evaluate()
-				.stream()
-				.count());
+		assertEquals(1, query.evaluate().stream().count());
 		testCon.commit();
 	}
 
 	@Test
-	public void testRdfStarAddAndRetrieveSparqlSeperateTransaction() throws InterruptedException {
+	public void testRdfStarAddAndRetrieveSparqlSeparateTransaction() throws InterruptedException {
 
 		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
 		Literal literal = vf.createLiteral("I am a triple ;-D");

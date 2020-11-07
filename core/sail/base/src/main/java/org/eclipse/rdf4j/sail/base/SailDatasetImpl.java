@@ -20,8 +20,11 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.iteration.IteratorIteration;
+import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -287,37 +290,43 @@ class SailDatasetImpl implements SailDataset {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
+
 		CloseableIteration<? extends Triple, SailException> iter;
 		if (changes.isStatementCleared()) {
+			// nothing in the backing source is relevant, but we may still need to return approved data
+			// from the changeset
 			iter = null;
 		} else {
 			iter = derivedFrom.getTriples(subj, pred, obj);
 		}
 
-		if (iter == null) {
-			return new EmptyIteration<>();
+		if (changes.hasDeprecated() && iter != null) {
+			iter = triplesDifference(iter, triple -> isDeprecated(triple, changes.getDeprecatedStatements()));
 		}
-		return iter; // TODO we will need to figure out a way to handle transaction isolation with deprecated and
-		// approved data
-//		Model deprecated = changes.getDeprecated();
-//		if (deprecated != null && iter != null) {
-//			iter = difference(iter, deprecated.));
-//		}
-//		Model approved = changes.getApproved();
-//		if (approved != null && iter != null) {
-//			return new DistinctModelReducingUnionIteration(iter, approved, (m) -> m.filter(subj, pred, obj, contexts));
-//
-//		} else if (approved != null) {
-//			Iterator<Statement> i = approved.filter(subj, pred, obj, contexts).iterator();
-//			return new CloseableIteratorIteration<>(i);
-//		} else if (iter != null) {
-//			return iter;
-//		} else {
-//			return new EmptyIteration<>();
-//		}
+
+		if (changes.hasApproved()) {
+			if (iter != null) {
+				// merge newly approved triples in the changeset with data from the backing source
+				return new DistinctIteration<>(new UnionIteration<>(
+						iter,
+						new IteratorIteration<Triple, SailException>(
+								changes.getApprovedTriples(subj, pred, obj).iterator())
+				));
+			}
+
+			// nothing relevant in the backing source, just return all matching approved triples from the changeset
+			Iterator<Triple> i = changes.getApprovedTriples(subj, pred, obj).iterator();
+			return new CloseableIteratorIteration<>(i);
+		}
+
+		if (iter != null) {
+			return iter;
+		}
+		return new EmptyIteration<>();
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(
@@ -331,4 +340,38 @@ class SailDatasetImpl implements SailDataset {
 		};
 	}
 
+	private CloseableIteration<? extends Triple, SailException> triplesDifference(
+			CloseableIteration<? extends Triple, SailException> result, Function<Triple, Boolean> excluded) {
+		return new FilterIteration<Triple, SailException>(result) {
+
+			@Override
+			protected boolean accept(Triple stmt) {
+				return !excluded.apply(stmt);
+			}
+		};
+	}
+
+	private boolean isDeprecated(Triple triple, List<Statement> deprecatedStatements) {
+		// the triple is deprecated if the changeset deprecates all existing statements in the backing dataset that
+		// involve this triple.
+		try (CloseableIteration<? extends Statement, SailException> subjectStatements = derivedFrom
+				.getStatements(triple, null, null)) {
+			while (subjectStatements.hasNext()) {
+				Statement st = subjectStatements.next();
+				if (!deprecatedStatements.contains(st)) {
+					return false;
+				}
+			}
+		}
+		try (CloseableIteration<? extends Statement, SailException> objectStatements = derivedFrom
+				.getStatements(null, null, triple)) {
+			while (objectStatements.hasNext()) {
+				Statement st = objectStatements.next();
+				if (!deprecatedStatements.contains(st)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
 }
