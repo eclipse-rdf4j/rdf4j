@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class NativeStoreConnectionTest extends RepositoryConnectionTest {
@@ -74,4 +75,5 @@ public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 
 		testCon2.close();
 	}
+
 }

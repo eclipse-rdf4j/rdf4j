@@ -66,4 +66,5 @@ public class ElasticsearchStoreConnectionTest extends RepositoryConnectionTest {
 		return new SailRepository(
 				new ElasticsearchStore(clientPool, "index1"));
 	}
+
 }
