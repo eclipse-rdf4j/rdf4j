@@ -290,22 +290,30 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		StatementPattern subject = new StatementPattern(
-				new Var("?this"),
-				new Var(UUID.randomUUID().toString()),
-				new Var(UUID.randomUUID().toString())
-		);
+		Stream<StatementPattern> allSubjectsObjects;
 
-		StatementPattern object = new StatementPattern(
-				new Var(UUID.randomUUID().toString()),
-				new Var(UUID.randomUUID().toString()),
-				new Var("?this")
-		);
+		if (hasOwnPath()) {
+			StatementPattern subject = new StatementPattern(
+					new Var("?this"),
+					new Var(UUID.randomUUID().toString()),
+					new Var(UUID.randomUUID().toString())
+			);
+
+			StatementPattern object = new StatementPattern(
+					new Var(UUID.randomUUID().toString()),
+					new Var(UUID.randomUUID().toString()),
+					new Var("?this")
+			);
+
+			allSubjectsObjects = Stream.of(subject, object);
+		} else {
+			allSubjectsObjects = Stream.empty();
+		}
 
 		Stream<StatementPattern> statementPatternStream = and.stream()
 				.flatMap(Collection::stream)
 				.flatMap(PropertyShape::getStatementPatterns);
 
-		return Stream.concat(statementPatternStream, Stream.of(subject, object));
+		return Stream.concat(statementPatternStream, allSubjectsObjects);
 	}
 }
