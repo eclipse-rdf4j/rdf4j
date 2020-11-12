@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.impl.TreeModel;
 /**
  * @author Peter Ansell
  */
-public class TreeModelTest extends AbstractModelTest {
+public class TreeModelTest extends ModelTest {
 
 	@Override
 	protected Model getNewModel() {

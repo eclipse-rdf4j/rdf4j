@@ -17,7 +17,7 @@ import org.junit.Test;
 /**
  * @author Peter Ansell
  */
-public abstract class AbstractModelPerformanceTest extends AbstractModelTest {
+public abstract class AbstractModelPerformanceTest extends ModelTest {
 
 	private static final int COUNT = 150;
 
