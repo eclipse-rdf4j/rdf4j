@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.model.base;
 
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.BNode;
 
 /**
@@ -30,17 +28,34 @@ public abstract class AbstractBNode implements BNode {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof BNode
-				&& Objects.equals(getID(), ((BNode) o).getID());
+				&& getID().equals(((BNode) o).getID());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hashCode(getID());
+		return getID().hashCode();
 	}
 
 	@Override
 	public String toString() {
 		return "_:" + getID();
+	}
+
+	static class GenericBNode extends AbstractBNode {
+
+		private static final long serialVersionUID = -617790782100827067L;
+
+		private String id;
+
+		GenericBNode(String id) {
+			this.id = id;
+		}
+
+		@Override
+		public String getID() {
+			return id;
+		}
+
 	}
 
 }

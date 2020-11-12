@@ -22,12 +22,13 @@ package org.eclipse.rdf4j.model;
  * </ul>
  * The last step should never fail as every legal (full) IRI contains at least one ':' character to separate the scheme
  * from the rest of the IRI. The implementation should check this upon object creation.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
- * 
+ *
  * @author Jeen Broekstra
  * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
+ *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 @SuppressWarnings("deprecation")
 public interface IRI extends URI, Resource {

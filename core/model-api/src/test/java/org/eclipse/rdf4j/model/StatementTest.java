@@ -43,7 +43,7 @@ public abstract class StatementTest {
 	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
-	protected abstract IRI iri(final String iri);
+	protected abstract IRI iri(String iri);
 
 	@Test
 	public final void testConstructor() {
@@ -66,11 +66,6 @@ public abstract class StatementTest {
 
 		assertThat(statement(subject, predicate, object, null)).as("accept null context");
 
-	}
-
-	@Ignore("undefined rules")
-	@Test
-	public void testStringValue() {
 	}
 
 	@Test

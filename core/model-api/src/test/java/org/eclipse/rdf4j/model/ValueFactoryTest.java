@@ -130,13 +130,18 @@ public abstract class ValueFactoryTest {
 	public void testCreateLiteralFloat() {
 
 		final float value = 42.0f;
+		final ValueFactory factory = factory();
 
-		final Literal literal = factory().createLiteral(value);
+		final Literal literal = factory.createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.floatValue()).isEqualTo(value);
 		assertThat(literal.getLabel()).isEqualTo("42.0");
 		assertThat(literal.getDatatype().stringValue()).isEqualTo(XSD_FLOAT);
+
+		assertThat(factory.createLiteral(Float.POSITIVE_INFINITY).getLabel()).isEqualTo("INF");
+		assertThat(factory.createLiteral(Float.NEGATIVE_INFINITY).getLabel()).isEqualTo("-INF");
+		assertThat(factory.createLiteral(Float.NaN).getLabel()).isEqualTo("NaN");
 
 	}
 
@@ -144,13 +149,19 @@ public abstract class ValueFactoryTest {
 	public void testCreateLiteralDouble() {
 
 		final double value = 42.0d;
+		final ValueFactory factory = factory();
 
-		final Literal literal = factory().createLiteral(value);
+		final Literal literal = factory.createLiteral(value);
 
 		assertThat(literal).isNotNull();
 		assertThat(literal.doubleValue()).isEqualTo(value);
 		assertThat(literal.getLabel()).isEqualTo("42.0");
 		assertThat(literal.getDatatype().stringValue()).isEqualTo(XSD_DOUBLE);
+
+		assertThat(factory.createLiteral(Double.POSITIVE_INFINITY).getLabel()).isEqualTo("INF");
+		assertThat(factory.createLiteral(Double.NEGATIVE_INFINITY).getLabel()).isEqualTo("-INF");
+		assertThat(factory.createLiteral(Double.NaN).getLabel()).isEqualTo("NaN");
+
 	}
 
 	@Test
@@ -196,6 +207,7 @@ public abstract class ValueFactoryTest {
 
 	@Test
 	public void testCreateLiteralDate() throws DatatypeConfigurationException {
+
 		final Date date = new Date(2020, 9, 30, 1, 2, 3);
 		final String string = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(date);
 

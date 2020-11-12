@@ -34,8 +34,14 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
+ * 
+ * @deprecated since 3.5.0. Use either {@link SimpleValueFactory} directly, or switch to using
+ *             {@link org.eclipse.rdf4j.model.base.AbstractValueFactory}.
  */
+@Deprecated
 public abstract class AbstractValueFactory implements ValueFactory {
+
+	/* Constants */
 
 	/**
 	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of this class)
@@ -56,31 +62,32 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		}
 	}
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	/* variables */
 
 	/**
-	 * The ID for the next bnode that is created.
+	 * @category variables
+	 * 
+	 *           The ID for the next bnode that is created.
 	 */
 	private int nextBNodeID;
 
 	/**
-	 * The prefix for any new bnode IDs.
+	 * @category variables
+	 * 
+	 *           The prefix for any new bnode IDs.
 	 */
 	private String bnodePrefix;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	/* Constructors */
 
+	/**
+	 * @category constructors
+	 */
 	protected AbstractValueFactory() {
 		initBNodeParams();
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	/* Public methods */
 
 	@Override
 	public IRI createIRI(String iri) {

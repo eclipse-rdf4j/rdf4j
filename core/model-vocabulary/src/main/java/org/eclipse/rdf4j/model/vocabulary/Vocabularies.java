@@ -41,7 +41,7 @@ class Vocabularies {
 		};
 	}
 
-	static IRI createIRI(final String namespace, final String localName) {
+	static IRI createIRI(String namespace, String localName) {
 		return new AbstractIRI() {
 
 			private static final long serialVersionUID = 1692436252019169159L;
