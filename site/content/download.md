@@ -7,13 +7,30 @@ You can either retrieve RDF4J via Apache Maven, or download the SDK or onejar di
 
 ## RDF4J 3.4.4 (latest)
 
-RDF4J 3.4.4 is our latest stable release. It requires Java 8-14 and 11 or higher is recommended. 
+RDF4J 3.4.4 is our latest stable release. The release is compatible with Java 8-14, however we recommend using Java 11 or higher.
+
 For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/3.4.4).
 
 - [RDF4J 3.4.4 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.4.4-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
 - [RDF4J 3.4.4 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.4.4-onejar.jar)<br/>
+  Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
+
+- [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
+
+## RDF4J 3.5.0-M1
+
+RDF4J 3.5.0-M1 is the first milestone build of the upcoming 3.5.0 release. This build is compatible with Java 8-15, however we recommend using Java 11 or higher.
+
+This is a milestone build, not an official release, intended for early access and testing. We do not recommend its use in production environments.
+
+For details on what’s new, see the [announcement](/news/2020/11/13/rdf4j-3.5.0-milestone-1/).
+
+- [RDF4J 3.5.0 M1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.5.0-M1-sdk.zip)<br/>
+  Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
+
+- [RDF4J 3.5.0 M1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.5.0-M1-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
