@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *             {@link org.eclipse.rdf4j.model.base.AbstractValueFactory}.
  */
 @Deprecated
-public abstract class AbstractValueFactory implements ValueFactory {
+public abstract class AbstractValueFactory extends org.eclipse.rdf4j.model.base.AbstractValueFactory {
 
 	/* Constants */
 
