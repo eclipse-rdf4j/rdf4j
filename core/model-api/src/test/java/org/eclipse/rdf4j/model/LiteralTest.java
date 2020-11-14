@@ -8,13 +8,29 @@
 package org.eclipse.rdf4j.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.DateTimeException;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.Month;
+import java.time.MonthDay;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.Period;
+import java.time.Year;
+import java.time.YearMonth;
+import java.time.temporal.ChronoField;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -47,10 +63,13 @@ public abstract class LiteralTest {
 	static final String XSD_TIME = XSD + "time";
 	static final String XSD_DATE = XSD + "date";
 	static final String XSD_GYEARMONTH = XSD + "gYearMonth";
-	static final String XSD_GMONTHDAY = XSD + "gMonthDay";
 	static final String XSD_GYEAR = XSD + "gYear";
-	static final String XSD_GMONTH = XSD + "gMonth";
+	static final String XSD_GMONTHDAY = XSD + "gMonthDay";
 	static final String XSD_GDAY = XSD + "gDay";
+	static final String XSD_GMONTH = XSD + "gMonth";
+	static final String XSD_DURATION = XSD + "duration";
+	static final String XSD_DURATION_DAYTIME = XSD + "dayTimeDuration";
+	static final String XSD_DURATION_YEARMONTH = XSD + "yearMonthDuration";
 
 	static final String RDF_LANG_STRING = RDF + "langString";
 
@@ -371,6 +390,271 @@ public abstract class LiteralTest {
 		assertThatIllegalArgumentException().as("malformed")
 				.isThrownBy(() -> literal("malformed", datatype).decimalValue());
 
+	}
+
+	@Test
+	public final void testTemporalDateTimeValue() {
+
+		final String integral = "2020-09-29T01:02:03";
+		final String fractional = "2020-09-29T01:02:03.004";
+
+		final String offset = "2020-09-29T01:02:03+05:00";
+		final String zero = "2020-09-29T01:02:03Z";
+
+		assertThat(LocalDateTime.from(literal(integral, XSD_DATETIME).temporalAccessorValue()))
+				.isEqualTo(LocalDateTime.parse(integral));
+
+		assertThat(LocalDateTime.from(literal(fractional, XSD_DATETIME).temporalAccessorValue()))
+				.isEqualTo(LocalDateTime.parse(fractional));
+
+		assertThat(OffsetDateTime.from(literal(offset, XSD_DATETIME).temporalAccessorValue()))
+				.isEqualTo(OffsetDateTime.parse(offset));
+
+		assertThat(OffsetDateTime.from(literal(zero, XSD_DATETIME).temporalAccessorValue()))
+				.isEqualTo(OffsetDateTime.parse(zero));
+
+		Stream.of(
+
+				"0001-01-01T00:00:00",
+				"0001-01-01T00:00:00.0",
+				"0001-01-01T00:00:00Z",
+				"0001-01-01T00:00:00.0Z",
+				"0001-01-01T00:00:00+00:00",
+				"0001-01-01T00:00:00.0+00:00",
+				"0001-01-01T00:00:00.0-00:00",
+				"0001-01-01T00:00:00.0+14:00",
+				"0001-01-01T00:00:00.0-14:00",
+				"0001-05-31T00:00:00.00",
+				"0001-07-31T00:00:00.00",
+				"0001-08-31T00:00:00.00",
+				"0001-10-31T00:00:00.00",
+				"0001-12-31T00:00:00.00",
+				"-0001-01-01T00:00:00",
+				"1234-12-31T23:59:59",
+				"1234-12-31T24:00:00",
+				// "12345-12-31T24:00:00",
+				// "1234-12-31T24:00:00.1234567890",
+				"2004-02-29T00:00:00"
+
+		)
+				.forEach(value -> assertThatCode(() -> literal(value, XSD_DATETIME).temporalAccessorValue())
+						.as(value)
+						.doesNotThrowAnyException()
+				);
+
+	}
+
+	@Test
+	public final void testTemporalTimeValue() {
+
+		final String integral = "01:02:03";
+		final String fractional = "01:02:03.004";
+
+		final String offset = "01:02:03+05:00";
+		final String zero = "01:02:03Z";
+
+		assertThat(LocalTime.from(literal(integral, XSD_TIME).temporalAccessorValue()))
+				.isEqualTo(LocalTime.parse(integral));
+
+		assertThat(LocalTime.from(literal(fractional, XSD_TIME).temporalAccessorValue()))
+				.isEqualTo(LocalTime.parse(fractional));
+
+		assertThat(OffsetTime.from(literal(offset, XSD_TIME).temporalAccessorValue()))
+				.isEqualTo(OffsetTime.parse(offset));
+
+		assertThat(OffsetTime.from(literal(zero, XSD_TIME).temporalAccessorValue()))
+				.isEqualTo(OffsetTime.parse(zero));
+	}
+
+	@Test
+	public final void testTemporalDateValue() {
+
+		final String local = "2020-11-14";
+		final String offset = "2020-11-14+05:00";
+		final String zero = "2020-11-14Z";
+
+		assertThat(LocalDate.from(literal(local, XSD_DATE).temporalAccessorValue()))
+				.isEqualTo(LocalDate.parse(local));
+
+		assertThat(LocalDate.from(literal(offset, XSD_DATE).temporalAccessorValue()))
+				.isEqualTo(LocalDate.parse(offset.substring(0, 10))); // OffsetDate not supported by java.time
+
+		assertThat(LocalDate.from(literal(zero, XSD_DATE).temporalAccessorValue()))
+				.isEqualTo(LocalDate.parse(offset.substring(0, 10))); // OffsetDate not supported by java.time
+
+	}
+
+	@Test
+	public final void testTemporalGYearMonthValue() {
+
+		final String base = "2020-11";
+
+		assertThat(YearMonth.from(literal(base, XSD_GYEARMONTH).temporalAccessorValue()))
+				.isEqualTo(YearMonth.parse(base));
+
+	}
+
+	@Test
+	public final void testTemporalGYearValue() {
+
+		final String local = "2020";
+
+		assertThat(Year.from(literal(local, XSD_GYEAR).temporalAccessorValue()))
+				.isEqualTo(Year.parse(local));
+
+	}
+
+	@Test
+	public final void testTemporalGMonthDayValue() {
+
+		final String local = "--11-14";
+
+		assertThat(MonthDay.from(literal(local, XSD_GMONTHDAY).temporalAccessorValue()))
+				.isEqualTo(MonthDay.parse(local));
+
+	}
+
+	@Test
+	public final void testTemporalGDayValue() {
+
+		final String local = "---14";
+
+		assertThat(literal(local, XSD_GDAY).temporalAccessorValue().get(ChronoField.DAY_OF_MONTH))
+				.isEqualTo(14);
+
+	}
+
+	@Test
+	public final void testTemporalGMonthValue() {
+
+		final String local = "--11";
+
+		assertThat(Month.from(literal(local, XSD_GMONTH).temporalAccessorValue()))
+				.isEqualTo(Month.NOVEMBER);
+
+	}
+
+	@Test
+	public final void testTemporalAccessorMalformedValue() {
+
+		assertThatExceptionOfType(DateTimeException.class)
+				.isThrownBy(() -> literal("", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class)
+				.isThrownBy(() -> literal("--", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("no time components")
+				.isThrownBy(() -> literal("2020-11-16T", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("missing fractional digits after dot")
+				.isThrownBy(() -> literal("2020-11-16T11:12:13.", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class)
+				.isThrownBy(() -> literal("malformed", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("no time components")
+				.isThrownBy(() -> literal("2020-11-16T", XSD_DATETIME).temporalAccessorValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("missing fractional digits after dot")
+				.isThrownBy(() -> literal("2020-11-16T11:12:13.", XSD_DATETIME).temporalAccessorValue());
+
+		Stream.of(
+
+				"foo", "Mon, 11 Jul 2005 09:22:29 +0200",
+				"0001-01-01T00:00",
+				"0001-01-01T00:00.00",
+				"0001-13-01T00:00:00.00",
+				"0001-01-32T00:00:00.00",
+				// "0001-02-30T00:00:00.00",
+				// "2005-02-29T00:00:00", // not a leap year
+				// "0001-04-31T00:00:00.00",
+				"0001-01-01T25:00:00.00",
+				"0001-01-01T00:61:00.00",
+				"0001-01-01T00:00:61.00",
+				"0001-01-01T00:00.00+15:00",
+				"0001-01-01T00:00.00-15:00",
+				"001-01-01T00:00:00.0",
+				"0001-1-01T00:00:00.0",
+				"0001-01-1T00:00:00.0",
+				"0001-01-01T0:00:00.0",
+				"0001-01-01T00:0:00.0",
+				"0001-01-01T00:00:0.0",
+				"0001/01-01T00:00:00.0",
+				"0001-01/01T00:00:00.0",
+				"0001-01-01t00:00:00.0",
+				"0001-01-01T00.00:00.0",
+				"0001-01-01T00:00.00.0",
+				"0001-01-01T00:00:00:0",
+				"0001-01-01T00:00.00+0:00",
+				"0001-01-01T00:00.00+00:0",
+				"0001-jan-01T00:00:00",
+				"0001-01-01T00:00:00+00:00Z",
+				"0001-01-01T24:01:00", "0001-01-01T24:00:01",
+				"00001-01-01T00:00:00",
+				"0001-001-01T00:00:00",
+				"0001-01-001T00:00:00",
+				"0001-01-01T000:00:00",
+				"0001-01-01T00:000:00",
+				"0001-01-01T00:00:000",
+				"0001-01-01T00:00:000",
+				"0001-01-01T00:00:00z",
+				"0001-01-01T00:00:00+05",
+				"0001-01-01T00:00:00+0500",
+				"0001-01-01T00:00:00GMT",
+				"0001-01-01T00:00:00PST",
+				"0001-01-01T00:00:00GMT+05",
+				// "0000-01-01T00:00:00",
+				"-0000-01-01T00:00:00",
+				"+0001-01-01T00:00:00"
+
+		)
+				.forEach(value -> assertThatExceptionOfType(DateTimeException.class)
+						.as(value)
+						.isThrownBy(() -> literal(value, XSD_DATETIME).temporalAccessorValue())
+				);
+
+	}
+
+	@Test
+	public final void testTemporalDurationValue() {
+
+		final String period = "P1Y2M3D";
+		final String duration = "PT1H2M3.4S";
+
+		assertThat(Period.from(literal(period, XSD_DURATION).temporalAmountValue()))
+				.isEqualTo(Period.parse(period));
+
+		assertThat(Period.from(literal("-P1Y2M3D", XSD_DURATION).temporalAmountValue()))
+				.isEqualTo(Period.parse(period).negated());
+
+		assertThat(Duration.from(literal(duration, XSD_DURATION).temporalAmountValue()))
+				.isEqualTo(Duration.parse(duration));
+
+	}
+
+	@Test
+	public final void testTemporalAmountMalformedValue() {
+
+		assertThatExceptionOfType(DateTimeException.class)
+				.isThrownBy(() -> literal("", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class)
+				.isThrownBy(() -> literal("malformed", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("no  components")
+				.isThrownBy(() -> literal("P", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("no time components")
+				.isThrownBy(() -> literal("P1Y2MT", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("negative component")
+				.isThrownBy(() -> literal("P-1347M ", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("no time separator")
+				.isThrownBy(() -> literal("P1Y1S ", XSD_DURATION).temporalAmountValue());
+
+		assertThatExceptionOfType(DateTimeException.class).as("missing fractional digits after dot")
+				.isThrownBy(() -> literal("PT1.S", XSD_DURATION).temporalAmountValue());
 	}
 
 	@Test

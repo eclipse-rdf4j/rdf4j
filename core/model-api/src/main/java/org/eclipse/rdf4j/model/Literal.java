@@ -9,6 +9,11 @@ package org.eclipse.rdf4j.model;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.DateTimeException;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
 import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -16,10 +21,19 @@ import javax.xml.datatype.XMLGregorianCalendar;
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  *
- * @author Arjohn Kampman
- * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
+ * <p>
+ * Value accessor methods (for instance, {@link #booleanValue()}) map literal lexical values conforming to the syntax of
+ * a supported <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema 1.1</a> datatype to a corresponding Java object.
+ * </p>
  *
- * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ * @author Arjohn Kampman
+ *
+ * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
+ * @see <a href="https://www.w3.org/TR/rdf11-concepts/#xsd-datatypes">RDF 1.1 Concepts and Abstract Syntax - &sect;5.1
+ *      The XML Schema Built-in Datatypes</a>
+ * @see <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes</a>
+ *
+ * @implSpec In order to ensure interoperability of concrete classes implementing this interface,
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
  *           specs.
  */
@@ -129,8 +143,122 @@ public interface Literal extends Value {
 	double doubleValue();
 
 	/**
+	 * Retrieves the {@link TemporalAccessor temporal accessor} value of this literal.
+	 * 
+	 * <p>
+	 * A temporal accessor representation can be given for literals whose label conforms to the syntax of the following
+	 * <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema 1.1</a> date/time datatypes:
+	 * </p>
+	 * 
+	 * <ul>
+	 *
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#dateTime">xsd:dateTime</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#time">xsd:time</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#date">xsd:date</a>,</li>
+	 *
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gYearMonth">xsd:gYearMonth</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gYear">xsd:gYear</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonthDay">xsd:gMonthDay</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gDay">xsd:gDay</a>,</li>
+	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonth">xsd:gMonth</a>.</li>
+	 * 
+	 * </ul>
+	 * 
+	 * <p>
+	 * Temporal accessor representations may be converted to specific {@link java.time} values like
+	 * {@link OffsetDateTime} using target static factory methods, for instance
+	 * {@code OffsetDateTime.from(literal.temporalAccessorValue())}.
+	 * </p>
+	 * 
+	 * <p>
+	 * Note however that {@link java.time} doesn't include dedicated classes for some legal XML Schema date/time values,
+	 * like offset dates (for instance, {@code 2020-11-16+01:00}) and {@code xsd:gDay} (for instance, {@code ---16}).
+	 * </p>
+	 * 
+	 * @return the temporal accessor value of this literal
+	 *
+	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAccessor} value
+	 * 
+	 * @since 3.5.0
+	 * @author Alessandro Bollini
+	 *
+	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
+	 *
+	 * @apiNote the <a href="https://www.w3.org/TR/xmlschema11-2/#dateTimeStamp">xsd:dateTimeStamp</a> datatype
+	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
+	 *          {@linkplain ValueFactory#createLiteral(XMLGregorianCalendar) factory methods}) was specified by
+	 *          <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema Definition Language (XSD) 1.1 Part 2:
+	 *          Datatypes</a> and later removed from <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema Part 2:
+	 *          Datatypes Second Edition</a>: it is not included among temporal datatypes automatically assigned by
+	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
+	 *          latter version of the standard.
+	 * 
+	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+	 *           expected to override it.
+	 */
+	default TemporalAccessor temporalAccessorValue() throws DateTimeException {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * Retrieves the {@link TemporalAmount temporal amount} value of this literal.
+	 *
+	 * <p>
+	 * A temporal amount representation can be given for literals whose label conforms to the syntax of the
+	 * <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a>
+	 * <a href="https://www.w3.org/TR/xmlschema-2/#duration">xsd:duration</a> datatype.
+	 * </p>
+	 * 
+	 * <p>
+	 * The adoption of the <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a> definition is a known deviation
+	 * from the <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF 1.1</a> standard;
+	 * well-formedness rules are relaxed to consider all duration components as optional and freely mixable.
+	 * </p>
+	 *
+	 * <p>
+	 * Temporal amount representations may be converted to specific {@link java.time} values like {@link Duration} using
+	 * target static factory methods, for instance {@code Duration.from(literal.temporalAmountValue())}.
+	 * </p>
+	 *
+	 * <p>
+	 * Note however that {@link java.time} doesn't include dedicated classes for legal XML Schema duration values
+	 * including both date and time components (for instance, {@code P1YT23H}).
+	 * </p>
+	 * 
+	 * @return the temporal amount value of this literal
+	 *
+	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAmount} value
+	 *
+	 * @since 3.5.0
+	 * @author Alessandro Bollini
+	 *
+	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
+	 *
+	 * @apiNote <a href="https://www.w3.org/TR/xmlschema11-2/#yearMonthDuration">xsd:yearMonthDuration</a> and
+	 *          <a href="https://www.w3.org/TR/xmlschema11-2/#dayTimeDuration">xsd:xsd:dayTimeDuration</a> datatypes
+	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
+	 *          {@linkplain ValueFactory#createLiteral(XMLGregorianCalendar) factory methods}) were specified by
+	 *          <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema Definition Language (XSD) 1.1 Part 2:
+	 *          Datatypes</a> and later removed from <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema Part 2:
+	 *          Datatypes Second Edition</a>: they are not included among temporal datatypes automatically assigned by
+	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
+	 *          latter version of the standard; interoperability with
+	 *          <a href="https://www.w3.org/TR/sparql11-query/#func-timezone">SPARQL 1.1 Query Language §17.4.5.8
+	 *          timezone</a> is not compromised, as the legacy {@code xsd:dayTimeDuration} return datatype is defined as
+	 *          a restriction of the {@code xds:duration} datatype.
+	 *
+	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+	 *           expected to override it.
+	 */
+	default TemporalAmount temporalAmountValue() throws DateTimeException {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
-	 * literals whose label conforms to the syntax of the following <a href="http://www.w3.org/TR/xmlschema-2/">XML
+	 * literals whose label conforms to the syntax of the following <a href="https://www.w3.org/TR/xmlschema11-2/">XML
 	 * Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>, <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>,
 	 * <tt>gYear</tt>, <tt>gMonth</tt> or <tt>gDay</tt>.
 	 *
@@ -155,7 +283,7 @@ public interface Literal extends Value {
 	 *
 	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
 	 *
-	 * @implNote {@linkplain #getLanguage() language} amd {@linkplain #getDatatype() datatype} are deliberately not
+	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
 	 *           considered in the computation (see issue
 	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)
 	 */
