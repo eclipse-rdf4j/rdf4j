@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -25,7 +26,6 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.util.iterators.EmptyIterator;
 import org.eclipse.rdf4j.util.iterators.SingletonIterator;
 
@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.util.iterators.SingletonIterator;
  *
  * @author Håvard Mikkelsen Ottestad
  */
-public class DynamicModel implements Model {
+public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private static final long serialVersionUID = -9162104133818983614L;
 
@@ -345,39 +345,17 @@ public class DynamicModel implements Model {
 		if (this == o) {
 			return true;
 		}
-
-		if (o instanceof Model) {
-			Model model = (Model) o;
-			return Models.isomorphic(this, model);
-		} else if (o instanceof Set) {
-			if (this.size() != ((Set<?>) o).size()) {
-				return false;
-			}
-			try {
-				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
-			} catch (ClassCastException e) {
-				return false;
-			}
+		if (model != null) {
+			return model.equals(o);
 		}
-
-		return false;
-
+		return super.equals(o);
 	}
 
 	@Override
 	public int hashCode() {
 		if (model != null) {
 			return model.hashCode();
-		} else {
-			int h = 0;
-			for (Statement obj : this) {
-				if (obj != null) {
-					h += obj.hashCode();
-				}
-			}
-			return h;
-
 		}
-
+		return super.hashCode();
 	}
 }

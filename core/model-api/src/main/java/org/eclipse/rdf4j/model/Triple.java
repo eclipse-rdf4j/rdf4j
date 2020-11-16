@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * {@code org.eclipse.rdf4j.model.util.Statements} utility class.
  *
  * @author Pavel Mihaylov
- * @see Statements
  *
  * @implNote In order to ensure interoperability of concrete classes implementing this interface,
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their

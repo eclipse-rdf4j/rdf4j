@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Models;
 
 /**
  * Provides basic operations that are common to all Models.
@@ -179,34 +178,6 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 			Statement st = (Statement) o;
 			return contains(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
 		}
-		return false;
-	}
-
-	@Override
-	public int hashCode() {
-		return super.hashCode();
-	}
-
-	@SuppressWarnings("unchecked")
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o instanceof Model) {
-			Model model = (Model) o;
-			return Models.isomorphic(this, model);
-		} else if (o instanceof Set) {
-			if (this.size() != ((Set<?>) o).size()) {
-				return false;
-			}
-			try {
-				return Models.isomorphic(this, (Iterable<? extends Statement>) o);
-			} catch (ClassCastException e) {
-				return false;
-			}
-		}
-
 		return false;
 	}
 

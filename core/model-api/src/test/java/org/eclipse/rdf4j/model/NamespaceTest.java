@@ -30,7 +30,7 @@ public abstract class NamespaceTest {
 	 *
 	 * @return a new instance of the concrete namespace class under test
 	 */
-	protected abstract Namespace namespace(final String prefix, final String name);
+	protected abstract Namespace namespace(String prefix, String name);
 
 	@Test
 	public void compareTo() {

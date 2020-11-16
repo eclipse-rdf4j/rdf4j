@@ -61,7 +61,7 @@ public abstract class LiteralTest {
 	 *
 	 * @return a new instance of the concrete literal class under test
 	 */
-	protected abstract Literal literal(final String label);
+	protected abstract Literal literal(String label);
 
 	/**
 	 * Creates a test literal instance.
@@ -71,7 +71,7 @@ public abstract class LiteralTest {
 	 *
 	 * @return a new instance of the concrete literal class under test
 	 */
-	protected abstract Literal literal(final String label, final String language);
+	protected abstract Literal literal(String label, String language);
 
 	/**
 	 * Creates a test literal instance.
@@ -81,7 +81,7 @@ public abstract class LiteralTest {
 	 *
 	 * @return a new instance of the concrete literal class under test
 	 */
-	protected abstract Literal literal(final String label, final IRI datatype);
+	protected abstract Literal literal(String label, IRI datatype);
 
 	/**
 	 * Creates a test datatype IRI instance.
@@ -90,7 +90,7 @@ public abstract class LiteralTest {
 	 *
 	 * @return a new instance of the concrete datatype class under test
 	 */
-	protected abstract IRI datatype(final String iri);
+	protected abstract IRI datatype(String iri);
 
 	//// Constructors //////////////////////////////////////////////////////////////////////////////////////////////////
 

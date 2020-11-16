@@ -15,12 +15,13 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
- * <p>
- * <strong>Warning</strong> / In order to ensure interoperability of concrete classes implementing this interface,
- * {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their specs.
- * 
+ *
  * @author Arjohn Kampman
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
+ *
+ * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  */
 public interface Literal extends Value {
 
@@ -44,7 +45,9 @@ public interface Literal extends Value {
 	Optional<String> getLanguage();
 
 	/**
-	 * Gets the datatype for this literal. If {@link #getLanguage()} returns a non-empty value than this must return
+	 * Gets the datatype for this literal.
+	 * <p>
+	 * If {@link #getLanguage()} returns a non-empty value than this must return
 	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>. If no datatype was
 	 * assigned to this literal by the creator, then this method must return
 	 * <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
@@ -55,7 +58,6 @@ public interface Literal extends Value {
 
 	/**
 	 * Returns the <tt>boolean</tt> value of this literal.
-	 *
 	 *
 	 * @return The <tt>boolean</tt> value of the literal.
 	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
