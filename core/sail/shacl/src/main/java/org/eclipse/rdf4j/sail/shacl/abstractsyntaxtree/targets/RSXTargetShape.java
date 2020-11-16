@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -74,16 +76,18 @@ public class RSXTargetShape extends Target {
 
 		String query = getTargetQueryFragment(null, new Var("temp1"), connectionsGroup.getRdfsSubClassOfReasoner());
 
-		List<Var> vars = Arrays.asList(new Var("temp1"), new Var("someVarName"));
+		List<Var> vars = Arrays.asList(new Var("temp1"));
 
-		return new Unique(new TargetChainRetriever(
+		return new Unique(new DebugPlanNode(new TargetChainRetriever(
 				connectionsGroup,
 				collect,
 				null,
 				query,
 				vars,
 				scope
-		));
+		), p -> {
+			System.out.println(p);
+		}));
 
 	}
 

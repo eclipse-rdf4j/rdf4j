@@ -225,7 +225,7 @@ abstract public class AbstractShaclTest {
 		.collect(Collectors.toList());
 
 	// @formatter:on
-	static boolean fullLogging = false;
+	static boolean fullLogging = true;
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
