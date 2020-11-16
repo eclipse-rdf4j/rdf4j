@@ -118,7 +118,8 @@ public class RSXTargetShape extends Target {
 	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
-		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null);
+		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null)
+				.getFragment();
 
 	}
 

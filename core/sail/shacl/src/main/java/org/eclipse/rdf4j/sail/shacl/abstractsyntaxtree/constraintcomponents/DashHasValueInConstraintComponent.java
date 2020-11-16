@@ -3,7 +3,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -20,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -168,7 +168,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	}
 
 	@Override
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
@@ -194,7 +194,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 							Collectors.joining("} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
 									"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
 									"}"));
-			return sparql;
+			return SparqlFragment.bgp(sparql);
 
 		} else {
 
@@ -211,7 +211,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					})
 					.reduce((a, b) -> a + " || " + b)
 					.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
-			return sparql;
+			return SparqlFragment.filterCondition(sparql);
 
 		}
 	}

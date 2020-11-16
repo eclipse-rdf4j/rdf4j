@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
@@ -231,37 +232,46 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 //	}
 
 	@Override
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		List<? extends Class<? extends Shape>> type = or
-				.stream()
-				.map(s -> {
-					if (s instanceof NodeShape) {
-						return NodeShape.class;
-					}
-					if (s instanceof PropertyShape) {
-						return PropertyShape.class;
-					}
-					throw new IllegalStateException("Unknown shape type: " + s.getClass());
-				})
-				.distinct()
-				.collect(Collectors.toList());
-
-		if (type.size() > 1) {
-			throw new UnsupportedOperationException(
-					"OrConstraintComponent found both NodeShape and PropertyShape as children");
-		}
-
-		Class<? extends Shape> aClass = type.get(0);
+		boolean isFilterCondition = or.stream()
+				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope))
+				.map(SparqlFragment::isFilterCondition)
+				.findFirst()
+				.orElse(false);
 
 		if (scope == Scope.nodeShape) {
 
-			throw  new UnsupportedOperationException();
+			if (!isFilterCondition) {
+				String collect = or
+						.stream()
+						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
+								rdfsSubClassOfReasoner, scope))
+						.map(SparqlFragment::getFragment)
+						.map(s -> s.replaceAll("(?m)^", "\t"))
+						.collect(
+								Collectors.joining(
+										"\n} UNION {\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+										"{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n",
+										"\n}"));
+				return SparqlFragment.bgp(collect);
+
+			} else {
+				String collect = or
+						.stream()
+						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
+								rdfsSubClassOfReasoner, scope))
+						.map(SparqlFragment::getFragment)
+						.collect(Collectors.joining(" ) || ( ", "( ",
+								" )"));
+				return SparqlFragment.filterCondition(collect);
+
+			}
 		} else if (scope == Scope.propertyShape) {
 
-			if (aClass == PropertyShape.class) {
-				throw  new UnsupportedOperationException();
+			if (!isFilterCondition) {
+				throw new UnsupportedOperationException();
 			} else {
 
 				Path path = getTargetChain().getPath().get();
@@ -271,6 +281,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						.stream()
 						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
 								rdfsSubClassOfReasoner, scope))
+						.map(SparqlFragment::getFragment)
 						.reduce((a, b) -> a + " || " + b)
 						.orElse("");
 
@@ -279,7 +290,8 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
 						+ "\n\tFILTER(!(" + collect + "))\n})";
 
-				String pathQuery2 = path.getTargetQueryFragment(subject, new Var(UUID.randomUUID().toString().replace("-", "")), rdfsSubClassOfReasoner);
+				String pathQuery2 = path.getTargetQueryFragment(subject,
+						new Var(UUID.randomUUID().toString().replace("-", "")), rdfsSubClassOfReasoner);
 
 				query = "{\n" +
 						AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " +
@@ -293,7 +305,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						"})\n" +
 						"}";
 
-				return query;
+				return SparqlFragment.bgp(query);
 			}
 		} else {
 			throw new UnsupportedOperationException("Unknown scope: " + scope);

@@ -9,6 +9,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Exportable;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.TargetChainInterface;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -36,7 +37,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
 
-	String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+	SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			Scope scope);
 
 	enum Scope {

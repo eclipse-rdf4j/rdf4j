@@ -3,6 +3,7 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 import java.io.StringWriter;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -293,21 +294,46 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		String sparql = constraintComponents.stream()
-				.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+
+		Var someObject = new Var(UUID.randomUUID().toString().replace("-", ""));
+
+		boolean isFilterCondition = constraintComponents.stream()
+				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
 						Scope.propertyShape))
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
-		return sparql;
+				.map(SparqlFragment::isFilterCondition)
+				.findFirst()
+				.orElse(false);
+
+		if (isFilterCondition) {
+			String sparql = constraintComponents.stream()
+					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
+							Scope.propertyShape))
+					.map(SparqlFragment::getFragment)
+					.reduce((a, b) -> a + " && " + b)
+					.orElse("");
+			return SparqlFragment.filterCondition(sparql);
+
+		} else {
+			String sparql = constraintComponents.stream()
+					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
+							Scope.propertyShape))
+					.map(SparqlFragment::getFragment)
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+			return SparqlFragment.bgp(sparql);
+		}
+
 	}
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+		Var someObject = new Var(UUID.randomUUID().toString().replace("-", ""));
+
 		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
 						Scope.propertyShape));
 	}
 

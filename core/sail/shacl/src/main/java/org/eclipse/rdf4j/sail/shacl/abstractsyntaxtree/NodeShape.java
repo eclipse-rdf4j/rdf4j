@@ -248,15 +248,34 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		String sparql = constraintComponents
-				.stream()
-				.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, new Var("someVarName"),
-						rdfsSubClassOfReasoner, Scope.nodeShape))
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
-		return sparql;
+
+		boolean isFilterCondition = constraintComponents.stream()
+				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+						Scope.nodeShape))
+				.map(SparqlFragment::isFilterCondition)
+				.findFirst()
+				.orElse(false);
+
+		if (isFilterCondition) {
+			String sparql = constraintComponents.stream()
+					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+							Scope.nodeShape))
+					.map(SparqlFragment::getFragment)
+					.reduce((a, b) -> a + " && " + b)
+					.orElse("");
+			return SparqlFragment.filterCondition(sparql);
+
+		} else {
+			String sparql = constraintComponents.stream()
+					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+							Scope.nodeShape))
+					.map(SparqlFragment::getFragment)
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+			return SparqlFragment.bgp(sparql);
+		}
 	}
 
 	@Override
@@ -264,7 +283,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
 		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, new Var("someVarName"),
+				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(subject, object,
 						rdfsSubClassOfReasoner, Scope.nodeShape));
 
 	}

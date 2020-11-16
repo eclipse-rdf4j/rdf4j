@@ -399,7 +399,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	 *
 	 * @return
 	 */
-	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}

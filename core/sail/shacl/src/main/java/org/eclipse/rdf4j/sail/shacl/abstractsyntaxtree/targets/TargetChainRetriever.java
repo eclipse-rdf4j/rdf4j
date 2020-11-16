@@ -156,7 +156,6 @@ public class TargetChainRetriever implements PlanNode {
 						Var predicateVar = currentStatementPattern.getPredicateVar();
 						Var objectVar = currentStatementPattern.getObjectVar();
 
-
 						if (!subjectVar.hasValue()) {
 							bindings.addBinding(subjectVar.getName(), next.getSubject());
 						}
@@ -174,7 +173,6 @@ public class TargetChainRetriever implements PlanNode {
 						results = connectionsGroup.getBaseConnection()
 								.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
 										bindings, true);
-
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query: \n{}", query);

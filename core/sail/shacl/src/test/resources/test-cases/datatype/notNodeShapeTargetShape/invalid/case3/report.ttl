@@ -14,12 +14,6 @@
       sh:sourceConstraintComponent sh:NotConstraintComponent;
       sh:resultSeverity sh:Violation;
       sh:sourceShape ex:PersonShape
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
     ] .
 
 ex:PersonShape a sh:NodeShape;
@@ -31,13 +25,9 @@ ex:PersonShape a sh:NodeShape;
     ];
   sh:not [ a sh:PropertyShape;
       sh:path ex:age;
-      sh:or [
-          rdf:first [ a sh:NodeShape;
-              sh:datatype xsd:boolean
-            ];
-          rdf:rest (_:node1emh3bq9sx7), (_:node1emh3bq9sx7)
-        ]
+      sh:or ([ a sh:NodeShape;
+            sh:datatype xsd:boolean
+          ] [ a sh:NodeShape;
+            sh:datatype xsd:string
+          ])
     ] .
-
-_:node1emh3bq9sx7 a sh:NodeShape;
-  sh:datatype xsd:string .
