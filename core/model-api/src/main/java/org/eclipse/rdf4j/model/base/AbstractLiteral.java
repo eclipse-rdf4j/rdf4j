@@ -118,7 +118,7 @@ public abstract class AbstractLiteral implements Literal {
 	 *
 	 * @throws NullPointerException if {@code mapper} is {@code null}
 	 */
-	protected <V> V value(Function<String, V> mapper) {
+	private <V> V value(Function<String, V> mapper) {
 		return Optional
 				.of(getLabel())
 				.map(requireNonNull(mapper, "null mapper"))
