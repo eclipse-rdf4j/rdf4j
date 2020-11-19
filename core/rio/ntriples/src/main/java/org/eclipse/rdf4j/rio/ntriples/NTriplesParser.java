@@ -85,7 +85,8 @@ public class NTriplesParser extends AbstractRDFParser {
 	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>. The InputStream is
 	 *                supposed to contain 7-bit US-ASCII characters, as per the N-Triples specification.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream (ignored, N-Triples does not support relative
+	 *                IRIs).
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
@@ -97,7 +98,6 @@ public class NTriplesParser extends AbstractRDFParser {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
-		// Note: baseURI will be checked in parse(Reader, String)
 
 		try {
 			parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);
@@ -111,7 +111,8 @@ public class NTriplesParser extends AbstractRDFParser {
 	 * Implementation of the <tt>parse(Reader, String)</tt> method defined in the RDFParser interface.
 	 *
 	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the Reader, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the Reader (ignored, N-Triples does not support relative
+	 *                IRIs).
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
@@ -125,9 +126,6 @@ public class NTriplesParser extends AbstractRDFParser {
 		try {
 			if (reader == null) {
 				throw new IllegalArgumentException("Reader can not be 'null'");
-			}
-			if (baseURI == null) {
-				throw new IllegalArgumentException("base URI can not be 'null'");
 			}
 
 			if (rdfHandler != null) {
