@@ -14,11 +14,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
-public class RDFXMLWriterBackgroundTest extends RDFWriterTest {
+public class RDFXMLWriterBackgroundTest extends AbstractRDFXMLWriterTest {
 
 	public RDFXMLWriterBackgroundTest() {
 		super(new RDFXMLWriterFactory(), new RDFXMLParserFactory());

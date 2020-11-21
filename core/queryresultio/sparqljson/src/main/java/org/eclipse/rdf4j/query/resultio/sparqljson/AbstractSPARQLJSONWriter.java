@@ -339,11 +339,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	@Override
 	public final Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
-
 		result.add(BasicQueryWriterSettings.JSONP_CALLBACK);
 		result.add(BasicWriterSettings.PRETTY_PRINT);
-		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
-		result.add(BasicWriterSettings.ENCODE_RDF_STAR);
 
 		return result;
 	}

@@ -14,14 +14,13 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Arjohn Kampman
  */
-public class TriGWriterBackgroundTest extends RDFWriterTest {
+public class TriGWriterBackgroundTest extends AbstractTriGWriterTest {
 
 	public TriGWriterBackgroundTest() {
 		super(new TriGWriterFactory(), new TriGParserFactory());

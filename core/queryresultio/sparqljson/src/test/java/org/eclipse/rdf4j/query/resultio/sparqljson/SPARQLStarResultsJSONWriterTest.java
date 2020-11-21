@@ -8,8 +8,11 @@
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
+import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 public class SPARQLStarResultsJSONWriterTest extends AbstractTupleQueryResultWriterTest {
 
@@ -21,5 +24,15 @@ public class SPARQLStarResultsJSONWriterTest extends AbstractTupleQueryResultWri
 	@Override
 	protected TupleQueryResultWriterFactory getWriterFactory() {
 		return new SPARQLStarResultsJSONWriterFactory();
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting<?>[] {
+				BasicWriterSettings.PRETTY_PRINT,
+				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
+				BasicWriterSettings.ENCODE_RDF_STAR,
+				BasicQueryWriterSettings.JSONP_CALLBACK
+		};
 	}
 }

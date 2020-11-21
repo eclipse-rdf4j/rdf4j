@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -1824,6 +1825,23 @@ public abstract class RDFWriterTest {
 		// 4 for triple1 (contained in triple5)
 		assertEquals(22, parsedOutput.size());
 	}
+
+	@Test
+	public void testGetSupportedSettings() throws Exception {
+		RDFWriter writer = rdfWriterFactory.getWriter(System.out);
+
+		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();
+		assertThat(supportedSettings).containsExactlyInAnyOrder(getExpectedSupportedSettings());
+	}
+
+	/**
+	 * Get the {@link RioSetting}s expected to be returned by {@link RDFWriter#getSupportedSettings()}. Used by
+	 * {@link #testGetSupportedSettings()} to determine if the output of {@link RDFWriter#getSupportedSettings()} is as
+	 * expected for the concrete writer implementation.
+	 * 
+	 * @return an array of {@link RioSetting}s.
+	 */
+	protected abstract RioSetting<?>[] getExpectedSupportedSettings();
 
 	@Test
 	public void testHandlingSequenceCloseableWriter() throws IOException {
