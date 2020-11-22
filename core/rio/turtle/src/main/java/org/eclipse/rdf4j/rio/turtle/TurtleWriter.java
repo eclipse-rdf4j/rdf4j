@@ -13,6 +13,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Map;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
@@ -150,6 +152,16 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.TURTLE;
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
+		settings.add(BasicWriterSettings.BASE_DIRECTIVE);
+		settings.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+		settings.add(BasicWriterSettings.PRETTY_PRINT);
+		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		return settings;
 	}
 
 	@Override
