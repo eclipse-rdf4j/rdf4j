@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.binary;
 
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * @author Arjohn Kampman
@@ -16,5 +17,10 @@ public class BinaryRDFWriterTest extends RDFWriterTest {
 
 	public BinaryRDFWriterTest() {
 		super(new BinaryRDFWriterFactory(), new BinaryRDFParserFactory());
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting[] {};
 	}
 }

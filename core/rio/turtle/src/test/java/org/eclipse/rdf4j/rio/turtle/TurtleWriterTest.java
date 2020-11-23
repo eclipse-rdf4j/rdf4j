@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
@@ -26,7 +25,7 @@ import org.junit.Test;
 /**
  * @author Arjohn Kampman
  */
-public class TurtleWriterTest extends RDFWriterTest {
+public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 	private IRI uri1;
 

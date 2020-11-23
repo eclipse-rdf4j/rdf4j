@@ -12,14 +12,13 @@ import java.io.StringWriter;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 import org.junit.Assert;
 import org.junit.Test;
 
-public class RDFXMLWriterTest extends RDFWriterTest {
+public class RDFXMLWriterTest extends AbstractRDFXMLWriterTest {
 
 	public RDFXMLWriterTest() {
 		super(new RDFXMLWriterFactory(), new RDFXMLParserFactory());
@@ -83,4 +82,5 @@ public class RDFXMLWriterTest extends RDFWriterTest {
 
 		return outputWriter.toString();
 	}
+
 }

@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.query.resultio.text.csv;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -39,5 +41,13 @@ public class SPARQLCSVTupleQueryResultWriterTest extends AbstractTupleQueryResul
 	@Ignore("pending implementation of RDF* extensions for the csv format")
 	@Test
 	public void testRDFStarHandling_DeepNesting() throws Exception {
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting<?>[] {
+				BasicWriterSettings.ENCODE_RDF_STAR,
+				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL
+		};
 	}
 }

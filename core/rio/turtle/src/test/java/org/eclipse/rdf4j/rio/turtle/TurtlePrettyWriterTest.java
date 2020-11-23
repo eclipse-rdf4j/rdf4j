@@ -11,14 +11,13 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Arjohn Kampman
  */
-public class TurtlePrettyWriterTest extends RDFWriterTest {
+public class TurtlePrettyWriterTest extends AbstractTurtleWriterTest {
 
 	private boolean inlineBlankNodes = true;
 

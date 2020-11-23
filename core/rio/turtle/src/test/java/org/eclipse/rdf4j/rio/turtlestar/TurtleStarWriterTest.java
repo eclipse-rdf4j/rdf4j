@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtlestar;
 
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.turtle.AbstractTurtleWriterTest;
 
 /**
  * @author Pavel Mihaylov
  */
-public class TurtleStarWriterTest extends RDFWriterTest {
+public class TurtleStarWriterTest extends AbstractTurtleWriterTest {
 	public TurtleStarWriterTest() {
 		super(new TurtleStarWriterFactory(), new TurtleStarParserFactory());
 	}
