@@ -1859,6 +1859,23 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
+	public void testGetSupportedSettings() throws Exception {
+		RDFWriter writer = rdfWriterFactory.getWriter(System.out);
+
+		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();
+		assertThat(supportedSettings).containsExactlyInAnyOrder(getExpectedSupportedSettings());
+	}
+
+	/**
+	 * Get the {@link RioSetting}s expected to be returned by {@link RDFWriter#getSupportedSettings()}. Used by
+	 * {@link #testGetSupportedSettings()} to determine if the output of {@link RDFWriter#getSupportedSettings()} is as
+	 * expected for the concrete writer implementation.
+	 * 
+	 * @return an array of {@link RioSetting}s.
+	 */
+	protected abstract RioSetting<?>[] getExpectedSupportedSettings();
+
+	@Test
 	public void testHandlingSequenceCloseableWriter() throws IOException {
 		// If an RDFWriter is a Closeable and it calls endRDF() explicitly on close() we should check
 		// it's consistent in various situations. Currently only RDFXMLPrettyWriter is a Closeable.

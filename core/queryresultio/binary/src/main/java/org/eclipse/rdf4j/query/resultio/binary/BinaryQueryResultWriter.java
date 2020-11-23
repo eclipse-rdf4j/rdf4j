@@ -32,6 +32,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Writer for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
@@ -102,6 +104,11 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	@Override
 	public final TupleQueryResultFormat getQueryResultFormat() {
 		return getTupleQueryResultFormat();
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		return Collections.emptyList();
 	}
 
 	@Override

@@ -14,14 +14,13 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 
 /**
  * JUnit test for the N-Triples parser/writer combination.
  *
  * @author Peter Ansell
  */
-public class NTriplesWriterBackgroundTest extends RDFWriterTest {
+public class NTriplesWriterBackgroundTest extends AbstractNTriplesWriterTest {
 
 	public NTriplesWriterBackgroundTest() {
 		super(new NTriplesWriterFactory(), new NTriplesParserFactory());

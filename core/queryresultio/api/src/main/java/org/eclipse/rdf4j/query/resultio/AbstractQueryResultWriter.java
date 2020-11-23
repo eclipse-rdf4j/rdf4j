@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
+import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.io.Sink;
@@ -43,7 +43,7 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter, Si
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		return Collections.emptyList();
+		return Arrays.asList(BasicWriterSettings.ENCODE_RDF_STAR, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 	}
 
 	@Override

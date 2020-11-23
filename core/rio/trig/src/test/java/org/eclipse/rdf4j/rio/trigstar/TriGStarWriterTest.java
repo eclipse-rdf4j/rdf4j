@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.trigstar;
 
-import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.trig.AbstractTriGWriterTest;
 
 /**
  * @author Pavel Mihaylov
  */
-public class TriGStarWriterTest extends RDFWriterTest {
+public class TriGStarWriterTest extends AbstractTriGWriterTest {
 	public TriGStarWriterTest() {
 		super(new TriGStarWriterFactory(), new TriGStarParserFactory());
 	}

@@ -12,6 +12,8 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
@@ -99,6 +102,16 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	@Override
 	public Writer getWriter() {
 		return writer;
+	}
+
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
+		settings.add(BasicWriterSettings.BASE_DIRECTIVE);
+		settings.add(XMLWriterSettings.USE_SINGLE_QUOTES);
+		settings.add(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);
+		settings.add(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG);
+		settings.add(XMLWriterSettings.INCLUDE_XML_PI);
+		return settings;
 	}
 
 	protected void writeHeader() throws IOException {
