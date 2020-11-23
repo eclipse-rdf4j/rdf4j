@@ -65,9 +65,6 @@ public class NQuadsParser extends NTriplesParser {
 			if (reader == null) {
 				throw new IllegalArgumentException("Reader can not be 'null'");
 			}
-			if (baseURI == null) {
-				throw new IllegalArgumentException("base URI can not be 'null'");
-			}
 
 			if (rdfHandler != null) {
 				rdfHandler.startRDF();

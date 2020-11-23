@@ -183,7 +183,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
 	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream. May be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
@@ -194,9 +194,6 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 			throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream cannot be 'null'");
-		}
-		if (baseURI == null) {
-			throw new IllegalArgumentException("Base URI cannot be 'null'");
 		}
 
 		InputSource inputSource = new InputSource(new BOMInputStream(in, false));
@@ -209,7 +206,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
 	 *
 	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream. May be <tt>null</tt>.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException      If the configured statement handler has encountered an unrecoverable error.

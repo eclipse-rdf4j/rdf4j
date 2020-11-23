@@ -94,7 +94,7 @@ public class HDTParser extends AbstractRDFParser {
 	 * Implementation of the <tt>parse(InputStream, String)</tt> method defined in the RDFParser interface.
 	 *
 	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
+	 * @param baseURI The URI associated with the data in the InputStream. Ignored, HDT does not support relative URIs.
 	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
