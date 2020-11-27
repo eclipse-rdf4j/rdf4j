@@ -188,14 +188,12 @@ public interface ValueFactory {
 	public Literal createLiteral(double value);
 
 	/**
-	 * Creates a new literal representing the specified bigDecimal that is typed using the appropriate XML Schema
-	 * date/time datatype.
+	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
 	 */
 	public Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
-	 * Creates a new literal representing the specified bigInteger that is typed using the appropriate XML Schema
-	 * date/time datatype.
+	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
 	 */
 	public Literal createLiteral(BigInteger bigInteger);
 
@@ -252,7 +250,7 @@ public interface ValueFactory {
 	 * date/time datatype.
 	 *
 	 * @param calendar The value for the literal.
-	 * @return An typed literal for the specified calendar.
+	 * @return A typed literal for the specified calendar.
 	 */
 	public Literal createLiteral(XMLGregorianCalendar calendar);
 
