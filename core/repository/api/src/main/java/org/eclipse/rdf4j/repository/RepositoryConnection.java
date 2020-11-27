@@ -661,6 +661,35 @@ public interface RepositoryConnection extends AutoCloseable {
 	}
 
 	/**
+	 * Checks for an error state in the active transaction that would force the transaction to be rolled back. This is
+	 * an optional call; calling or not calling this method should have no effect on the outcome of {@link #commit()} or
+	 * {@link #rollback()}. A call to this method must be followed by (in the same thread) with a call to
+	 * {@link #prepare()} , {@link #commit()}, {@link #rollback()}, or {@link #close()} . This method may be called
+	 * multiple times within the same transaction by the same thread. If this method returns normally, the caller can
+	 * reasonably expect that a subsequent call to {@link #commit()} will also return normally. If this method returns
+	 * with an exception the caller should treat the exception as if it came from a call to {@link #commit()}.
+	 *
+	 * @throws UnknownTransactionStateException If the transaction state can not be determined (this can happen for
+	 *                                          instance when communication between client and server fails or
+	 *                                          times-out). It does not indicate a problem with the integrity of the
+	 *                                          store.
+	 * @throws RepositoryException              If there is an active transaction and it cannot be committed.
+	 * @throws IllegalStateException            If the connection has been closed or prepare was already called by
+	 *                                          another thread.
+	 * 
+	 * @implNote this default method is a temporary no-op implementation to ensure backward compatibility. Implementing
+	 *           classes should override.
+	 * 
+	 * @since 3.5.0
+	 * @see #commit()
+	 * @see #begin()
+	 * @see #rollback()
+	 */
+	default void prepare() throws RepositoryException {
+		// silently ignore
+	}
+
+	/**
 	 * Commits the active transaction. This operation ends the active transaction.
 	 *
 	 * @throws UnknownTransactionStateException if the transaction state can not be determined. This can happen for
@@ -670,6 +699,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #isActive()
 	 * @see #begin()
 	 * @see #rollback()
+	 * @see #prepare()
 	 */
 	void commit() throws RepositoryException;
 

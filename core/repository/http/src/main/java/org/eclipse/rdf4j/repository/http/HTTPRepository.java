@@ -354,19 +354,28 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			synchronized (this) {
 				result = compatibleMode;
 				if (result == null) {
-					try (RDF4JProtocolSession client = createHTTPClient()) {
-						final String serverProtocolVersion = client.getServerProtocol();
-
-						// protocol version 7 supports the new transaction
-						// handling. If the server is older, we need to run in
-						// backward-compatible mode.
-						result = compatibleMode = (Integer.parseInt(serverProtocolVersion) < 7);
-					} catch (NumberFormatException | IOException e) {
-						throw new RepositoryException("could not read protocol version from server: ", e);
-					}
+					// protocol version 7 supports the new transaction
+					// handling. If the server is older, we need to run in
+					// backward-compatible mode.
+					result = compatibleMode = (getServerProtocolVersion() < 7);
 				}
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * Get the RDF4J Server's protocol version, as an integer
+	 * 
+	 * @return the protocol version implemented by the RDF4J, as an integer number.
+	 */
+	int getServerProtocolVersion() {
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			final String serverProtocolVersion = client.getServerProtocol();
+			return Integer.parseInt(serverProtocolVersion);
+		} catch (NumberFormatException | IOException e) {
+			throw new RepositoryException("could not read protocol version from server: ", e);
+		}
+
 	}
 }

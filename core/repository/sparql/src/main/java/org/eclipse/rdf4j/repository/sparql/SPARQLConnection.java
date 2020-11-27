@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
-import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.model.BNode;
@@ -403,6 +402,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			return new SPARQLTupleQuery(client, base, query);
 		}
 		throw new UnsupportedQueryLanguageException("Unsupported query language " + ql);
+	}
+
+	@Override
+	public void prepare() throws RepositoryException {
+		// no-op, not supported in SPARQL protocol
 	}
 
 	@Override
