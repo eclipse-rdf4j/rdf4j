@@ -28,8 +28,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 public class Example13AddRDFToDatabase {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 
 		// First load our RDF file as a Model.
 		String filename = "example-data-artists.ttl";
@@ -57,8 +56,7 @@ public class Example13AddRDFToDatabase {
 					System.out.println("db contains: " + st);
 				}
 			}
-		}
-		finally {
+		} finally {
 			// before our program exits, make sure the database is properly shut down.
 			db.shutDown();
 		}

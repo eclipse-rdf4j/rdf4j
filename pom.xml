@@ -44,6 +44,7 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>bom</module>
+		<module>examples</module>
 	</modules>
 	<profiles>
 		<profile>

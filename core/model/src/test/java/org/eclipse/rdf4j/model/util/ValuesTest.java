@@ -13,10 +13,18 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.model.util.Values.triple;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.GregorianCalendar;
+
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -28,6 +36,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -42,16 +51,35 @@ import org.junit.Test;
  */
 public class ValuesTest {
 
+	private ValueFactory vf;
+
+	@Before
+	public void setUp() {
+		vf = mock(ValueFactory.class);
+	}
+
 	@Test
-	public void testValidIri() {
+	public void testValidIri1() {
 		IRI validIRI = iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 		assertThat(validIRI).isEqualTo(RDF.TYPE);
 	}
 
 	@Test
-	public void testValidIr2() {
+	public void testIri1_InjectedValueFactory() {
+		iri(vf, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+		verify(vf).createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+	}
+
+	@Test
+	public void testValidIri2() {
 		IRI validIRI = iri(RDF.NAMESPACE, "type");
 		assertThat(validIRI).isEqualTo(RDF.TYPE);
+	}
+
+	@Test
+	public void testIri2_InjectedValueFactory() {
+		iri(vf, RDF.NAMESPACE, "type");
+		verify(vf).createIRI(RDF.NAMESPACE, "type");
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -73,7 +101,8 @@ public class ValuesTest {
 
 	@Test
 	public void testIriNamespaceNull() {
-		assertThatThrownBy(() -> iri(null, "type"))
+		String namespace = null;
+		assertThatThrownBy(() -> iri(namespace, "type"))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("namespace may not be null");
 	}
@@ -87,14 +116,20 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testBnode() {
+	public void testBNode() {
 		BNode bnode = bnode();
 		assertThat(bnode).isNotNull();
 		assertThat(bnode.getID()).isNotNull();
 	}
 
 	@Test
-	public void testBnodeWithId() {
+	public void testBNode_InjectedValueFactory() {
+		bnode(vf);
+		verify(vf).createBNode();
+	}
+
+	@Test
+	public void testBNodeWithId() {
 		String nodeId = "foobar";
 		BNode bnode = bnode(nodeId);
 		assertThat(bnode).isNotNull();
@@ -102,8 +137,16 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testBNodeWithId_InjectedValueFactory() {
+		String nodeId = "foobar";
+		bnode(vf, nodeId);
+		verify(vf).createBNode(nodeId);
+	}
+
+	@Test
 	public void testBnodeNull() {
-		assertThatThrownBy(() -> bnode(null))
+		String nodeId = null;
+		assertThatThrownBy(() -> bnode(nodeId))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("nodeId may not be null");
 	}
@@ -115,6 +158,13 @@ public class ValuesTest {
 
 		assertThat(literal.getLabel()).isEqualTo(lexValue);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.STRING);
+	}
+
+	@Test
+	public void testStringLiteral_InjectedValueFactory() {
+		String lexValue = "a literal";
+		literal(vf, lexValue);
+		verify(vf).createLiteral(lexValue);
 	}
 
 	@Test
@@ -133,6 +183,13 @@ public class ValuesTest {
 		assertThat(literal.getLabel()).isEqualTo(lexValue);
 		assertThat(literal.intValue()).isEqualTo(42);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.INT);
+	}
+
+	@Test
+	public void testTypedLiteral_InjectedValueFactory() {
+		String lexValue = "42";
+		literal(vf, lexValue, XSD.INT);
+		verify(vf).createLiteral(lexValue, XSD.INT);
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -171,12 +228,25 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testBooleanLiteral_InjectedValueFactory() {
+		literal(vf, true);
+		verify(vf).createLiteral(true);
+	}
+
+	@Test
 	public void testByteLiteral() {
 		byte value = 42;
 		Literal literal = literal(value);
 		assertThat(literal.getLabel()).isEqualTo("42");
 		assertThat(literal.byteValue()).isEqualTo(value);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.BYTE);
+	}
+
+	@Test
+	public void testByteLiteral_InjectedValueFactory() {
+		byte value = 42;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
 	}
 
 	@Test
@@ -189,12 +259,26 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testShortLiteral_InjectedValueFactory() {
+		short value = 42;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
+	}
+
+	@Test
 	public void testIntLiteral() {
 		int value = 42;
 		Literal literal = literal(value);
 		assertThat(literal.getLabel()).isEqualTo("42");
 		assertThat(literal.intValue()).isEqualTo(value);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.INT);
+	}
+
+	@Test
+	public void testIntLiteral_InjectedValueFactory() {
+		int value = 42;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
 	}
 
 	@Test
@@ -206,11 +290,25 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testLongLiteral_InjectedValueFactory() {
+		long value = 42;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
+	}
+
+	@Test
 	public void testFloatLiteral() {
 		float value = 42.313f;
 		Literal literal = literal(value);
 		assertThat(literal.floatValue()).isEqualTo(value);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.FLOAT);
+	}
+
+	@Test
+	public void testFloatLiteral_InjectedValueFactory() {
+		float value = 42.313f;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
 	}
 
 	@Test
@@ -222,11 +320,25 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testDoubleLiteral_InjectedValueFactory() {
+		double value = 42.313;
+		literal(vf, value);
+		verify(vf).createLiteral(value);
+	}
+
+	@Test
 	public void testBigDecimalLiteral() {
 		BigDecimal value = new BigDecimal(42.313);
 		Literal literal = literal(value);
 		assertThat(literal.decimalValue()).isEqualTo(value);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.DECIMAL);
+	}
+
+	@Test
+	public void testBigDecimalLiteral_InjectedValueFactory() {
+		BigDecimal value = new BigDecimal(42.313);
+		literal(vf, value);
+		verify(vf).createLiteral(value);
 	}
 
 	@Test
@@ -245,6 +357,13 @@ public class ValuesTest {
 		Literal literal = literal(value);
 		assertThat(literal.integerValue()).isEqualTo(value);
 		assertThat(literal.getDatatype()).isEqualTo(XSD.INTEGER);
+	}
+
+	@Test
+	public void testBigIntegerLiteral_InjectedValueFactory() {
+		BigInteger value = BigInteger.valueOf(42_000_000_000_000_000l);
+		literal(vf, value);
+		verify(vf).createLiteral(value);
 	}
 
 	@Test
@@ -268,6 +387,13 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testTemporalAccessorLiteral_InjectedValueFactory() {
+		LocalDateTime value = LocalDateTime.parse("2020-09-30T01:02:03.004");
+		literal(vf, value);
+		verify(vf).createLiteral(value);
+	}
+
+	@Test
 	public void testTemporalAccessorLiteralNull() {
 		final LocalDateTime value = null;
 
@@ -285,6 +411,12 @@ public class ValuesTest {
 		assertThat(triple.getSubject()).isEqualTo(RDF.ALT);
 		assertThat(triple.getPredicate()).isEqualTo(RDF.TYPE);
 		assertThat(triple.getObject()).isEqualTo(RDFS.CONTAINER);
+	}
+
+	@Test
+	public void testTriple_InjectedValueFactory() {
+		triple(vf, RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+		verify(vf).createTriple(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
 	}
 
 	@Test
@@ -313,6 +445,13 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testTripleFromStatement_InjectedValueFactory() {
+		Statement st = SimpleValueFactory.getInstance().createStatement(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+		triple(vf, st);
+		verify(vf).createTriple(RDF.ALT, RDF.TYPE, RDFS.CONTAINER);
+	}
+
+	@Test
 	public void testTripleFromStatementNull() {
 		assertThatThrownBy(() -> triple(null))
 				.isInstanceOf(NullPointerException.class)
@@ -323,5 +462,115 @@ public class ValuesTest {
 	public void testGetValueFactory() {
 		ValueFactory vf = Values.getValueFactory();
 		assertThat(vf).isNotNull();
+	}
+
+	@Test()
+	public void testLiteralObjectNull() throws Exception {
+		Object obj = null;
+		assertThatThrownBy(() -> literal(obj)).isInstanceOf(NullPointerException.class)
+				.hasMessageContaining("object may not be null");
+	}
+
+	@Test
+	public void testLiteralObjectBoolean() throws Exception {
+		Object obj = Boolean.TRUE;
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.BOOLEAN);
+		assertThat(l.booleanValue()).isTrue();
+	}
+
+	@Test
+	public void testLiteralObjectByte() throws Exception {
+		Object obj = Integer.valueOf(42).byteValue();
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.BYTE);
+		assertThat(l.byteValue()).isEqualTo((byte) 42);
+	}
+
+	@Test
+	public void testLiteralObjectDouble() throws Exception {
+		Object obj = Double.valueOf(42.0);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.DOUBLE);
+		assertThat(l.doubleValue()).isEqualTo(42.0);
+	}
+
+	@Test
+	public void testLiteralObjectFloat() throws Exception {
+		Object obj = Float.valueOf(42);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.FLOAT);
+		assertThat(l.floatValue()).isEqualTo(42.0f);
+	}
+
+	@Test
+	public void testLiteralObjectInteger() throws Exception {
+		Object obj = Integer.valueOf(42);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.INT);
+		assertThat(l.intValue()).isEqualTo(42);
+	}
+
+	@Test
+	public void testLiteralObjectLong() throws Exception {
+		Object obj = Long.valueOf(42l);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.LONG);
+		assertThat(l.longValue()).isEqualTo(42l);
+	}
+
+	@Test
+	public void testLiteralObjectShort() throws Exception {
+		Object obj = Short.parseShort("42");
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.SHORT);
+		assertThat(l.shortValue()).isEqualTo((short) 42);
+	}
+
+	@Test
+	public void testLiteralObjectXMLGregorianCalendar() throws Exception {
+		GregorianCalendar c = new GregorianCalendar();
+		c.setTime(new Date());
+		try {
+			Object obj = DatatypeFactory.newInstance().newXMLGregorianCalendar(c);
+			Literal l = literal(obj);
+			assertThat(l).isNotNull();
+			assertThat(l.getDatatype()).isEqualTo(XSD.DATETIME);
+		} catch (DatatypeConfigurationException e) {
+			fail("Could not instantiate javax.xml.datatype.DatatypeFactory");
+		}
+
+	}
+
+	@Test
+	public void testLiteralObjectDate() throws Exception {
+		Object obj = new Date();
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.DATETIME);
+	}
+
+	@Test
+	public void testLiteralObjectString() throws Exception {
+		Object obj = "random unique string";
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.STRING);
+		assertThat(l.getLabel()).isEqualTo(obj);
+	}
+
+	@Test
+	public void testLiteralObjectObject() throws Exception {
+		Object obj = new Object();
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.STRING);
 	}
 }

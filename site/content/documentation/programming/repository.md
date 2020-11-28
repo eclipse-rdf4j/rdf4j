@@ -88,7 +88,9 @@ Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
 
 ### Elasticserch RDF Repository
 
-> Experimental! New in RDF4J 3.1
+{{< tag " New in RDF4J 3.1" >}}
+
+{{< tag " Experimental " >}}
 
 The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with the ElasticsearchSail which uses Elasticsearch for enhanced search.
 
@@ -619,10 +621,10 @@ try (RepositoryConnection con = repo.getConnection()){
 }
 ```
 
-The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). Using a ValueFactory you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
+The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). As also shown in [The RDF Model API documentation](/documentation/programming/model/#creating-new-building-blocks-the-values-and-statements-factory-methods), you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
 
 ```java
-ValueFactory factory = myRepository.getValueFactory();
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 // In this example, we specify the keyword string. Of course, this
 // could just as easily be obtained by user input, or by reading from
@@ -638,7 +640,7 @@ TupleQuery keywordQuery = con.prepareTupleQuery("SELECT ?document WHERE { ?docum
 // Evaluation of the query object will now effectively be the same as
 // if we had specified the query as follows:
 //   SELECT ?document WHERE { ?document ex:keyword "foobar". }
-keywordQuery.setBinding("keyword", factory.createLiteral(keyword));
+keywordQuery.setBinding("keyword", literal(keyword));
 
 // We then evaluate the prepared query and can process the result:
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
@@ -1120,22 +1122,20 @@ public class QueryExplainExample {
 
 The RepositoryConnection can also be used for adding, retrieving, removing or otherwise manipulating individual statements, or sets of statements.
 
-To be able to add new statements, we can use a ValueFactory to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
+To be able to add new statements, we can use either the {{ < javadoc "Values" "model/util/Values.html" > }} factory methods or a `ValueFactory` to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
 
 ```java
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 ...
 
-ValueFactory f = myRepository.getValueFactory();
-
 // create some resources and literals to make statements out of
-IRI alice = f.createIRI("http://example.org/people/alice");
-IRI bob = f.createIRI("http://example.org/people/bob");
-IRI name = f.createIRI("http://example.org/ontology/name");
-IRI person = f.createIRI("http://example.org/ontology/Person");
-Literal bobsName = f.createLiteral("Bob");
-Literal alicesName = f.createLiteral("Alice");
+IRI alice = Values.iri("http://example.org/people/alice");
+IRI bob = Values.iri("http://example.org/people/bob");
+IRI name = Values.iri("http://example.org/ontology/name");
+IRI person = Values.iri("http://example.org/ontology/Person");
+Literal bobsName = Values.literal("Bob");
+Literal alicesName = Values.literal("Alice");
 
 try (RepositoryConnection con = myRepository.getConnection()) {
   // alice is a person
@@ -1149,7 +1149,7 @@ try (RepositoryConnection con = myRepository.getConnection()) {
 }
 ```
 
-Of course, it will not always be necessary to use a ValueFactory to create IRIs. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
+Of course, it will not always be necessary to create IRI objects. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
 
 Retrieving statements works in a very similar way. One way of retrieving statements we have already seen actually: we can get a GraphQueryResult containing statements by evaluating a graph query. However, we can also use direct method calls to retrieve (sets of) statements. For example, to retrieve all statements about Alice, we could do:
 
@@ -1453,13 +1453,15 @@ Although transactions are a convenient mechanism, having to always call `begin()
 As an example, consider this bit of transactional code. It opens a connection, starts a transaction, adds two RDF statements, and then commits. It also makes sure that it rolls back the transaction if something went wrong, and it ensures that once we’re done, the connection is closed.
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 RepositoryConnection conn = myRepository.getConnection();
 try {
    conn.begin();
    conn.add(bob, RDF.TYPE, FOAF.PERSON);
-   conn.add(bob, FOAF.NAME, f.createLiteral("Bob"));
+   conn.add(bob, FOAF.NAME, literal("Bob"));
    conn.commit();
 }
 catch (RepositoryException e) {
@@ -1473,11 +1475,13 @@ finally {
 That's an awful lot of code for just inserting two triples. The same thing can be achieved with far less boilerplate code, as follows:
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 Repositories.consume(myRepository, conn -> {
   conn.add(bob, RDF.TYPE, FOAF.PERSON);
-  conn.add(bob, RDFS.LABEL, f.createLiteral("Bob"));
+  conn.add(bob, RDFS.LABEL, literal("Bob"));
 });
 ```
 
@@ -1491,4 +1495,6 @@ The Repository API supports multithreaded access to a store: multiple concurrent
 
 The Repository object is thread-safe, and can be safely shared and reused across multiple threads (a good way to do this is via a RepositoryProvider).
 
-NOTE: RepositoryConnection is not thread-safe. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads.
+{{< warning >}}
+<strong>RepositoryConnection is not thread-safe</strong>. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads.
+{{</ warning >}}
