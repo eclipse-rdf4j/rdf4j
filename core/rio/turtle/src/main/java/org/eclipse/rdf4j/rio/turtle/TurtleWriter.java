@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -114,7 +115,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
 		this.baseIRI = baseIRI;
-		this.writer = new IndentingWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+		// The BufferedWriter is here to avoid to many calls to the CharEncoder
+		// see javadoc of OutputStreamWriter.
+		this.writer = new IndentingWriter(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8)));
 	}
 
 	/**

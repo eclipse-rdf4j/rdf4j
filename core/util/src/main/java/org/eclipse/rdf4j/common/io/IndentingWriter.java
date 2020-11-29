@@ -148,6 +148,20 @@ public class IndentingWriter extends Writer {
 	}
 
 	@Override
+	public void write(String str, int off, int len)
+			throws IOException {
+		if (!indentationWritten) {
+			for (int i = 0; i < indentationLevel; i++) {
+				out.write(indentationString);
+			}
+
+			indentationWritten = true;
+		}
+		charactersSinceEOL += len;
+		out.write(str, off, len);
+	}
+
+	@Override
 	public void write(char cbuf[], int off, int len) throws IOException {
 		if (!indentationWritten) {
 			for (int i = 0; i < indentationLevel; i++) {
