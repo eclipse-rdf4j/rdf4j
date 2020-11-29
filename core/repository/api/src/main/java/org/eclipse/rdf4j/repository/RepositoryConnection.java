@@ -677,8 +677,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws IllegalStateException            If the connection has been closed or prepare was already called by
 	 *                                          another thread.
 	 * 
-	 * @implNote this default method is a temporary no-op implementation to ensure backward compatibility. Implementing
-	 *           classes should override.
+	 * @implNote this default method throws an {@link UnsupportedOperationException} and is a temporary measure to
+	 *           ensure backward compatibility only. Implementing classes should override.
 	 * 
 	 * @since 3.5.0
 	 * @see #commit()
@@ -686,7 +686,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #rollback()
 	 */
 	default void prepare() throws RepositoryException {
-		// silently ignore
+		throw new UnsupportedOperationException();
 	}
 
 	/**

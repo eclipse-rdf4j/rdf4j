@@ -406,7 +406,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public void prepare() throws RepositoryException {
-		// no-op, not supported in SPARQL protocol
+		throw new UnsupportedOperationException("SPARQL protocol has no support for 2-phase commit");
 	}
 
 	@Override

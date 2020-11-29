@@ -298,6 +298,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	public void prepare() throws RepositoryException {
 		if (this.getRepository().getServerProtocolVersion() < 12) {
 			// Action.PREPARE is not supported in Servers using protocols older than version 12.
+			logger.warn("Prepare operation not supported by server (requires protocol version 12)");
 			return;
 		}
 
