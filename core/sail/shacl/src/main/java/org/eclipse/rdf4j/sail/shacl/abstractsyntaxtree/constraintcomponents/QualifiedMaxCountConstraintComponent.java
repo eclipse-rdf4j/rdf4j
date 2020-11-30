@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -28,6 +27,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCountFilter;
@@ -171,7 +171,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 					connectionsGroup.getBaseConnection(),
 					getTargetChain().getPath()
 							.get()
-							.getTargetQueryFragment(new Var("a"), new Var("c"),
+							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,
@@ -216,7 +217,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				connectionsGroup.getBaseConnection(),
 				getTargetChain().getPath()
 						.get()
-						.getTargetQueryFragment(new Var("a"), new Var("c"),
+						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner()),
 				false,
 				null,

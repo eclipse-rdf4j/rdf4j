@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
-import java.util.UUID;
-
 import org.eclipse.rdf4j.model.Value;
 
 /**
@@ -36,18 +34,11 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	public Var(String name) {
-		assert !name.contains("?");
 		setName(name);
 	}
 
 	public Var(String name, Value value) {
 		this(name);
-		setValue(value);
-	}
-
-	public Var(Value value) {
-		this(UUID.randomUUID().toString().replace("-", "") + "_anon");
-		setAnonymous(true);
 		setValue(value);
 	}
 

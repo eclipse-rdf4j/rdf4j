@@ -7,11 +7,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeWrapper;
@@ -56,13 +55,15 @@ public class InversePath extends Path {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		return Stream.of(new StatementPattern(object, new Var(inversePath.getId()), subject));
+		return Stream.of(new StatementMatcher(object, new StatementMatcher.Variable(inversePath.getId()), subject));
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 
 		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner);
 

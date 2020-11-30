@@ -8,11 +8,10 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Targetable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BindSelect;
@@ -38,7 +37,7 @@ public class EffectiveTarget {
 
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new Var(targetVarPrefix + String.format("%010d", index++)),
+					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index++)),
 					targetable,
 					previous,
 					rdfsSubClassOfReasoner
@@ -49,7 +48,7 @@ public class EffectiveTarget {
 
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
-					new Var(targetVarPrefix + String.format("%010d", index)),
+					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index)),
 					optional,
 					previous,
 					rdfsSubClassOfReasoner
@@ -61,7 +60,7 @@ public class EffectiveTarget {
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 	}
 
-	public Var getTargetVar() {
+	public StatementMatcher.Variable getTargetVar() {
 		return chain.getLast().var;
 	}
 
@@ -72,20 +71,20 @@ public class EffectiveTarget {
 			Extend direction, boolean includePropertyShapeValues) {
 
 		String query = getQuery(includePropertyShapeValues);
-		List<Var> vars = getVars();
+		List<StatementMatcher.Variable> vars = getVars();
 		if (includePropertyShapeValues) {
 			vars = new ArrayList<>(vars);
 			vars.add(optional.var);
 		}
 
-		List<String> varNames = vars.stream().map(Var::getName).collect(Collectors.toList());
+		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
 			return new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
 		}, 100, direction, includePropertyShapeValues, rdfsSubClassOfReasoner);
 	}
 
-	private List<Var> getVars() {
+	private List<StatementMatcher.Variable> getVars() {
 		return chain.stream().map(t -> t.var).collect(Collectors.toList());
 	}
 
@@ -102,20 +101,20 @@ public class EffectiveTarget {
 		}
 
 		return Stream.concat(chain.stream(), getOptionalAsStream())
-				.flatMap(EffectiveTargetObject::getStatementPatterns)
+				.flatMap(EffectiveTargetObject::getStatementMatcher)
 				.anyMatch(currentStatementPattern ->
 
 				connectionsGroup.getAddedStatements()
 						.hasStatement(
-								(Resource) currentStatementPattern.getSubjectVar().getValue(),
-								(IRI) currentStatementPattern.getPredicateVar().getValue(),
-								currentStatementPattern.getObjectVar().getValue(), false)
+								(Resource) currentStatementPattern.getSubjectValue(),
+								(IRI) currentStatementPattern.getPredicateValue(),
+								currentStatementPattern.getObjectValue(), false)
 						||
 						connectionsGroup.getRemovedStatements()
 								.hasStatement(
-										(Resource) currentStatementPattern.getSubjectVar().getValue(),
-										(IRI) currentStatementPattern.getPredicateVar().getValue(),
-										currentStatementPattern.getObjectVar().getValue(), false)
+										(Resource) currentStatementPattern.getSubjectValue(),
+										(IRI) currentStatementPattern.getPredicateValue(),
+										currentStatementPattern.getObjectValue(), false)
 
 				);
 
@@ -137,7 +136,7 @@ public class EffectiveTarget {
 				.reduce((a, b) -> a + "\n" + b)
 				.orElse("");
 
-		List<String> varNames = getVars().stream().map(Var::getName).collect(Collectors.toList());
+		List<String> varNames = getVars().stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		return new Select(connectionsGroup.getBaseConnection(), query, null,
 				b -> new ValidationTuple(b, varNames, scope, false));
@@ -161,8 +160,8 @@ public class EffectiveTarget {
 		} else {
 			// complex chain
 
-			List<StatementPattern> collect = chain.stream()
-					.flatMap(EffectiveTargetObject::getStatementPatterns)
+			List<StatementMatcher> collect = chain.stream()
+					.flatMap(EffectiveTargetObject::getStatementMatcher)
 					.collect(Collectors.toList());
 
 			String query = chain.stream()
@@ -170,11 +169,15 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
+			System.out.println("#######################################");
+			System.out.println(query);
+			System.out.println("#######################################");
+			System.out.println();
 			if (includeTargetsAffectedByRemoval && optional != null) {
 				return new TargetChainRetriever(
 						connectionsGroup,
 						collect,
-						optional.getStatementPatterns().collect(Collectors.toList()),
+						optional.getStatementMatcher().collect(Collectors.toList()),
 						query,
 						getVars(),
 						scope
@@ -245,12 +248,12 @@ public class EffectiveTarget {
 
 	static class EffectiveTargetObject {
 
-		final Var var;
+		final StatementMatcher.Variable var;
 		final Targetable target;
 		final EffectiveTargetObject prev;
 		final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 
-		public EffectiveTargetObject(Var var, Targetable target, EffectiveTargetObject prev,
+		public EffectiveTargetObject(StatementMatcher.Variable var, Targetable target, EffectiveTargetObject prev,
 				RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 			this.var = var;
 			this.target = target;
@@ -258,11 +261,11 @@ public class EffectiveTarget {
 			this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 		}
 
-		public Stream<StatementPattern> getStatementPatterns() {
+		public Stream<StatementMatcher> getStatementMatcher() {
 			if (prev == null) {
-				return target.getStatementPatterns(null, var, rdfsSubClassOfReasoner);
+				return target.getStatementMatcher(null, var, rdfsSubClassOfReasoner);
 			} else {
-				return target.getStatementPatterns(prev.var, var, rdfsSubClassOfReasoner);
+				return target.getStatementMatcher(prev.var, var, rdfsSubClassOfReasoner);
 			}
 		}
 

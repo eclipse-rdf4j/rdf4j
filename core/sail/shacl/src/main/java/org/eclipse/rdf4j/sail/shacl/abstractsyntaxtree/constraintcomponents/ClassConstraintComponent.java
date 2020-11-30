@@ -8,10 +8,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -113,7 +113,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalInnerJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
-					path.getTargetQueryFragment(new Var("a"), new Var("c"),
+					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,

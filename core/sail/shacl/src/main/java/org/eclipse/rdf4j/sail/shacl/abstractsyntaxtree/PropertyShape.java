@@ -14,8 +14,6 @@ import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -294,10 +292,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		Var someObject = new Var(UUID.randomUUID().toString().replace("-", ""));
+		StatementMatcher.Variable someObject = new StatementMatcher.Variable(
+				UUID.randomUUID().toString().replace("-", ""));
 
 		boolean isFilterCondition = constraintComponents.stream()
 				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
@@ -328,12 +328,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		Var someObject = new Var(UUID.randomUUID().toString().replace("-", ""));
+		StatementMatcher.Variable someObject = new StatementMatcher.Variable(
+				UUID.randomUUID().toString().replace("-", ""));
 
 		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
+				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
 						Scope.propertyShape));
 	}
 

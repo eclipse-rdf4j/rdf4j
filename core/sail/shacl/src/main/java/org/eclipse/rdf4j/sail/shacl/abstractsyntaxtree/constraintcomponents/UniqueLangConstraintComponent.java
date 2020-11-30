@@ -10,9 +10,9 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -83,15 +83,17 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
-		Var targetVar = effectiveTarget.getTargetVar();
+		StatementMatcher.Variable targetVar = effectiveTarget.getTargetVar();
 
 		String pathQuery1 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value1"),
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(),
+						new StatementMatcher.Variable("value1"),
 						connectionsGroup.getRdfsSubClassOfReasoner()))
 				.get();
 
 		String pathQuery2 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), new Var("value2"),
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(),
+						new StatementMatcher.Variable("value2"),
 						connectionsGroup.getRdfsSubClassOfReasoner()))
 				.get();
 
@@ -129,7 +131,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					targets,
 					connectionsGroup.getBaseConnection(),
 					path.get()
-							.getTargetQueryFragment(new Var("a"), new Var("c"),
+							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,
@@ -172,7 +175,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				allRelevantTargets,
 				connectionsGroup.getBaseConnection(),
 				path.get()
-						.getTargetQueryFragment(new Var("a"), new Var("c"),
+						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner()),
 				false,
 				null,

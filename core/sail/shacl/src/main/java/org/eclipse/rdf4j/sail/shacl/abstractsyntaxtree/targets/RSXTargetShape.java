@@ -12,8 +12,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
@@ -24,11 +22,11 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
@@ -71,12 +69,14 @@ public class RSXTargetShape extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			SailConnection connection) {
 
-		List<StatementPattern> collect = getStatementPatterns(null, new Var("temp1"),
+		List<StatementMatcher> collect = getStatementMatcher(null, new StatementMatcher.Variable("temp1"),
 				connectionsGroup.getRdfsSubClassOfReasoner()).collect(Collectors.toList());
 
-		String query = getTargetQueryFragment(null, new Var("temp1"), connectionsGroup.getRdfsSubClassOfReasoner());
+		String query = getTargetQueryFragment(null, new StatementMatcher.Variable("temp1"),
+				connectionsGroup.getRdfsSubClassOfReasoner());
 
-		List<Var> vars = Arrays.asList(new Var("temp1"));
+		System.out.println(query);
+		List<StatementMatcher.Variable> vars = Arrays.asList(new StatementMatcher.Variable("temp1"));
 
 		return new Unique(new DebugPlanNode(new TargetChainRetriever(
 				connectionsGroup,
@@ -86,7 +86,9 @@ public class RSXTargetShape extends Target {
 				vars,
 				scope
 		), p -> {
-			System.out.println(p);
+			if (false) {
+				System.out.println(p);
+			}
 		}));
 
 	}
@@ -101,25 +103,29 @@ public class RSXTargetShape extends Target {
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		String query = getTargetQueryFragment(null, new Var("temp1"), connectionsGroup.getRdfsSubClassOfReasoner());
+		String query = getTargetQueryFragment(null, new StatementMatcher.Variable("temp1"),
+				connectionsGroup.getRdfsSubClassOfReasoner());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query, new Var("temp1"),
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query,
+				new StatementMatcher.Variable("temp1"),
 				ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
-		return this.targetShape.getStatementPatterns_rsx_targetShape(subject, object,
+		return this.targetShape.getStatementMatchers_rsx_targetShape(subject, object,
 				rdfsSubClassOfReasoner, null);
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null)

@@ -2,7 +2,6 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
 
 import java.io.StringWriter;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -13,8 +12,6 @@ import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -248,7 +245,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
 		boolean isFilterCondition = constraintComponents.stream()
@@ -279,11 +277,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
 		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(subject, object,
+				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(subject, object,
 						rdfsSubClassOfReasoner, Scope.nodeShape));
 
 	}

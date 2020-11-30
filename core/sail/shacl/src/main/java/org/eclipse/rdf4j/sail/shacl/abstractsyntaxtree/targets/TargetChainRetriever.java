@@ -15,8 +15,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -24,6 +22,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationExecutionLogger;
@@ -40,16 +39,16 @@ public class TargetChainRetriever implements PlanNode {
 	private static final Logger logger = LoggerFactory.getLogger(TargetChainRetriever.class);
 
 	private final ConnectionsGroup connectionsGroup;
-	private final List<StatementPattern> statementPatterns;
-	private final List<StatementPattern> removedStatementPatterns;
+	private final List<StatementMatcher> statementPatterns;
+	private final List<StatementMatcher> removedStatementMatchers;
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
 	private final StackTraceElement[] stackTrace;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
-			List<StatementPattern> statementPatterns, List<StatementPattern> removedStatementPatterns, String query,
-			List<Var> vars, ConstraintComponent.Scope scope) {
+			List<StatementMatcher> statementPatterns, List<StatementMatcher> removedStatementMatchers, String query,
+			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
 		this.statementPatterns = statementPatterns;
 		this.scope = scope;
@@ -66,19 +65,19 @@ public class TargetChainRetriever implements PlanNode {
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		this.removedStatementPatterns = removedStatementPatterns != null ? removedStatementPatterns
+		this.removedStatementMatchers = removedStatementMatchers != null ? removedStatementMatchers
 				: Collections.emptyList();
-		assert this.removedStatementPatterns.size() <= 1;
+		assert this.removedStatementMatchers.size() <= 1;
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			final Iterator<StatementPattern> statementPatternIterator = statementPatterns.iterator();
-			final Iterator<StatementPattern> removedStatementIterator = removedStatementPatterns.iterator();
+			final Iterator<StatementMatcher> statementPatternIterator = statementPatterns.iterator();
+			final Iterator<StatementMatcher> removedStatementIterator = removedStatementMatchers.iterator();
 
-			StatementPattern currentStatementPattern;
+			StatementMatcher currentStatementMatcher;
 			CloseableIteration<? extends Statement, SailException> statements;
 			ValidationTuple next;
 
@@ -86,7 +85,7 @@ public class TargetChainRetriever implements PlanNode {
 
 			ParsedQuery parsedQuery;
 
-			public void calculateNextStatementPattern() {
+			public void calculateNextStatementMatcher() {
 				if (statements != null && statements.hasNext()) {
 					return;
 				}
@@ -111,17 +110,17 @@ public class TargetChainRetriever implements PlanNode {
 					SailConnection connection;
 
 					if (statementPatternIterator.hasNext()) {
-						currentStatementPattern = statementPatternIterator.next();
+						currentStatementMatcher = statementPatternIterator.next();
 						connection = connectionsGroup.getAddedStatements();
 					} else {
-						currentStatementPattern = removedStatementIterator.next();
+						currentStatementMatcher = removedStatementIterator.next();
 						connection = connectionsGroup.getRemovedStatements();
 					}
 
 					statements = connection.getStatements(
-							(Resource) currentStatementPattern.getSubjectVar().getValue(),
-							(IRI) currentStatementPattern.getPredicateVar().getValue(),
-							currentStatementPattern.getObjectVar().getValue(), false);
+							(Resource) currentStatementMatcher.getSubjectValue(),
+							(IRI) currentStatementMatcher.getPredicateValue(),
+							currentStatementMatcher.getObjectValue(), false);
 				} while (!statements.hasNext());
 
 			}
@@ -140,7 +139,7 @@ public class TargetChainRetriever implements PlanNode {
 						MapBindingSet bindings = new MapBindingSet();
 
 						if (statements == null || !statements.hasNext()) {
-							calculateNextStatementPattern();
+							calculateNextStatementMatcher();
 							if (statements == null || !statements.hasNext()) {
 								return;
 							}
@@ -152,20 +151,19 @@ public class TargetChainRetriever implements PlanNode {
 
 						Statement next = statements.next();
 
-						Var subjectVar = currentStatementPattern.getSubjectVar();
-						Var predicateVar = currentStatementPattern.getPredicateVar();
-						Var objectVar = currentStatementPattern.getObjectVar();
-
-						if (!subjectVar.hasValue()) {
-							bindings.addBinding(subjectVar.getName(), next.getSubject());
+						if (currentStatementMatcher.getSubjectValue() == null
+								&& !currentStatementMatcher.subjectIsWildcard()) {
+							bindings.addBinding(currentStatementMatcher.getSubjectName(), next.getSubject());
 						}
 
-						if (!predicateVar.hasValue()) {
-							bindings.addBinding(predicateVar.getName(), next.getPredicate());
+						if (currentStatementMatcher.getPredicateValue() == null
+								&& !currentStatementMatcher.predicateIsWildcard()) {
+							bindings.addBinding(currentStatementMatcher.getPredicateName(), next.getPredicate());
 						}
 
-						if (!objectVar.hasValue()) {
-							bindings.addBinding(objectVar.getName(), next.getObject());
+						if (currentStatementMatcher.getObjectValue() == null
+								&& !currentStatementMatcher.objectIsWildcard()) {
+							bindings.addBinding(currentStatementMatcher.getObjectName(), next.getObject());
 						}
 
 						// TODO: Should really bulk this operation!

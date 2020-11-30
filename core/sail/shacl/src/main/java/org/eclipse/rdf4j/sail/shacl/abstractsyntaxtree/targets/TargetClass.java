@@ -13,11 +13,10 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -100,7 +99,8 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public Stream<StatementPattern> getStatementPatterns(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
@@ -109,11 +109,13 @@ public class TargetClass extends Target {
 				.map(rdfsSubClassOfReasoner::backwardsChain)
 				.flatMap(Collection::stream)
 				.distinct()
-				.map(t -> new StatementPattern(object, new Var(RDF.TYPE), new Var(t)));
+				.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
+						new StatementMatcher.Variable(t)));
 	}
 
 	@Override
-	public String getTargetQueryFragment(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		List<Resource> targetClass = this.targetClass

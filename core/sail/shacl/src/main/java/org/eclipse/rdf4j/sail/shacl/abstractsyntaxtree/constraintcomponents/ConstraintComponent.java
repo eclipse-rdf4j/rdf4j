@@ -3,13 +3,12 @@ package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Exportable;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.TargetChainInterface;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -34,10 +33,12 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
 
-	Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope);
 
-	SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
 			Scope scope);
 

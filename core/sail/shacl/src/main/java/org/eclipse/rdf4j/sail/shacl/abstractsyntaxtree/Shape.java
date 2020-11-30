@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -391,7 +389,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+//		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+		return true;
 	}
 
 	/**
@@ -399,7 +398,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	 *
 	 * @return
 	 */
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
@@ -409,7 +409,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	 *
 	 * @return
 	 */
-	public Stream<StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}

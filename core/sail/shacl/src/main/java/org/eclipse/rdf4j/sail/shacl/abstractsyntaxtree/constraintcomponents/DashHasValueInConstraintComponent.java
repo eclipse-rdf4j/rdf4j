@@ -12,14 +12,13 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
@@ -99,7 +98,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
-					path.getTargetQueryFragment(new Var("a"), new Var("c"),
+					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner()),
 					false,
 					null,
@@ -152,12 +151,13 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	}
 
 	@Override
-	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
 		if (getTargetChain().getPath().isPresent()) {
 			Path path = getTargetChain().getPath().get();
-			return path.getStatementPatterns(subject, object, rdfsSubClassOfReasoner);
+			return path.getStatementMatcher(subject, object, rdfsSubClassOfReasoner);
 
 //			return hasValueIn
 //					.stream()
@@ -168,7 +168,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();

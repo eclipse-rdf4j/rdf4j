@@ -11,8 +11,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.AST.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -25,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
@@ -232,7 +231,8 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 //	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
 		boolean isFilterCondition = or.stream()
@@ -291,7 +291,8 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						+ "\n\tFILTER(!(" + collect + "))\n})";
 
 				String pathQuery2 = path.getTargetQueryFragment(subject,
-						new Var(UUID.randomUUID().toString().replace("-", "")), rdfsSubClassOfReasoner);
+						new StatementMatcher.Variable(UUID.randomUUID().toString().replace("-", "")),
+						rdfsSubClassOfReasoner);
 
 				query = "{\n" +
 						AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " +
@@ -318,23 +319,25 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public Stream<? extends StatementPattern> getStatementPatterns_rsx_targetShape(Var subject, Var object,
+	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		StatementPattern subjectPattern = new StatementPattern(
+		StatementMatcher subjectPattern = new StatementMatcher(
 				object,
-				new Var(UUID.randomUUID().toString().replace("-", "")),
-				new Var(UUID.randomUUID().toString().replace("-", ""))
+				null,
+				null
 		);
 
-		StatementPattern objectPattern = new StatementPattern(
-				new Var(UUID.randomUUID().toString().replace("-", "")),
-				new Var(UUID.randomUUID().toString().replace("-", "")),
+		StatementMatcher objectPattern = new StatementMatcher(
+				null,
+				null,
 				object
 		);
 
-		Stream<StatementPattern> statementPatternStream = or.stream()
-				.flatMap(c -> c.getStatementPatterns_rsx_targetShape(object, new Var("someVarName"),
+		Stream<StatementMatcher> statementPatternStream = or.stream()
+				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(object,
+						new StatementMatcher.Variable("someVarName"),
 						rdfsSubClassOfReasoner, Scope.nodeShape));
 
 		return Stream.concat(statementPatternStream, Stream.of(subjectPattern, objectPattern));

@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -33,6 +32,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.targets.EffectiveTarget;
 import org.slf4j.Logger;
@@ -52,7 +52,7 @@ public class BindSelect implements PlanNode {
 	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
-	private final List<Var> vars;
+	private final List<StatementMatcher.Variable> vars;
 	private final int bulkSize;
 	private final PlanNode source;
 	private final EffectiveTarget.Extend direction;
@@ -62,7 +62,7 @@ public class BindSelect implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public BindSelect(SailConnection connection, String query, List<Var> vars, PlanNode source,
+	public BindSelect(SailConnection connection, String query, List<StatementMatcher.Variable> vars, PlanNode source,
 			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		this.connection = connection;
@@ -174,7 +174,7 @@ public class BindSelect implements PlanNode {
 
 				values.append("){}\n");
 
-				for (Var var : vars) {
+				for (StatementMatcher.Variable var : vars) {
 					orderBy.append("?").append(var.getName()).append(" ");
 				}
 
@@ -199,13 +199,13 @@ public class BindSelect implements PlanNode {
 						varNames = vars
 								.stream()
 								.limit(targetChainSize)
-								.map(Var::getName)
+								.map(StatementMatcher.Variable::getName)
 								.collect(Collectors.toList());
 					} else {
 						varNames = vars
 								.stream()
 								.skip(vars.size() - targetChainSize)
-								.map(Var::getName)
+								.map(StatementMatcher.Variable::getName)
 								.collect(Collectors.toList());
 					}
 

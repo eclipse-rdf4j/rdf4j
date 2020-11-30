@@ -1,14 +1,15 @@
 package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents;
 
-import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 
 class ComplexQueryFragment {
 	private final String targetVarPrefix;
-	private final Var value;
+	private final StatementMatcher.Variable value;
 	private final String query;
-	private final Var targetVar;
+	private final StatementMatcher.Variable targetVar;
 
-	public ComplexQueryFragment(String query, String targetVarPrefix, Var targetVar, Var value) {
+	public ComplexQueryFragment(String query, String targetVarPrefix, StatementMatcher.Variable targetVar,
+			StatementMatcher.Variable value) {
 		this.query = query;
 		this.targetVarPrefix = targetVarPrefix;
 		this.targetVar = targetVar;
@@ -19,7 +20,7 @@ class ComplexQueryFragment {
 		return targetVarPrefix;
 	}
 
-	public Var getValue() {
+	public StatementMatcher.Variable getValue() {
 		return value;
 	}
 
@@ -27,7 +28,7 @@ class ComplexQueryFragment {
 		return query;
 	}
 
-	public Var getTargetVar() {
+	public StatementMatcher.Variable getTargetVar() {
 		return targetVar;
 	}
 }

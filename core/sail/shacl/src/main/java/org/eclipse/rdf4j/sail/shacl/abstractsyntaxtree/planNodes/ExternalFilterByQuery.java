@@ -16,12 +16,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,11 +34,12 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final ParsedQuery query;
-	private final Var queryVariable;
+	private final StatementMatcher.Variable queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
 
-	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment, Var queryVariable,
+	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment,
+			StatementMatcher.Variable queryVariable,
 			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;

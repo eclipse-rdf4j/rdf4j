@@ -8,10 +8,10 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
@@ -81,13 +81,13 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
-		Var value = new Var("value");
+		StatementMatcher.Variable value = new StatementMatcher.Variable("value");
 
 		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix, value, negatePlan,
 				connectionsGroup);
 
 		String query = complexQueryFragment.getQuery();
-		Var targetVar = complexQueryFragment.getTargetVar();
+		StatementMatcher.Variable targetVar = complexQueryFragment.getTargetVar();
 
 		return new Select(connectionsGroup.getBaseConnection(), query, null, b -> {
 
@@ -112,14 +112,15 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 	}
 
-	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, Var value, boolean negated,
+	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, StatementMatcher.Variable value,
+			boolean negated,
 			ConnectionsGroup connectionsGroup) {
 
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, Scope.propertyShape,
 				connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
-		Var targetVar = effectiveTarget.getTargetVar();
+		StatementMatcher.Variable targetVar = effectiveTarget.getTargetVar();
 
 		Optional<String> pathQuery = targetChain.getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
@@ -173,7 +174,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
 						path.get()
-								.getTargetQueryFragment(new Var("a"), new Var("c"),
+								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+										new StatementMatcher.Variable("c"),
 										connectionsGroup.getRdfsSubClassOfReasoner()),
 						false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
@@ -243,7 +245,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					effectiveTarget.getPlanNode(connectionsGroup, scope, false),
 					connectionsGroup.getBaseConnection(),
 					path.get()
-							.getTargetQueryFragment(new Var("a"), new Var("c"),
+							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner()),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
