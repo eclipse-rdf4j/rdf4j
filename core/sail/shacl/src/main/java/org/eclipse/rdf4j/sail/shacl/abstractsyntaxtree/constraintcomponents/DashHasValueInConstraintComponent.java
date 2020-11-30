@@ -203,9 +203,9 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					.stream()
 					.map(value -> {
 						if (value instanceof IRI) {
-							return "?" + subject.getName() + " = <" + value + ">";
+							return "?" + object.getName() + " = <" + value + ">";
 						} else if (value instanceof Literal) {
-							return "?" + subject.getName() + " = " + value;
+							return "?" + object.getName() + " = " + value;
 						}
 						throw new UnsupportedOperationException(
 								"value was unsupported type: " + value.getClass().getSimpleName());

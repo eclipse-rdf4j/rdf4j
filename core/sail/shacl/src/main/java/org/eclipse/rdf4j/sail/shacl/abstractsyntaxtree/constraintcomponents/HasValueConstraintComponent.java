@@ -173,9 +173,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 		} else {
 			if (hasValue instanceof IRI) {
-				return SparqlFragment.filterCondition("?" + subject.getName() + " = <" + hasValue + ">");
+				return SparqlFragment.filterCondition("?" + object.getName() + " = <" + hasValue + ">");
 			} else if (hasValue instanceof Literal) {
-				return SparqlFragment.filterCondition("?" + subject.getName() + " = " + hasValue);
+				return SparqlFragment.filterCondition("?" + object.getName() + " = " + hasValue);
 			}
 			throw new UnsupportedOperationException(
 					"value was unsupported type: " + hasValue.getClass().getSimpleName());
