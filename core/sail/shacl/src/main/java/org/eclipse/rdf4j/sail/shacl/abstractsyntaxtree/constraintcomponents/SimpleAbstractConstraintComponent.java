@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.InnerJoin;
@@ -161,15 +160,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			} else {
 				PlanNode temp = overrideTargetNode.getPlanNode();
 
-				temp = new DebugPlanNode(temp, (p) -> {
-					assert p != null;
-				});
-
 				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right, false);
-
-				temp = new DebugPlanNode(temp, (p) -> {
-					assert p != null;
-				});
 
 				planNode = new BulkedExternalInnerJoin(temp,
 						connectionsGroup.getBaseConnection(),
@@ -180,10 +171,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
-
-			planNode = new DebugPlanNode(planNode, p -> {
-				assert p != null;
-			});
 
 			if (negatePlan) {
 				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
@@ -232,9 +219,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);
 
 			PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup, discardedRight);
-			discardedRight = new DebugPlanNode(discardedRight, p -> {
-				assert p != null;
-			});
 
 			typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup, scope,
 					EffectiveTarget.Extend.left, true);
@@ -251,10 +235,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					true,
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
-
-			bulkedExternalInnerJoin = new DebugPlanNode(bulkedExternalInnerJoin, p -> {
-//				assert p != null;
-			});
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);
 

@@ -43,7 +43,7 @@ public class GroupByFilter implements PlanNode {
 			ValidationTuple next;
 			ValidationTuple tempNext;
 
-			List<ValidationTuple> group = new ArrayList<>();
+			final List<ValidationTuple> group = new ArrayList<>();
 
 			private void calculateNext() {
 				if (next != null) {

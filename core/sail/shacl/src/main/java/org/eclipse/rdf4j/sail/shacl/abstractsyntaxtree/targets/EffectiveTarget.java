@@ -6,8 +6,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.ShaclUnsupportedException;
@@ -19,6 +17,7 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalFilterB
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ValidationTuple;
 
 public class EffectiveTarget {
@@ -79,9 +78,9 @@ public class EffectiveTarget {
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		return new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
+		return new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
 			return new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
-		}, 100, direction, includePropertyShapeValues, rdfsSubClassOfReasoner);
+		}, 100, direction, includePropertyShapeValues, rdfsSubClassOfReasoner));
 	}
 
 	private List<StatementMatcher.Variable> getVars() {
@@ -106,14 +105,14 @@ public class EffectiveTarget {
 
 				connectionsGroup.getAddedStatements()
 						.hasStatement(
-								(Resource) currentStatementPattern.getSubjectValue(),
-								(IRI) currentStatementPattern.getPredicateValue(),
+								currentStatementPattern.getSubjectValue(),
+								currentStatementPattern.getPredicateValue(),
 								currentStatementPattern.getObjectValue(), false)
 						||
 						connectionsGroup.getRemovedStatements()
 								.hasStatement(
-										(Resource) currentStatementPattern.getSubjectValue(),
-										(IRI) currentStatementPattern.getPredicateValue(),
+										currentStatementPattern.getSubjectValue(),
+										currentStatementPattern.getPredicateValue(),
 										currentStatementPattern.getObjectValue(), false)
 
 				);
@@ -169,10 +168,6 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
-			System.out.println("#######################################");
-			System.out.println(query);
-			System.out.println("#######################################");
-			System.out.println();
 			if (includeTargetsAffectedByRemoval && optional != null) {
 				return new TargetChainRetriever(
 						connectionsGroup,

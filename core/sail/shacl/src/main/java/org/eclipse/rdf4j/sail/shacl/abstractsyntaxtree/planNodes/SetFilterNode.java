@@ -18,10 +18,10 @@ import org.eclipse.rdf4j.sail.SailException;
 
 public class SetFilterNode implements PlanNode {
 
-	private Set<Value> targetNodeList;
-	private PlanNode parent;
-	private int index;
-	private boolean returnValid;
+	private final Set<Value> targetNodeList;
+	private final PlanNode parent;
+	private final int index;
+	private final boolean returnValid;
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -37,7 +37,7 @@ public class SetFilterNode implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
 			ValidationTuple next;
 

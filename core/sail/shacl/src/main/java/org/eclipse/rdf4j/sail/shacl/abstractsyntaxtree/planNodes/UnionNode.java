@@ -39,11 +39,11 @@ public class UnionNode implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			List<CloseableIteration<? extends ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
+			final List<CloseableIteration<? extends ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
 					.map(PlanNode::iterator)
 					.collect(Collectors.toList());
 
-			ValidationTuple[] peekList = new ValidationTuple[nodes.length];
+			final ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 
 			ValidationTuple next;
 			ValidationTuple prev;

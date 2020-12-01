@@ -52,11 +52,11 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			ArrayDeque<ValidationTuple> left = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>();
 
-			ArrayDeque<ValidationTuple> right = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>();
 
-			CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
 
 			private void calculateNext() {
 

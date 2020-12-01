@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
@@ -100,10 +99,6 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new DebugPlanNode(planNode, p -> {
-			assert p != null;
-		});
-
 		return new Unique(planNode);
 
 	}
@@ -116,8 +111,6 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.orElse(new EmptyNode());
 
 		planNode = new Unique(planNode);
-
-		planNode = new DebugPlanNode(planNode, "AndConstraintComponent::getAllTargetsPlan");
 
 		return planNode;
 	}
@@ -236,15 +229,14 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 			} else {
 
 				Path path = getTargetChain().getPath().get();
-				String objectVariable = randomVariable();
 
 				String collect = and
 						.stream()
 						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
 								rdfsSubClassOfReasoner, scope))
 						.map(SparqlFragment::getFragment)
-						.reduce((a, b) -> a + " && " + b)
-						.orElse("");
+						.collect(Collectors.joining(" ) && ( ", "( ",
+								" )"));
 
 				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 

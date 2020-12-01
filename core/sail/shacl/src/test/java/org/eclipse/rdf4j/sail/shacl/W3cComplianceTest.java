@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -53,6 +54,7 @@ public class W3cComplianceTest {
 		return urls;
 	}
 
+	@Ignore
 	@Test
 	public void test() throws IOException {
 		runTest(testCasePath);

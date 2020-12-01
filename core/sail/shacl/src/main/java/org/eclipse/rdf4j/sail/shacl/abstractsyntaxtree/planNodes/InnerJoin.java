@@ -29,8 +29,8 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	private final StackTraceElement[] stackTrace;
 	private boolean printed = false;
 
-	private PlanNode left;
-	private PlanNode right;
+	private final PlanNode left;
+	private final PlanNode right;
 	private CloseableIteration<ValidationTuple, SailException> iterator;
 	private PushablePlanNode joined;
 	private PushablePlanNode discardedLeft;

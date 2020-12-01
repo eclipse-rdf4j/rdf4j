@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Cache;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
@@ -114,14 +113,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			allTargetsPlan = planNodeProvider.getPlanNode();
 		}
 
-		allTargetsPlan = new DebugPlanNode(allTargetsPlan, p -> {
-			assert p != null;
-		});
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
-
-		invalid = new DebugPlanNode(invalid, p -> {
-			assert p != null;
-		});
 
 		return invalid;
 

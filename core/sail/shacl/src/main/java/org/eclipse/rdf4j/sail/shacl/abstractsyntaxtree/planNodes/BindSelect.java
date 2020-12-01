@@ -155,7 +155,7 @@ public class BindSelect implements PlanNode {
 					this.targetChainSize = targetChainSize;
 				}
 
-				StringBuilder orderBy = new StringBuilder("");
+				StringBuilder orderBy = new StringBuilder();
 
 				StringBuilder values = new StringBuilder("\nVALUES( ");
 				if (direction == EffectiveTarget.Extend.right) {
@@ -240,11 +240,7 @@ public class BindSelect implements PlanNode {
 			@Override
 			boolean localHasNext() throws SailException {
 				calculateNext();
-				if (bindingSet != null && bindingSet.hasNext()) {
-					return true;
-				} else {
-					return false;
-				}
+				return bindingSet != null && bindingSet.hasNext();
 			}
 
 			@Override

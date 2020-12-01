@@ -23,7 +23,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	private final T parent;
 	private final String name;
 
-	private Queue<ValidationTuple> buffer = new ArrayDeque<>();
+	private final Queue<ValidationTuple> buffer = new ArrayDeque<>();
 	private boolean closed;
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;

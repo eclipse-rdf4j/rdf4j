@@ -54,11 +54,7 @@ public class Select implements PlanNode {
 					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
 					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
-		if (orderBy != null) {
-			sorted = true;
-		} else {
-			sorted = false;
-		}
+		sorted = orderBy != null;
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
 	}

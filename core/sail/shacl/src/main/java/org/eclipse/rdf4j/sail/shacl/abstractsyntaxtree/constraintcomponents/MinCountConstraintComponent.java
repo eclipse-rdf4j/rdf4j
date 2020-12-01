@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -48,10 +47,6 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode target = getTargetChain()
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);
-
-		target = new DebugPlanNode(target, p -> {
-			assert p != null;
-		});
 
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())

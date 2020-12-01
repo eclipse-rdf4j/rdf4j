@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -118,8 +116,8 @@ public class TargetChainRetriever implements PlanNode {
 					}
 
 					statements = connection.getStatements(
-							(Resource) currentStatementMatcher.getSubjectValue(),
-							(IRI) currentStatementMatcher.getPredicateValue(),
+							currentStatementMatcher.getSubjectValue(),
+							currentStatementMatcher.getPredicateValue(),
 							currentStatementMatcher.getObjectValue(), false);
 				} while (!statements.hasNext());
 

@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalInnerJoin;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -79,28 +78,16 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
 
-					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						assert p != null;
-					});
-
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", Scope.nodeShape,
 									connectionsGroup.getRdfsSubClassOfReasoner())
 							.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left,
 									false);
 
-					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						assert p != null;
-					});
-
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", Scope.nodeShape,
 									connectionsGroup.getRdfsSubClassOfReasoner())
 							.getTargetFilter(connectionsGroup, deletedTypes);
-
-					deletedTypes = new DebugPlanNode(deletedTypes, p -> {
-						assert p != null;
-					});
 
 					addedTargets = new UnionNode(addedTargets,
 							new TrimToTarget(new ShiftToPropertyShape(deletedTypes)));
@@ -160,10 +147,6 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					connectionsGroup.getBaseConnection(),
 					RDF.TYPE, Collections.singleton(clazz),
 					addedTargets, false, ExternalPredicateObjectFilter.FilterOn.value);
-
-			falseNode = new DebugPlanNode(falseNode, p -> {
-				assert p != null;
-			});
 
 			return falseNode;
 

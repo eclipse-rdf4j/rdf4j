@@ -389,8 +389,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-//		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
-		return true;
+		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
 
 	/**

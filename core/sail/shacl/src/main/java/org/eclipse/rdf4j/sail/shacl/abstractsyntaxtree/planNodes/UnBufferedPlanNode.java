@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implements PushablePlanNode {
 	private final Logger logger = LoggerFactory.getLogger(UnBufferedPlanNode.class);
 
-	private T parent;
+	private final T parent;
 
 	ValidationTuple next;
 	private boolean closed;

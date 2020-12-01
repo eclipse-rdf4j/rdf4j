@@ -98,7 +98,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 	private Set<String> seenLanguages = new HashSet<>();
 
-	private CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+	private final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
 	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
 		super(parent, validationExecutionLogger);

@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNodeProvider;
@@ -153,9 +152,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
 							Scope.nodeShape);
 
-			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				assert p != null;
-			});
 			if (!(constraintComponent instanceof PropertyShape) && produceValidationReports) {
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
@@ -166,10 +162,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			if (scope == Scope.propertyShape) {
 				validationPlanNode = new Unique(new ShiftToPropertyShape(validationPlanNode));
 			}
-
-			validationPlanNode = new DebugPlanNode(validationPlanNode, "", p -> {
-				assert p != null;
-			});
 
 			union = new UnionNode(union,
 					validationPlanNode);
@@ -211,8 +203,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getPlanNode(connectionsGroup, Scope.nodeShape, true));
-
-		planNode = new DebugPlanNode(planNode, "NodeShape::getAllTargetsPlan");
 
 		if (scope == Scope.propertyShape) {
 			planNode = new ShiftToPropertyShape(planNode);

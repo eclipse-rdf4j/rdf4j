@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.BulkedExternalLeftOuterJoin;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.GroupByFilter;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -125,10 +124,6 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn)
 					.getFalseNode(UnBufferedPlanNode.class);
-
-			falseNode = new DebugPlanNode(falseNode, p -> {
-				assert p != null;
-			});
 
 			return falseNode;
 

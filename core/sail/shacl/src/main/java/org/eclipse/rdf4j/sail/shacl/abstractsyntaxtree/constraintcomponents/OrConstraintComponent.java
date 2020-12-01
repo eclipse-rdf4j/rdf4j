@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.DebugPlanNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EqualsJoinValue;
 import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
@@ -106,10 +105,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> new DebugPlanNode(getAllTargetsPlan(connectionsGroup, scope), "",
-					p -> {
-						assert p != null;
-					});
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, scope);
 		}
 
 		PlanNode orPlanNodes = or.stream()
@@ -120,19 +116,10 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						scope
 				)
 				)
-				.map(p -> {
-					return (PlanNode) new DebugPlanNode(p, "", p1 -> {
-						assert p1 != null;
-					});
-				})
 				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
 				.orElse(new EmptyNode());
 
 		PlanNode invalid = new Unique(orPlanNodes);
-
-		invalid = new DebugPlanNode(invalid, p -> {
-			assert p != null;
-		});
 
 		return invalid;
 	}
@@ -275,15 +262,14 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 			} else {
 
 				Path path = getTargetChain().getPath().get();
-				String objectVariable = randomVariable();
 
 				String collect = or
 						.stream()
 						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
 								rdfsSubClassOfReasoner, scope))
 						.map(SparqlFragment::getFragment)
-						.reduce((a, b) -> a + " || " + b)
-						.orElse("");
+						.collect(Collectors.joining(" ) || ( ", "( ",
+								" )"));
 
 				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 
