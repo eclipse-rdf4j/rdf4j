@@ -243,10 +243,12 @@ public class TransactionController extends AbstractController {
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
 						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));
 				transaction.delete(format, request.getInputStream(), baseURI);
-
 				break;
 			case UPDATE:
 				return getSparqlUpdateResult(transaction, request, response);
+			case PREPARE:
+				transaction.prepare();
+				break;
 			case COMMIT:
 				transaction.commit();
 				// If commit fails with an exception, deregister should be skipped so the user
