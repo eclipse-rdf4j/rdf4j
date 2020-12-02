@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.repository;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -22,9 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-import java.io.IOException;
-import java.io.InputStream;
-
 /**
  * RDF Tutorial example 15: executing a simple SPARQL query on the database
  *
@@ -33,8 +33,7 @@ import java.io.InputStream;
 public class Example15SimpleSPARQLQuery {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
 		db.init();
@@ -42,10 +41,9 @@ public class Example15SimpleSPARQLQuery {
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
 			String filename = "example-data-artists.ttl";
-			try (InputStream input =
-					Example15SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
+			try (InputStream input = Example15SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
 				// add the RDF data from the inputstream directly to our database
-				conn.add(input, "", RDFFormat.TURTLE );
+				conn.add(input, "", RDFFormat.TURTLE);
 			}
 
 			// We do a simple SPARQL SELECT-query that retrieves all resources of type `ex:Artist`,
@@ -70,8 +68,7 @@ public class Example15SimpleSPARQLQuery {
 					System.out.println("?n = " + solution.getValue("n"));
 				}
 			}
-		}
-		finally {
+		} finally {
 			// Before our program exits, make sure the database is properly shut down.
 			db.shutDown();
 		}

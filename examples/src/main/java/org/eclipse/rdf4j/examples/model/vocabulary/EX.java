@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Vocabulary constants for the 'http://example.org/' namespace.
- * It's a good idea to always create a vocabulary class such as this one when you program with RDF4J. It makes
- * it far easier to reuse certain resources and properties in various places in your code.
+ * Vocabulary constants for the 'http://example.org/' namespace. It's a good idea to always create a vocabulary class
+ * such as this one when you program with RDF4J. It makes it far easier to reuse certain resources and properties in
+ * various places in your code.
  */
 public class EX {
 
