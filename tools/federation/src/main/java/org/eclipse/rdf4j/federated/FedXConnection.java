@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
@@ -87,6 +88,12 @@ public class FedXConnection extends AbstractSailConnection {
 		super(federation);
 		this.federation = federation;
 		this.federationContext = federationContext;
+	}
+
+	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		super.setTransactionSettings(settings);
+		this.getWriteStrategyInternal().setTransactionSettings(settings);
 	}
 
 	@Override
