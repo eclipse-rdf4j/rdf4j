@@ -1189,7 +1189,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	protected ErrorInfo getErrorInfo(HttpResponse response) throws RepositoryException {
 		try {
 			ErrorInfo errInfo = ErrorInfo.parse(EntityUtils.toString(response.getEntity()));
-			logger.warn("Server reports problem: {}", errInfo.getErrorMessage());
+			logger.warn("Server reports problem: {} (enable debug logging for full details)", errInfo.getErrorType());
+			logger.debug("full error message: {}", errInfo.getErrorMessage());
 			return errInfo;
 		} catch (IOException e) {
 			logger.warn("Unable to retrieve error info from server");
