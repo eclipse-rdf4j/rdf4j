@@ -171,7 +171,12 @@ public interface RDFParser {
 	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
 	 *
 	 * @param in      The InputStream from which to read the data.
-	 * @param baseURI The URI associated with the data in the InputStream. May be <code>null</code>.
+	 * @param baseURI The URI associated with the data in the InputStream. May be <code>null</code>. Parsers for syntax
+	 *                formats that do not support relative URIs will ignore this argument.
+	 *                <p>
+	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section 5.1
+	 *                for details).
 	 * 
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
@@ -198,7 +203,12 @@ public interface RDFParser {
 	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
 	 *
 	 * @param reader  The Reader from which to read the data.
-	 * @param baseURI The URI associated with the data in the InputStream. May be <code>null</code>.
+	 * @param baseURI The URI associated with the data in the InputStream. May be <code>null</code>. Parsers for syntax
+	 *                formats that do not support relative URIs will ignore this argument.
+	 *                <p>
+	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section 5.1
+	 *                for details).
 	 * 
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.

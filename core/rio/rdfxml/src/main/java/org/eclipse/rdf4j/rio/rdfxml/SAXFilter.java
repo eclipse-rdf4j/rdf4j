@@ -667,8 +667,8 @@ class SAXFilter implements ContentHandler {
 		}
 
 		public void setBaseURI(String uriString) {
-			// Resolve the specified base URI against the inherited base URI
-			baseURI = baseURI.resolve(createBaseURI(uriString));
+			// Resolve the specified base URI against the inherited base URI (if any)
+			baseURI = baseURI != null ? baseURI.resolve(createBaseURI(uriString)) : createBaseURI(uriString);
 		}
 
 		public void setNamespaceMappings(Map<String, String> namespaceMappings) {
