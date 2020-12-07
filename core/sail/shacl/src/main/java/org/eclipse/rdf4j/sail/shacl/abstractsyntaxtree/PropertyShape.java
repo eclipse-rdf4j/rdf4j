@@ -269,11 +269,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	public ConstraintComponent deepClone() {
 		PropertyShape nodeShape = new PropertyShape(this);
 
-		constraintComponents.stream()
+		nodeShape.constraintComponents = constraintComponents.stream()
 				.map(ConstraintComponent::deepClone)
 				.collect(Collectors.toList());
-
-		nodeShape.constraintComponents = constraintComponents;
 
 		return nodeShape;
 	}
