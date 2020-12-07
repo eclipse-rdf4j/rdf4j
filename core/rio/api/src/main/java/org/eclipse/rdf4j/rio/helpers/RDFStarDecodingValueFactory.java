@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.rio.helpers;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
 import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -113,6 +115,16 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
 		return delegate.createLiteral(bigInteger);
+	}
+
+	@Override
+	public Literal createLiteral(TemporalAccessor value) {
+		return delegate.createLiteral(value);
+	}
+
+	@Override
+	public Literal createLiteral(TemporalAmount value) {
+		return delegate.createLiteral(value);
 	}
 
 	@Override

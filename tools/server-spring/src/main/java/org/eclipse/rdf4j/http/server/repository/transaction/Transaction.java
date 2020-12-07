@@ -148,6 +148,18 @@ class Transaction implements AutoCloseable {
 	 * @throws ExecutionException
 	 * @throws InterruptedException
 	 */
+	void prepare() throws InterruptedException, ExecutionException {
+		Future<Boolean> result = submit(() -> {
+			txnConnection.prepare();
+			return true;
+		});
+		getFromFuture(result);
+	}
+
+	/**
+	 * @throws ExecutionException
+	 * @throws InterruptedException
+	 */
 	void commit() throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
 			txnConnection.commit();

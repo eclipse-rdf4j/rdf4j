@@ -109,52 +109,30 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 		return results;
 	}
 
-	/**
-	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
-	 *
-	 * @param in      The InputStream from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
-	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException      If the configured statement handler encountered an unrecoverable error.
-	 * @throws IllegalArgumentException If the supplied input stream or base URI is <tt>null</tt>.
-	 */
 	@Override
 	public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		if (in == null) {
 			throw new IllegalArgumentException("Input stream cannot be 'null'");
 		}
-		if (baseURI == null) {
-			throw new IllegalArgumentException("Base URI cannot be 'null'");
-		}
 
 		InputSource inputSource = new InputSource(new BOMInputStream(in, false));
-		inputSource.setSystemId(baseURI);
+		if (baseURI != null) {
+			inputSource.setSystemId(baseURI);
+		}
 
 		parse(inputSource);
 	}
 
-	/**
-	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
-	 *
-	 * @param reader  The Reader from which to read the data, must not be <tt>null</tt>.
-	 * @param baseURI The URI associated with the data in the InputStream, must not be <tt>null</tt>.
-	 * @throws IOException              If an I/O error occurred while data was read from the InputStream.
-	 * @throws RDFParseException        If the parser has found an unrecoverable parse error.
-	 * @throws RDFHandlerException      If the configured statement handler has encountered an unrecoverable error.
-	 * @throws IllegalArgumentException If the supplied reader or base URI is <tt>null</tt>.
-	 */
 	@Override
 	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
 		if (reader == null) {
 			throw new IllegalArgumentException("Reader cannot be 'null'");
 		}
-		if (baseURI == null) {
-			throw new IllegalArgumentException("Base URI cannot be 'null'");
-		}
 
 		InputSource inputSource = new InputSource(reader);
-		inputSource.setSystemId(baseURI);
+		if (baseURI != null) {
+			inputSource.setSystemId(baseURI);
+		}
 
 		parse(inputSource);
 	}

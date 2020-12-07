@@ -15,6 +15,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -184,8 +185,9 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		Collection<RioSetting<?>> result = super.getSupportedSettings();
-
+		final Collection<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
+		result.add(BasicWriterSettings.PRETTY_PRINT);
+		result.add(BasicWriterSettings.BASE_DIRECTIVE);
 		result.add(JSONLDSettings.COMPACT_ARRAYS);
 		result.add(JSONLDSettings.HIERARCHICAL_VIEW);
 		result.add(JSONLDSettings.JSONLD_MODE);

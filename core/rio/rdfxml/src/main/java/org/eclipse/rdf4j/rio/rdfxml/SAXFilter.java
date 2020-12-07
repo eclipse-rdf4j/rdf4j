@@ -147,7 +147,9 @@ class SAXFilter implements ContentHandler {
 	}
 
 	public void setDocumentURI(String documentURI) {
-		this.documentURI = createBaseURI(documentURI);
+		if (documentURI != null) {
+			this.documentURI = createBaseURI(documentURI);
+		}
 	}
 
 	public void setParseStandAloneDocuments(boolean standAloneDocs) {
@@ -290,7 +292,9 @@ class SAXFilter implements ContentHandler {
 		elInfoStack.push(deferredElement);
 		rdfContextStackHeight++;
 
-		rdfParser.setBaseURI(deferredElement.baseURI.toString());
+		if (deferredElement.baseURI != null) {
+			rdfParser.setBaseURI(deferredElement.baseURI.toString());
+		}
 		rdfParser.setXMLLang(deferredElement.xmlLang);
 
 		rdfParser.startElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
@@ -348,7 +352,9 @@ class SAXFilter implements ContentHandler {
 			// Check for any deferred start elements
 			if (deferredElement != null) {
 				// Start element still deferred, this is an empty element
-				rdfParser.setBaseURI(deferredElement.baseURI.toString());
+				if (deferredElement.baseURI != null) {
+					rdfParser.setBaseURI(deferredElement.baseURI.toString());
+				}
 				rdfParser.setXMLLang(deferredElement.xmlLang);
 
 				rdfParser.emptyElement(deferredElement.namespaceURI, deferredElement.localName, deferredElement.qName,
@@ -661,8 +667,8 @@ class SAXFilter implements ContentHandler {
 		}
 
 		public void setBaseURI(String uriString) {
-			// Resolve the specified base URI against the inherited base URI
-			baseURI = baseURI.resolve(createBaseURI(uriString));
+			// Resolve the specified base URI against the inherited base URI (if any)
+			baseURI = baseURI != null ? baseURI.resolve(createBaseURI(uriString)) : createBaseURI(uriString);
 		}
 
 		public void setNamespaceMappings(Map<String, String> namespaceMappings) {

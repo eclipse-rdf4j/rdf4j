@@ -88,16 +88,16 @@ Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, stor
 {{< example "Example 01" "model/Example01BuildModel.java" >}} shows how we can create the RDF model we introduced above using RDF4J:
 
 ```java {linenos=inline}
-// We use a ValueFactory to create the building blocks of our RDF statements:
-// IRIs, blank nodes and literals.
-ValueFactory vf = SimpleValueFactory.getInstance();
+// We use some static factory methods to easily create IRIs and Literals
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 // We want to reuse this namespace when creating several building blocks.
 String ex = "http://example.org/";
 
 // Create IRIs for the resources we want to add.
-IRI picasso = vf.createIRI(ex, "Picasso");
-IRI artist = vf.createIRI(ex, "Artist");
+IRI picasso = iri(ex, "Picasso");
+IRI artist = iri(ex, "Artist");
 
 // Create a new, empty Model object.
 Model model = new TreeModel();
@@ -106,12 +106,12 @@ Model model = new TreeModel();
 model.add(picasso, RDF.TYPE, artist);
 
 // second statement: Picasso's first name is "Pablo".
-model.add(picasso, FOAF.FIRST_NAME, vf.createLiteral("Pablo"));
+model.add(picasso, FOAF.FIRST_NAME, literal("Pablo"));
 ```
 
-Let's take a closer look at this. Lines 1-10 are necessary preparation: we use a {{< javadoc "ValueFactory" "model/ValueFactory.html" >}} to create resources , which we will later use to add facts to our model.
+Let's take a closer look at this. Lines 1-10 are necessary preparation: we use {{< javadoc "Values" "model/util/Values.html" >}} factory methods to create resources , which we will later use to add facts to our model.
 
-On line 13, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models. For our purposes however, it doesn't really matter which implementation you use.
+On line 13, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models. For our purposes however, it doesn't really matter which implementation you use.
 
 On lines 16 and 19, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo".
 

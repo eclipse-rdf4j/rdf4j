@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.model;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
 import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -18,6 +20,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
  * statements} based on the RDF-1.1 Concepts and Abstract Syntax, a W3C Recommendation.
  *
  * @author Arjohn Kampman
+ *
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/">RDF-1.1 Concepts and Abstract Syntax</a>
  */
 public interface ValueFactory {
@@ -185,23 +188,69 @@ public interface ValueFactory {
 	public Literal createLiteral(double value);
 
 	/**
-	 * Creates a new literal representing the specified bigDecimal that is typed using the appropriate XML Schema
-	 * date/time datatype.
+	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
 	 */
 	public Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
-	 * Creates a new literal representing the specified bigInteger that is typed using the appropriate XML Schema
-	 * date/time datatype.
+	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
 	 */
 	public Literal createLiteral(BigInteger bigInteger);
+
+	/**
+	 * Creates a new literal representing a temporal accessor value.
+	 *
+	 * @param value the temporal accessor value for the literal
+	 *
+	 * @return a literal representing the specified temporal accessor {@code value} with the appropriate
+	 *         {@linkplain Literal#temporalAccessorValue() XML Schema date/time datatype}
+	 *
+	 * @throws NullPointerException     if {@code value} is {@code null}
+	 * @throws IllegalArgumentException if {@code value} cannot be represented by an XML Schema date/time datatype
+	 *
+	 * @since 3.5.0
+	 * @author Alessandro Bollini
+	 *
+	 * @apiNote See datatype-related API notes for {@link Literal#temporalAccessorValue()}.
+	 *
+	 * @implNote the default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+	 *           expected to override it.
+	 */
+	public default Literal createLiteral(TemporalAccessor value) {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * Creates a new literal representing a temporal amount value.
+	 *
+	 * @param value the temporal amount value for the literal
+	 * 
+	 * @return a literal representing the specified temporal amount {@code value} with the appropriate
+	 *         {@linkplain Literal#temporalAmountValue() XML Schema duration datatype}
+	 *
+	 * @throws NullPointerException     if {@code value} is {@code null}
+	 * @throws IllegalArgumentException if {@code value} cannot be represented by an XML Schema duration datatype
+	 *
+	 * @since 3.5.0
+	 * @author Alessandro Bollini
+	 *
+	 * @apiNote See datatype-related API notes for {@link Literal#temporalAmountValue()}.
+	 *
+	 * @implNote the default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+	 *           expected to override it.
+	 */
+	public default Literal createLiteral(TemporalAmount value) {
+		throw new UnsupportedOperationException();
+	}
 
 	/**
 	 * Creates a new literal representing the specified calendar that is typed using the appropriate XML Schema
 	 * date/time datatype.
 	 *
 	 * @param calendar The value for the literal.
-	 * @return An typed literal for the specified calendar.
+	 * @return A typed literal for the specified calendar.
 	 */
 	public Literal createLiteral(XMLGregorianCalendar calendar);
 

@@ -44,6 +44,7 @@
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>bom</module>
+		<module>examples</module>
 	</modules>
 	<profiles>
 		<profile>
@@ -294,7 +295,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.30</slf4j.version>
 		<logback.version>1.1.11</logback.version>
-		<httpclient.version>4.5.12</httpclient.version>
+		<httpclient.version>4.5.13</httpclient.version>
 		<httpcore.version>4.4.13</httpcore.version>
 		<jackson.version>2.10.5</jackson.version>
 		<jsonldjava.version>0.13.2</jsonldjava.version>
@@ -304,7 +305,7 @@
 		<solr.version>7.7.2</solr.version>
 		<elasticsearch.version>6.8.8</elasticsearch.version>
 		<servlet.version>3.1.0</servlet.version>
-		<jetty.version>9.4.24.v20191120</jetty.version>
+		<jetty.version>9.4.34.v20201102</jetty.version>
 		<spring.version>5.2.9.RELEASE</spring.version>
 		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>

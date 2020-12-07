@@ -12,6 +12,8 @@ import static org.eclipse.rdf4j.model.base.AbstractLiteral.reserved;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Objects;
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.model.base.AbstractLiteral.DecimalLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.IntegerLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.NumberLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TaggedLiteral;
+import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAccessorLiteral;
+import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAmountLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TypedLiteral;
 import org.eclipse.rdf4j.model.base.AbstractStatement.GenericStatement;
 import org.eclipse.rdf4j.model.base.AbstractTriple.GenericTriple;
@@ -118,7 +122,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		Objects.requireNonNull(label, "null label");
 		Objects.requireNonNull(language, "null language");
 
-		if (label.isEmpty()) {
+		if (language.isEmpty()) {
 			throw new IllegalArgumentException("empty language tag");
 		}
 
@@ -174,6 +178,22 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		Objects.requireNonNull(bigDecimal, "null bigDecimal");
 
 		return new DecimalLiteral(bigDecimal);
+	}
+
+	@Override
+	public Literal createLiteral(TemporalAccessor value) {
+
+		Objects.requireNonNull(value, "null value");
+
+		return new TemporalAccessorLiteral(value);
+	}
+
+	@Override
+	public Literal createLiteral(TemporalAmount value) {
+
+		Objects.requireNonNull(value, "null value");
+
+		return new TemporalAmountLiteral(value);
 	}
 
 	@Override

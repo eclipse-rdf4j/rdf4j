@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.write;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -24,6 +26,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * @see RepositoryWriteStrategy
  * @see ReadOnlyWriteStrategy
  */
+@Experimental
 public interface WriteStrategy extends AutoCloseable {
 	/**
 	 * Close this write strategy (e.g. close a shared {@link RepositoryException}).
@@ -32,6 +35,14 @@ public interface WriteStrategy extends AutoCloseable {
 	 */
 	@Override
 	void close() throws RepositoryException;
+
+	/**
+	 * Assign {@link TransactionSetting}s to be used for the next transaction.
+	 * 
+	 * @param transactionSettings one or more {@link TransactionSetting}s
+	 * @throws RepositoryException
+	 */
+	void setTransactionSettings(TransactionSetting... transactionSettings) throws RepositoryException;
 
 	/**
 	 * Begin a transaction.

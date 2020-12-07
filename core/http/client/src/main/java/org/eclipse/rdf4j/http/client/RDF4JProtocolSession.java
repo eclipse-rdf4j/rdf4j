@@ -671,6 +671,39 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 	}
 
+	public synchronized void prepareTransaction() throws RDF4JException, IOException, UnauthorizedException {
+		checkRepositoryURL();
+
+		if (transactionURL == null) {
+			throw new IllegalStateException("Transaction URL has not been set");
+		}
+
+		HttpPut method = null;
+		try {
+			URIBuilder url = new URIBuilder(transactionURL);
+			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());
+			method = applyAdditionalHeaders(new HttpPut(url.build()));
+
+			final HttpResponse response = execute(method);
+			try {
+				int code = response.getStatusLine().getStatusCode();
+				if (code == HttpURLConnection.HTTP_OK) {
+				} else {
+					throw new RepositoryException("unable to prepare transaction. HTTP error code " + code);
+				}
+			} finally {
+				EntityUtils.consumeQuietly(response.getEntity());
+			}
+		} catch (URISyntaxException e) {
+			logger.error("could not create URL for transaction prepare", e);
+			throw new RuntimeException(e);
+		} finally {
+			if (method != null) {
+				method.reset();
+			}
+		}
+	}
+
 	public synchronized void commitTransaction() throws RDF4JException, IOException, UnauthorizedException {
 		checkRepositoryURL();
 

@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.query.resultio.text.tsv;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * @author Jeen Broekstra
@@ -25,5 +27,13 @@ public class SPARQLTSVTupleQueryResultWriterTest extends AbstractTupleQueryResul
 	@Override
 	protected TupleQueryResultWriterFactory getWriterFactory() {
 		return new SPARQLResultsTSVWriterFactory();
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting<?>[] {
+				BasicWriterSettings.ENCODE_RDF_STAR,
+				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL
+		};
 	}
 }

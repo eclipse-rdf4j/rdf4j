@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
@@ -134,6 +136,23 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		assertThat(actualT2.getPredicate()).isEqualTo(RDF.TYPE);
 		assertThat(actualT2.getObject()).isEqualTo(RDFS.CLASS);
 	}
+
+	@Test
+	public void testGetSupportedSettings() throws Exception {
+		TupleQueryResultWriter writer = getWriterFactory().getWriter(System.out);
+
+		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();
+		assertThat(supportedSettings).containsExactlyInAnyOrder(getExpectedSupportedSettings());
+	}
+
+	/**
+	 * Get the {@link RioSetting}s expected to be returned by {@link QueryResultWriter#getSupportedSettings()}. Used by
+	 * {@link #testGetSupportedSettings()} to determine if the output of
+	 * {@link QueryResultWriter#getSupportedSettings()} is as expected for the concrete writer implementation.
+	 * 
+	 * @return an array of {@link RioSetting}s.
+	 */
+	protected abstract RioSetting<?>[] getExpectedSupportedSettings();
 
 	protected abstract TupleQueryResultParserFactory getParserFactory();
 
