@@ -46,7 +46,7 @@ public class EvaluationModeTest {
 		Repository repo = new SailRepository(spinSail);
 		repo.initialize();
 		try (RepositoryConnection conn = repo.getConnection()) {
-			conn.add(getClass().getResource("/testcases/testEvaluationMode.ttl"), null, null);
+			conn.add(getClass().getResource("/testcases/testEvaluationMode.ttl"));
 			TupleQuery tq = conn.prepareTupleQuery(
 					"prefix spin: <http://spinrdf.org/spin#> prefix ex: <ex:> select ?s where {?s ex:prop ?t. ?s a ex:TestClass. ?t a ex:TestClass. ex:Query spin:select ?t}");
 			Set<String> results = new HashSet<>();

@@ -720,12 +720,39 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Adds RDF data from an InputStream to the repository, optionally to one or more named contexts.
 	 *
 	 * @param in         An InputStream from which RDF data can be read.
-	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
 	 *                   contextual information in the actual data. If no contexts are supplied the contextual
 	 *                   information in the input stream is used, if no context information is available the data is
 	 *                   added without any context.
+	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * @since 3.5.0
+	 */
+	default void add(InputStream in, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(in, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds RDF data from an InputStream to the repository, optionally to one or more named contexts.
+	 *
+	 * @param in         An InputStream from which RDF data can be read.
+	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+	 *                   <code>null</code>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
+	 * @param dataFormat The serialization format of the data.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+	 *                   information in the input stream is used, if no context information is available the data is
+	 *                   added without any context.
+	 * 
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
@@ -742,7 +769,36 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * be preferred.</b>
 	 *
 	 * @param reader     A Reader from which RDF data can be read.
-	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
+	 * @param dataFormat The serialization format of the data.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *                   these contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(reader, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds RDF data from a Reader to the repository, optionally to one or more named contexts. <b>Note: using a Reader
+	 * to upload byte-based data means that you have to be careful not to destroy the data's character encoding by
+	 * enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is to
+	 * be preferred.</b>
+	 *
+	 * @param reader     A Reader from which RDF data can be read.
+	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+	 *                   <code>null</code>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
@@ -759,10 +815,60 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
 	 * contexts.
 	 *
+	 * @param url      The URL of the RDF data.
+	 * @param contexts The contexts to add the data to. If one or more contexts are specified the data is added to these
+	 *                 contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the URL.
+	 * @throws UnsupportedRDFormatException If the RDF format could not be recognized.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(URL url, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(url, null, null, contexts);
+	}
+
+	/**
+	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
+	 * contexts.
+	 *
+	 * @param url        The URL of the RDF data.
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the content type in the HTTP response header, and failing that, the
+	 *                   file name extension of the supplied URL.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *                   these contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the URL.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format
+	 *                                      could not be automatically determined.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(URL url, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(url, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
+	 * contexts.
+	 *
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
 	 *                   <tt>null</tt>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
 	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
 	 *                   determined by examining the content type in the HTTP response header, and failing that, the
 	 *                   file name extension of the supplied URL.
@@ -781,10 +887,63 @@ public interface RepositoryConnection extends AutoCloseable {
 	/**
 	 * Adds RDF data from the specified file to a specific contexts in the repository.
 	 *
+	 * @param file     A file containing RDF data.
+	 * @param contexts The contexts to add the data to. Note that this parameter is a vararg and as such is optional. If
+	 *                 no contexts are specified, the data is added to any context specified in the actual data file, or
+	 *                 if the data contains no context, it is added without context. If one or more contexts are
+	 *                 specified the data is added to these contexts, ignoring any context information in the data
+	 *                 itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the file.
+	 * @throws UnsupportedRDFormatException If the RDF format of the supplied file could not be recognized.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(File file, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(file, null, null, contexts);
+	}
+
+	/**
+	 * Adds RDF data from the specified file to a specific contexts in the repository.
+	 *
+	 * @param file       A file containing RDF data.
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the file name extension of the supplied File.
+	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
+	 *                   If no contexts are specified, the data is added to any context specified in the actual data
+	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
+	 *                   are specified the data is added to these contexts, ignoring any context information in the data
+	 *                   itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the file.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(File file, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(file, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds RDF data from the specified file to a specific contexts in the repository.
+	 *
 	 * @param file       A file containing RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
-	 * @param dataFormat The serialization format of the data.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the file name extension of the supplied File.
 	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
 	 *                   If no contexts are specified, the data is added to any context specified in the actual data
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
