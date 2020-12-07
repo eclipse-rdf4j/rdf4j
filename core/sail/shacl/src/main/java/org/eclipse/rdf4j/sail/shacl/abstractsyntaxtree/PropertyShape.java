@@ -298,8 +298,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
 							Scope.propertyShape))
 					.map(SparqlFragment::getFragment)
-					.reduce((a, b) -> a + " && " + b)
-					.orElse("");
+					.collect(Collectors.joining(" ) && ( ", "( ", " )"));
+
 			return SparqlFragment.filterCondition(sparql);
 
 		} else {

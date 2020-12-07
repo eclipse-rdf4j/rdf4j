@@ -251,8 +251,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
 							Scope.nodeShape))
 					.map(SparqlFragment::getFragment)
-					.reduce((a, b) -> a + " && " + b)
-					.orElse("");
+					.collect(Collectors.joining(" ) && ( ", "( ", " )"));
+
 			return SparqlFragment.filterCondition(sparql);
 
 		} else {

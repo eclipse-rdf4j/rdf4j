@@ -250,8 +250,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
 								rdfsSubClassOfReasoner, scope))
 						.map(SparqlFragment::getFragment)
-						.collect(Collectors.joining(" ) || ( ", "( ",
-								" )"));
+						.collect(Collectors.joining(" ) || ( ", "( ", " )"));
 				return SparqlFragment.filterCondition(collect);
 
 			}
