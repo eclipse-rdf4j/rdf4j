@@ -128,7 +128,9 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF* triple
 	 * @return an {@link Triple RDF* triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
+	 * @deprecated since 3.5.0 - use {@link Values#triple(Statement)} instead
 	 */
+	@Deprecated
 	public static Triple toTriple(Statement statement) {
 		return toTriple(SimpleValueFactory.getInstance(), statement);
 	}
@@ -140,7 +142,10 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF* triple
 	 * @return an {@link Triple RDF* triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
+	 * 
+	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
 	 */
+	@Deprecated
 	public static Triple toTriple(ValueFactory vf, Statement statement) {
 		return vf.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());
 	}
@@ -181,6 +186,41 @@ public class Statements {
 	 */
 	public static Statement toStatement(ValueFactory vf, Triple triple, Resource context) {
 		return vf.createStatement(triple.getSubject(), triple.getPredicate(), triple.getObject(), context);
+	}
+
+	/**
+	 * Create a {@link Statement} from the supplied subject, predicate, object and context.
+	 *
+	 * @param subject   the statement subject
+	 * @param predicate the statement predicate
+	 * @param object    the statement object
+	 * @param context   the context to assign to the {@link Statement}. May be null to indicate no context.
+	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+	 *         supplied context.
+	 * @throws NullPointerException if any of subject, predicate, or object are <code>null</code>.
+	 * @since 3.5.0
+	 */
+	public static Statement statement(Resource subject, IRI predicate, Value object,
+			Resource context) {
+		return statement(SimpleValueFactory.getInstance(), subject, predicate, object, context);
+	}
+
+	/**
+	 * Create a {@link Statement} from the supplied subject, predicate, object and context.
+	 *
+	 * @param vf        the {@link ValueFactory} to use for creating the {@link Statement} object.
+	 * @param subject   the statement subject
+	 * @param predicate the statement predicate
+	 * @param object    the statement object
+	 * @param context   the context to assign to the {@link Statement}. May be null to indicate no context.
+	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+	 *         supplied context.
+	 * @throws NullPointerException if any of vf, subject, predicate, or object are <code>null</code>.
+	 * @since 3.5.0
+	 */
+	public static Statement statement(ValueFactory vf, Resource subject, IRI predicate, Value object,
+			Resource context) {
+		return vf.createStatement(subject, predicate, object, context);
 	}
 
 	/**

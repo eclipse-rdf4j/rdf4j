@@ -37,6 +37,8 @@ public abstract class Protocol {
 		UPDATE,
 		/** Keep alive ping @since 2.3 */
 		PING,
+		/** prepare */
+		PREPARE,
 		/** commit */
 		COMMIT,
 		/** rollback */
@@ -78,12 +80,13 @@ public abstract class Protocol {
 	 * Protocol version.
 	 *
 	 * <ul>
+	 * <li>12: since RDF4J 3.5.0</li>
 	 * <li>11: since RDF4J 3.3.0</li>
 	 * <li>10: since RDF4J 3.1.0</li>
 	 * <li>9: since RDF4J 3.0.0</li>
 	 * </ul>
 	 */
-	public static final String VERSION = "11";
+	public static final String VERSION = "12";
 
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.

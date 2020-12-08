@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.io.IndentingWriter;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -56,7 +57,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined
  * in <a href="http://www.dajobe.org/2004/01/turtle/">in this document</a>.
  */
-public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
+public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
 	private static final int LINE_WRAP = 80;
 
@@ -69,10 +70,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	private static final IRI REST = new SimpleIRI(RDF.REST.stringValue()) {
 		private static final long serialVersionUID = -7951518099940758898L;
 	};
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	/**
 	 * Size of statement buffer used for pretty printing and blank node inlining. Set to Long.MAX_VALUE to buffer
@@ -101,10 +98,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 
 	private ModelFactory modelFactory = new LinkedHashModelFactory();
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
 	/**
 	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
 	 *
@@ -121,7 +114,6 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI
 	 */
 	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {
-		super(out);
 		this.baseIRI = baseIRI;
 		// The BufferedWriter is here to avoid to many calls to the CharEncoder
 		// see javadoc of OutputStreamWriter.
@@ -148,9 +140,10 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter {
 		this.writer = new IndentingWriter(writer);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	public Writer getWriter() {
+		return writer;
+	}
 
 	@Override
 	public RDFFormat getRDFFormat() {

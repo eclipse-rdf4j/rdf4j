@@ -38,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.io.ByteSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -58,7 +59,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
  *
  * @author Arjohn Kampman
  */
-public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
+public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, ByteSink {
 
 	/*-----------*
 	 * Variables *
@@ -87,20 +88,15 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	protected boolean tupleVariablesFound = false;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
 	public BinaryQueryResultWriter(OutputStream out) {
-		super(out);
 		this.out = new DataOutputStream(out);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
+	public OutputStream getOutputStream() {
+		return out;
+	}
+
 	public final TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.BINARY;
 	}

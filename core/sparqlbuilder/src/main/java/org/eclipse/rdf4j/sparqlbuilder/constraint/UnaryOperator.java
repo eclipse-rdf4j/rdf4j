@@ -18,7 +18,7 @@ enum UnaryOperator implements SparqlOperator {
 
 	private String operator;
 
-	private UnaryOperator(String operator) {
+	UnaryOperator(String operator) {
 		this.operator = operator;
 	}
 

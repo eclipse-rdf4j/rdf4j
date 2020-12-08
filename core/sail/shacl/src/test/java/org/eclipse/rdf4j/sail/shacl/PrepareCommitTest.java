@@ -8,18 +8,30 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.junit.Test;
 
@@ -44,6 +56,37 @@ public class PrepareCommitTest {
 		}
 
 		shaclSail.shutDown();
+	}
+
+	@Test
+	public void testPrepareFollowedByRollback() throws IOException {
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMinCountZero.ttl");
+		NotifyingSailConnection conn = shaclSail.getConnection();
+		try {
+			Model otherShaclData = Rio.parse(getClass().getResourceAsStream("/shacl.ttl"), "",
+					RDFFormat.TURTLE);
+			conn.begin();
+			conn.clear(RDF4J.SHACL_SHAPE_GRAPH);
+			otherShaclData.forEach(st -> conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
+					RDF4J.SHACL_SHAPE_GRAPH));
+			IRI bob = SimpleValueFactory.getInstance().createIRI("http://example.org/bob");
+			conn.addStatement(bob, RDF.TYPE, RDFS.RESOURCE);
+
+			conn.prepare(); // should fail because bob has no label
+			fail("constraint violation not detected on prepare call");
+		} catch (ShaclSailValidationException e) {
+			conn.rollback();
+
+			// check that original shacl data (shaclMinCountZero) has been restored
+			Model restoredShapeGraph = QueryResults
+					.asModel(conn.getStatements(null, null, null, true, RDF4J.SHACL_SHAPE_GRAPH));
+
+			Set<Literal> minCountValues = Models
+					.objectLiterals(restoredShapeGraph.getStatements(null, SHACL.MIN_COUNT, null));
+			assertThat(minCountValues).hasSize(1).allMatch(l -> l.intValue() == 0);
+		} finally {
+			conn.close();
+		}
 	}
 
 	@Test

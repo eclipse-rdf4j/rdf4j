@@ -153,6 +153,11 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			}
 
 			@Override
+			public void prepare() throws RepositoryException {
+				// no-op
+			}
+
+			@Override
 			public void commit() throws RepositoryException {
 				Set<String> ids = new LinkedHashSet<>();
 				ids.addAll(manager.getRepositoryIDs());
@@ -310,6 +315,7 @@ public class RepositoryConfigRepository extends AbstractRepository {
 			private UnsupportedOperationException unsupported() {
 				return new UnsupportedOperationException("Query operations are not supported on the SYSTEM repository");
 			}
+
 		};
 	}
 

@@ -115,7 +115,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -> createNode(nodeID),
 					() -> createNode());
 
-			final JsonLdOptions options = new JsonLdOptions(baseURI);
+			final JsonLdOptions options = baseURI != null ? new JsonLdOptions(baseURI) : new JsonLdOptions();
 			options.useNamespaces = true;
 
 			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);

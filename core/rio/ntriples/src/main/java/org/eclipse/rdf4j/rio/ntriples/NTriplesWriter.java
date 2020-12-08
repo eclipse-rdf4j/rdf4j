@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -35,16 +36,12 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
  * An implementation of the RDFWriter interface that writes RDF documents in N-Triples format. The N-Triples format is
  * defined in <a href="http://www.w3.org/TR/rdf-testcases/#ntriples">this section</a> of the RDF Test Cases document.
  */
-public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
+public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
 	protected final Writer writer;
 
 	private boolean xsdStringToPlainLiteral = true;
 	private boolean escapeUnicode;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new NTriplesWriter that will write to the supplied OutputStream.
@@ -52,7 +49,6 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the N-Triples document to.
 	 */
 	public NTriplesWriter(OutputStream out) {
-		super(out);
 		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 	}
 
@@ -65,9 +61,10 @@ public class NTriplesWriter extends AbstractRDFWriter implements RDFWriter {
 		this.writer = writer;
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	public Writer getWriter() {
+		return writer;
+	}
 
 	@Override
 	public RDFFormat getRDFFormat() {

@@ -30,6 +30,11 @@ public class NumericLiteral extends SimpleLiteral {
 		this.number = number;
 	}
 
+	protected NumericLiteral(Number number, XSD.Datatype datatype) {
+		super(XMLDatatypeUtil.toString(number), datatype);
+		this.number = number;
+	}
+
 	/**
 	 * Creates an xsd:byte typed litral with the specified value.
 	 */

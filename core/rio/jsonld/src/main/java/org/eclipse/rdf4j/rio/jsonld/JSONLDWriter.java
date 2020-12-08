@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
@@ -46,7 +47,7 @@ import com.github.jsonldjava.utils.JsonUtils;
  *
  * @author Peter Ansell
  */
-public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
+public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
 	private final Model model = new LinkedHashModel();
 
@@ -72,7 +73,6 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseURI      base URI
 	 */
 	public JSONLDWriter(OutputStream outputStream, String baseURI) {
-		super(outputStream);
 		this.baseURI = baseURI;
 		this.writer = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
 	}
@@ -95,6 +95,11 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter {
 	public JSONLDWriter(Writer writer, String baseURI) {
 		this.baseURI = baseURI;
 		this.writer = writer;
+	}
+
+	@Override
+	public Writer getWriter() {
+		return writer;
 	}
 
 	@Override

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
@@ -315,7 +316,7 @@ public class JSONLDHierarchicalWriterTest {
 
 	private void verifyModelIsNotChanged(File file) throws IOException {
 		Model model2 = Rio.parse(new FileInputStream(file), null, RDFFormat.JSONLD);
-		assertTrue(model2.equals(model));
+		assertTrue(Models.isomorphic(model, model2));
 	}
 
 	private void compareWithJsonFile(File file) throws IOException {

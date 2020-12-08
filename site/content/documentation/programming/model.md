@@ -13,7 +13,28 @@ The core of the RDF4J framework is the RDF Model API (see the [Model API Javadoc
 
 RDF statements are represented by the {{< javadoc "Statement" "model/Statement.html" >}} interface. Each `Statement` has a subject, predicate, object and (optionally) a context. Each of these 4 items is a {{< javadoc "Value" "model/Value.html" >}}. The `Value` interface is further specialized into {{< javadoc "Resource" "model/Resource.html" >}}, and {{< javadoc "Literal" "model/Literal.html" >}}. `Resource` represents any RDF value that is either a {{< javadoc "BNode" "model/BNode.html" >}} or an {{< javadoc "IRI" "model/IRI.html" >}}. `Literal` represents RDF literal values (strings, dates, integer numbers, and so on).
 
-To create new values and statements, you can use a {{< javadoc "ValueFactory" "model/ValueFactory.html" >}}. You can use a default `ValueFactory` implementation called {{< javadoc "SimpleValueFactory" "model/impl/SimpleValueFactory.html" >}}:
+### Creating new building blocks: the `Values` and `Statements` factory methods
+
+{{< tag " New in RDF4J 3.5 " >}}
+
+To create new values and statements, you can use the {{< javadoc "Values" "model/util/Values.html" >}}  and {{< javadoc "Statements" "model/util/Statements.html" >}} static factory methods, which provide easy creation of new `IRI`s, `Literal`s, `BNode`s, `Triple`s and `Statement`s based on a variety of different input objects.
+
+```java
+import static org.eclipse.model.util.Statements.statement;
+import static org.eclipse.model.util.Values.iri;
+import static org.eclipse.model.util.Values.literal;
+
+IRI bob = iri("http://example.org/bob");
+IRI nameProp = iri("http://example.org/name");
+Literal bobsName = literal("Bob");
+Literal bobsAge = literal(42);
+
+Statement st = statement(bob, name, bobsName);
+```
+
+### Using a `ValueFactory`
+
+If you want more control than the static factory methods provide, you can also use a {{< javadoc "ValueFactory" "model/ValueFactory.html" >}} instance. You can obtain one from {{< javadoc "Values" "model/util/Values.html" >}}, or you can directly use a singleton `ValueFactory` implementation called {{< javadoc "SimpleValueFactory" "model/impl/SimpleValueFactory.html" >}}:
 
 ```java
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,11 +43,19 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 ValueFactory factory = SimpleValueFactory.getInstance();
 ```
 
-For performance reasons, the `SimpleValueFactory` provides only basic input validation. The {{< javadoc "ValidatingValueFactory" "model/impl/ValidatingValueFactory.html" >}} is stricter, albeit somewhat slower.
+For performance reasons, the `SimpleValueFactory` provides only basic input validation. The {{< javadoc "ValidatingValueFactory" "model/impl/ValidatingValueFactory.html" >}} is stricter, albeit somewhat slower (though this should not be noticable unless you are working with very significant amounts of data).
 
 You can also obtain a `ValueFactory` from the {{< javadoc "Repository" "repository/Repository.html" >}} you are working with, and in fact, this is the recommend approach. For more information about this see the [Repository API documentation](/documentation/programming/repository/).
 
 Regardless of how you obtain your `ValueFactory`, once you have it, you can use it to create new `IRI`s, `Literal`s, and `Statement`s:
+
+```java
+IRI bob = iri(factory, "http://example.org/bob");
+IRI name = iri(factory,"http://example.org/name");
+Literal bobsName = literal(factory, "Bob");
+Statement nameStatement = statement(factory, bob, name, bobsName);
+```
+Or if you prefer, using the `Valuefactory` directly:
 
 ```java
 IRI bob = factory.createIRI("http://example.org/bob");
@@ -38,7 +67,7 @@ Statement nameStatement = factory.createStatement(bob, name, bobsName);
 The Model API also provides pre-defined IRIs for several well-known vocabularies, such as RDF, RDFS, OWL, DC (Dublin Core), FOAF (Friend-of-a-Friend), and more. These constants can all be found in the `org.eclipse.rdf4j.model.vocabulary` package, and can be quite handy in quick creation of RDF statements (or in querying a `Repository`, as we shall see later):
 
 ```java
-Statement typeStatement = factory.createStatement(bob, RDF.TYPE, FOAF.PERSON);
+Statement typeStatement = Values.statement(bob, RDF.TYPE, FOAF.PERSON);
 ```
 
 ## The Model interface
@@ -49,7 +78,7 @@ The above interfaces and classes show how we can create the individual building 
 
 ```java
 // create a new Model to put statements in
-Model model = new LinkedHashModel();
+Model model = DynamicModelFactory.createEmptyModel();
 // add an RDF statement
 model.add(typeStatement);
 // add another RDF statement by simply providing subject, predicate, and object.
@@ -80,11 +109,11 @@ for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
 
 The `filter()` method returns a `Model` again. However, the `Model` returned by this method is still backed by the original `Model`. Thus, changes that you make to this returned `Model` will automatically be reflected in the original `Model` as well.
 
-Rdf4j provides two default implementations of the `Model` interface: {{< javadoc "org.eclipse.rdf4j.model.impl.LinkedHashModel" "model/impl/LinkedHashModel.html" >}}, and {{< javadoc "org.eclipse.rdf4j.model.impl.TreeModel" "model/impl/TreeModel.html" >}}. The difference between the two is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however.
+RDF4J provides three default implementations of the `Model` interface: {{< javadoc "org.eclipse.model.mpl.DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "org.eclipse.rdf4j.model.impl.LinkedHashModel" "model/impl/LinkedHashModel.html" >}}, and {{< javadoc "org.eclipse.rdf4j.model.impl.TreeModel" "model/impl/TreeModel.html" >}}. The difference between them is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however. 
 
 ## Building RDF Models with the ModelBuilder
 
-Since version 2.1, rdf4j provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} utility. The `ModelBuilder` provides a fluent API to quickly and efficiently create RDF models programmatically.
+Since version 2.1, RDF4J provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} utility. The `ModelBuilder` provides a fluent API to quickly and efficiently create RDF models programmatically.
 
 Here’s a simple code example that demonstrates how to quickly create an RDF graph with some FOAF data:
 
@@ -178,16 +207,19 @@ As an example, suppose we wish to add the above list of three string literals as
 The {{< javadoc "RDFCollections" "model/util/RDFCollections.html" >}} utility allows us to do this, as follows:
 
 ```java
+import static org.eclipse.model.util.Values.bnode;
+import static org.eclipse.model.util.Values.iri;
+import static org.eclipse.model.util.Values.literal;
+
 String ns = "http://example.org/";
-ValueFactory vf = SimpleValueFactory.getInstance();
 // IRI for ex:favoriteLetters
-IRI favoriteLetters = vf.createIRI(ns, "favoriteLetters");
+IRI favoriteLetters = iri(ns, "favoriteLetters");
 // IRI for ex:John
-IRI john = vf.createIRI(ns, "John");
+IRI john = iri(ns, "John");
 // create a list of letters
-List<Literal> letters = Arrays.asList(new Literal[] { vf.createLiteral("A"), vf.createLiteral("B"), vf.createLiteral("C") });
+List<Literal> letters = Arrays.asList(new Literal[] { literal("A"), literal("B"), literal("C") });
 // create a head resource for our list
-Resource head = vf.createBNode();
+Resource head = bnode();
 // convert our list and add it to a newly-created Model
 Model aboutJohn = RDFCollections.asRDF(letters, head, new LinkedHashModel());
 // set the ex:favoriteLetters property to link to the head of the list
@@ -263,8 +295,8 @@ RDF4J offers utility conversion functions very similar to the utilities for RDF 
 For example, to create the above RDF container, we can do this:
 
 ```java
-List<Literal> letters = Arrays.asList(new Literal[] { vf.createLiteral("A"), vf.createLiteral("B"), vf.createLiteral("C") });
-IRI myBag = vf.createIRI("urn:myBag");
+List<Literal> letters = Arrays.asList(new Literal[] { literal("A"), literal("B"), literal("C") });
+IRI myBag = iri("urn:myBag");
 Model letterBag = RDFContainers.toRDF(RDF.BAG, letters, myBag, new TreeModel());
 ```
 
