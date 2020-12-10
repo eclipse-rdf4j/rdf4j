@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -11,8 +11,8 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -52,37 +52,32 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseG1GC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class QueryBenchmark {
+public class SortBenchmark {
 
 	private SailRepository repository;
 
-	private static final String query1;
-	private static final String query2;
-	private static final String query3;
 	private static final String query4;
 
 	static {
 		try {
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
+
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	List<Statement> statementList;
+	List<Value> valuesList;
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.groupByQuery") // adapt to run other benchmark tests
+				.include("SortBenchmark.*") // adapt to run other benchmark tests
 				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
@@ -90,7 +85,7 @@ public class QueryBenchmark {
 		new Runner(opt).run();
 	}
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 
 		repository = new SailRepository(new MemoryStore());
@@ -102,19 +97,20 @@ public class QueryBenchmark {
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+				valuesList = stream
+						.map(s -> s.getObject())
+						.collect(Collectors.toList());
+			}
 		}
-
-		System.gc();
 
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
+		return SortBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
-	@TearDown(Level.Invocation)
+	@TearDown(Level.Trial)
 	public void afterClass() {
 
 		repository.shutDown();
@@ -122,72 +118,42 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> groupByQuery() {
+	public List<BindingSet> sortByQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return Iterations.asList(connection
-					.prepareTupleQuery(query1)
-					.evaluate());
+			try (Stream<BindingSet> stream = connection
+					.prepareTupleQuery(query4)
+					.evaluate()
+					.stream()) {
+				return stream.limit(1).collect(Collectors.toList());
+			}
 		}
 	}
 
 	@Benchmark
-	public boolean simpleUpdateQueryIsolationReadCommitted() {
+	public Value sortGetStatements() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
+			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+				Value[] values = stream
+						.map(s -> s.getObject())
+						.toArray(i -> new Value[i]);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
+				Arrays.parallelSort(values, new ValueComparator());
 
+				return values[0];
+			}
+		}
 	}
 
 	@Benchmark
-	public boolean simpleUpdateQueryIsolationNone() {
+	public Value sortDirectly() {
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
+		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		return hasStatement();
+		Arrays.parallelSort(values, new ValueComparator());
 
-	}
-
-	@Benchmark
-	public boolean removeByQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	@Benchmark
-	public boolean removeByQueryReadCommitted() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-		}
-		return hasStatement();
+		return values[0];
 
 	}
 
