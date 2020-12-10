@@ -13,7 +13,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.jdk }}  
+        java-version: ${{ matrix.jdk }}
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
@@ -24,10 +24,10 @@ jobs:
     - name: Verify formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
-      run: mvn -B clean install -Pquick,\!formatting -Djapicmp.skip
+      run: mvn -B clean install -Pquick,\!formatting
     - name: Run tests
       run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
     - name: Print test failures
       if: failure()
       run: ./printTestResults.sh
-    
+
