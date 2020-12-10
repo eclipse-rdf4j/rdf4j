@@ -43,8 +43,9 @@
 		<module>tools</module>
 		<module>testsuites</module>
 		<module>compliance</module>
-		<module>bom</module>
 		<module>examples</module>
+		<!-- for maven Central deployment it is important that bom is the last module -->
+		<module>bom</module>
 	</modules>
 	<profiles>
 		<profile>
