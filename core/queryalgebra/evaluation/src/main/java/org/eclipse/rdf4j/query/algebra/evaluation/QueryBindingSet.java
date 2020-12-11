@@ -43,8 +43,19 @@ public class QueryBindingSet extends AbstractBindingSet {
 	}
 
 	public QueryBindingSet(BindingSet bindingSet) {
-		this(bindingSet.size());
-		addAll(bindingSet);
+		 bindings = bindingsFrom(bindingSet);
+	}
+
+	private static Map<String, Value> bindingsFrom(BindingSet bindingSet){
+		if (bindingSet instanceof QueryBindingSet) {
+			return new HashMap<>(((QueryBindingSet) bindingSet).bindings);
+		} else {
+			Map<String, Value> bindings = new HashMap<>(bindingSet.size() * 2);
+			for (Binding binding : bindingSet) {
+				bindings.put(binding.getName(), binding.getValue());
+			}
+			return bindings;
+		}
 	}
 
 	public void addAll(BindingSet bindingSet) {
