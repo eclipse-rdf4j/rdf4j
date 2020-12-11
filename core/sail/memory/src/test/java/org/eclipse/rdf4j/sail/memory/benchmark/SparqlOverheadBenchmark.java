@@ -50,7 +50,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseG1GC" })
+// use SerialGC because the workload is single-threaded
+@Fork(value = 1, jvmArgs = { "-Xms256M", "-Xmx256M", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -123,12 +124,6 @@ public class SparqlOverheadBenchmark {
 			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 				return stream.count();
 			}
-		}
-	}
-
-	private boolean hasStatement() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
 	}
 

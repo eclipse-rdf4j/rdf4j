@@ -54,6 +54,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
+// use G1GC because the workload is multi-threaded
 @Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseG1GC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 5)
@@ -99,7 +100,7 @@ public class SortBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 				valuesList = stream
-						.map(s -> s.getObject())
+						.map(Statement::getObject)
 						.collect(Collectors.toList());
 			}
 		}
@@ -136,8 +137,8 @@ public class SortBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 				Value[] values = stream
-						.map(s -> s.getObject())
-						.toArray(i -> new Value[i]);
+						.map(Statement::getObject)
+						.toArray(Value[]::new);
 
 				Arrays.parallelSort(values, new ValueComparator());
 
@@ -155,12 +156,6 @@ public class SortBenchmark {
 
 		return values[0];
 
-	}
-
-	private boolean hasStatement() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
-		}
 	}
 
 }
