@@ -59,7 +59,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	public void setName(String name) {
-		this.name = name;
+		this.name = name.intern();
 	}
 
 	public void setValue(Value value) {
