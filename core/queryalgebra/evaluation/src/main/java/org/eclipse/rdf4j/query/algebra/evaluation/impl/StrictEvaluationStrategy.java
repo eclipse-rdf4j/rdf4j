@@ -456,17 +456,16 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	private static final class ConvertingStatementsToBindingsIteration
-	    extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException>
-	{
+			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
 		private final BindingSet bindings;
 		private final Var subjVar;
 		private final Var predVar;
 		private final Var conVar;
 		private final Var objVar;
 
-		private ConvertingStatementsToBindingsIteration(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
-		    BindingSet bindings, Var subjVar, Var predVar, Var conVar, Var objVar)
-		{
+		private ConvertingStatementsToBindingsIteration(
+				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				BindingSet bindings, Var subjVar, Var predVar, Var conVar, Var objVar) {
 			super(iter);
 			this.bindings = bindings;
 			this.subjVar = subjVar;
@@ -487,30 +486,26 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return result;
 		}
 
-		private void trySetContext(final Var conVar, Statement st, QueryBindingSet result)
-		{
+		private void trySetContext(final Var conVar, Statement st, QueryBindingSet result) {
 			if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
 					&& st.getContext() != null) {
 				result.addBinding(conVar.getName(), st.getContext());
 			}
 		}
 
-		private void trySetObject(final Var objVar, Statement st, QueryBindingSet result)
-		{
+		private void trySetObject(final Var objVar, Statement st, QueryBindingSet result) {
 			if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
 				result.addBinding(objVar.getName(), st.getObject());
 			}
 		}
 
-		private void trySetPredicate(final Var predVar, Statement st, QueryBindingSet result)
-		{
+		private void trySetPredicate(final Var predVar, Statement st, QueryBindingSet result) {
 			if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
 				result.addBinding(predVar.getName(), st.getPredicate());
 			}
 		}
 
-		private void trySetSubject(final Var subjVar, Statement st, QueryBindingSet result)
-		{
+		private void trySetSubject(final Var subjVar, Statement st, QueryBindingSet result) {
 			if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
 				result.addBinding(subjVar.getName(), st.getSubject());
 			}
@@ -682,7 +677,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			};
 
 			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new ConvertingStatementsToBindingsIteration(stIter3, bindings, subjVar, predVar, conVar, objVar);
+			resultingIterator = new ConvertingStatementsToBindingsIteration(stIter3, bindings, subjVar, predVar, conVar,
+					objVar);
 			allGood = true;
 
 			return resultingIterator;
