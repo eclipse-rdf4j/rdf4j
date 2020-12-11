@@ -61,7 +61,8 @@
 						<dependency>
 							<groupId>${project.groupId}</groupId>
 							<artifactId>rdf4j-util</artifactId>
-							<version>${project.version}</version>
+							<version>${last.japicmp.compare.version}</version>
+							<type>jar</type>
 						</dependency>
 					</oldVersions>
 					<newVersions>
