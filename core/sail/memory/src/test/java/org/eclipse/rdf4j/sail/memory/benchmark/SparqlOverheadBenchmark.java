@@ -22,7 +22,9 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -60,11 +62,13 @@ public class SparqlOverheadBenchmark {
 	private SailRepository repository;
 
 	private static final String query5;
+	private static final String query6;
 
 	static {
 		try {
 
 			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
+			query6 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query6.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -125,6 +129,20 @@ public class SparqlOverheadBenchmark {
 				return stream.count();
 			}
 		}
+	}
+
+	@Benchmark
+	public long queryWithManyVars() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (Stream<BindingSet> stream = connection
+					.prepareTupleQuery(query6)
+					.evaluate()
+					.stream()) {
+				return stream.count();
+			}
+		}
+
 	}
 
 }
