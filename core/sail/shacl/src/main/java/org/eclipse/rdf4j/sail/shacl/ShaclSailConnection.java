@@ -838,8 +838,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		public Settings(boolean cacheSelectNodes, boolean validationEnabled) {
 			this.cacheSelectedNodes = cacheSelectNodes;
-			if (!validationEnabled)
+			if (!validationEnabled) {
 				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+			}
 		}
 
 		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {
