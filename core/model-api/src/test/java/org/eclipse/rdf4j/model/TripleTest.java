@@ -13,7 +13,6 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.util.Objects;
 
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**

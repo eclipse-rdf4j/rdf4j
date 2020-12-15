@@ -399,8 +399,9 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
 		} else {
 			BNode bNode = (BNode) value;
-			if (!inlineBlankNodes)
+			if (!inlineBlankNodes) {
 				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+			}
 		}
 	}
 

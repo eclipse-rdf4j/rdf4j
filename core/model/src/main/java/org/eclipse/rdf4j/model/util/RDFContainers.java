@@ -8,7 +8,10 @@
 
 package org.eclipse.rdf4j.model.util;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -16,7 +19,13 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -50,7 +59,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
  *     +---rdf:_3--> "C"
  * </pre>
  *
- * 
+ *
  * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>.
  */
 public class RDFContainers {
@@ -243,7 +252,7 @@ public class RDFContainers {
 
 	/**
 	 * Creates the IRI of the element counter predicate in the {@link RDF} namespace, rdf:_nnn
-	 * 
+	 *
 	 * @param vf             the {@link ValueFactory} to use for creation of new model objects. May not be {@code null}
 	 * @param elementCounter the counter varialbe for which IRI has to be created
 	 * @return {@link IRI} of the rdf:_nnn

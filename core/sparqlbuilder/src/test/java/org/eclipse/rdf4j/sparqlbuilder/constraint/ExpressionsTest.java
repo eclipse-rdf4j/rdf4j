@@ -11,8 +11,6 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
 import static org.junit.Assert.assertEquals;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
-import org.hamcrest.CoreMatchers;
-import org.junit.Assert;
 import org.junit.Test;
 
 public class ExpressionsTest {
