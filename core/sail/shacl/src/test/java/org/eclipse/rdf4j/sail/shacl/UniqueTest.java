@@ -60,6 +60,9 @@ public class UniqueTest {
 
 		ArrayList<ValidationTuple> expected = new ArrayList<>(new HashSet<>(new MockConsumePlanNode(input).asList()));
 
+		tuples.sort(ValidationTuple::compareValue);
+		expected.sort(ValidationTuple::compareValue);
+
 		tuples.sort(ValidationTuple::compareTarget);
 		expected.sort(ValidationTuple::compareTarget);
 

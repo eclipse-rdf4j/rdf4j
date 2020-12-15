@@ -142,8 +142,11 @@ public class EqualsJoinTest {
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
 				.map(v -> {
-					assert (v.size() == 2);
-					return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, true);
+					if (v.size() > 1) {
+						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, true);
+					} else {
+						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, false);
+					}
 				})
 				.collect(Collectors.toSet());
 
