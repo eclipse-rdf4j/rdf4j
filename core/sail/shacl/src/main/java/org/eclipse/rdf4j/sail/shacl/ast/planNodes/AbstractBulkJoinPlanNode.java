@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
-abstract class AbstractBulkJoinPlanNode implements PlanNode {
+public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;

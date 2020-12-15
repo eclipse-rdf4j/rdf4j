@@ -14,8 +14,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ModelCollectionTest;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 import com.google.common.collect.testing.SampleElements;
 import com.google.common.collect.testing.TestSetGenerator;

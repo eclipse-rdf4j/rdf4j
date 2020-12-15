@@ -145,5 +145,6 @@ public class RDFXMLPrettyWriterBackgroundTest extends AbstractRDFXMLWriterTest {
 		List<RioSetting<?>> inherited = new ArrayList<>(Arrays.asList(super.getExpectedSupportedSettings()));
 		inherited.add(BasicWriterSettings.INLINE_BLANK_NODES);
 		return inherited.toArray(new RioSetting<?>[] {});
-	};
+	}
+
 }
