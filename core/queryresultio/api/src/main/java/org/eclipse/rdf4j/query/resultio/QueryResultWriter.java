@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
-import java.io.Writer;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.query.QueryResultHandler;

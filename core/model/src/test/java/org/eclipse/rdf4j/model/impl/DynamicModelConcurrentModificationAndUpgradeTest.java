@@ -18,9 +18,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.Test;

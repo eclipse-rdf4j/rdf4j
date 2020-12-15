@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Test;

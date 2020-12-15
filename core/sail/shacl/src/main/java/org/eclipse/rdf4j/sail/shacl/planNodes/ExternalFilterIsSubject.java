@@ -33,8 +33,9 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 
 		if (value instanceof Resource) {
 			return connection.hasStatement((Resource) value, null, null, true);
-		} else
+		} else {
 			return false;
+		}
 
 	}
 
