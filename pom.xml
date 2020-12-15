@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.5.0-SNAPSHOT</version>
+	<version>3.6.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -43,8 +43,9 @@
 		<module>tools</module>
 		<module>testsuites</module>
 		<module>compliance</module>
-		<module>bom</module>
 		<module>examples</module>
+		<!-- for maven Central deployment it is important that bom is the last module -->
+		<module>bom</module>
 	</modules>
 	<profiles>
 		<profile>
@@ -867,6 +868,8 @@
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
+								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
+								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 								<!-- GH-2538 bug fix, not considered backward incompatible -->
 								<exclude>org.eclipse.rdf4j.model.Namespace#equals(java.lang.Object)</exclude>
 								<exclude>org.eclipse.rdf4j.model.Namespace#hashCode()</exclude>
