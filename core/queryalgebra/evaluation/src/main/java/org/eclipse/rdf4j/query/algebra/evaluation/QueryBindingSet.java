@@ -7,12 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
@@ -20,6 +14,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
+
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * An implementation of the {@link BindingSet} interface that is used to evalate query object models. This
@@ -30,31 +32,35 @@ public class QueryBindingSet extends AbstractBindingSet {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
-	private final Map<String, Value> bindings;
+	private final Binding[] bindings;
 
 	public QueryBindingSet() {
-		this(8);
+		this(3);
 	}
 
 	public QueryBindingSet(int capacity) {
 		// Create bindings map with some extra space for new bindings and
 		// compensating for HashMap's load factor
-		bindings = new HashMap<>(capacity * 2);
+		bindings = new Binding[capacity];
 	}
 
 	public QueryBindingSet(BindingSet bindingSet) {
-		this(bindingSet.size());
-		addAll(bindingSet);
-	}
-
-	public void addAll(BindingSet bindingSet) {
 		if (bindingSet instanceof QueryBindingSet) {
-			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
+			bindings = ((QueryBindingSet) bindingSet).bindings;
 		} else {
+			bindings = new Binding[bindingSet.size()];
 			for (Binding binding : bindingSet) {
 				this.addBinding(binding);
 			}
 		}
+	}
+
+	public void addAll(BindingSet bindingSet) {
+
+		for (Binding binding : bindingSet) {
+			this.addBinding(binding);
+		}
+
 	}
 
 	/**
@@ -73,7 +79,6 @@ public class QueryBindingSet extends AbstractBindingSet {
 	 * @param value The binding's value.
 	 */
 	public void addBinding(String name, Value value) {
-		assert !bindings.containsKey(name) : "variable already bound: " + name;
 		setBinding(name, value);
 	}
 
@@ -82,66 +87,66 @@ public class QueryBindingSet extends AbstractBindingSet {
 	}
 
 	public void setBinding(String name, Value value) {
-		bindings.put(name, value);
+		for (int i = 0; i < bindings.length; i++) {
+			if (bindings[i] == null || bindings[i].getName() == name) {
+				bindings[i] = new SimpleBinding(name, value);
+				break;
+			}
+		}
+
+
 	}
 
 	public void removeBinding(String name) {
-		bindings.remove(name);
+		throw new UnsupportedOperationException();
 	}
 
 	public void removeAll(Collection<String> bindingNames) {
-		bindings.keySet().removeAll(bindingNames);
+		throw new UnsupportedOperationException();
 	}
 
 	public void retainAll(Collection<String> bindingNames) {
-		bindings.keySet().retainAll(bindingNames);
+		throw new UnsupportedOperationException();
 	}
 
 	@Override
 	public Set<String> getBindingNames() {
-		return bindings.keySet();
+		return Arrays.stream(bindings).filter(Objects::nonNull).map(Binding::getName).collect(Collectors.toSet());
 	}
 
 	@Override
 	public Value getValue(String bindingName) {
-		return bindings.get(bindingName);
+		for (Binding binding : bindings) {
+			if (binding != null && binding.getName() == bindingName) {
+				return binding.getValue();
+			}
+		}
+		return null;
 	}
 
 	@Override
 	public Binding getBinding(String bindingName) {
-		Value value = getValue(bindingName);
-
-		if (value != null) {
-			return new SimpleBinding(bindingName, value);
+		for (Binding binding : bindings) {
+			if (binding != null && binding.getName() == bindingName) {
+				return binding;
+			}
 		}
-
 		return null;
 	}
 
 	@Override
 	public boolean hasBinding(String bindingName) {
-		return bindings.containsKey(bindingName);
+		return getValue(bindingName) != null;
 	}
 
 	@Override
 	public Iterator<Binding> iterator() {
-		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet()
-				.stream()
-				.filter(entry -> entry.getValue() != null)
-				.iterator();
-
-		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
-
-			@Override
-			protected Binding convert(Map.Entry<String, Value> entry) {
-				return new SimpleBinding(entry.getKey(), entry.getValue());
-			}
-		};
+		return Arrays.stream(bindings).filter(Objects::nonNull).iterator();
 	}
 
 	@Override
 	public int size() {
-		return bindings.size();
+		return (int) Arrays.stream(bindings).filter(Objects::nonNull).count();
 	}
 
 	@Override
@@ -152,4 +157,6 @@ public class QueryBindingSet extends AbstractBindingSet {
 			return super.equals(other);
 		}
 	}
+
+
 }
