@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class ShiftToNodeShape implements PlanNode {
 
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -27,7 +27,7 @@ public class ShiftToNodeShape implements PlanNode {
 	public ShiftToNodeShape(PlanNode parent) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 		this.parent = parent;
-		this.stackTrace = Thread.currentThread().getStackTrace();
+		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override

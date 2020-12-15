@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
  */
 public class DebugPlanNode implements PlanNode {
 
-	private final StackTraceElement[] stacktrace;
+	private StackTraceElement[] stackTrace;
 	private Consumer<ValidationTuple> debugPoint;
 	private final String message;
 	PlanNode parent;
@@ -34,7 +34,7 @@ public class DebugPlanNode implements PlanNode {
 	public DebugPlanNode(PlanNode parent, String message) {
 		this.parent = parent;
 		this.message = message;
-		this.stacktrace = Thread.currentThread().getStackTrace();
+		// this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
 

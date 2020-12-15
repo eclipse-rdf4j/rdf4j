@@ -57,7 +57,7 @@ public class BindSelect implements PlanNode {
 	private final PlanNode source;
 	private final EffectiveTarget.Extend direction;
 	private final boolean includePropertyShapeValues;
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -79,7 +79,7 @@ public class BindSelect implements PlanNode {
 		this.query = query;
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
-		this.stackTrace = Thread.currentThread().getStackTrace();
+		// this.stackTrace = Thread.currentThread().getStackTrace();
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 
 	}

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class UnionNode implements PlanNode {
 
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 	private final PlanNode[] nodes;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -32,7 +32,7 @@ public class UnionNode implements PlanNode {
 		}
 
 		this.nodes = nodes;
-		this.stackTrace = Thread.currentThread().getStackTrace();
+		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
