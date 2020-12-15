@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.util;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.atLeastOnce;
@@ -71,35 +70,34 @@ public class RDFCollectionsTest {
 
 	}
 
-	@Test
-	public void testNonWellformedCollection() {
+	@Test(expected = ModelException.class)
+	public void testNonWellformedCollection_MissingTerminator() {
 		Resource head = vf.createBNode();
 		Model m = RDFCollections.asRDF(values, head, new TreeModel());
 		m.remove(null, RDF.REST, RDF.NIL);
-		try {
-			RDFCollections.asValues(m, head, new ArrayList<>());
-			fail("collection missing terminator should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
-		}
+		RDFCollections.asValues(m, head, new ArrayList<>());
+	}
 
-		m = RDFCollections.asRDF(values, head, new TreeModel());
+	@Test(expected = ModelException.class)
+	public void testNonWellformedCollection_Cycle() {
+		Resource head = vf.createBNode("z");
+		Model m = RDFCollections.asRDF(values, head, new TreeModel());
+
+		// Replace rdf:rest relation for head node with one pointing to itself.
+		// This introduces a cycle in an otherwise well-formed collection.
+		m.remove(head, RDF.REST, null);
 		m.add(head, RDF.REST, head);
 
-		try {
-			RDFCollections.asValues(m, head, new ArrayList<>());
-			fail("collection with cycle should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
-		}
+		RDFCollections.asValues(m, head, new ArrayList<>());
+	}
 
-		// supply incorrect head node
-		try {
-			RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
-			fail("resource that is not a collection should result in error");
-		} catch (ModelException e) {
-			// fall through, expected
-		}
+	@Test(expected = ModelException.class)
+	public void testNonWellformedCollection_IncorrectHeadNode() {
+		Resource head = vf.createBNode();
+		Model m = RDFCollections.asRDF(values, head, new TreeModel());
+
+		// Use resource that is unrelated to the actual collection as the head node
+		RDFCollections.asValues(m, vf.createBNode(), new ArrayList<>());
 	}
 
 	@Test

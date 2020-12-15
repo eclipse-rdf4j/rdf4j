@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.evaluation.ModelTripleSource;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.SP;
+import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -90,7 +92,10 @@ public class SpinParserTest {
 		if (textParsedOp instanceof ParsedQuery) {
 			assertEquals(((ParsedQuery) textParsedOp).getTupleExpr(), ((ParsedQuery) rdfParsedOp).getTupleExpr());
 		} else {
-			assertEquals(((ParsedUpdate) textParsedOp).getUpdateExprs(), ((ParsedUpdate) rdfParsedOp).getUpdateExprs());
+			List<UpdateExpr> textUpdates = ((ParsedUpdate) textParsedOp).getUpdateExprs();
+			List<UpdateExpr> rdfUpdates = ((ParsedUpdate) rdfParsedOp).getUpdateExprs();
+
+			assertThat(textUpdates).isEqualTo(rdfUpdates);
 		}
 	}
 }

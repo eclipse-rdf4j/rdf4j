@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * JUnit test for the RDF/JSON parser.
@@ -32,6 +34,11 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 			throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
 				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting[] { BasicWriterSettings.PRETTY_PRINT };
 	}
 
 }

@@ -20,16 +20,21 @@ import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstan
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_LANG_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.LITERAL_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.NAMESPACE;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.OBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.PREDICATE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.QNAME;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_SET_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.RESULT_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.ROOT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.SUBJECT_TAG;
+import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.TRIPLE_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.URI_TAG;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_NAME_ATT;
 import static org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLResultsXMLConstants.VAR_TAG;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Writer;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,10 +42,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.SESAMEQNAME;
@@ -63,7 +70,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter {
+abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
 
 	/*-----------*
 	 * Variables *
@@ -94,9 +101,12 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	 *--------------*/
 
 	protected AbstractSPARQLXMLWriter(OutputStream out) {
-		super(out);
 		this.xmlWriter = new XMLWriter(out);
 		this.xmlWriter.setPrettyPrint(true);
+	}
+
+	protected AbstractSPARQLXMLWriter(Writer writer) {
+		this(new XMLWriter(writer));
 	}
 
 	protected AbstractSPARQLXMLWriter(XMLWriter xmlWriter) {
@@ -104,9 +114,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		this.xmlWriter.setPrettyPrint(true);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	public Writer getWriter() {
+		return xmlWriter.getWriter();
+	}
 
 	/**
 	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
@@ -365,8 +376,10 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 
 		result.add(BasicWriterSettings.PRETTY_PRINT);
-		result.add(BasicQueryWriterSettings.ADD_SESAME_QNAME);
 		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+		result.add(BasicWriterSettings.ENCODE_RDF_STAR);
+		result.add(BasicQueryWriterSettings.ADD_SESAME_QNAME);
+		result.add(XMLWriterSettings.INCLUDE_XML_PI);
 
 		return result;
 	}
@@ -394,7 +407,9 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	}
 
 	private void writeValue(Value value) throws IOException {
-		if (value instanceof IRI) {
+		if (value instanceof Triple) {
+			writeTriple((Triple) value);
+		} else if (value instanceof IRI) {
 			writeURI((IRI) value);
 		} else if (value instanceof BNode) {
 			writeBNode((BNode) value);
@@ -405,6 +420,20 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 	private boolean isQName(IRI nextUri) {
 		return namespaceTable.containsKey(nextUri.getNamespace());
+	}
+
+	private void writeTriple(Triple triple) throws IOException {
+		xmlWriter.startTag(TRIPLE_TAG);
+		xmlWriter.startTag(SUBJECT_TAG);
+		writeValue(triple.getSubject());
+		xmlWriter.endTag(SUBJECT_TAG);
+		xmlWriter.startTag(PREDICATE_TAG);
+		writeValue(triple.getPredicate());
+		xmlWriter.endTag(PREDICATE_TAG);
+		xmlWriter.startTag(OBJECT_TAG);
+		writeValue(triple.getObject());
+		xmlWriter.endTag(OBJECT_TAG);
+		xmlWriter.endTag(TRIPLE_TAG);
 	}
 
 	/**

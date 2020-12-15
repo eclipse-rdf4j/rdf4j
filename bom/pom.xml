@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>3.3.2-SNAPSHOT</version>
+		<version>3.6.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-bom</artifactId>
 	<packaging>pom</packaging>
@@ -21,6 +21,16 @@
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-http-protocol</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-model-api</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-model-vocabulary</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -370,6 +380,12 @@
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sparql-testsuite</artifactId>
 				<version>${project.version}</version>
+			</dependency>
+			<!-- third party dependencies -->
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-simple</artifactId>
+				<version>${slf4j.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

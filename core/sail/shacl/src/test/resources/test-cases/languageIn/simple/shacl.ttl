@@ -12,5 +12,11 @@ ex:PersonShape
 	sh:property [
 		sh:path ex:label ;
 		sh:languageIn ( "en" "no" )  ;
-	] .
+	] ;
+	 sh:property [
+         		sh:path ex:label2 ;
+         		sh:languageIn ( )  ;
+         	]
+
+	 .
 

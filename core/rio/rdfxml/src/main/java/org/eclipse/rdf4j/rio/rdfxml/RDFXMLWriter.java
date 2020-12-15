@@ -12,9 +12,12 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.xml.XMLUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -29,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
@@ -38,10 +42,10 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in XML-serialized RDF format.
  */
-public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
+public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
-	protected ParsedIRI baseIRI;
-	protected Writer writer;
+	protected final ParsedIRI baseIRI;
+	protected final Writer writer;
 	protected String defaultNamespace;
 	protected boolean headerWritten = false;
 	protected Resource lastWrittenSubject = null;
@@ -64,7 +68,6 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param baseIRI base URI
 	 */
 	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {
-		super(out);
 		this.baseIRI = baseIRI;
 		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 		namespaceTable = new LinkedHashMap<>();
@@ -94,6 +97,21 @@ public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter {
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.RDFXML;
+	}
+
+	@Override
+	public Writer getWriter() {
+		return writer;
+	}
+
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
+		settings.add(BasicWriterSettings.BASE_DIRECTIVE);
+		settings.add(XMLWriterSettings.USE_SINGLE_QUOTES);
+		settings.add(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);
+		settings.add(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG);
+		settings.add(XMLWriterSettings.INCLUDE_XML_PI);
+		return settings;
 	}
 
 	protected void writeHeader() throws IOException {

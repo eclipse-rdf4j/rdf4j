@@ -20,6 +20,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 
+import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -603,7 +604,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			if (!GEO.WKT_LITERAL.equals(from.getDatatype())) {
 				throw new MalformedQueryException("Unsupported datatype: " + from.getDatatype());
 			}
-			Shape shape = parseQueryShape(SearchFields.getPropertyField(geoProperty), from.getLabel());
+			Shape shape = parseQueryPoint(SearchFields.getPropertyField(geoProperty), from.getLabel());
 			if (!(shape instanceof Point)) {
 				throw new MalformedQueryException("Geometry literal is not a point: " + from.getLabel());
 			}
@@ -716,8 +717,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			if (!GEO.WKT_LITERAL.equals(qgeom.getDatatype())) {
 				throw new MalformedQueryException("Unsupported datatype: " + qgeom.getDatatype());
 			}
-			Shape qshape = parseQueryShape(SearchFields.getPropertyField(geoProperty), qgeom.getLabel());
-			hits = geoRelationQuery(query.getRelation(), geoProperty, qshape, query.getContextVar());
+			hits = geoRelationQuery(query.getRelation(), geoProperty, qgeom.getLabel(), query.getContextVar());
 		} catch (Exception e) {
 			logger.error("There was a problem evaluating spatial relation query '" + query.getRelation() + " "
 					+ qgeom.getLabel() + "'!", e);
@@ -792,7 +792,15 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		return new BindingSetCollection(bindingNames, bindingSets);
 	}
 
+	protected Object parseLuceneQueryShape(String property, String value) throws ParseException, IOException {
+		return SimpleWKTShapeParser.parse(value);
+	}
+
 	protected Shape parseQueryShape(String property, String value) throws ParseException {
+		return getSpatialContext(property).readShapeFromWkt(value);
+	}
+
+	protected Shape parseQueryPoint(String property, String value) throws ParseException {
 		return getSpatialContext(property).readShapeFromWkt(value);
 	}
 
@@ -830,7 +838,7 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty,
-			Shape shape, Var context) throws MalformedQueryException, IOException;
+			String wkt, Var context) throws MalformedQueryException, IOException;
 
 	protected abstract BulkUpdater newBulkUpdate();
 }

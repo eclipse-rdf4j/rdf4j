@@ -261,7 +261,7 @@ class MemorySailStore implements SailStore {
 			return new EmptyIteration<>();
 		}
 
-		// TODO there is no separate index for Trples, so for now we iterate over all statements to find matches.
+		// TODO there is no separate index for Triples, so for now we iterate over all statements to find matches.
 		return new MemTripleIterator<>(statements, memSubj, memPred, memObj, snapshot);
 	}
 

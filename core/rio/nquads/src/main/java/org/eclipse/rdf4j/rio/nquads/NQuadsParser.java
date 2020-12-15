@@ -46,7 +46,6 @@ public class NQuadsParser extends NTriplesParser {
 		if (inputStream == null) {
 			throw new IllegalArgumentException("Input stream can not be 'null'");
 		}
-		// Note: baseURI will be checked in parse(Reader, String)
 
 		try {
 			parse(new InputStreamReader(new BOMInputStream(inputStream, false), StandardCharsets.UTF_8), baseURI);
@@ -64,9 +63,6 @@ public class NQuadsParser extends NTriplesParser {
 		try {
 			if (reader == null) {
 				throw new IllegalArgumentException("Reader can not be 'null'");
-			}
-			if (baseURI == null) {
-				throw new IllegalArgumentException("base URI can not be 'null'");
 			}
 
 			if (rdfHandler != null) {

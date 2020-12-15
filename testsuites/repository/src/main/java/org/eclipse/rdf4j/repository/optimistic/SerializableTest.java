@@ -152,6 +152,17 @@ public class SerializableTest {
 	}
 
 	@Test
+	public void testPrepare_safePattern() throws Exception {
+		a.begin(level);
+		b.begin(level);
+		a.add(PICASSO, RDF.TYPE, PAINTER);
+		b.add(REMBRANDT, RDF.TYPE, PAINTER);
+		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));
+		a.commit();
+		b.prepare();
+	}
+
+	@Test
 	public void test_afterPattern() throws Exception {
 		a.begin(level);
 		b.begin(level);
@@ -185,6 +196,25 @@ public class SerializableTest {
 		a.commit();
 		try {
 			b.commit();
+			fail();
+		} catch (RepositoryException e) {
+			// e.printStackTrace();
+			assertTrue(e.getCause() instanceof SailConflictException
+					|| e.getMessage().contains("Observed State has Changed"));
+			b.rollback();
+		}
+	}
+
+	@Test
+	public void testPrepare_conflictPattern() throws Exception {
+		a.begin(level);
+		b.begin(level);
+		a.add(PICASSO, RDF.TYPE, PAINTER);
+		b.add(REMBRANDT, RDF.TYPE, PAINTER);
+		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));
+		a.commit();
+		try {
+			b.prepare();
 			fail();
 		} catch (RepositoryException e) {
 			// e.printStackTrace();

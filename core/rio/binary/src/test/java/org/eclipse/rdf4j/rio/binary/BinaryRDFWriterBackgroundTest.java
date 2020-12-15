@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * @author Arjohn Kampman
@@ -31,4 +32,10 @@ public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 		return QueryResults
 				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
 	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting[] {};
+	}
+
 }

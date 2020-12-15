@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -59,11 +58,11 @@ public class ValueComparatorBenchmark {
 	List<Value> manyPointerEquals;
 	List<Value> manyDeepEquals;
 
-	@Setup(Level.Iteration)
+	@Setup(Level.Invocation)
 	public void setUp() throws InterruptedException, IOException {
 
 		try (InputStream resourceAsStream = ValueComparatorBenchmark.class.getClassLoader()
-				.getResourceAsStream("bsbm-100.ttl")) {
+				.getResourceAsStream("benchmarkFiles/bsbm-100.ttl")) {
 
 			Model parse = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
@@ -116,7 +115,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortSubjects() throws Exception {
+	public int sortSubjects() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -130,7 +129,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortPredicates() throws Exception {
+	public int sortPredicates() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -144,7 +143,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortObjects() throws Exception {
+	public int sortObjects() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -158,7 +157,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortManyPointerEquals() throws Exception {
+	public int sortManyPointerEquals() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;
@@ -172,7 +171,7 @@ public class ValueComparatorBenchmark {
 	}
 
 	@Benchmark
-	public int sortManyDeepEquals() throws Exception {
+	public int sortManyDeepEquals() {
 
 		ValueComparator valueComparator = new ValueComparator();
 		int compare = 0;

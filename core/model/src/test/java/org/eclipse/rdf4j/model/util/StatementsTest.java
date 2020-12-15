@@ -113,4 +113,52 @@ public class StatementsTest {
 		assertEquals("Identical triples must produce the same blank node",
 				Statements.TRIPLE_BNODE_MAPPER.apply(t1), Statements.TRIPLE_BNODE_MAPPER.apply(t2));
 	}
+
+	@Test
+	public void testToTriple() {
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+
+		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"), vf.createIRI("http://example.org/context"));
+
+		assertThat(Statements.toTriple(st1)).isEqualTo(t1);
+	}
+
+	@Test
+	public void testToStatement() {
+
+		Resource context = vf.createIRI("http://example.org/context");
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+
+		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+
+		assertThat(Statements.toStatement(t1)).isEqualTo(st1);
+	}
+
+	@Test
+	public void testToStatement_Context() {
+
+		Resource context = vf.createIRI("http://example.org/context");
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+
+		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"), context);
+
+		assertThat(Statements.toStatement(t1, context)).isEqualTo(st1);
+	}
+
+	@Test
+	public void testToStatement_NullContext() {
+		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"));
+
+		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
+				vf.createLiteral("data"), null);
+
+		assertThat(Statements.toStatement(t1, null)).isEqualTo(st1);
+	}
 }

@@ -9,11 +9,14 @@ package org.eclipse.rdf4j.rio.rdfjson;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -43,20 +46,17 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell p_ansell@yahoo.com
  */
-public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
+public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
-	private Writer writer;
-
-	private OutputStream outputStream;
+	private final Writer writer;
 
 	private Model graph;
 
 	private final RDFFormat actualFormat;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
-		super(out);
-		this.outputStream = out;
 		this.actualFormat = actualFormat;
+		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
 	}
 
 	public RDFJSONWriter(final Writer writer, final RDFFormat actualFormat) {
@@ -65,23 +65,18 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter {
 	}
 
 	@Override
+	public Writer getWriter() {
+		return writer;
+	}
+
+	@Override
 	public void endRDF() throws RDFHandlerException {
 		checkWritingStarted();
 		try {
-			if (this.writer != null) {
-				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
-					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				} finally {
-					this.writer.flush();
-				}
-			} else if (this.outputStream != null) {
-				try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.outputStream);) {
-					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
-				} finally {
-					this.outputStream.flush();
-				}
-			} else {
-				throw new IllegalStateException("The output stream and the writer were both null.");
+			try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
+				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+			} finally {
+				this.writer.flush();
 			}
 		} catch (final IOException e) {
 			throw new RDFHandlerException(e);

@@ -295,6 +295,24 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	@Override
+	public void prepare() throws RepositoryException {
+		if (this.getRepository().getServerProtocolVersion() < 12) {
+			// Action.PREPARE is not supported in Servers using protocols older than version 12.
+			logger.warn("Prepare operation not supported by server (requires protocol version 12)");
+			return;
+		}
+
+		flushTransactionState(Action.PREPARE);
+		try {
+			client.prepareTransaction();
+		} catch (RepositoryException e) {
+			throw e;
+		} catch (RDF4JException | IllegalStateException | IOException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Override
 	public void commit() throws RepositoryException {
 
 		if (this.getRepository().useCompatibleMode()) {
@@ -603,6 +621,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			case GET:
 			case UPDATE:
 			case COMMIT:
+			case PREPARE:
 			case QUERY:
 			case SIZE:
 				if (toAdd != null) {

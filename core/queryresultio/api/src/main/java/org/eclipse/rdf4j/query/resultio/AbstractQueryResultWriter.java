@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
-import java.io.OutputStream;
+import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
+import org.eclipse.rdf4j.common.io.Sink;
+import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -25,29 +25,11 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
  *
  * @author Peter Ansell
  */
-public abstract class AbstractQueryResultWriter implements QueryResultWriter {
+public abstract class AbstractQueryResultWriter implements QueryResultWriter, Sink {
 
 	private WriterConfig writerConfig = new WriterConfig();
-	private final OutputStream outputStream;
 
 	private boolean encodeRDFStar;
-
-	/**
-	 * Default constructor.
-	 *
-	 */
-	protected AbstractQueryResultWriter() {
-		this(null);
-	}
-
-	protected AbstractQueryResultWriter(OutputStream out) {
-		this.outputStream = out;
-	}
-
-	@Override
-	public Optional<OutputStream> getOutputStream() {
-		return Optional.ofNullable(outputStream);
-	}
 
 	@Override
 	public void setWriterConfig(WriterConfig config) {
@@ -61,7 +43,12 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter {
 
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
-		return Collections.emptyList();
+		return Arrays.asList(BasicWriterSettings.ENCODE_RDF_STAR, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
+	}
+
+	@Override
+	public FileFormat getFileFormat() {
+		return getQueryResultFormat();
 	}
 
 	@Override

@@ -28,6 +28,8 @@ public enum SparqlFunction implements SparqlOperator {
 	FLOOR("FLOOR"),
 	HOURS("HOURS"),
 	IF("IF"),
+	IN("IN", true),
+	NOT_IN("NOT IN", true),
 	IRI("IRI"),
 	IS_BLANK("isBLANK"),
 	IS_IRI("isIRI"),
@@ -70,13 +72,22 @@ public enum SparqlFunction implements SparqlOperator {
 	YEAR("YEAR");
 
 	private String function;
+	private boolean pad;
 
-	private SparqlFunction(String function) {
-		this.function = function;
+	SparqlFunction(String function) {
+		this(function, false);
 	}
 
-	@Override
+	SparqlFunction(String function, boolean pad) {
+		this.function = function;
+		this.pad = pad;
+	}
+
+	boolean pad() {
+		return this.pad;
+	}
+
 	public String getQueryString() {
-		return function;
+		return function + (pad ? " " : "");
 	}
 }

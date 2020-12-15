@@ -239,10 +239,9 @@ echo "     - Go to the milestone, click the 'closed' tab and copy the link for l
 echo " - Go to https://github.com/eclipse/rdf4j/tree/master/site/content/release-notes and create ${MVN_VERSION_RELEASE}.md"
 echo " - Edit the following file https://github.com/eclipse/rdf4j/blob/master/site/content/download.md"
 echo " - Go to https://github.com/eclipse/rdf4j/tree/master/site/content/news and create rdf4j-${NEWS_FILE_NAME}.md"
-echo " - Go to https://github.com/eclipse/rdf4j/releases/new and create a release for the ${MVN_VERSION_RELEASE} tag. Add a link to the release notes in the description.
+echo " - Go to https://github.com/eclipse/rdf4j/releases/new and create a release for the ${MVN_VERSION_RELEASE} tag. Add a link to the release notes in the description."
 echo " - Post to Google Groups: https://groups.google.com/forum/#!forum/rdf4j-users"
 echo "     - Good example: https://groups.google.com/forum/#!topic/rdf4j-users/isrC7qdhplY"
-echo " - Upload the javadocs by adding them to site/static/javadoc/${MVN_VERSION_RELEASE}"
+echo " - Upload the javadocs by adding a compressed tar.gz archive called ${MVN_VERSION_RELEASE}.tgz to site/static/javadoc/"
 echo "     - Aggregated javadoc can be found in target/site/apidocs or in the SDK zip file"
-echo "     - Make sure to also replace the site/static/javadoc/latest directory with a copy (don't use a symlink)"
-
+echo "     - Make sure to also replace the site/static/javadoc/latest file with a copy. Do not use a symlink."

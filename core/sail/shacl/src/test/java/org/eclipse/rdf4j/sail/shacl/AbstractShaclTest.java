@@ -177,6 +177,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/uniqueLang/simple",
 		"test-cases/hasValue/simple",
 		"test-cases/hasValue/and",
+		"test-cases/hasValue/and2",
 		"test-cases/hasValue/not",
 		"test-cases/hasValue/not2",
 		"test-cases/hasValue/not2",
@@ -187,8 +188,19 @@ abstract public class AbstractShaclTest {
 		"test-cases/hasValueIn/not",
 		"test-cases/hasValueIn/not2",
 		"test-cases/hasValueIn/targetNode",
-		"test-cases/hasValueIn/targetNode2"
-	)
+		"test-cases/hasValueIn/targetNode2",
+		"test-cases/languageIn/subtags",
+		"test-cases/languageIn/subtags2",
+		"test-cases/hasValueIn/targetNode2",
+		"test-cases/hasValue/or",
+		"test-cases/hasValue/targetShapeOr",
+		"test-cases/hasValue/targetShapeAnd",
+		"test-cases/hasValue/targetShapeAnd2",
+		"test-cases/hasValue/targetShapeAndOr",
+		"test-cases/hasValue/targetShapeAndOr2",
+		"test-cases/hasValueIn/targetShapeOr",
+		"test-cases/hasValueIn/or"
+		)
 		.distinct()
 		.sorted()
 		.collect(Collectors.toList());
@@ -318,7 +330,8 @@ abstract public class AbstractShaclTest {
 			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 				connection.begin(isolationLevel);
 				ValueFactory vf = connection.getValueFactory();
-				connection.add(vf.createBNode(), vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
+				connection.add(vf.createIRI("http://example.com/fewfkj9832ur8fh8whiu32hu"),
+						vf.createIRI("http://example.com/jkhsdfiu3r2y9fjr3u0"),
 						vf.createLiteral("123", XSD.INTEGER), vf.createBNode());
 				try {
 					connection.commit();
@@ -326,10 +339,6 @@ abstract public class AbstractShaclTest {
 					if (!(sailException.getCause() instanceof ShaclSailValidationException)) {
 						throw sailException;
 					}
-					exception = true;
-					logger.debug(sailException.getMessage());
-
-					printResults(sailException);
 				}
 			}
 

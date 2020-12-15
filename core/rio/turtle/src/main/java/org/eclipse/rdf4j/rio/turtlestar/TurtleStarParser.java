@@ -49,7 +49,6 @@ public class TurtleStarParser extends TurtleParser {
 		if (peekIsTripleValue()) {
 			return parseTripleValue();
 		}
-
 		return super.parseValue();
 	}
 }

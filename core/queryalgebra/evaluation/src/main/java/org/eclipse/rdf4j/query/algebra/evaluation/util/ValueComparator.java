@@ -10,13 +10,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import java.util.Comparator;
 import java.util.Optional;
 
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -47,8 +48,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 2. Blank nodes
-		boolean b1 = o1 instanceof BNode;
-		boolean b2 = o2 instanceof BNode;
+		boolean b1 = o1.isBNode();
+		boolean b2 = o2.isBNode();
 		if (b1 && b2) {
 			return compareBNodes((BNode) o1, (BNode) o2);
 		}
@@ -60,8 +61,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 3. IRIs
-		boolean iri1 = o1 instanceof IRI;
-		boolean iri2 = o2 instanceof IRI;
+		boolean iri1 = o1.isIRI();
+		boolean iri2 = o2.isIRI();
 		if (iri1 && iri2) {
 			return compareURIs((IRI) o1, (IRI) o2);
 		}
@@ -73,8 +74,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		// 4. Literals
-		boolean l1 = o1 instanceof Literal;
-		boolean l2 = o2 instanceof Literal;
+		boolean l1 = o1.isLiteral();
+		boolean l2 = o2.isLiteral();
 		if (l1 && l2) {
 			return compareLiterals((Literal) o1, (Literal) o2);
 		}
@@ -138,7 +139,15 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				result = compareDatatypes(leftDatatype, rightDatatype);
+				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
+				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
+
+				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
+					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
+				} else {
+					result = compareDatatypes(leftDatatype, rightDatatype);
+				}
+
 			} else {
 				result = 1;
 			}
@@ -199,6 +208,31 @@ public class ValueComparator implements Comparator<Value> {
 		} else {
 			// incompatible or unordered datatypes
 			return compareURIs(leftDatatype, rightDatatype);
+		}
+	}
+
+	private int compareDatatypes(XSD.Datatype leftDatatype, XSD.Datatype rightDatatype) {
+		if (leftDatatype.isNumericDatatype()) {
+			if (rightDatatype.isNumericDatatype()) {
+				// both are numeric datatypes
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			} else {
+				return -1;
+			}
+		} else if (rightDatatype.isNumericDatatype()) {
+			return 1;
+		} else if (leftDatatype.isCalendarDatatype()) {
+			if (rightDatatype.isCalendarDatatype()) {
+				// both are calendar datatype
+				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			} else {
+				return -1;
+			}
+		} else if (rightDatatype.isCalendarDatatype()) {
+			return 1;
+		} else {
+			// incompatible or unordered datatype
+			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
 		}
 	}
 

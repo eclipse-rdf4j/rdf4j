@@ -1,20 +1,21 @@
 ---
 title: "Release management"
 toc: true
+autonumbering: true
 ---
 
 This document outlines how to create a new release of RDF4J.
 <!--more-->
 
-# The simple way: using the release script
+## The simple way: using the release script
 
-In the project root, the script `release.sh` is a shell-script that (almost) fully automates the handling of releases. It creates branches, sets correct version numbers, builds and uploads artifacts, etc. It gives you several prompts along the way to guide you through the process. 
+In the project root, the script `release.sh` is a shell-script that (almost) fully automates the handling of releases. It creates branches, sets correct version numbers, builds and uploads artifacts, etc. It gives you several prompts along the way to guide you through the process.
 
 The release script should always be run from the `master` branch.
 
 If for whatever reason, you wish to manually create a release instead, the following sections detail the manual process.
 
-# Patch releases
+## Patch releases
 
 Patch releases are created by branching the `master` branch into a release branch, and
 when complete, tagging this release branch with the version number before
@@ -32,7 +33,7 @@ usually about a week in advance, with an open invitation for contributors to
 propose additional fixes to include, which are done as Pull Requests to the
 `master` branch.
 
-## Creating a patch release branch
+### Creating a patch release branch
 
 Any fixes to be included in a patch release must be merged into the `master`
 branch first.  A patch release branch should differ from the `master` branch,
@@ -78,7 +79,7 @@ create a patch release branch, follow these steps:
 
 6. Finally, create a pull request to merge the release branch back into master. Like branch sync PRs, this PR will be merged by means of a merge-commit, rather than the default 'squash and merge', so as not to lose the version-tagged commit.
 
-# Hotfix releases
+## Hotfix releases
 
 Hotfix release are patch releases that target a prior minor version (not the
 latest stable release). These are needed when a critical bug was found in a
@@ -95,7 +96,7 @@ A hotfix release use a preceding release as its basis. This means we need to cre
     `git branch releases/2.1.6`
 
 3. Fix maven version numbers in the release branch. We need to set the project version to `2.1.6-SNAPSHOT` by using:
-    
+
     `mvn versions:set`<br>
     <br>
     This will ask for the new version number. Enter `2.1.6-SNAPSHOT` to indicate that this is the development branch for the upcoming 2.1.6 release. After this is done, execute
@@ -133,7 +134,7 @@ Once all fixes are applied to the release branch, and the build is stable (NB ve
     `mvn versions:commit`<br>
     <br>
     which will remove backup files. Finally, commit the changes and push:
-    
+
     `git commit -s -a -m "patch release 2.1.6"`
     `git push`
 
@@ -146,7 +147,7 @@ Once the release is complete, the hotfix branch can to be deleted. Although this
 
 Note that, although the branch is deleted, the release tag is still in place, for future use of further hotfix releases.
 
-# Release distribution deployment
+## Release distribution deployment
 
 RDF4J has two separate distributions:
 
@@ -160,12 +161,12 @@ RDF4J has four separate announcements:
 3. the [RDF4J.org website](http://rdf4j.org/wp-admin/edit.php), and
 4. the [rdf4j-user mailing list](https://groups.google.com/forum/#!forum/rdf4j-users).
 
-## Building and uploading the release
+### Building and uploading the release
 
 We use the [Eclipse RDF4J Jenkins CI instance](https://ci.eclipse.org/rdf4j) to build and deploy new releases to the Central Repository, as well as building and deploying the SDK archive and the onejar to the Eclipse download mirrors.
 
 To do this, log in to Jenkins, and start the job named `rdf4j-deploy-release-sdk`.
-The job will ask for the github release tag as an input parameters, e.g. '2.2.1'. It will automatically check out the release tag, build the project, and upload the SDK zip file and the onejar to the Eclipse download mirrors. 
+The job will ask for the github release tag as an input parameters, e.g. '2.2.1'. It will automatically check out the release tag, build the project, and upload the SDK zip file and the onejar to the Eclipse download mirrors.
 
 After successful completion, it will kick off a second job:
 `rdf4j-deploy-release-ossrh`. This job will build all Maven artifacts and
@@ -174,13 +175,13 @@ upload, it will also automatically invoke synchronization with the Central
 Repository.  Note that after successful completion, the artifacts may not be
 available on the Central Repository for several hours.
 
-# Minor and Major releases
+## Minor and Major releases
 
 Minor and major releases require a formal [release review](https://www.eclipse.org/projects/handbook/#release-review), and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
 
 We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the [Eclipse RDF4J project site](https://projects.eclipse.org/projects/technology.rdf4j), and the necessary milestones are created in the [issue tracker](https://github.com/eclipse/rdf4j/issues).
 
-## Review planning and application
+### Review planning and application
 
 A release can only be done once its review is successfully concluded. Eclipse release review are announced in regular cycles, and always complete on the first or third Wednesday of each month. For this reason, we schedule our releases to happen on a first or third Thursday.
 
@@ -208,7 +209,7 @@ When IP log approval and review approval have been given, the review can be sche
 
 For more detailed information about the release review process, see the [Eclipse Project Handbook](https://www.eclipse.org/projects/handbook/).
 
-## Branching minor releases
+### Branching minor releases
 
 Prior to a minor release, the `develop` branch is merged into the `master` branch
 (along with the `develop` branch's version) to facilitate release review.
@@ -223,14 +224,14 @@ Once a minor release is published the `develop` minor version should be incremen
 version and any approved features that are scheduled for this next minor
 version should be merged into `develop` branch.
 
-# Optional: publishing docker images
+## Optional: publishing docker images
 
-Occasionally a docker server/workbench image could be built 
+Occasionally a docker server/workbench image could be built
 and pushed to `https:/hub.docker.com/eclipse/rdf4j-workbench`,
 which is part of the Eclipse organizational account.
 Since this account is managed separately by the Eclipse Foundation,
 only a limited number of committers will be granted access by the EMO.
- 
+
 The Dockerfiles are stored in `rdf4j-tools/assembly/src/main/dist/docker`,
 and currently there are two supported architectures: `amd64` (Intel/AMD x86-64) and `arm64v8`.
 

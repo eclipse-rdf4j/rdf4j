@@ -2,15 +2,16 @@
 title: "The Repository API"
 weight: 3
 toc: true
+autonumbering: true
 ---
-The Repository API is the central access point for RDF4J-compatible RDF databases (a.k.a. triplestores), as well as for SPARQL endpoints. 
+The Repository API is the central access point for RDF4J-compatible RDF databases (a.k.a. triplestores), as well as for SPARQL endpoints.
 <!--more-->
 
 Its purpose is to give a developer-friendly access point to RDF repositories, offering various methods for querying and updating the data, while hiding a lot of the nitty gritty details of the underlying machinery.
 
 The interfaces for the Repository API can be found in package `org.eclipse.rdf4j.repository`. Several implementations for these interface exist in various sub-packages.
 
-# Creating a Repository object
+## Creating a Repository object
 
 The first step in any action that involves repositories is to create a Repository for it.
 
@@ -26,7 +27,7 @@ Creating Repository objects can be done in multiple ways. We will first show an 
 
 We will first take a look at the use of the SailRepository class in order to create and use a local repository.
 
-## Main memory RDF Repository
+### Main memory RDF Repository
 
 One of the simplest configurations is a repository that just stores RDF data in main memory without applying any inferencing. This is also by far the fastest type of repository that can be used. The following code creates and initializes a non-inferencing main-memory repository:
 
@@ -58,7 +59,7 @@ memStore.setSyncDelay(1000L);
 Repository repo = new SailRepository(memStore);
 ```
 
-## Native RDF Repository
+### Native RDF Repository
 
 A Native RDF Repository does not keep its data in main memory, but instead stores it directly to disk (in a binary format optimized for compact storage and fast retrieval). It is an efficient, scalable and fast solution for RDF storage of datasets that are too large to keep entirely in memory.
 
@@ -85,21 +86,23 @@ String indexes = "spoc,posc,cosp";
 Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
 ```
 
-## Elasticserch RDF Repository
+### Elasticserch RDF Repository
 
-> Experimental! New in RDF4J 3.1
+{{< tag " New in RDF4J 3.1" >}}
 
-The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with the ElasticsearchSail which uses Elasticsearch for enhanced search. 
+{{< tag " Experimental " >}}
 
-The ElasticsearchStore is experimental and future releases may be incompatible with the current version. Write-ahead-logging is not supported. 
-This means that a write operation can appear to have partially succeeded if the ElasticsearchStore looses its connection to Elasticsearch during a commit. 
+The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with the ElasticsearchSail which uses Elasticsearch for enhanced search.
 
-Transaction isolation is not as strong as for the other stores. The highest supported level is READ_COMMITTED, and even this 
+The ElasticsearchStore is experimental and future releases may be incompatible with the current version. Write-ahead-logging is not supported.
+This means that a write operation can appear to have partially succeeded if the ElasticsearchStore looses its connection to Elasticsearch during a commit.
+
+Transaction isolation is not as strong as for the other stores. The highest supported level is READ_COMMITTED, and even this
 level is only guaranteed when all other transactions also use READ_COMMITTED.
 
-Performance for the NativeStore is in most cases considerably better than for the ElasticsearchStore. 
-The read cache in the ElasticsearchStore makes workloads with repetitive reads fast. Storing small, infrequently updated, datasets such as a 
-reference library or an ontology is a good usecase for the ElasticsearchStore.    
+Performance for the NativeStore is in most cases considerably better than for the ElasticsearchStore.
+The read cache in the ElasticsearchStore makes workloads with repetitive reads fast. Storing small, infrequently updated, datasets such as a
+reference library or an ontology is a good usecase for the ElasticsearchStore.
 
 The code for creation of an ElasticsearchStore is almost identical to other repositories:
 
@@ -114,7 +117,7 @@ Repository repo = new SailRepository(new ElasticsearchStore("localhost", 9300, "
 
 Remember to call `repo.shutdown()` when you are done with your ElasticsearchStore. This will close the underlying Elasticsearch Client.
 
-## RDF Schema inferencing
+### RDF Schema inferencing
 
 As we have seen, we can create Repository objects for any kind of back-end store by passing them a reference to the appropriate Sail object. We can pass any stack of Sails this way, allowing all kinds of repository configurations to be created quite easily. For example, to stack an RDF Schema inferencer on top of a memory store, we simply create a repository like so:
 
@@ -131,9 +134,9 @@ Repository repo = new SailRepository(
 
 Each layer in the Sail stack is created by a constructor that takes the underlying Sail as a parameter. Finally, we create the SailRepository object as a functional wrapper around the Sail stack.
 
-The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
+The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingRDFSInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
 
-## Custom Inferencing 
+### Custom Inferencing
 
 The previous section showed how to use the built-in RDF schema inferencer. This section will show how to create a repository capable of performing inferences according to a custom rule that you provide.
 
@@ -173,8 +176,8 @@ In simple rule cases, such as this one, an empty string could have been provided
 
 The CustomGraphQueryInferencer used here is fairly limited: it effectively only allows a single inference rule. For more complex custom inferencing or validation needs, RDF4J offers the SPIN Sail or the SHACL Sail.
 
-## Access over HTTP
-### Server-side RDF4J repositories
+### Access over HTTP
+#### Server-side RDF4J repositories
 
 Working with remote RDF4J repositories is just as easy as working with local ones. We use a different Repository object, the `HTTPRepository`, instead of the SailRepository class.
 
@@ -189,7 +192,7 @@ String repositoryID = "example-db";
 Repository repo = new HTTPRepository(rdf4jServer, repositoryID);
 ```
 
-### SPARQL endpoints
+#### SPARQL endpoints
 
 We can use the Repository interface to access any SPARQL endpoint as well. This is done as follows:
 
@@ -203,7 +206,7 @@ Repository repo = new SPARQLRepository(sparqlEndpoint);
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
 
-### Configuring the HTTP session thread pool
+#### Configuring the HTTP session thread pool
 
 Both the HTTPRepository and the SPARQLRepository use the SPARQL Protocol over
 HTTP under the hood (in the case of the HTTPRepository, it uses the extended
@@ -220,7 +223,7 @@ To configure this to use a different core size, you can specify the
 `org.eclipse.rdf4j.client.executors.corePoolSize` system property with a
 different number.
 
-## The RepositoryManager and RepositoryProvider
+### The RepositoryManager and RepositoryProvider
 
 Using what we’ve seen in the previous section, we can create and use various different types of repositories. However, when developing an application in which you have to keep track of several repositories, sharing references to these repositories between different parts of your code can become complex. Ideal would be one central location where all information on the repositories in use (including id, type, directory for persistent data storage, etc.) is kept. This is the role of the {{< javadoc "RepositoryManager" "repository/manager/RepositoryManager.html" >}} and {{< javadoc "RepositoryProvider" "repository/manager/RepositoryProvider.html" >}}.
 
@@ -291,7 +294,7 @@ backendConfig = new SchemaCachingRDFSInferencerConfig(backendConfig);
 SailRepositoryConfig repositoryTypeSpec = new SailRepositoryConfig(backendConfig);
 ```
 
-### The RemoteRepositoryManager
+#### The RemoteRepositoryManager
 
 A useful feature of RDF4J is that most its APIs are transparent with respect to whether you are working locally or remote. This is the case for the RDF4J repositories, but also for the RepositoryManager. In the above examples, we have used a LocalRepositoryManager, creating repositories for local use. However, it is also possible to use a RemoteRepositoryManager, using it to create and manage repositories residing on a remotely running RDF4J Server.
 
@@ -308,7 +311,7 @@ manager.init();
 
 Once initialized, the RemoteRepositoryManager can be used in the same fashion as the LocalRepositoryManager: creating new repositories, requesting references to existing repositories, and so on.
 
-### The RepositoryProvider
+#### The RepositoryProvider
 
 Finally, RDF4J also includes a `RepositoryProvider` class. This is a utility class that holds static references to RepositoryManagers, making it easy to share Managers (and the repositories they contain) across your application. In addition, the RepositoryProvider also has a built-in shutdown hook, which makes sure all repositories managed by it are shut down when the JVM exits.
 
@@ -322,7 +325,7 @@ RepositoryManager manager  = RepositoryProvider.getRepositoryManager(url);
 
 The RepositoryProvider creates and keeps a singleton instance of RepositoryManager for each distinct location you specify, which means that you invoke the above call in several places in your code without having to worry about creating duplicate manager objects.
 
-## Creating a Federation
+### Creating a Federation
 
 It is possible to create a virtual repository that is a federation of existing repositories. The following code illustrates how to use the RepositoryManagerFederator class to create a federation. It assumes you already have a reference to a RepositoryManager instance, and is a simplified form of what the RDF4J Console runs when its federate command is invoked:
 
@@ -362,7 +365,7 @@ boolean validateMembers(RepositoryManager manager, boolean readonly,
 }
 ```
 
-# Using a repository: RepositoryConnections
+## Using a repository: RepositoryConnections
 
 Now that we have created a Repository, we want to do something with it. In RDF4J, this is achieved through `RepositoryConnection` objects, which can be created by the Repository.
 
@@ -370,7 +373,7 @@ A {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} 
 
 In the following sections, we will show some examples of basic operations.
 
-## Adding RDF to a repository
+### Adding RDF to a repository
 
 The Repository API offers various methods for adding data to a repository. Data can be added by specifying the location of a file that contains RDF data, and statements can be added individually or in collections.
 
@@ -428,7 +431,7 @@ catch (java.io.IOEXception e) {
 
 More information on other available methods can be found in the {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} javadoc.
 
-## Querying a repository
+### Querying a repository
 
 The Repository API has a number of methods for creating and evaluating queries. Three types of queries are distinguished: tuple queries, graph queries and boolean queries. The query types differ in the type of results that they produce.
 
@@ -438,7 +441,7 @@ The result of graph queries is an RDF graph (or set of statements). This type of
 
 The result of boolean queries is a simple boolean value, i.e. true or false. This type of query can be used to check if a repository contains specific information. SPARQL ASK queries are boolean queries.
 
-### SELECT: tuple queries
+#### SELECT: tuple queries
 
 To evaluate a (SELECT) tuple query we can do the following:
 
@@ -508,7 +511,7 @@ try (TupleQueryResult result = tupleQuery.evaluate()) {
 }
 ```
 
-### A tuple query in a single line of code: the Repositories utility
+#### A tuple query in a single line of code: the Repositories utility
 
 RDF4J provides a convenience utility class `org.eclipse.rdf4j.repository.util.Repositories`, which allows us to significantly shorten our boilerplate code. In particular, the `Repositories` utility allows us to do away with opening/closing a RepositoryConnection completely. For example, to open a connection, create and evaluate a SPARQL SELECT query, and then put that query’s result in a list, we can do the following:
 
@@ -518,7 +521,7 @@ List<BindingSet> results = Repositories.tupleQuery(rep, "SELECT * WHERE {?s ?p ?
 
 We make use of so-called Lambda expressions to process the result. In this particular example, the only processing we do is to convert the `TupleQueryResult` object into a `List`. However, you can supply any kind of function to this interface to fully customize the processing that you do on the result.
 
-### Using TupleQueryResultHandlers
+#### Using TupleQueryResultHandlers
 
 You can also directly process the query result by supplying a `TupleQueryResultHandler` to the query’s `evaluate()` method. The main difference is that when using a return object, the caller has control over when the next answer is retrieved (namely, whenever `next()` is called), whereas with the use of a handler, the connection pushes answers to the handler object as soon as it has them available.
 
@@ -531,7 +534,7 @@ con.prepareTupleQuery(queryString).evaluate(new SPARQLResultsCSVWriter(System.ou
 
 RDF4J provides a number of standard implementations of TupleQueryResultHandler, and of course you can also supply your own application-specific implementation. Have a look in the Javadoc for more details.
 
-### CONSTRUCT/DESCRIBE: graph queries
+#### CONSTRUCT/DESCRIBE: graph queries
 
 The following code evaluates a graph query on a repository:
 
@@ -554,7 +557,7 @@ You can also quickly turn a GraphQueryResult into a Model (that is, a Java Colle
 Model resultModel = QueryResults.asModel(graphQueryResult);
 ```
 
-### Doing a graph query in a single line of code
+#### Doing a graph query in a single line of code
 
 Similarly to how we do this with SELECT queries, we can use the Repositories utility to obtain a result from a SPARQL CONSTRUCT (or DESCRIBE) query in a single line of Java code:
 
@@ -562,7 +565,7 @@ Similarly to how we do this with SELECT queries, we can use the Repositories uti
 Model m = Repositories.graphQuery(rep, "CONSTRUCT WHERE {?s ?p ?o}", r -> QueryResults.asModel(r));
 ```
 
-### Using RDFHandlers
+#### Using RDFHandlers
 
 For graph queries, we can supply an `org.eclipse.rdf4j.rio.RDFHandler` to the `evaluate()` method. Again, this is a generic interface, each object implementing it can process the reported RDF statements in any way it wants.
 
@@ -581,7 +584,7 @@ try (RepositoryConnection conn = repo.getConnection()) {
 
 Note that in the above code we use the `org.eclipse.rdf4j.rio.Rio` utility to quickly create a writer of the desired format. The Rio utility offers a lot of useful functions to quickly create writers and parser for various formats.
 
-### Preparing and Reusing Queries
+#### Preparing and Reusing Queries
 
 In the previous sections we have simply created a query from a string and immediately evaluated it. However, the `prepareTupleQuery` and `prepareGraphQuery` methods return objects of type `Query`, specifically `TupleQuery` and `GraphQuery`.
 
@@ -618,10 +621,10 @@ try (RepositoryConnection con = repo.getConnection()){
 }
 ```
 
-The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). Using a ValueFactory you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
+The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). As also shown in [The RDF Model API documentation](/documentation/programming/model/#creating-new-building-blocks-the-values-and-statements-factory-methods), you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
 
 ```java
-ValueFactory factory = myRepository.getValueFactory();
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 // In this example, we specify the keyword string. Of course, this
 // could just as easily be obtained by user input, or by reading from
@@ -637,24 +640,24 @@ TupleQuery keywordQuery = con.prepareTupleQuery("SELECT ?document WHERE { ?docum
 // Evaluation of the query object will now effectively be the same as
 // if we had specified the query as follows:
 //   SELECT ?document WHERE { ?document ex:keyword "foobar". }
-keywordQuery.setBinding("keyword", factory.createLiteral(keyword));
+keywordQuery.setBinding("keyword", literal(keyword));
 
 // We then evaluate the prepared query and can process the result:
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
-### Explaining queries
+#### Explaining queries
 
 > New in RDF4J 3.2.0 - Experimental feature
 
-SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and 
+SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and
 the results returned. The query explain feature gives a peek into what decisions are being made and how they affect
 the performance of your query.
 
-This feature is currently released as an experimental feature, which means that it may change, be moved or even removed in the future. 
-Explaining queries currently only works if you are using one of the built in stores directly in your Java code. 
-If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an 
-UnsupportedException. 
+This feature is currently released as an experimental feature, which means that it may change, be moved or even removed in the future.
+Explaining queries currently only works if you are using one of the built in stores directly in your Java code.
+If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an
+UnsupportedException.
 
 In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
 
@@ -676,20 +679,20 @@ There are 4 explanation levels to choose between:
 | Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 | ✓                  |
 
 
-First try to use the `Timed` level, since this is the richest and gives the clearest understanding about 
-which part of the query is the slowest. `Timed` and `Executed` both fully evaluate the query and iterate 
-over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort 
+First try to use the `Timed` level, since this is the richest and gives the clearest understanding about
+which part of the query is the slowest. `Timed` and `Executed` both fully evaluate the query and iterate
+over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort
 timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
 
-The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in 
+The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in
 order to optimize them.
 
-As an example, the following query intends to get everyone in Peter's extended friend graph who is at least 18 years old 
+As an example, the following query intends to get everyone in Peter's extended friend graph who is at least 18 years old
 and return their node and optionally their name.
 
 ```sparql
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-SELECT ?friend ?name WHERE 
+SELECT ?friend ?name WHERE
 {
 	BIND(<http://example.com/peter> as ?person)
 	?person a foaf:Person ;
@@ -698,7 +701,7 @@ SELECT ?friend ?name WHERE
 	OPTIONAL {
 		?friend foaf:name ?name
 	}
-	FILTER(?age >= 18) 
+	FILTER(?age >= 18)
 }
 ```
 
@@ -760,9 +763,9 @@ We start by reading the query top to bottom. The first node we encounter is:
 
 ```
 Projection (resultSizeActual=2, totalTimeActual=0.247ms, selfTimeActual=0.002ms)
-``` 
+```
 
-The node name is "Projection", which represents the `SELECT` keyword. The values in parentheses 
+The node name is "Projection", which represents the `SELECT` keyword. The values in parentheses
 are cost-estimates and actual measured output and timing. You may encounter:
 
  - **costEstimate**: an internal value that represents the cost for executing this node and is used for ordering the nodes
@@ -770,28 +773,28 @@ are cost-estimates and actual measured output and timing. You may encounter:
  - **resultSizeActual**: the actual number of results that this node produced
  - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
  - **selfTimeActual**: the time this node took all on its own to produce its results
- 
- In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 0.189ms (~75% of the overall time). 
+
+ In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 0.189ms (~75% of the overall time).
  This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.
- 
- Joins in RDF4J have a left, and a right node (the pipes in the query plan make it simpler to see which node is the left and which is the right). 
-The join algorithms will first retrieve a result from the left node before it gets a result from the right node. The left node is the first 
-node displayed under the join node. For the `Join` on line 06 we have the left node being line 07 and the right being line 11.`Executed` 
-and `Timed` plans will typically show the algorithm for all join and left join nodes. Our fastest algorithm is usually `JoinIterator`, it will 
-retrieve a result from the left node and use the results to "query" the right node for the next relevant result. 
- 
-In our plan above we can see how `Extension` node and the `Filter` node can "inform" the `ArbitraryLengthPath` which values for 
-`person` and `friend` are relevant because the `Extension` node binds exactly one value for `person` and `Filter` node binds exactly 
+
+ Joins in RDF4J have a left, and a right node (the pipes in the query plan make it simpler to see which node is the left and which is the right).
+The join algorithms will first retrieve a result from the left node before it gets a result from the right node. The left node is the first
+node displayed under the join node. For the `Join` on line 06 we have the left node being line 07 and the right being line 11.`Executed`
+and `Timed` plans will typically show the algorithm for all join and left join nodes. Our fastest algorithm is usually `JoinIterator`, it will
+retrieve a result from the left node and use the results to "query" the right node for the next relevant result.
+
+In our plan above we can see how `Extension` node and the `Filter` node can "inform" the `ArbitraryLengthPath` which values for
+`person` and `friend` are relevant because the `Extension` node binds exactly one value for `person` and `Filter` node binds exactly
 four values for`friend`. This is why `ArbitraryLengthPath` has a `resultSizeActual` of two, meaning that it only produced two results.
 
-The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes 
+The query above is a very efficient and nicely behaved query. Usually the reason to explain a query is because the query is slow or takes
 up a lot of memory.
 
 The following query is a typical example of a scoping issue, which is a very common cause of slow SPARQL queries.
 
 ```sparql
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-SELECT * WHERE 
+SELECT * WHERE
 {
     BIND(<http://example.com/peter> as ?person)
 	?person a foaf:Person .
@@ -804,9 +807,9 @@ SELECT * WHERE
 }
 ```
 
-The issue with this query is that each of the union clauses introduces a new scope. It's quite easy to see in this example. Both unions define a new 
-variable `?friend`, however the results should not be the intersection of common values but rather the union between "everyone that knows or is known by someone" 
-and "everyone 18 or older". The only exception here is that `?person` is used in the outer scope, so results from the inner union would be filtered to match 
+The issue with this query is that each of the union clauses introduces a new scope. It's quite easy to see in this example. Both unions define a new
+variable `?friend`, however the results should not be the intersection of common values but rather the union between "everyone that knows or is known by someone"
+and "everyone 18 or older". The only exception here is that `?person` is used in the outer scope, so results from the inner union would be filtered to match
 with bindings for `?person` from the outer scope. SPARQL is designed with bottom-up semantics, which means that inner sections should be evaluated before
 outer sections. This precisely so as to make scoping issues unambiguous.
 
@@ -906,14 +909,14 @@ Taking a look at the unoptimized plan we can see where the issue lies:
 46                Var (name=age)
 ```
 
-The problem is that the `Union` on line 16 introduces a new scope. This means that the `Join` above it (line 6) can't push its binding for `?person` into the `Union`. 
+The problem is that the `Union` on line 16 introduces a new scope. This means that the `Join` above it (line 6) can't push its binding for `?person` into the `Union`.
 This is the reason that the execution of the query was done with the `HashJoinIteration` rather than with the `JoinIterator`.
 
 One way to solve this issue is to copy the `BIND` into all relevant unions.
 
 ```sparql
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-SELECT ?friend ?name WHERE 
+SELECT ?friend ?name WHERE
 {
     BIND(<http://example.com/peter> as ?person)
 	?person a foaf:Person .
@@ -927,7 +930,7 @@ SELECT ?friend ?name WHERE
 }
 ```
 
-This forces the inner union to only consider ex:peter as `?person` meaning we only need to find his friends and not everyone elses friends. 
+This forces the inner union to only consider ex:peter as `?person` meaning we only need to find his friends and not everyone elses friends.
 The query plan also agrees that this is better.
 
 ```
@@ -1110,31 +1113,29 @@ public class QueryExplainExample {
 		sailRepository.shutDown();
 
 	}
-	
-}	
+
+}
 ```
 
 
-## Creating, retrieving, removing individual statements
+### Creating, retrieving, removing individual statements
 
 The RepositoryConnection can also be used for adding, retrieving, removing or otherwise manipulating individual statements, or sets of statements.
 
-To be able to add new statements, we can use a ValueFactory to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
+To be able to add new statements, we can use either the {{ < javadoc "Values" "model/util/Values.html" > }} factory methods or a `ValueFactory` to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
 
 ```java
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 ...
 
-ValueFactory f = myRepository.getValueFactory();
-
 // create some resources and literals to make statements out of
-IRI alice = f.createIRI("http://example.org/people/alice");
-IRI bob = f.createIRI("http://example.org/people/bob");
-IRI name = f.createIRI("http://example.org/ontology/name");
-IRI person = f.createIRI("http://example.org/ontology/Person");
-Literal bobsName = f.createLiteral("Bob");
-Literal alicesName = f.createLiteral("Alice");
+IRI alice = Values.iri("http://example.org/people/alice");
+IRI bob = Values.iri("http://example.org/people/bob");
+IRI name = Values.iri("http://example.org/ontology/name");
+IRI person = Values.iri("http://example.org/ontology/Person");
+Literal bobsName = Values.literal("Bob");
+Literal alicesName = Values.literal("Alice");
 
 try (RepositoryConnection con = myRepository.getConnection()) {
   // alice is a person
@@ -1148,7 +1149,7 @@ try (RepositoryConnection con = myRepository.getConnection()) {
 }
 ```
 
-Of course, it will not always be necessary to use a ValueFactory to create IRIs. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
+Of course, it will not always be necessary to create IRI objects. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
 
 Retrieving statements works in a very similar way. One way of retrieving statements we have already seen actually: we can get a GraphQueryResult containing statements by evaluating a graph query. However, we can also use direct method calls to retrieve (sets of) statements. For example, to retrieve all statements about Alice, we could do:
 
@@ -1195,7 +1196,7 @@ Or, if we want to erase all statements about Alice completely, we can do:
 con.remove(alice, null, null);
 ```
 
-## Using named graphs/context
+### Using named graphs/context
 
 RDF4J supports the notion of _context_, which you can think of as a way to group sets of statements together through a single group identifier (this identifier can be a blank node or a URI).
 
@@ -1281,7 +1282,7 @@ RepositoryResult<Statement> result = con.getStatements(null, null, null, (Resour
 
 So as you can see, you can freely combine contexts in this fashion.
 
-Note: 
+Note:
 
 ```java
 getStatements(null, null, null);
@@ -1295,7 +1296,7 @@ getStatements(null, null, null, (Resource)null);
 
 The former (without any context id parameter) retrieves all statements in the repository, ignoring any context information. The latter, however, only retrieves statements that explicitly do not have any associated context.
 
-## Working with Models, Collections and Iterations
+### Working with Models, Collections and Iterations
 
 Most of these examples sofar have been on the level of individual statements. However, the Repository API offers several methods that work with Java Collections of statements, allowing more batch-like update operations.
 
@@ -1323,7 +1324,7 @@ con.remove(con.getStatements(alice, null, null));
 
 The RepositoryConnection interface has several variations of add, retrieve and remove operations. See the Javadoc for a full overview of the options.
 
-## RDF Collections and RepositoryConnections
+### RDF Collections and RepositoryConnections
 
 In the [Model API documentation](../model/) we have already seen how we can use the RDFCollections utility on top of a Model. This makes it very easy to insert any RDF Collection into your Repository - after all a Model can simply be added as follows:
 
@@ -1355,11 +1356,13 @@ try(RepositoryConnection conn = repo.getConnection()) {
 }
 ```
 
-# Transactions
+## Transactions
 
 So far, we have shown individual operations on repositories: adding statements, removing them, etc. By default, each operation on a `RepositoryConnection` is immediately sent to the store and committed.
 
-The `RepositoryConnection` interface supports a full transactional mechanism that allows one to group modification operations together and treat them as a single update: before the transaction is committed, none of the operations in the transaction has taken effect, and after, they all take effect. If something goes wrong at any point during a transaction, it can be rolled back so that the state of the repository is the same as before the transaction started. Bundling update operations in a single transaction often also improves update performance compared to multiple smaller transactions.
+The `RepositoryConnection` interface supports a full transactional mechanism that allows one to group modification operations together and treat them as a single update: before the transaction is committed, none of the operations in the transaction has taken effect, and after, they all take effect. If something goes wrong at any point during a transaction, it can be rolled back so that the state of the repository is the same as before the transaction started.
+
+Bundling update operations in a single transaction often also improves update performance compared to multiple smaller transactions. This may not be noticeable when adding a few thousand statements, but it can make a big difference when loading millions of statements into a repository.
 
 We can indicate that we want to begin a transaction by using the `RepositoryConnection.begin()` method. In the following example, we use a connection to bundle two file addition operations in a single transaction:
 
@@ -1407,7 +1410,7 @@ try (RepositoryConnection con = myRepository.getConnection()) {
 The `close()` method, which is automatically invoked by Java when the try-with resources block ends, will also ensure that an unfinished transaction is rolled back (it will also log a warning about this).
 A `RepositoryConnection` only supports one active transaction at a time. You can check at any time whether a transaction is active on your connection by using the `isActive()` method. If you need concurrent transactions, you will need to use several separate RepositoryConnections.
 
-## Transaction Isolation Levels
+### Transaction Isolation Levels
 
 Any transaction operates according to a certain transaction isolation level. A transaction isolation level dictates who can 'see' the updates that are perfomed as part of the transaction while that transaction is active, as well as how concurrent transactions interact with each other.
 
@@ -1443,20 +1446,22 @@ try (RepositoryConnection conn = rep.getConnection()) {
 
 A transaction isolation level is a sort of contract, that is, a set of guarantees of what will minimally happen while the transaction is active. A store will make a best effort to honor the guarantees of the requested isolation level. If it does not support the specific isolation level being requested, it will attempt to use a level it does support that offers minimally the same guarantees.
 
-## Automated transaction handling
+### Automated transaction handling
 
 Although transactions are a convenient mechanism, having to always call `begin()` and `commit()` to explictly start and stop your transactions can be tedious. RDF4J offers a number of convenience utility functions to automate this part of transaction handling, using the `Repositories` utility class.
 
 As an example, consider this bit of transactional code. It opens a connection, starts a transaction, adds two RDF statements, and then commits. It also makes sure that it rolls back the transaction if something went wrong, and it ensures that once we’re done, the connection is closed.
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 RepositoryConnection conn = myRepository.getConnection();
 try {
    conn.begin();
    conn.add(bob, RDF.TYPE, FOAF.PERSON);
-   conn.add(bob, FOAF.NAME, f.createLiteral("Bob"));
+   conn.add(bob, FOAF.NAME, literal("Bob"));
    conn.commit();
 }
 catch (RepositoryException e) {
@@ -1470,11 +1475,13 @@ finally {
 That's an awful lot of code for just inserting two triples. The same thing can be achieved with far less boilerplate code, as follows:
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 Repositories.consume(myRepository, conn -> {
   conn.add(bob, RDF.TYPE, FOAF.PERSON);
-  conn.add(bob, RDFS.LABEL, f.createLiteral("Bob"));
+  conn.add(bob, RDFS.LABEL, literal("Bob"));
 });
 ```
 
@@ -1482,10 +1489,12 @@ As you can see, using `Repositories.consume()`, we do not explicitly begin or co
 
 This pattern is useful for simple transactions, however as we’ve seen above, we sometimes do need to explicitly call `begin()`, especially if we want to modify the transaction isolation level.
 
-# Multithreaded Repository Access
+## Multithreaded Repository Access
 
 The Repository API supports multithreaded access to a store: multiple concurrent threads can obtain connections to a Repository and query and performs operations on it simultaneously (though, depending on the transaction isolation level, access may occassionally block as a thread needs exclusive access).
 
 The Repository object is thread-safe, and can be safely shared and reused across multiple threads (a good way to do this is via a RepositoryProvider).
 
-NOTE: RepositoryConnection is not thread-safe. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads. 
+{{< warning >}}
+<strong>RepositoryConnection is not thread-safe</strong>. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads.
+{{</ warning >}}

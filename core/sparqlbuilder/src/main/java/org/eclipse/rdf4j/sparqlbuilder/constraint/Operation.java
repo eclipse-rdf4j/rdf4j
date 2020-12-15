@@ -23,9 +23,6 @@ abstract class Operation<T extends Operation<T>> extends Expression<T> {
 	Operation(SparqlOperator operator, int operandLimit) {
 		super(operator);
 		this.operandLimit = operandLimit;
-		if (operator instanceof ConnectiveOperator) {
-			parenthesize();
-		}
 	}
 
 	@SuppressWarnings("unchecked")

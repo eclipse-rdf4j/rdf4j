@@ -65,9 +65,9 @@ pygmentsStyle = "github"
 
 [markup]
   [markup.tableOfContents]
-    endLevel = 3
+    endLevel = 4
     ordered = false
-    startLevel = 1   
+    startLevel = 2   
   [markup.goldmark]
     [markup.goldmark.extensions]
       definitionList = true

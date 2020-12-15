@@ -11,7 +11,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -55,7 +55,7 @@ public class DatasetDeclProcessor {
 					ASTIRI astIri = dc.jjtGetChild(ASTIRI.class);
 
 					try {
-						IRI uri = SESAME.NIL;
+						IRI uri = RDF4J.NIL;
 
 						if (astIri != null) {
 							uri = SimpleValueFactory.getInstance().createIRI(astIri.getValue());

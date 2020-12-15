@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.rio.Rio;
 /**
  * RDF Tutorial example 07: Writing an RDF model in Turtle syntax
  *
- * In this example, we show how you can use the Rio Parser/writer toolkit to write your
- * model in Turtle syntax.
+ * In this example, we show how you can use the Rio Parser/writer toolkit to write your model in Turtle syntax.
  *
  * @author Jeen Broekstra
  * @see
@@ -39,13 +38,13 @@ public class Example07WriteTurtle {
 		builder
 				.setNamespace("ex", "http://example.org/")
 				.subject("ex:Picasso")
-					.add(RDF.TYPE, "ex:Artist")
-					.add(FOAF.FIRST_NAME, "Pablo")
-					.add("ex:homeAddress", address) // link the blank node
-				.subject(address)			// switch the subject
-					.add("ex:street", "31 Art Gallery")
-					.add("ex:city", "Madrid")
-					.add("ex:country", "Spain");
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "Pablo")
+				.add("ex:homeAddress", address) // link the blank node
+				.subject(address) // switch the subject
+				.add("ex:street", "31 Art Gallery")
+				.add("ex:city", "Madrid")
+				.add("ex:country", "Spain");
 
 		Model model = builder.build();
 

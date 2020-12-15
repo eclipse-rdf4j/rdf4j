@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -22,7 +24,11 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Reader;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -320,6 +326,33 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(result));
 		rdfParser.parse(reader, baseURI);
 		return result;
+	}
+
+	@Test
+	public void testRoundTrip_NonDefaultCharEncoding() throws Exception {
+		assumeTrue(
+				"Writer for format " + rdfWriterFactory.getRDFFormat().getName() + " does not use character encoding",
+				rdfWriterFactory.getRDFFormat().hasCharset());
+
+		// use Windows-1250 character encoding instead of format default
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		Writer charWriter = new OutputStreamWriter(out, "windows-1250");
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(charWriter);
+
+		String originalString = "Fahrvergnügen";
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(vf.createStatement(uri1, uri1, vf.createLiteral(originalString)));
+		rdfWriter.endRDF();
+
+		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
+		Reader reader = new InputStreamReader(in, "windows-1250");
+		RDFParser rdfParser = rdfParserFactory.getParser();
+		rdfParser.setValueFactory(vf);
+		Model model = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(model));
+		rdfParser.parse(reader, "");
+
+		assertThat(model.objects()).allMatch(v -> v.stringValue().equals(originalString));
 	}
 
 	@Test
@@ -1824,6 +1857,23 @@ public abstract class RDFWriterTest {
 		// 4 for triple1 (contained in triple5)
 		assertEquals(22, parsedOutput.size());
 	}
+
+	@Test
+	public void testGetSupportedSettings() throws Exception {
+		RDFWriter writer = rdfWriterFactory.getWriter(System.out);
+
+		Collection<RioSetting<?>> supportedSettings = writer.getSupportedSettings();
+		assertThat(supportedSettings).containsExactlyInAnyOrder(getExpectedSupportedSettings());
+	}
+
+	/**
+	 * Get the {@link RioSetting}s expected to be returned by {@link RDFWriter#getSupportedSettings()}. Used by
+	 * {@link #testGetSupportedSettings()} to determine if the output of {@link RDFWriter#getSupportedSettings()} is as
+	 * expected for the concrete writer implementation.
+	 * 
+	 * @return an array of {@link RioSetting}s.
+	 */
+	protected abstract RioSetting<?>[] getExpectedSupportedSettings();
 
 	@Test
 	public void testHandlingSequenceCloseableWriter() throws IOException {

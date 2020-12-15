@@ -11,17 +11,20 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.Stats;
+import org.eclipse.rdf4j.sail.shacl.planNodes.AbstractBulkJoinPlanNode;
 import org.eclipse.rdf4j.sail.shacl.planNodes.AggregateIteratorTypeOverride;
 import org.eclipse.rdf4j.sail.shacl.planNodes.EnrichWithShape;
 import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
@@ -214,6 +217,12 @@ public class AndPropertyShape extends PathPropertyShape {
 				.anyMatch(a -> a);
 	}
 
+	public boolean childrenHasOwnPathRecursive() {
+		return and.stream()
+				.flatMap(a -> a.stream().map(PathPropertyShape::childrenHasOwnPathRecursive))
+				.anyMatch(a -> a);
+	}
+
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, boolean negated) {
 		Optional<PlanNode> reduce = and
@@ -227,22 +236,84 @@ public class AndPropertyShape extends PathPropertyShape {
 
 	@Override
 	public String buildSparqlValidNodes(String targetVar) {
-		return and.stream()
-				.map(propertyShapes -> propertyShapes
-						.stream()
-						.map(propertyShape -> propertyShape.buildSparqlValidNodes(targetVar))
-						.reduce((a, b) -> a + "\n" + b))
-				.filter(Optional::isPresent)
-				.map(Optional::get)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+
+		if (hasOwnPath()) {
+			// within property shape
+			String objectVariable = randomVariable();
+			String pathQuery1 = getPath().getQuery(targetVar, objectVariable, null);
+
+			String collect = and.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(objectVariable))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) && ( ", "( ",
+							" )"));
+
+			String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
+					+ "\n\tFILTER(!(" + collect + "))\n})";
+
+			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
+
+			query = "{\n" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
+					+ " \n} UNION {\n\t" + AbstractBulkJoinPlanNode.VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
+					+ randomVariable() + " "
+					+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
+					+ " \n})\n}";
+
+			return query;
+		} else if (!childrenHasOwnPathRecursive()) {
+
+			return and.stream()
+					.map(l -> l.stream()
+							.map(p -> p.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + " && " + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.joining(" ) && ( ", "( ",
+							" )"));
+		} else {
+			// within node shape
+			return and.stream()
+					.map(propertyShapes -> propertyShapes
+							.stream()
+							.map(propertyShape -> propertyShape.buildSparqlValidNodes(targetVar))
+							.reduce((a, b) -> a + "\n" + b))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.reduce((a, b) -> a + "\n" + b)
+					.orElse("");
+		}
+
 	}
 
 	@Override
 	public Stream<StatementPattern> getStatementPatterns() {
-		return and
-				.stream()
+		Stream<StatementPattern> allSubjectsObjects;
+
+		if (hasOwnPath()) {
+			StatementPattern subject = new StatementPattern(
+					new Var("?this"),
+					new Var(UUID.randomUUID().toString()),
+					new Var(UUID.randomUUID().toString())
+			);
+
+			StatementPattern object = new StatementPattern(
+					new Var(UUID.randomUUID().toString()),
+					new Var(UUID.randomUUID().toString()),
+					new Var("?this")
+			);
+
+			allSubjectsObjects = Stream.of(subject, object);
+		} else {
+			allSubjectsObjects = Stream.empty();
+		}
+
+		Stream<StatementPattern> statementPatternStream = and.stream()
 				.flatMap(Collection::stream)
 				.flatMap(PropertyShape::getStatementPatterns);
+
+		return Stream.concat(statementPatternStream, allSubjectsObjects);
 	}
 }

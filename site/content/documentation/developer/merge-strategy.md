@@ -3,29 +3,44 @@ title: "RDF4J merge strategy"
 toc: true
 ---
 
-RDF4J values a clean, linear commit history on our main branches. To achieve this, we default to using [Squash and merge](https://help.github.com/en/github/administering-a-repository/about-merge-methods-on-github#squashing-your-merge-commits) as our merge strategy for all new features, improvements, or bug fixes. 
+RDF4J values a clean but accurate commit history on our main branches, where
+commits are meaningfully described and linked back to the issue that they
+address. To achieve this, we merge everything using merge-commits, and we may
+ask you to [squash](/documentation/developer/squashing) your pull request branch before we
+merge it.
+
 <!--more-->
 
-See also: [developer workflow](/documentation/developer/workflow/)
+We use merge-commits exclusively to merge pull requests into our main branches
+as this preserves the history of changes and who made those changes accurately.
+You as a contributor are completely free to use rebasing, squashing or merge on
+your own branches as you see fit, of course.
 
-# Self-contained changes, pull requests, and commits
+Note: we previously experimented with using 'squash-and-merge' as our Pull
+Request strategy. The advantage of this was that it kept the main branch
+history nicely linear, and automatically squashes all changes in a Pull Request
+into a single commit. However, squash-and-merge sometimes overwrites the Author
+field of a commit, which introduces problems in terms of IP provenance. For
+that reason, we have decided to switch back to a simpler 'merge-commit'
+strategy. See also [Github issue 2011](https://github.com/eclipse/rdf4j/issues/2011).
+
+## Self-contained changes, pull requests, and commits
 
 We define a *self-contained change* as a change that addresses a single issue,
-addresses it completely, and does not also address other issues. 
+addresses it completely, and does not also address other issues.
 
 We expect every pull request to be a self-contained change. Note that that does
 not mean that a pull request can only contain a single commit: it can have
 several commits that together form a self-contained change.
 
-If a pull request is properly self-contained, merging it using squash and merge
-will result in a single, self-contained commit on the main branch that
-completely addresses a single issue.
+We do, however, prefer fewer commits before merging, so if you have created a
+long list of commits on our branch, we may ask you to [squash](/documentation/developer/squashing) it first.
 
-## Commit messages
+### Commit messages
 
 We prefer every commit message to be descriptive: it should start with the
 github issue number to which it relates, then have a short one line description
-that details the specific change. 
+that details the specific change.
 
 Examples of good commit messages:
 
@@ -38,55 +53,13 @@ Examples of poor commit messages:
 - "GH-666 typo"
 - "GH-1234 fixed the problem"
 
-You may ask why we bother with this when we're going to squash everything into
-a single commit anyway. We still prefer meaningful commits because:
+We prefer meaningful commits because:
 
 - it makes reviewing the pull request easier;
-- in a squash and merge, each individual commit message is added as a bullet
-  list point in the description, so it is helpful if it is meaningful even
-  after squashing.
+- after your PR has been merged, your commit messages become part of the main branch's history, and having each commit linked to an issue and meaningfully described makes it easier to figure what got changed where and why.
 
 That said, if occassionally a less "perfect" commit message slips through, that's
 fine. We're all human.
 
-And oh yeah: don't forget to [sign off your commits](/documentation/developer/workflow/#patch-requests)! 
-
-# Motivation 
-
-We use squash and merge because we value a clean, linear history over a more
-detailed, accurate history for our main branches. There are several reasons we
-value this:
-
-1. it makes the history tree easier to read, with no "branch spaghetti"
-2. it makes it more obvious what feature a particular change relates to when
-   using blame or bisect tools. Because changes are self-contained, every
-   commit on the main branch relates to a single feature or fix, and the
-   context of any particular line changed as part of that is immediately
-   obvious.
-
-A common objection is that using squash and merge, you lose the (potentially
-valuable) information the individual commits gave you. This is not quite true:
-Github preserves the original commit history on the (closed) pull request page.
-Since the squash and merge commit message refers back to this pull request
-with a number, it can be easily found back even years later.
-
-For an excellent in-depth discussion of the advantages of using squash and
-merge, we recommend reading this blog article: [Two Years of squash
-merge](https://blog.dnsimple.com/2019/01/two-years-of-squash-merge/).
-
-# Exceptions
-
-There is one standard exception to the rule: pull requests that involve
-bringing our main branches (`master` and `develop`) in sync with each other use
-a merge commit. The main reason for this is that here, it is more important to
-track progression through time accurately, and we do want to preserve
-individual commits.
-
-In very rare cases, by exception, we allow a feature pull request to be merged
-using a merge commit. This will only be done if the following conditions are
-all met:
-
-1. the author explicitly comments on the pull request that this is necessary (and why), and;
-2. the author can show that the PR has been rebased (not merged!) so that the result of the merge will be near-linear, and;
-3. the project lead has given explicit approval of the intent to use a merge commit.
+And oh yeah: don't forget to [sign off your commits](/documentation/developer/workflow/#patch-requests)!
 

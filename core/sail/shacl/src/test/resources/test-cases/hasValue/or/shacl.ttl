@@ -1,29 +1,15 @@
-@prefix : <http://example.com/data/> .
-@prefix ont: <http://example.com/ontology#> .
-@prefix so: <http://www.ontotext.com/semantic-object/> .
-@prefix affected: <http://www.ontotext.com/semantic-object/affected> .
-@prefix res: <http://www.ontotext.com/semantic-object/result/> .
-@prefix dct: <http://purl.org/dc/terms/> .
-@prefix gn: <http://www.geonames.org/ontology#> .
+@base <http://example.com/ns> .
+@prefix ex: <http://example.com/ns#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
-@prefix puml: <http://plantuml.com/ontology#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
-@prefix void: <http://rdfs.org/ns/void#> .
-@prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix dash: <http://datashapes.org/dash#> .
-@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
-@prefix vocsh: <http://example.org/shape/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-vocsh:MinMaxScalars
+ex:shape1
 	a sh:NodeShape ;
-	sh:targetClass ont:Test ;
+	sh:targetClass ex:Person ;
 	sh:property [
-		sh:path ont:info ;
-		dash:hasValueIn ("blue" "green" "red");
-		#sh:or ([ sh:hasValue "blue" ; ] [ sh:hasValue "green" ; ] [ sh:hasValue "red" ; ]) ;
-	] ;
-       .
+		sh:path ex:info ;
+		sh:or ([ sh:hasValue "blue" ; ] [ sh:hasValue "green" ; ] [ sh:hasValue "red" ; ]) ;
+	]  .

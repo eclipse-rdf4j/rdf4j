@@ -7,29 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
 
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
-
 /**
- * {@link TupleQueryResultParserFactory} for creating instances of {@link SPARQLStarResultsJSONParser}.
  *
- * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - moved to
+ *             {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONParserFactory}
  */
-public class SPARQLStarResultsJSONParserFactory implements TupleQueryResultParserFactory {
-	/**
-	 * Returns {@link TupleQueryResultFormat#JSON_STAR}.
-	 */
-	@Override
-	public TupleQueryResultFormat getTupleQueryResultFormat() {
-		return SPARQLStarResultsJSONConstants.QUERY_RESULT_FORMAT;
-	}
-
-	/**
-	 * Returns a new instance of {@link SPARQLStarResultsJSONParser}.
-	 */
-	@Override
-	public TupleQueryResultParser getParser() {
-		return new SPARQLStarResultsJSONParser();
-	}
+@Deprecated
+public class SPARQLStarResultsJSONParserFactory
+		extends org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONParserFactory {
 }

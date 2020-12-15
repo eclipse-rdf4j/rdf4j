@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.write;
 
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -29,7 +30,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public class RepositoryWriteStrategy implements WriteStrategy {
 
 	private final Repository writeRepository;
+
 	private RepositoryConnection connection = null;
+
+	private TransactionSetting[] transactionSettings;
 
 	public RepositoryWriteStrategy(Repository writeRepository) {
 		super();
@@ -46,7 +50,11 @@ public class RepositoryWriteStrategy implements WriteStrategy {
 	@Override
 	public void begin() throws RepositoryException {
 		createConnection();
-		connection.begin();
+		if (transactionSettings != null && transactionSettings.length > 0) {
+			connection.begin(transactionSettings);
+		} else {
+			connection.begin();
+		}
 	}
 
 	@Override
@@ -91,5 +99,10 @@ public class RepositoryWriteStrategy implements WriteStrategy {
 	public void clearNamespaces() throws RepositoryException {
 		createConnection();
 		connection.clearNamespaces();
+	}
+
+	@Override
+	public void setTransactionSettings(TransactionSetting... transactionSettings) throws RepositoryException {
+		this.transactionSettings = transactionSettings;
 	}
 }

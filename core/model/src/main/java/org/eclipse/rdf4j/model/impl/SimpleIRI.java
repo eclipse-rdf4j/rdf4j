@@ -10,12 +10,13 @@ package org.eclipse.rdf4j.model.impl;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
 
 /**
  * The default implementation of the {@link IRI} interface.
  */
-public class SimpleIRI implements IRI {
+public class SimpleIRI extends AbstractIRI {
 
 	/*-----------*
 	 * Constants *
@@ -78,12 +79,6 @@ public class SimpleIRI implements IRI {
 		this.localNameIdx = -1;
 	}
 
-	// Implements IRI.toString()
-	@Override
-	public String toString() {
-		return iriString;
-	}
-
 	@Override
 	public String stringValue() {
 		return iriString;
@@ -107,27 +102,4 @@ public class SimpleIRI implements IRI {
 		return iriString.substring(localNameIdx);
 	}
 
-	// Implements IRI.equals(Object)
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-
-		if (o instanceof IRI) {
-
-			String a = toString();
-			String b = o.toString();
-
-			return a.equals(b);
-		}
-
-		return false;
-	}
-
-	// Implements IRI.hashCode()
-	@Override
-	public int hashCode() {
-		return iriString.hashCode();
-	}
 }
