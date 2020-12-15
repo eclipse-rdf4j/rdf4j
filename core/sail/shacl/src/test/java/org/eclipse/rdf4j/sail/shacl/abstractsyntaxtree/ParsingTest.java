@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree;
+package org.eclipse.rdf4j.sail.shacl.ast;
 
 import static org.junit.Assert.assertEquals;
 

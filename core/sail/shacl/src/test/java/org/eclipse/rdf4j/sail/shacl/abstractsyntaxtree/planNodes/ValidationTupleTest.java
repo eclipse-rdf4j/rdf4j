@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes;
+package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import static org.junit.Assert.assertEquals;
 
@@ -14,7 +14,7 @@ import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.junit.Test;
 
 public class ValidationTupleTest {

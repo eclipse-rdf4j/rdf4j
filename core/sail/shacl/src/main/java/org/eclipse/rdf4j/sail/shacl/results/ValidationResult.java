@@ -21,11 +21,11 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Severity;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Severity;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 
 /**
  * The ValidationResult represents the results from a SHACL validation in an easy-to-use Java API.

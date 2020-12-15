@@ -1,4 +1,4 @@
-package org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.paths;
+package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import static org.junit.Assert.assertTrue;
 

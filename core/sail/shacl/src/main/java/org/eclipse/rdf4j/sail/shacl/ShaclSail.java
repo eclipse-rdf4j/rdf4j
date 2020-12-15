@@ -62,8 +62,7 @@ import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -649,11 +648,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with "true" will
-	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
-	 * or rdfs:Resource in an environment with a reasoner.
-	 *
-	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 * This function does nothing. Use dash:AllSubjectsTarget.
 	 *
 	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
@@ -663,9 +658,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
-	 *
-	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 * This function does nothing. Use dash:AllSubjectsTarget.
 	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)

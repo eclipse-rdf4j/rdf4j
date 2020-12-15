@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.abstractsyntaxtree.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.junit.Test;
 
 /**
