@@ -12,6 +12,6 @@ ex:PersonShape
 	sh:property
         [
 		sh:path ex:knows ;
-		sh:not [ sh:and ( [sh:in (ex:steve)] [sh:in (ex:steve ex:pete)] ) ] ;
+		sh:not [ sh:and ( [sh:in (ex:steve)] [sh:in (ex:pete ex:steve)] ) ] ;
 	]	 .
 

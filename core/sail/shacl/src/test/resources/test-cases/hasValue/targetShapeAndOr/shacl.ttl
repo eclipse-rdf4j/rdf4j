@@ -12,7 +12,11 @@ ex:shape1
 	rsx:targetShape [
 	        sh:property [
         		sh:path ex:info ;
-        		sh:and ([sh:or ([sh:hasValue "blue"] [sh:hasValue "fjwklejf"]) ;] [ sh:hasValue "red" ; ]) ;
+        		sh:and (
+        		        [sh:or ([sh:hasValue "blue"]
+        		        [sh:hasValue "fjwklejf"])]
+        		        [ sh:hasValue "red"]
+        		) ;
         	]
 	];
 

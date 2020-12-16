@@ -21,7 +21,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.junit.Test;
 
 /**
@@ -41,9 +42,10 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect = shaclSail.getNodeShapes()
+				List<PlanNode> collect = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 
 				assertEquals(0, collect.size());
@@ -53,9 +55,10 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 				assertEquals(2, collect2.size());
 
@@ -97,9 +100,10 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect1 = shaclSail.getNodeShapes()
+				List<PlanNode> collect1 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
 						.collect(Collectors.toList());
 				assertEquals(1, collect1.size());
 
@@ -110,9 +114,11 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getNodeShapes()
+				List<PlanNode> collect2 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
+
 						.collect(Collectors.toList());
 				assertEquals(1, collect2.size());
 			}
@@ -120,9 +126,11 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect3 = shaclSail.getNodeShapes()
+				List<PlanNode> collect3 = shaclSail.getShapes()
 						.stream()
-						.flatMap(shape -> shape.generatePlans(connectionsGroup, shape, false, false))
+						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
+						.filter(s -> !(s instanceof EmptyNode))
+
 						.collect(Collectors.toList());
 				assertEquals(2, collect3.size());
 			}
@@ -134,7 +142,7 @@ public class ReduceNumberOfPlansTest {
 
 	private void refreshAddedRemovedStatements(ShaclSailConnection connection) {
 
-		connection.fillAddedAndRemovedStatementRepositories();
+		connection.prepareValidation();
 
 	}
 

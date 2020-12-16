@@ -9,8 +9,10 @@
 package org.eclipse.rdf4j.sail.shacl.results;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -18,12 +20,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.AST.InversePath;
-import org.eclipse.rdf4j.sail.shacl.AST.Path;
-import org.eclipse.rdf4j.sail.shacl.AST.PathPropertyShape;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.AST.SimplePath;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Severity;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 
 /**
  * The ValidationResult represents the results from a SHACL validation in an easy-to-use Java API.
@@ -34,35 +36,37 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 @Deprecated
 public class ValidationResult {
 
-	private final Resource id = SimpleValueFactory.getInstance().createBNode();
+	private final Resource id = SimpleValueFactory.getInstance().createBNode(UUID.randomUUID() + "");
+	private final Optional<Value> value;
+	private final Shape shape;
 
 	private final SourceConstraintComponent sourceConstraintComponent;
-	private final PropertyShape sourceShape;
+	private final Severity severity;
+	private final Value focusNode;
 	private Path path;
 	private ValidationResult detail;
-	private final Value focusNode;
-	private final Optional<Value> value;
 
-	public ValidationResult(PropertyShape sourceShape, Value focusNode, Value value) {
-		this.sourceShape = sourceShape;
+	public ValidationResult(Value focusNode, Value value, Shape shape,
+			SourceConstraintComponent sourceConstraintComponent, Severity severity, ConstraintComponent.Scope scope) {
 		this.focusNode = focusNode;
-		this.sourceConstraintComponent = sourceShape.getSourceConstraintComponent();
-		if (sourceShape instanceof PathPropertyShape) {
-			this.path = ((PathPropertyShape) sourceShape).getPath();
-		}
+		assert this.focusNode != null;
+		this.sourceConstraintComponent = sourceConstraintComponent;
+		this.shape = shape;
 
-		if (sourceConstraintComponent.producesValidationResultValue() &&
-		// WE DON'T SUPPORT sh:value FOR LOGICAL OPERATORS YET
-				sourceConstraintComponent.getConstraintType() != SourceConstraintComponent.ConstraintType.Logical) {
+		if (sourceConstraintComponent.producesValidationResultValue()) {
+			assert value != null;
 			this.value = Optional.of(value);
 		} else {
+			if (scope == ConstraintComponent.Scope.propertyShape) {
+				assert value == null;
+			}
 			this.value = Optional.empty();
 		}
 
-	}
-
-	public void setDetail(ValidationResult detail) {
-		this.detail = detail;
+		if (shape instanceof PropertyShape) {
+			this.path = ((PropertyShape) shape).getPath();
+		}
+		this.severity = severity;
 	}
 
 	/**
@@ -70,6 +74,10 @@ public class ValidationResult {
 	 */
 	public ValidationResult getDetail() {
 		return detail;
+	}
+
+	public void setDetail(ValidationResult detail) {
+		this.detail = detail;
 	}
 
 	/**
@@ -93,26 +101,25 @@ public class ValidationResult {
 
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
 
-		model.add(getId(), SHACL.FOCUS_NODE, getFocusNode());
-		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
-		model.add(getId(), SHACL.SOURCE_SHAPE, getSourceShapeResource());
-
-		if (getPath() != null) {
-			// TODO: Path should be responsible for this!
-			if (getPath() instanceof SimplePath) {
-				model.add(getId(), SHACL.RESULT_PATH, ((SimplePath) getPath()).getPath());
-			} else if (getPath() instanceof InversePath) {
-				model.add(getId(), SHACL.RESULT_PATH, getPath().getId());
-				model.add(getPath().getId(), SHACL.INVERSE_PATH, ((InversePath) getPath()).getPath());
-			}
-		}
+		model.add(getId(), SHACL.FOCUS_NODE, focusNode);
 
 		value.ifPresent(v -> model.add(getId(), SHACL.VALUE, v));
 
-		if (detail != null) {
-			model.add(getId(), SHACL.DETAIL, detail.getId());
-			detail.asModel(model);
+		if (this.path != null) {
+			path.toModel(path.getId(), null, model, new HashSet<>());
+			model.add(getId(), SHACL.RESULT_PATH, path.getId());
 		}
+
+		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
+		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
+
+		// TODO: Figure out how sh:detail should work!
+//		if (detail != null) {
+//			model.add(getId(), SHACL.DETAIL, detail.getId());
+//			detail.asModel(model);
+//		}
+
+		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
 
 		return model;
 	}
@@ -122,13 +129,6 @@ public class ValidationResult {
 	 */
 	private Path getPath() {
 		return path;
-	}
-
-	/**
-	 * @return the Resource (IRI or BNode) that identifies the source shape
-	 */
-	public Resource getSourceShapeResource() {
-		return sourceShape.getId();
 	}
 
 	/**
@@ -153,14 +153,9 @@ public class ValidationResult {
 	public String toString() {
 		return "ValidationResult{" +
 				"sourceConstraintComponent=" + sourceConstraintComponent +
-				", sourceShape=" + sourceShape +
 				", path=" + path +
 				", detail=" + detail +
 				", focusNode=" + focusNode +
 				'}';
-	}
-
-	public Optional<Value> getValue() {
-		return value;
 	}
 }

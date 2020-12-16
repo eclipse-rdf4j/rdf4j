@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 
@@ -18,8 +18,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IteratorCloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 @Deprecated
@@ -32,9 +31,10 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	private boolean truncated = false;
 
 	private ValidationResult next = null;
-	private CloseableIteration<Tuple, SailException> tupleIterator;
+	private CloseableIteration<? extends ValidationTuple, SailException> tupleIterator;
 
-	public ValidationResultIterator(CloseableIteration<Tuple, SailException> tupleIterator, long limit) {
+	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator,
+			long limit) {
 		this.limit = limit;
 		this.tupleIterator = tupleIterator;
 		getTuples();
@@ -47,26 +47,22 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		}
 		if (next == null && tupleIterator.hasNext()) {
 			if (limit < 0 || counter < limit) {
-				Tuple invalidTuple = tupleIterator.next();
+				ValidationTuple invalidTuple = tupleIterator.next();
+
+				Deque<ValidationResult> validationResults = invalidTuple.toValidationResult();
 
 				ValidationResult parent = null;
-				ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
 
-				while (!propertyShapes.isEmpty()) {
-
-					ValidationResult validationResult = new ValidationResult(
-							propertyShapes.pop(),
-							invalidTuple.getLine().get(0),
-							invalidTuple.getLine().get(invalidTuple.getLine().size() - 1)
-					);
-
+				for (ValidationResult validationResult : validationResults) {
 					if (parent == null) {
-						next = validationResult;
+						parent = validationResult;
+						next = parent;
 					} else {
 						parent.setDetail(validationResult);
+						parent = validationResult;
 					}
-					parent = validationResult;
 				}
+
 				counter++;
 			}
 
@@ -77,8 +73,8 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		}
 	}
 
-	public List<Tuple> getTuples() {
-		List<Tuple> actualList = new ArrayList<>();
+	public List<ValidationTuple> getTuples() {
+		List<ValidationTuple> actualList = new ArrayList<>();
 		long localCounter = 0;
 		while (tupleIterator.hasNext() && (limit < 0 || localCounter++ < limit + 1)) {
 			actualList.add(tupleIterator.next());

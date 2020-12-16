@@ -13,6 +13,26 @@
       <path-complex-002>
     ) .
 
+ex:j ex:p ex:i .
+
+ex:k ex:p ex:j .
+
+ex:l ex:p ex:j .
+
+
+ex:s1 a sh:PropertyShape ;
+ sh:targetNode ex:i ;
+ sh:path ( _:pinv _:pinv ) ;
+ sh:class ex:C .
+
+_:pinv sh:inversePath ex:p .
+
+ex:s2 a sh:PropertyShape ;
+ sh:targetNode ex:i ;
+ sh:path ( [ sh:inversePath ex:p ] [ sh:inversePath ex:p ] ) ;
+ sh:class ex:C .
+
+
 <path-complex-002> a sht:Validate ;
   rdfs:label "Test of complex path validation results" ;
   mf:action [

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
 
 /**
  * The ValidationReport represents the report from a SHACL validation in an easy-to-use Java API.
@@ -37,7 +36,6 @@ public class ValidationReport {
 
 	protected final List<ValidationResult> validationResult = new ArrayList<>();
 	protected boolean truncated = false;
-	List<Tuple> tuples;
 
 	public ValidationReport() {
 
@@ -107,7 +105,4 @@ public class ValidationReport {
 		return truncated;
 	}
 
-	public void setTuples(List<Tuple> collect) {
-		this.tuples = collect;
-	}
 }

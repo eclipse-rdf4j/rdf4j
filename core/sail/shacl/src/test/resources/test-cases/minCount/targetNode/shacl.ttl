@@ -12,6 +12,5 @@ ex:PersonShape
 	sh:property [
 		sh:path ex:ssn ;
 		sh:minCount 2 ;
-
 	] .
 

@@ -84,7 +84,7 @@ public class RDFCollections {
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
 			Resource... contexts) {
 		Objects.requireNonNull(sink);
-		consumeCollection(values, head, st -> sink.add(st), contexts);
+		consumeCollection(values, head, sink::add, contexts);
 		return sink;
 	}
 
