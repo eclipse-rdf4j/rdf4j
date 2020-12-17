@@ -448,7 +448,7 @@
 			<dependency>
 				<groupId>org.locationtech.spatial4j</groupId>
 				<artifactId>spatial4j</artifactId>
-				<version>0.7</version>
+				<version>0.8</version>
 			</dependency>
 			<dependency>
 				<groupId>org.locationtech.jts</groupId>
