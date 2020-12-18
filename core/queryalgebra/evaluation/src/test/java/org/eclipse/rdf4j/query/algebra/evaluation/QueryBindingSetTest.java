@@ -9,10 +9,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
@@ -94,20 +94,23 @@ public class QueryBindingSetTest {
 			bs.addBinding("foo", vf.createIRI("urn:foo"));
 			fail();
 		} catch (AssertionError e) {
+			// The current implementation sets an assertion.
+			// however the behavior that is expected is that
+			// after adding an existing binding only the last
+			// set one is returned.
 			return;
 		}
 	}
 
 	@Test
-	public void testNonSharedBackingMap()
-			throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException {
+	public void testNonSharedBackingMap() {
 		QueryBindingSet bs = new QueryBindingSet();
 		bs.addBinding("foo", vf.createIRI("urn:foo"));
 		bs.addBinding("bar", vf.createIRI("urn:bar"));
 		QueryBindingSet bs2 = new QueryBindingSet(bs);
-		final Field declaredField = QueryBindingSet.class.getDeclaredField("bindings");
-		declaredField.setAccessible(true);
-		assertTrue(declaredField.get(bs) != declaredField.get(bs2));
+		bs2.addBinding("boo", vf.createIRI("urn:boo"));
+		assertNotEquals(bs.size(), bs2.size());
+		assertFalse(bs.hasBinding("boo"));
 	}
 
 	@Test
