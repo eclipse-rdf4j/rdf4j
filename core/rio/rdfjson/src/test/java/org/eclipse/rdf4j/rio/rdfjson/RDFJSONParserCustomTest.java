@@ -140,8 +140,8 @@ public class RDFJSONParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		// 17 supported in RDFJSONParser + 12 from AbstractRDFParser
-		assertEquals(29, parser.getSupportedSettings().size());
+		// 17 supported in RDFJSONParser + 13 from AbstractRDFParser
+		assertEquals(30, parser.getSupportedSettings().size());
 	}
 
 	@Test

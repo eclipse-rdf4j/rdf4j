@@ -79,6 +79,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 	private ParsedIRI baseURI;
 
 	/**
+	 * The base URI for skolemizing IRIs.
+	 */
+	private String skolemOrigin;
+	private ParsedIRI parsedSkolemOrigin;
+
+	/**
 	 * Enables a consistent global mapping of blank node identifiers without using a map, but concatenating this as a
 	 * prefix for the blank node identifiers supplied by the parser.
 	 */
@@ -207,6 +213,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 		result.add(BasicParserSettings.PRESERVE_BNODE_IDS);
 
 		result.add(BasicParserSettings.NAMESPACES);
+
+		result.add(BasicParserSettings.SKOLEMIZE_ORIGIN);
 
 		return result;
 	}
@@ -420,16 +428,18 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a new {@link BNode} or Skolem {@link IRI} object.
+	 * 
+	 * @return blank node or skolem IRI
 	 */
 	protected Resource createNode() throws RDFParseException {
+		ParsedIRI skolem = getCachedSkolemOrigin();
 		try {
-			String origin = parserConfig.get(BasicParserSettings.SKOLEMIZE_ORIGIN);
-			if (preserveBNodeIDs() || origin == null || origin.length() == 0) {
+			if (preserveBNodeIDs() || skolem == null) {
 				return valueFactory.createBNode();
 			} else {
 				String nodeId = valueFactory.createBNode().getID();
 				String path = "/.well-known/genid/" + nextBNodePrefix + nodeId;
-				String iri = ParsedIRI.create(origin).resolve(path);
+				String iri = skolem.resolve(path);
 				return valueFactory.createIRI(iri);
 			}
 		} catch (Exception e) {
@@ -440,6 +450,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a {@link BNode} or Skolem {@link IRI} object for the specified identifier.
+	 * 
+	 * @param nodeID node identifier
+	 * @return blank node or skolem IRI
 	 */
 	protected Resource createNode(String nodeID) throws RDFParseException {
 		// If we are preserving blank node ids then we do not prefix them to
@@ -464,12 +477,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));
 			}
 
-			String origin = parserConfig.get(BasicParserSettings.SKOLEMIZE_ORIGIN);
-			if (origin == null || origin.length() == 0) {
+			ParsedIRI skolem = getCachedSkolemOrigin();
+			if (skolem == null) {
 				return valueFactory.createBNode("genid-" + nextBNodePrefix + toAppend);
 			} else {
 				String path = "/.well-known/genid/" + nextBNodePrefix + toAppend;
-				String iri = ParsedIRI.create(origin).resolve(path);
+				String iri = skolem.resolve(path);
 				return valueFactory.createIRI(iri);
 			}
 		}
@@ -774,4 +787,28 @@ public abstract class AbstractRDFParser implements RDFParser {
 		return UUID.randomUUID().toString().replaceAll("-", "") + "-";
 	}
 
+	/**
+	 * Parse skolem origin, if set
+	 * 
+	 * @return skolem origin or null
+	 */
+	private ParsedIRI getCachedSkolemOrigin() {
+		String origin = getParserConfig().get(BasicParserSettings.SKOLEMIZE_ORIGIN);
+
+		if (origin == null || origin.length() == 0) {
+			if (skolemOrigin != null) {
+				skolemOrigin = null;
+				parsedSkolemOrigin = null;
+			}
+			return null;
+		}
+
+		if (skolemOrigin != null && origin.equals(skolemOrigin)) {
+			return parsedSkolemOrigin;
+		}
+
+		skolemOrigin = origin;
+		parsedSkolemOrigin = ParsedIRI.create(origin);
+		return parsedSkolemOrigin;
+	}
 }
