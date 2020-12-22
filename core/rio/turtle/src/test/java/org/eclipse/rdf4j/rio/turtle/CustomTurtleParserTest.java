@@ -185,7 +185,7 @@ public class CustomTurtleParserTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertThat(parser.getSupportedSettings()).hasSize(14);
+		assertThat(parser.getSupportedSettings()).hasSize(15);
 	}
 
 	@Test

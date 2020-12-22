@@ -637,7 +637,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertThat(parser.getSupportedSettings()).hasSize(13);
+		assertThat(parser.getSupportedSettings()).hasSize(14);
 	}
 
 	protected abstract RDFParser createRDFParser();
