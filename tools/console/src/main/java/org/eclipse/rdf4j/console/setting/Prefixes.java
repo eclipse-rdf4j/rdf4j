@@ -13,22 +13,9 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.util.Namespaces;
 import org.eclipse.rdf4j.model.util.URIUtil;
-import org.eclipse.rdf4j.model.vocabulary.DCAT;
-import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
-import org.eclipse.rdf4j.model.vocabulary.FOAF;
-import org.eclipse.rdf4j.model.vocabulary.ODRL2;
-import org.eclipse.rdf4j.model.vocabulary.ORG;
-import org.eclipse.rdf4j.model.vocabulary.OWL;
-import org.eclipse.rdf4j.model.vocabulary.PROV;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.ROV;
-import org.eclipse.rdf4j.model.vocabulary.SKOS;
-import org.eclipse.rdf4j.model.vocabulary.TIME;
-import org.eclipse.rdf4j.model.vocabulary.VCARD4;
-import org.eclipse.rdf4j.model.vocabulary.VOID;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Namespace prefix setting
@@ -38,24 +25,10 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class Prefixes extends ConsoleSetting<Set<Namespace>> {
 	public final static String NAME = "prefixes";
 
-	public final static Set<Namespace> DEFAULT = new HashSet<>();
+	public final static Set<Namespace> DEFAULT = new HashSet<>(Namespaces.DEFAULT_RDFA11);
 
 	static {
-		DEFAULT.add(DCAT.NS);
-		DEFAULT.add(DCTERMS.NS);
-		DEFAULT.add(FOAF.NS);
-		DEFAULT.add(ODRL2.NS);
-		DEFAULT.add(ORG.NS);
-		DEFAULT.add(OWL.NS);
-		DEFAULT.add(PROV.NS);
-		DEFAULT.add(RDF.NS);
-		DEFAULT.add(RDFS.NS);
 		DEFAULT.add(ROV.NS);
-		DEFAULT.add(SKOS.NS);
-		DEFAULT.add(TIME.NS);
-		DEFAULT.add(VCARD4.NS);
-		DEFAULT.add(VOID.NS);
-		DEFAULT.add(XSD.NS);
 	}
 
 	@Override
