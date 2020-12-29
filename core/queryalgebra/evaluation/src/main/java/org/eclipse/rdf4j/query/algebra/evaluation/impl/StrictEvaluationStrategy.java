@@ -14,7 +14,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -455,6 +459,92 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return visitor.boundVars;
 	}
 
+	private static final class IntoBindingSetCoverter
+			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
+		private final BindingSet bindings;
+		private final List<BiConsumer<QueryBindingSet, Statement>> consumers;
+
+		private IntoBindingSetCoverter(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				BindingSet bindings, Var conVar, Var objVar, Var predVar, Var subjVar) {
+			super(iter);
+			this.bindings = bindings;
+
+			consumers = Stream.of(createPredicateConsumer(bindings, predVar),
+					createSubjectConsumer(bindings, subjVar),
+					createContextconsumer(bindings, conVar),
+					createObjectConsumer(bindings, objVar))
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+		}
+
+		private BiConsumer<QueryBindingSet, Statement> createContextconsumer(BindingSet bindings, Var conVar) {
+			if (conVar != null && !conVar.isConstant() && !bindings.hasBinding(conVar.getName())) {
+				final String name = conVar.getName();
+				return (result, st) -> {
+					if (st.getContext() != null) {
+						result.addBinding(name, st.getContext());
+					}
+					;
+				};
+			} else {
+				return null;
+			}
+		}
+
+		private BiConsumer<QueryBindingSet, Statement> createObjectConsumer(BindingSet bindings, Var objVar) {
+			if (objVar != null && !objVar.isConstant() && !bindings.hasBinding(objVar.getName())) {
+				final String name = objVar.getName();
+				return (result, st) -> {
+					if (st.getObject() != null) {
+						result.addBinding(name, st.getObject());
+					}
+					;
+				};
+			} else {
+				return null;
+			}
+		}
+
+		private BiConsumer<QueryBindingSet, Statement> createSubjectConsumer(BindingSet bindings, Var subjVar) {
+			if (subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName())) {
+				final String name = subjVar.getName();
+				return (result, st) -> {
+					if (st.getSubject() != null) {
+						result.addBinding(name, st.getSubject());
+					}
+					;
+				};
+			} else {
+				return null;
+			}
+		}
+
+		private BiConsumer<QueryBindingSet, Statement> createPredicateConsumer(BindingSet bindings, Var predVar) {
+			if (predVar != null && !predVar.isConstant() && !bindings.hasBinding(predVar.getName())) {
+				final String name = predVar.getName();
+				return (result, st) -> {
+					if (st.getPredicate() != null) {
+						result.addBinding(name, st.getPredicate());
+					}
+					;
+				};
+			} else {
+				return null;
+			}
+		}
+
+		@Override
+		protected BindingSet convert(Statement st) {
+			QueryBindingSet result = new QueryBindingSet(bindings);
+
+			for (BiConsumer<QueryBindingSet, Statement> consumer : consumers) {
+				consumer.accept(result, st);
+			}
+
+			return result;
+		}
+	}
+
 	private static class BoundVarVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final Set<Var> boundVars = new HashSet<>();
@@ -588,6 +678,42 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					Value obj = st.getObject();
 					Resource context = st.getContext();
 
+					if (!testSubjectEqToAny(subjVar, predVar, objVar, conVar, subjValue, subj, pred, obj, context)) {
+						return false;
+					}
+
+					if (!testPredicateEqToObjOrContext(predVar, objVar, conVar, predValue, pred, obj, context)) {
+						return false;
+					}
+
+					return testObjEqToContext(objVar, conVar, objValue, obj, context);
+				}
+
+				private boolean testObjEqToContext(final Var objVar, final Var conVar, final Value objValue, Value obj,
+						Resource context) {
+					if (objVar != null && objValue == null) {
+						if (objVar.equals(conVar) && !obj.equals(context)) {
+							return false;
+						}
+					}
+					return true;
+				}
+
+				private boolean testPredicateEqToObjOrContext(final Var predVar, final Var objVar, final Var conVar,
+						final Value predValue, IRI pred, Value obj, Resource context) {
+					if (predVar != null && predValue == null) {
+						if (predVar.equals(objVar) && !pred.equals(obj)) {
+							return false;
+						}
+						if (predVar.equals(conVar) && !pred.equals(context)) {
+							return false;
+						}
+					}
+					return true;
+				}
+
+				private boolean testSubjectEqToAny(final Var subjVar, final Var predVar, final Var objVar,
+						final Var conVar, final Value subjValue, Resource subj, IRI pred, Value obj, Resource context) {
 					if (subjVar != null && subjValue == null) {
 						if (subjVar.equals(predVar) && !subj.equals(pred)) {
 							return false;
@@ -599,50 +725,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 							return false;
 						}
 					}
-
-					if (predVar != null && predValue == null) {
-						if (predVar.equals(objVar) && !pred.equals(obj)) {
-							return false;
-						}
-						if (predVar.equals(conVar) && !pred.equals(context)) {
-							return false;
-						}
-					}
-
-					if (objVar != null && objValue == null) {
-						if (objVar.equals(conVar) && !obj.equals(context)) {
-							return false;
-						}
-					}
-
 					return true;
 				}
 			};
 
 			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter3) {
-
-				@Override
-				protected BindingSet convert(Statement st) {
-					QueryBindingSet result = new QueryBindingSet(bindings);
-
-					if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
-						result.addBinding(subjVar.getName(), st.getSubject());
-					}
-					if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
-						result.addBinding(predVar.getName(), st.getPredicate());
-					}
-					if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
-						result.addBinding(objVar.getName(), st.getObject());
-					}
-					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-							&& st.getContext() != null) {
-						result.addBinding(conVar.getName(), st.getContext());
-					}
-
-					return result;
-				}
-			};
+			resultingIterator = new IntoBindingSetCoverter(stIter3, bindings, conVar, objVar, predVar, subjVar);
 			allGood = true;
 
 			return resultingIterator;
