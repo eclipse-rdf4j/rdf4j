@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -16,7 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -463,11 +461,29 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return visitor.boundVars;
 	}
 
+	/**
+	 * This class converts statements into BindingSets. It tries to do so by creating {@link BiConsumer}s for each no
+	 * null {@link Var}iable. That BiConsumer injects the Value directly into the new binding set.
+	 *
+	 * @param <T> the specific type of BindingSet being used at this stage.
+	 */
 	private static final class IntoBindingSetCoverter<T extends BindingSet>
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
 		private final List<BiConsumer<T, Statement>> consumers;
 		private final Supplier<T> newbindings;
 
+		/**
+		 * 
+		 * @param iter         the statement provider
+		 * @param bindings     prior existing bindings
+		 * @param conVar       the context variable
+		 * @param objVar       the object variable
+		 * @param predVar      the predicate variable
+		 * @param subjVar      the subject variable
+		 * @param newbindings  a supplier that makes new binding sets
+		 * @param addToBinding a {@link java.util.function.Function} that creates the BiConsumers that adds the Binding
+		 *                     to the BindingSet in an optimal manner.
+		 */
 		private IntoBindingSetCoverter(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BindingSet bindings, Var conVar, Var objVar, Var predVar, Var subjVar,
 				Supplier<T> newbindings,
@@ -475,21 +491,28 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			super(iter);
 			this.newbindings = newbindings;
 			consumers = Stream.of(
-					createConsumer(bindings, subjVar, Statement::getSubject, addToBinding.apply(subjVar)),
-					createConsumer(bindings, predVar, Statement::getPredicate, addToBinding.apply(predVar)),
-					createConsumer(bindings, objVar, Statement::getObject, addToBinding.apply(objVar)),
-					createConsumer(bindings, conVar, Statement::getContext, addToBinding.apply(conVar)))
+					createConsumer(subjVar, Statement::getSubject, bindings, addToBinding),
+					createConsumer(predVar, Statement::getPredicate, bindings, addToBinding),
+					createConsumer(objVar, Statement::getObject, bindings, addToBinding),
+					createConsumer(conVar, Statement::getContext, bindings, addToBinding))
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
 		}
 
-		private BiConsumer<T, Statement> createConsumer(BindingSet bindings,
+		private BiConsumer<T, Statement> createConsumer(
 				Var var,
 				java.util.function.Function<Statement, Value> accessor,
-				BiConsumer<T, Value> addToBinding) {
+				BindingSet bindings,
+				java.util.function.Function<Var, BiConsumer<T, Value>> addToBindingMaker) {
+			// If the var is already set in the bindings we do not overwrite it.
+			// so then we return null.
+			// if var is constant we don't set it either.
+			// if it is null there is nothing to set.
 			if (var != null && !var.isConstant() && !bindings.hasBinding(var.getName())) {
+				final BiConsumer<T, Value> addToBinding = addToBindingMaker.apply(var);
 				return (result, st) -> {
 					final Value val = accessor.apply(st);
+					// context may be null
 					if (val != null) {
 						addToBinding.accept(result, val);
 					}
@@ -501,8 +524,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		@Override
 		protected BindingSet convert(Statement st) {
+			// create a new binding set (may expand on a prior set binding)
 			T result = newbindings.get();
 
+			// for each consumer we
 			for (BiConsumer<T, Statement> consumer : consumers) {
 				consumer.accept(result, st);
 			}
@@ -557,72 +582,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();
 		}
+		Resource[] contexts = extractContext(statementPattern, contextValue);
+		if (contexts == null)
+			return new EmptyIteration<>();
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
-
 		boolean allGood = false;
+		Predicate<Statement> filter = filterForContextAndVariableReuse(statementPattern, subjVar, predVar, objVar,
+				conVar, contexts);
 		try {
-			Resource[] contexts;
-
-			Set<IRI> graphs = null;
-			boolean emptyGraph = false;
-
-			if (dataset != null) {
-				if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
-					graphs = dataset.getDefaultGraphs();
-					emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
-				} else {
-					graphs = dataset.getNamedGraphs();
-					emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
-				}
-			}
-
-			if (emptyGraph) {
-				// Search zero contexts
-				return new EmptyIteration<>();
-			} else if (graphs == null || graphs.isEmpty()) {
-				// store default behaviour
-				if (contextValue != null) {
-					if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-						contexts = new Resource[] { (Resource) null };
-					} else {
-						contexts = new Resource[] { (Resource) contextValue };
-					}
-				}
-				/*
-				 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph
-				 * in SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
-				 * Resource[] { (Resource)null }; }
-				 */
-				else {
-					contexts = new Resource[0];
-				}
-			} else if (contextValue != null) {
-				if (graphs.contains(contextValue)) {
-					contexts = new Resource[] { (Resource) contextValue };
-				} else {
-					// Statement pattern specifies a context that is not part of
-					// the dataset
-					return new EmptyIteration<>();
-				}
-			} else {
-				contexts = new Resource[graphs.size()];
-				int i = 0;
-				for (IRI graph : graphs) {
-					IRI context = null;
-					if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
-						context = graph;
-					}
-					contexts[i++] = context;
-				}
-			}
 
 			stIter1 = tripleSource.getStatements((Resource) subjValue, (IRI) predValue, objValue, contexts);
 
-			Predicate<Statement> filter = filterForContextAndVariableReuse(statementPattern, subjVar, predVar, objVar,
-					conVar, contexts);
 			if (filter == null) {
 				// Return an iterator that converts the statements to var bindings
 				resultingIterator = createIntoBindingSetIterator(bindings, subjVar, predVar, objVar, conVar, stIter1);
@@ -661,6 +634,71 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 			}
 		}
+	}
+
+	/**
+	 * To make it easier to compile this hot method it is extracted from the TupleExpresion evaluation
+	 * 
+	 * @param statementPattern
+	 * @param contextValue
+	 * @return a null context if we know the iteration must be empty. else as store demands.
+	 */
+	private Resource[] extractContext(StatementPattern statementPattern, final Value contextValue) {
+		Resource[] contexts;
+
+		Set<IRI> graphs = null;
+		boolean emptyGraph = false;
+
+		if (dataset != null) {
+			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
+				graphs = dataset.getDefaultGraphs();
+				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
+			} else {
+				graphs = dataset.getNamedGraphs();
+				emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
+			}
+		}
+
+		if (emptyGraph) {
+			// Search zero contexts
+			contexts = null;
+		} else if (graphs == null || graphs.isEmpty()) {
+			// store default behaviour
+			if (contextValue != null) {
+				if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
+					contexts = new Resource[] { (Resource) null };
+				} else {
+					contexts = new Resource[] { (Resource) contextValue };
+				}
+			}
+			/*
+			 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in
+			 * SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
+			 * Resource[] { (Resource)null }; }
+			 */
+			else {
+				contexts = new Resource[0];
+			}
+		} else if (contextValue != null) {
+			if (graphs.contains(contextValue)) {
+				contexts = new Resource[] { (Resource) contextValue };
+			} else {
+				// Statement pattern specifies a context that is not part of
+				// the dataset
+				contexts = null;
+			}
+		} else {
+			contexts = new Resource[graphs.size()];
+			int i = 0;
+			for (IRI graph : graphs) {
+				IRI context = null;
+				if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
+					context = graph;
+				}
+				contexts[i++] = context;
+			}
+		}
+		return contexts;
 	}
 
 	private Predicate<Statement> filterForContextAndVariableReuse(StatementPattern statementPattern, final Var subjVar,
@@ -724,7 +762,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			CloseableIteration<? extends Statement, QueryEvaluationException> stIter3) {
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator;
 		if (bindings == null || bindings.size() == 0) {
-
+			// If there are no prior bindings we can use a smaller and optimized
+			// Array BindingSet.
+			// We use invoke dynamic to make a function that sets a variables value
+			// directly into the array without any further logic.
 			Supplier<ArrayBindingSet> sup = () -> {
 				final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
 						.filter(Objects::nonNull)
@@ -737,8 +778,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			java.util.function.Function<Var, BiConsumer<ArrayBindingSet, Value>> addToBinding = (var) -> {
 				if (var == null) {
 					// if var is null we will throw this value away
-					return (a, v) -> {
-					};
+					return null;
 				} else {
 					return sup.get().getDirectSetterForVariable(var.getName());
 				}
@@ -758,8 +798,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return (var) -> {
 			// if var is null we will throw this value away
 			if (var == null) {
-				return (r, v) -> {
-				};
+				return null;
 			} else {
 				final String name = var.getName();
 				return (r, v) -> r.addBinding(name, v);
