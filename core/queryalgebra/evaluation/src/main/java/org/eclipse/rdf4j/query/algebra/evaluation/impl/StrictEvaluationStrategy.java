@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -16,6 +17,8 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -156,6 +159,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.ArrayBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
@@ -459,74 +463,36 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return visitor.boundVars;
 	}
 
-	private static final class IntoBindingSetCoverter
+	private static final class IntoBindingSetCoverter<T extends BindingSet>
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final BindingSet bindings;
-		private final List<BiConsumer<QueryBindingSet, Statement>> consumers;
+		private final List<BiConsumer<T, Statement>> consumers;
+		private final Supplier<T> newbindings;
 
 		private IntoBindingSetCoverter(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
-				BindingSet bindings, Var conVar, Var objVar, Var predVar, Var subjVar) {
+				BindingSet bindings, Var conVar, Var objVar, Var predVar, Var subjVar,
+				Supplier<T> newbindings,
+				java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
 			super(iter);
-			this.bindings = bindings;
-
-			consumers = Stream.of(createPredicateConsumer(bindings, predVar),
-					createSubjectConsumer(bindings, subjVar),
-					createContextconsumer(bindings, conVar),
-					createObjectConsumer(bindings, objVar))
+			this.newbindings = newbindings;
+			consumers = Stream.of(
+					createConsumer(bindings, subjVar, Statement::getSubject, addToBinding.apply(subjVar)),
+					createConsumer(bindings, predVar, Statement::getPredicate, addToBinding.apply(predVar)),
+					createConsumer(bindings, objVar, Statement::getObject, addToBinding.apply(objVar)),
+					createConsumer(bindings, conVar, Statement::getContext, addToBinding.apply(conVar)))
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
 		}
 
-		private BiConsumer<QueryBindingSet, Statement> createContextconsumer(BindingSet bindings, Var conVar) {
-			if (conVar != null && !conVar.isConstant() && !bindings.hasBinding(conVar.getName())) {
-				final String name = conVar.getName();
+		private BiConsumer<T, Statement> createConsumer(BindingSet bindings,
+				Var var,
+				java.util.function.Function<Statement, Value> accessor,
+				BiConsumer<T, Value> addToBinding) {
+			if (var != null && !var.isConstant() && !bindings.hasBinding(var.getName())) {
 				return (result, st) -> {
-					if (st.getContext() != null) {
-						result.addBinding(name, st.getContext());
+					final Value val = accessor.apply(st);
+					if (val != null) {
+						addToBinding.accept(result, val);
 					}
-					;
-				};
-			} else {
-				return null;
-			}
-		}
-
-		private BiConsumer<QueryBindingSet, Statement> createObjectConsumer(BindingSet bindings, Var objVar) {
-			if (objVar != null && !objVar.isConstant() && !bindings.hasBinding(objVar.getName())) {
-				final String name = objVar.getName();
-				return (result, st) -> {
-					if (st.getObject() != null) {
-						result.addBinding(name, st.getObject());
-					}
-					;
-				};
-			} else {
-				return null;
-			}
-		}
-
-		private BiConsumer<QueryBindingSet, Statement> createSubjectConsumer(BindingSet bindings, Var subjVar) {
-			if (subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName())) {
-				final String name = subjVar.getName();
-				return (result, st) -> {
-					if (st.getSubject() != null) {
-						result.addBinding(name, st.getSubject());
-					}
-					;
-				};
-			} else {
-				return null;
-			}
-		}
-
-		private BiConsumer<QueryBindingSet, Statement> createPredicateConsumer(BindingSet bindings, Var predVar) {
-			if (predVar != null && !predVar.isConstant() && !bindings.hasBinding(predVar.getName())) {
-				final String name = predVar.getName();
-				return (result, st) -> {
-					if (st.getPredicate() != null) {
-						result.addBinding(name, st.getPredicate());
-					}
-					;
 				};
 			} else {
 				return null;
@@ -535,9 +501,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		@Override
 		protected BindingSet convert(Statement st) {
-			QueryBindingSet result = new QueryBindingSet(bindings);
+			T result = newbindings.get();
 
-			for (BiConsumer<QueryBindingSet, Statement> consumer : consumers) {
+			for (BiConsumer<T, Statement> consumer : consumers) {
 				consumer.accept(result, st);
 			}
 
@@ -571,14 +537,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		final Var conVar = statementPattern.getContextVar();
 
 		final Value subjValue = getVarValue(subjVar, bindings);
+		// if the subjValue is not a Resource or null
+		// the result must be empty
+		if (subjValue != null && !(subjValue instanceof Resource)) {
+			return new EmptyIteration<>();
+		}
 		final Value predValue = getVarValue(predVar, bindings);
+		// if the predValue is not a IRI or null
+		// the result must be empty
+		if (predValue != null && !(predValue instanceof IRI)) {
+			return new EmptyIteration<>();
+		}
+
 		final Value objValue = getVarValue(objVar, bindings);
 		final Value contextValue = getVarValue(conVar, bindings);
-
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter3 = null;
-		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
 
 		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
 				|| isUnbound(conVar, bindings)) {
@@ -586,151 +558,86 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return new EmptyIteration<>();
 		}
 
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
+		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
+
 		boolean allGood = false;
 		try {
-			try {
-				Resource[] contexts;
+			Resource[] contexts;
 
-				Set<IRI> graphs = null;
-				boolean emptyGraph = false;
+			Set<IRI> graphs = null;
+			boolean emptyGraph = false;
 
-				if (dataset != null) {
-					if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
-						graphs = dataset.getDefaultGraphs();
-						emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
-					} else {
-						graphs = dataset.getNamedGraphs();
-						emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
-					}
-				}
-
-				if (emptyGraph) {
-					// Search zero contexts
-					return new EmptyIteration<>();
-				} else if (graphs == null || graphs.isEmpty()) {
-					// store default behaviour
-					if (contextValue != null) {
-						if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-							contexts = new Resource[] { (Resource) null };
-						} else {
-							contexts = new Resource[] { (Resource) contextValue };
-						}
-					}
-					/*
-					 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default
-					 * graph in SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) {
-					 * contexts = new Resource[] { (Resource)null }; }
-					 */
-					else {
-						contexts = new Resource[0];
-					}
-				} else if (contextValue != null) {
-					if (graphs.contains(contextValue)) {
-						contexts = new Resource[] { (Resource) contextValue };
-					} else {
-						// Statement pattern specifies a context that is not part of
-						// the dataset
-						return new EmptyIteration<>();
-					}
+			if (dataset != null) {
+				if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
+					graphs = dataset.getDefaultGraphs();
+					emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
 				} else {
-					contexts = new Resource[graphs.size()];
-					int i = 0;
-					for (IRI graph : graphs) {
-						IRI context = null;
-						if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
-							context = graph;
-						}
-						contexts[i++] = context;
-					}
+					graphs = dataset.getNamedGraphs();
+					emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
 				}
-
-				stIter1 = tripleSource.getStatements((Resource) subjValue, (IRI) predValue, objValue, contexts);
-
-				if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
-					// Named contexts are matched by retrieving all statements from
-					// the store and filtering out the statements that do not have a
-					// context.
-					stIter2 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
-
-						@Override
-						protected boolean accept(Statement st) {
-							return st.getContext() != null;
-						}
-
-					}; // end anonymous class
-				} else {
-					stIter2 = stIter1;
-				}
-			} catch (ClassCastException e) {
-				// Invalid value type for subject, predicate and/or context
-				return new EmptyIteration<>();
 			}
 
-			// The same variable might have been used multiple times in this
-			// StatementPattern, verify value equality in those cases.
-			// TODO: skip this filter if not necessary
-			stIter3 = new FilterIteration<Statement, QueryEvaluationException>(stIter2) {
-
-				@Override
-				protected boolean accept(Statement st) {
-					Resource subj = st.getSubject();
-					IRI pred = st.getPredicate();
-					Value obj = st.getObject();
-					Resource context = st.getContext();
-
-					if (!testSubjectEqToAny(subjVar, predVar, objVar, conVar, subjValue, subj, pred, obj, context)) {
-						return false;
+			if (emptyGraph) {
+				// Search zero contexts
+				return new EmptyIteration<>();
+			} else if (graphs == null || graphs.isEmpty()) {
+				// store default behaviour
+				if (contextValue != null) {
+					if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
+						contexts = new Resource[] { (Resource) null };
+					} else {
+						contexts = new Resource[] { (Resource) contextValue };
 					}
-
-					if (!testPredicateEqToObjOrContext(predVar, objVar, conVar, predValue, pred, obj, context)) {
-						return false;
-					}
-
-					return testObjEqToContext(objVar, conVar, objValue, obj, context);
 				}
-
-				private boolean testObjEqToContext(final Var objVar, final Var conVar, final Value objValue, Value obj,
-						Resource context) {
-					if (objVar != null && objValue == null) {
-						if (objVar.equals(conVar) && !obj.equals(context)) {
-							return false;
-						}
-					}
-					return true;
+				/*
+				 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph
+				 * in SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
+				 * Resource[] { (Resource)null }; }
+				 */
+				else {
+					contexts = new Resource[0];
 				}
-
-				private boolean testPredicateEqToObjOrContext(final Var predVar, final Var objVar, final Var conVar,
-						final Value predValue, IRI pred, Value obj, Resource context) {
-					if (predVar != null && predValue == null) {
-						if (predVar.equals(objVar) && !pred.equals(obj)) {
-							return false;
-						}
-						if (predVar.equals(conVar) && !pred.equals(context)) {
-							return false;
-						}
-					}
-					return true;
+			} else if (contextValue != null) {
+				if (graphs.contains(contextValue)) {
+					contexts = new Resource[] { (Resource) contextValue };
+				} else {
+					// Statement pattern specifies a context that is not part of
+					// the dataset
+					return new EmptyIteration<>();
 				}
-
-				private boolean testSubjectEqToAny(final Var subjVar, final Var predVar, final Var objVar,
-						final Var conVar, final Value subjValue, Resource subj, IRI pred, Value obj, Resource context) {
-					if (subjVar != null && subjValue == null) {
-						if (subjVar.equals(predVar) && !subj.equals(pred)) {
-							return false;
-						}
-						if (subjVar.equals(objVar) && !subj.equals(obj)) {
-							return false;
-						}
-						if (subjVar.equals(conVar) && !subj.equals(context)) {
-							return false;
-						}
+			} else {
+				contexts = new Resource[graphs.size()];
+				int i = 0;
+				for (IRI graph : graphs) {
+					IRI context = null;
+					if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
+						context = graph;
 					}
-					return true;
+					contexts[i++] = context;
 				}
-			};
+			}
 
-			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new IntoBindingSetCoverter(stIter3, bindings, conVar, objVar, predVar, subjVar);
+			stIter1 = tripleSource.getStatements((Resource) subjValue, (IRI) predValue, objValue, contexts);
+
+			Predicate<Statement> filter = filterForContextAndVariableReuse(statementPattern, subjVar, predVar, objVar,
+					conVar, contexts);
+			if (filter == null) {
+				// Return an iterator that converts the statements to var bindings
+				resultingIterator = createIntoBindingSetIterator(bindings, subjVar, predVar, objVar, conVar, stIter1);
+			} else {
+				stIter2 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
+
+					@Override
+					protected boolean accept(Statement object)
+							throws QueryEvaluationException {
+						return filter.test(object);
+					}
+				};
+				resultingIterator = createIntoBindingSetIterator(bindings, subjVar, predVar, objVar, conVar, stIter2);
+			}
+
 			allGood = true;
 
 			return resultingIterator;
@@ -743,22 +650,128 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					}
 				} finally {
 					try {
-						if (stIter3 != null) {
-							stIter3.close();
+						if (stIter2 != null) {
+							stIter2.close();
 						}
 					} finally {
-						try {
-							if (stIter2 != null) {
-								stIter2.close();
-							}
-						} finally {
-							if (stIter1 != null) {
-								stIter1.close();
-							}
+						if (stIter1 != null) {
+							stIter1.close();
 						}
 					}
 				}
 			}
+		}
+	}
+
+	private Predicate<Statement> filterForContextAndVariableReuse(StatementPattern statementPattern, final Var subjVar,
+			final Var predVar, final Var objVar, final Var conVar, Resource[] contexts) {
+		long countUniqueVariables = Stream.of(subjVar, predVar, objVar, conVar).distinct().count();
+		long countVariables = Stream.of(subjVar, predVar, objVar, conVar).count();
+		Predicate<Statement> filter = null;
+		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
+			filter = st -> st.getContext() != null;
+		}
+
+		if (countUniqueVariables != countVariables) {
+			// The same variable might have been used multiple times in this
+			// StatementPattern, verify value equality in those cases.
+			filter = addSameVariableFilters(subjVar, predVar, objVar, conVar, filter);
+		}
+		return filter;
+	}
+
+	private Predicate<Statement> addSameVariableFilters(final Var subjVar, final Var predVar, final Var objVar,
+			final Var conVar,
+			Predicate<Statement> filter) {
+		// We are using the same variable multiple times in this StatementPattern
+		// verify value equality in these cases.
+		if (subjVar != null) {
+			if (subjVar.equals(predVar)) {
+				filter = and(filter, st -> st.getSubject().equals(st.getPredicate()));
+			}
+			if (subjVar.equals(objVar)) {
+				filter = and(filter, st -> st.getSubject().equals(st.getObject()));
+			}
+			if (subjVar.equals(conVar)) {
+				filter = and(filter, st -> st.getSubject().equals(st.getContext()));
+			}
+		}
+		if (predVar != null) {
+			if (predVar.equals(objVar)) {
+				filter = and(filter, st -> st.getPredicate().equals(st.getObject()));
+			}
+			if (predVar.equals(conVar)) {
+				filter = and(filter, st -> st.getPredicate().equals(st.getContext()));
+			}
+		}
+		if (objVar != null) {
+			if (objVar.equals(conVar)) {
+				filter = and(filter, st -> st.getObject().equals(st.getContext()));
+			}
+		}
+		return filter;
+	}
+
+	private Predicate<Statement> and(Predicate<Statement> existing, Predicate<Statement> toAdd) {
+		if (existing == null)
+			return toAdd;
+		else
+			return existing.and(toAdd);
+	}
+
+	private ConvertingIteration<Statement, BindingSet, QueryEvaluationException> createIntoBindingSetIterator(
+			final BindingSet bindings, final Var subjVar, final Var predVar, final Var objVar, final Var conVar,
+			CloseableIteration<? extends Statement, QueryEvaluationException> stIter3) {
+		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator;
+		if (bindings == null || bindings.size() == 0) {
+
+			Supplier<ArrayBindingSet> sup = () -> {
+				final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
+						.filter(Objects::nonNull)
+						.map(Var::getName)
+						.collect(Collectors.toList())
+						.toArray(new String[0]);
+				return new ArrayBindingSet(names);
+			};
+
+			java.util.function.Function<Var, BiConsumer<ArrayBindingSet, Value>> addToBinding = (var) -> {
+				if (var == null) {
+					// if var is null we will throw this value away
+					return (a, v) -> {
+					};
+				} else {
+					return sup.get().getDirectSetterForVariable(var.getName());
+				}
+			};
+			resultingIterator = new IntoBindingSetCoverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
+					sup, addToBinding);
+		} else {
+			java.util.function.Function<Var, BiConsumer<QueryBindingSet, Value>> addToBinding = makeAddToBindingFunction();
+			resultingIterator = new IntoBindingSetCoverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
+					() -> new QueryBindingSet(bindings), addToBinding);
+		}
+		return resultingIterator;
+	}
+
+	private java.util.function.Function<Var, BiConsumer<QueryBindingSet, Value>> makeAddToBindingFunction() {
+
+		return (var) -> {
+			// if var is null we will throw this value away
+			if (var == null) {
+				return (r, v) -> {
+				};
+			} else {
+				final String name = var.getName();
+				return (r, v) -> r.addBinding(name, v);
+			}
+		};
+	}
+
+	private Supplier<QueryBindingSet> makeBindingSetSupplier(final BindingSet bindings) {
+		if (bindings == null || bindings.size() == 0) {
+			return QueryBindingSet::new;
+		} else {
+			return () -> new QueryBindingSet(bindings);
 		}
 	}
 
