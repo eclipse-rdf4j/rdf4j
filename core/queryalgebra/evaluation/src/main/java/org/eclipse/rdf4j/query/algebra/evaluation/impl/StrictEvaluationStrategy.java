@@ -490,7 +490,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
 			super(iter);
 			this.newbindings = newbindings;
-			 List<BiConsumer<T, Statement>> consumers = Stream.of(
+			List<BiConsumer<T, Statement>> consumers = Stream.of(
 					createConsumer(subjVar, Statement::getSubject, bindings, addToBinding),
 					createConsumer(predVar, Statement::getPredicate, bindings, addToBinding),
 					createConsumer(objVar, Statement::getObject, bindings, addToBinding),
@@ -498,15 +498,16 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
 			if (consumers.isEmpty())
-				consumer = (b, s) -> {};
-			else if (consumers.size() ==1 )
+				consumer = (b, s) -> {
+				};
+			else if (consumers.size() == 1)
 				consumer = consumers.get(0);
 			else {
-				 BiConsumer<T, Statement> temp = consumers.get(0);
-				 for (int i=1;i<consumers.size();i++) {
-					 temp = temp.andThen(consumers.get(0));
-				 }
-				 consumer = temp;
+				BiConsumer<T, Statement> temp = consumers.get(0);
+				for (int i = 1; i < consumers.size(); i++) {
+					temp = temp.andThen(consumers.get(0));
+				}
+				consumer = temp;
 			}
 		}
 
@@ -772,11 +773,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// Array BindingSet.
 			// We use invoke dynamic to make a function that sets a variables value
 			// directly into the array without any further logic.
-                        final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
-						.filter(Objects::nonNull)
-						.map(Var::getName)
-						.collect(Collectors.toList())
-						.toArray(new String[0]);
+			final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
+					.filter(Objects::nonNull)
+					.map(Var::getName)
+					.collect(Collectors.toList())
+					.toArray(new String[0]);
 			Supplier<ArrayBindingSet> sup = () -> {
 				return new ArrayBindingSet(names);
 			};
@@ -807,7 +808,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return null;
 			} else {
 				final String name = var.getName();
-				return (r, v) -> r.addBinding(name, v);
+				return (r, v) -> {
+					if (!r.hasBinding(name)) {
+						r.addBinding(name, v);
+					}
+				};
+
 			}
 		};
 	}
