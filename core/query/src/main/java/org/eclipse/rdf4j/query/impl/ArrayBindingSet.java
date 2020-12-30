@@ -53,7 +53,12 @@ public class ArrayBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Set<String> getBindingNames() {
-		return new LinkedHashSet<>(Arrays.asList(bindingNames));
+		final LinkedHashSet<String> bns = new LinkedHashSet<>();
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (values[i] != null)
+				bns.add(bindingNames[i]);
+		}
+		return bns;
 	}
 
 	@Override
