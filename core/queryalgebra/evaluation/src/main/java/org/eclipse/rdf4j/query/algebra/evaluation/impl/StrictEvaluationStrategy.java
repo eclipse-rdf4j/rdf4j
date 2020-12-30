@@ -505,7 +505,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			else {
 				BiConsumer<T, Statement> temp = consumers.get(0);
 				for (int i = 1; i < consumers.size(); i++) {
-					temp = temp.andThen(consumers.get(0));
+					temp = temp.andThen(consumers.get(i));
 				}
 				consumer = temp;
 			}
@@ -808,12 +808,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return null;
 			} else {
 				final String name = var.getName();
-				return (r, v) -> {
-					if (!r.hasBinding(name)) {
-						r.addBinding(name, v);
-					}
-				};
-
+				return (r, v) -> r.addBinding(name, v);
 			}
 		};
 	}
