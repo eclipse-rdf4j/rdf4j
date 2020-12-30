@@ -7,12 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.impl;
 
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
@@ -41,14 +39,25 @@ public class ArrayBindingSet extends AbstractBindingSet {
 	 */
 	public ArrayBindingSet(String... names) {
 		this.bindingNames = names;
-		Arrays.sort(this.bindingNames);
 		this.values = new Value[names.length];
 	}
 
-	public BiConsumer<ArrayBindingSet, Value> getDirectSetterForVariable(String name) {
-		int idx = Arrays.binarySearch(bindingNames, name);
-		assert (idx >= 0);
-		return (a, v) -> a.values[idx] = v;
+	public BiConsumer<ArrayBindingSet, Value> getDirectSetterForVariable(String bindingName) {
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (bindingNames[i].equals(bindingName)) {
+				final int idx = i;
+				return (a, v) -> a.values[idx] = v;
+			}
+		}
+		return null;
+	}
+
+	public String nameByIndex(int i) {
+		return bindingNames[i];
+	}
+
+	public Value valueByIndex(int i) {
+		return values[i];
 	}
 
 	@Override
@@ -63,12 +72,10 @@ public class ArrayBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Value getValue(String bindingName) {
-		int idx = Arrays.binarySearch(bindingNames, bindingName);
-
-		if (idx >= 0) {
-			return values[idx];
+		for (int i = 0; i < bindingNames.length; i++) {
+			if (bindingNames[i].equals(bindingName))
+				return values[i];
 		}
-
 		return null;
 	}
 

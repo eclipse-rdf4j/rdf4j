@@ -469,7 +469,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 */
 	private static final class IntoBindingSetCoverter<T extends BindingSet>
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final List<BiConsumer<T, Statement>> consumers;
+		private final BiConsumer<T, Statement> consumer;
 		private final Supplier<T> newbindings;
 
 		/**
@@ -490,13 +490,24 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
 			super(iter);
 			this.newbindings = newbindings;
-			consumers = Stream.of(
+			 List<BiConsumer<T, Statement>> consumers = Stream.of(
 					createConsumer(subjVar, Statement::getSubject, bindings, addToBinding),
 					createConsumer(predVar, Statement::getPredicate, bindings, addToBinding),
 					createConsumer(objVar, Statement::getObject, bindings, addToBinding),
 					createConsumer(conVar, Statement::getContext, bindings, addToBinding))
 					.filter(Objects::nonNull)
 					.collect(Collectors.toList());
+			if (consumers.isEmpty())
+				consumer = (b, s) -> {};
+			else if (consumers.size() ==1 )
+				consumer = consumers.get(0);
+			else {
+				 BiConsumer<T, Statement> temp = consumers.get(0);
+				 for (int i=1;i<consumers.size();i++) {
+					 temp = temp.andThen(consumers.get(0));
+				 }
+				 consumer = temp;
+			}
 		}
 
 		private BiConsumer<T, Statement> createConsumer(
@@ -526,12 +537,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		protected BindingSet convert(Statement st) {
 			// create a new binding set (may expand on a prior set binding)
 			T result = newbindings.get();
-
-			// for each consumer we
-			for (BiConsumer<T, Statement> consumer : consumers) {
-				consumer.accept(result, st);
-			}
-
+			consumer.accept(result, st);
 			return result;
 		}
 	}
@@ -766,12 +772,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// Array BindingSet.
 			// We use invoke dynamic to make a function that sets a variables value
 			// directly into the array without any further logic.
-			Supplier<ArrayBindingSet> sup = () -> {
-				final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
+                        final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
 						.filter(Objects::nonNull)
 						.map(Var::getName)
 						.collect(Collectors.toList())
 						.toArray(new String[0]);
+			Supplier<ArrayBindingSet> sup = () -> {
 				return new ArrayBindingSet(names);
 			};
 
