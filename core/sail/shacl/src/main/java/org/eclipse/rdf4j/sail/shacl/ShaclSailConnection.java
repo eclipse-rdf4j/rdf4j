@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
@@ -391,12 +392,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							shape.generatePlans(connectionsGroup, sail.isLogValidationPlans(),
 									validateEntireBaseSail)))
 					.filter(ShapePlanNodeTuple::hasPlanNode)
-
 					.map(shapePlanNodeTuple -> {
 						shapePlanNodeTuple.setPlanNode(new SingleCloseablePlanNode(shapePlanNodeTuple.getPlanNode()));
 						return shapePlanNodeTuple;
 					})
-
 					.map(shapePlanNodeTuple -> () -> {
 
 						PlanNode planNode = shapePlanNodeTuple.getPlanNode();
@@ -910,7 +909,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		public boolean hasPlanNode() {
-			return planNode != null;
+			return !(planNode instanceof EmptyNode);
 		}
 	}
 
