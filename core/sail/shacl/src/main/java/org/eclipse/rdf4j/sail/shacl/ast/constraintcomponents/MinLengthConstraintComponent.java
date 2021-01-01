@@ -1,12 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -25,7 +26,7 @@ public class MinLengthConstraintComponent extends SimpleAbstractConstraintCompon
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.MIN_LENGTH,
-				SimpleValueFactory.getInstance().createLiteral(minLength + "", XMLSchema.INTEGER));
+				literal(minLength + "", XMLSchema.INTEGER));
 	}
 
 	@Override

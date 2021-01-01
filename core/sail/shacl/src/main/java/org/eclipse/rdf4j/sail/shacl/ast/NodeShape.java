@@ -219,7 +219,6 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		nodeShape.constraintComponents = constraintComponents.stream()
 				.map(ConstraintComponent::deepClone)
 				.collect(Collectors.toList());
-		;
 
 		return nodeShape;
 	}

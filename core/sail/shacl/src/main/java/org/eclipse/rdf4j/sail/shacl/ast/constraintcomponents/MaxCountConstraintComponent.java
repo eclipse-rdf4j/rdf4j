@@ -1,12 +1,13 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -35,8 +36,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.MAX_COUNT,
-				SimpleValueFactory.getInstance().createLiteral(maxCount + "", XMLSchema.INTEGER));
+		model.add(subject, SHACL.MAX_COUNT, literal(maxCount + "", XMLSchema.INTEGER));
 	}
 
 	@Override

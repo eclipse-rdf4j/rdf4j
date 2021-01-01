@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -9,7 +11,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -48,7 +49,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.CLOSED, SimpleValueFactory.getInstance().createLiteral(true));
+		model.add(subject, SHACL.CLOSED, literal(true));
 		// TODO: add ignored properties to model!
 
 	}

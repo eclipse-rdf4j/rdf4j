@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Set;
@@ -15,7 +17,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -76,14 +77,13 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
 		model.add(subject, SHACL.QUALIFIED_VALUE_SHAPE, getId());
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 		if (qualifiedValueShapesDisjoint != null) {
-			model.add(subject, SHACL.QUALIFIED_VALUE_SHAPES_DISJOINT, vf.createLiteral(qualifiedValueShapesDisjoint));
+			model.add(subject, SHACL.QUALIFIED_VALUE_SHAPES_DISJOINT, literal(qualifiedValueShapesDisjoint));
 		}
 
 		if (qualifiedMaxCount != null) {
-			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, vf.createLiteral(qualifiedMaxCount));
+			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, literal(qualifiedMaxCount));
 		}
 
 		qualifiedValueShape.toModel(null, null, model, exported);
