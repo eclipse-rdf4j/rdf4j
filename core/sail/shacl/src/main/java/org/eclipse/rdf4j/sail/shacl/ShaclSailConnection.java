@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
@@ -386,14 +387,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		try {
 			Stream<Callable<ValidationResultIterator>> callableStream = shapes
 					.stream()
-					.map(shape -> shape.generatePlans(connectionsGroup, sail.isLogValidationPlans(),
-							validateEntireBaseSail))
-					.filter(Objects::nonNull)
+					.map(shape -> new ShapePlanNodeTuple(shape,
+							shape.generatePlans(connectionsGroup, sail.isLogValidationPlans(),
+									validateEntireBaseSail)))
+					.filter(ShapePlanNodeTuple::hasPlanNode)
 
-					.map(SingleCloseablePlanNode::new)
+					.map(shapePlanNodeTuple -> {
+						shapePlanNodeTuple.setPlanNode(new SingleCloseablePlanNode(shapePlanNodeTuple.getPlanNode()));
+						return shapePlanNodeTuple;
+					})
 
-					.map(planNode -> () -> {
+					.map(shapePlanNodeTuple -> () -> {
 
+						PlanNode planNode = shapePlanNodeTuple.getPlanNode();
 						ValidationExecutionLogger validationExecutionLogger = null;
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger = new ValidationExecutionLogger();
@@ -402,11 +408,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 						try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode
 								.iterator()) {
-//							if (GlobalValidationExecutionLogging.loggingEnabled) {
-//								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-//								logger.info("Start execution of plan " + propertyShape.getNodeShape().toString() + " : "
-//										+ propertyShape.toString());
-//							}
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								logger.info("Start execution of plan:\n{}\n", shapePlanNodeTuple.getShape().toString());
+							}
 
 							long before = 0;
 							if (sail.isPerformanceLogging()) {
@@ -423,32 +427,30 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								}
 							}
 
-//							if (sail.isPerformanceLogging()) {
-//								long after = System.currentTimeMillis();
-//								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-//								logger.info("Execution of plan took {} ms for {} : {}", (after - before),
-//										propertyShape.getNodeShape().toString(), propertyShape.toString());
-//							}
+							if (sail.isPerformanceLogging()) {
+								long after = System.currentTimeMillis();
+								logger.info("Execution of plan took {} ms for:\n{}\n", (after - before),
+										shapePlanNodeTuple.getShape().toString());
+							}
 
-//							if (GlobalValidationExecutionLogging.loggingEnabled) {
-//								PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-//								logger.info("Finished execution of plan {} : {}",
-//										propertyShape.getNodeShape().toString(),
-//										propertyShape.toString());
-//							}
+							if (GlobalValidationExecutionLogging.loggingEnabled) {
+								logger.info("Finished execution of plan:\n{}\n",
+										shapePlanNodeTuple.getShape().toString());
+
+							}
 
 							if (sail.isLogValidationViolations()) {
-//								List<ValidationTuple> tuples = validationResults.getTuples();
 								if (!validationResults.conforms()) {
+									List<ValidationTuple> tuples = validationResults.getTuples();
 
-//									PropertyShape propertyShape = ((EnrichWithShape) planNode).getPropertyShape();
-//
-//									logger.info(
-//											"SHACL not valid. The following experimental debug results were produced: \n\tNodeShape: {}\n\tPropertyShape: {} \n\t\t{}",
-//											propertyShape.getNodeShape().getId(), propertyShape.getId(),
-//											tuples.stream()
-//													.map(a -> a.toString() + " -cause-> " + a.getCause())
-//													.collect(Collectors.joining("\n\t\t")));
+									logger.info(
+											"SHACL not valid. The following experimental debug results were produced:  \n\t\t{}\n\n{}\n",
+											tuples.stream()
+													.map(ValidationTuple::toString)
+													.collect(Collectors.joining("\n\t\t")),
+											shapePlanNodeTuple.getShape().toString()
+
+									);
 								}
 							}
 
@@ -884,6 +886,32 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
 		}
 
+	}
+
+	static class ShapePlanNodeTuple {
+		private final Shape shape;
+		private PlanNode planNode;
+
+		public ShapePlanNodeTuple(Shape shape, PlanNode planNode) {
+			this.shape = shape;
+			this.planNode = planNode;
+		}
+
+		public Shape getShape() {
+			return shape;
+		}
+
+		public PlanNode getPlanNode() {
+			return planNode;
+		}
+
+		public void setPlanNode(PlanNode planNode) {
+			this.planNode = planNode;
+		}
+
+		public boolean hasPlanNode() {
+			return planNode != null;
+		}
 	}
 
 }
