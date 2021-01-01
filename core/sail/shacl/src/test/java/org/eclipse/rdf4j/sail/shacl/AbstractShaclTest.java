@@ -304,8 +304,8 @@ abstract public class AbstractShaclTest {
 				List<Object[]> collect = findTestCases(testCasePath, baseCase.name())
 						.stream()
 						.flatMap(path -> Stream
-//								.of(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)// TODO: Uncomment this line!!!!!
-								.of(IsolationLevels.NONE)
+								.of(IsolationLevels.NONE, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)
+//								.of(IsolationLevels.NONE)
 								.map(isolationLevel -> new Object[] { testCasePath, path, baseCase, isolationLevel }))
 						.collect(Collectors.toList());
 
