@@ -7,9 +7,7 @@
  ****************************************************************************** */
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -49,7 +47,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 				this.converter = manyVariableConversion;
 			}
 		} else {
-			this.converter = (s) -> project(projection.getProjectionElemList(), s, parentBindings,
+			this.converter = (s) -> project(pel, s, parentBindings,
 					!determineOuterProjection(projection));
 		}
 	}
@@ -124,27 +122,36 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	private Function<BindingSet, ArrayBindingSet> convertManyVariables(ProjectionElemList pel) {
 		String[] targetNames = pel.getTargetNames().toArray(new String[0]);
-		ArrayBindingSet abs = new ArrayBindingSet(targetNames);
-		int size = pel.getElements().size();
-		Map<String, BiConsumer<ArrayBindingSet, Value>> setters = new HashMap<>(size);
-		for (ProjectionElem el : pel.getElements()) {
-			String targetName = el.getTargetName();
+		
+		final int size = pel.getElements().size();
+		final String[] sourcenames = new String[size];
+		@SuppressWarnings("unchecked")
+		final BiConsumer<ArrayBindingSet, Value>[] setters = new BiConsumer[size];
+		
+		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
 
-			String sourceName = el.getSourceName();
-			BiConsumer<ArrayBindingSet, Value> setter = getSetterToTarget(abs, targetName);
-			setters.put(sourceName, setter);
-		}
-
-		return (sb) -> {
+		return sourceBindings -> {
 			ArrayBindingSet abs2 = new ArrayBindingSet(targetNames);
-			Set<Map.Entry<String, BiConsumer<ArrayBindingSet, Value>>> entrySet = setters.entrySet();
-			for (Map.Entry<String, BiConsumer<ArrayBindingSet, Value>> entry : entrySet) {
-				Value targetValue = sb.getValue(entry.getKey());
+			
+			for (int j=0;j<size;j++) {
+				Value targetValue = sourceBindings.getValue(sourcenames[j]);
 				if (targetValue != null) {
-					entry.getValue().accept(abs2, targetValue);
+					setters[j].accept(abs2, targetValue);
 				}
 			}
 			return abs2;
 		};
+	}
+
+	private void getSourceToTargetSetters(ProjectionElemList pel, String[] targetNames, final String[] sourcenames,
+	    final BiConsumer<ArrayBindingSet, Value>[] setters)
+	{
+		ArrayBindingSet abs = new ArrayBindingSet(targetNames);
+		List<ProjectionElem> elements = pel.getElements();
+		for (int i = 0; i < elements.size(); i++) {
+			ProjectionElem el = elements.get(i);
+			sourcenames[i] =el.getSourceName();
+			setters[i] = getSetterToTarget(abs, el.getTargetName());
+		}
 	}
 }
