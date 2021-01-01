@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -42,6 +42,14 @@ public class ArrayBindingSet extends AbstractBindingSet {
 		this.values = new Value[names.length];
 	}
 
+        /**
+         * This is used to generate a direct setter into the array to put a
+         * binding value into. Can be used to avoid many comparisons to the
+         * bindingNames.
+         * @param bindingName for which you want the setter
+         * @return the setter biconsumer which can operate on any ArrayBindingSet
+         * but should only be used on ones with an identical bindingNames array.
+         */
 	public BiConsumer<ArrayBindingSet, Value> getDirectSetterForVariable(String bindingName) {
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {
