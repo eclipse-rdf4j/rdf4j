@@ -122,18 +122,18 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	private Function<BindingSet, ArrayBindingSet> convertManyVariables(ProjectionElemList pel) {
 		String[] targetNames = pel.getTargetNames().toArray(new String[0]);
-		
+
 		final int size = pel.getElements().size();
 		final String[] sourcenames = new String[size];
 		@SuppressWarnings("unchecked")
 		final BiConsumer<ArrayBindingSet, Value>[] setters = new BiConsumer[size];
-		
+
 		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
 
 		return sourceBindings -> {
 			ArrayBindingSet abs2 = new ArrayBindingSet(targetNames);
-			
-			for (int j=0;j<size;j++) {
+
+			for (int j = 0; j < size; j++) {
 				Value targetValue = sourceBindings.getValue(sourcenames[j]);
 				if (targetValue != null) {
 					setters[j].accept(abs2, targetValue);
@@ -144,13 +144,12 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	}
 
 	private void getSourceToTargetSetters(ProjectionElemList pel, String[] targetNames, final String[] sourcenames,
-	    final BiConsumer<ArrayBindingSet, Value>[] setters)
-	{
+			final BiConsumer<ArrayBindingSet, Value>[] setters) {
 		ArrayBindingSet abs = new ArrayBindingSet(targetNames);
 		List<ProjectionElem> elements = pel.getElements();
 		for (int i = 0; i < elements.size(); i++) {
 			ProjectionElem el = elements.get(i);
-			sourcenames[i] =el.getSourceName();
+			sourcenames[i] = el.getSourceName();
 			setters[i] = getSetterToTarget(abs, el.getTargetName());
 		}
 	}
