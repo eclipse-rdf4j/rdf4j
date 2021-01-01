@@ -387,7 +387,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 
 		SailRepository shapesRepoCache = new SailRepository(
-				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
 		shapesRepoCache.init();
 		List<Shape> shapes;
@@ -505,7 +505,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private void implicitTargetClass(SailRepositoryConnection shaclSailConnection) {
-		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, true).stream()) {
+		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
 			stream
 					.map(Statement::getSubject)
 					.filter(s ->
