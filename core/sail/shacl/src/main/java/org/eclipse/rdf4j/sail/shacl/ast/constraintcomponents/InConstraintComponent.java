@@ -34,6 +34,10 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		if (exported.contains(getId())) {
+			return;
+		}
+		exported.add(getId());
 		model.add(subject, SHACL.IN, getId());
 		HelperTool.listToRdf(in, getId(), model);
 	}

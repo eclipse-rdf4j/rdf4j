@@ -53,6 +53,11 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		if (exported.contains(getId())) {
+			return;
+		}
+		exported.add(getId());
+
 		model.add(subject, SHACL.LANGUAGE_IN, getId());
 		HelperTool.listToRdf(languageIn.stream()
 				.map(Values::literal)

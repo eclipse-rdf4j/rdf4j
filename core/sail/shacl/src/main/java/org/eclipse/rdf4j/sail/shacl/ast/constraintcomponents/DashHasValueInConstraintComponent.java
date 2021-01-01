@@ -51,6 +51,10 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		if (exported.contains(getId())) {
+			return;
+		}
+		exported.add(getId());
 		model.add(subject, DASH.hasValueIn, getId());
 		HelperTool.listToRdf(hasValueIn, getId(), model);
 	}

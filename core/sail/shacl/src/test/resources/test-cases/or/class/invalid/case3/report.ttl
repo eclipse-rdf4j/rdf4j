@@ -26,12 +26,8 @@
 
 ex:personShapeOr a sh:PropertyShape;
   sh:path ex:knows;
-  sh:or [
-      rdf:first [ a sh:NodeShape;
-          sh:class ex:Person
-        ];
-      rdf:rest (_:node1ejq3v66tx4), (_:node1ejq3v66tx4)
-    ] .
-
-_:node1ejq3v66tx4 a sh:NodeShape;
-  sh:class ex:Animal .
+  sh:or ([ a sh:NodeShape;
+        sh:class ex:Person
+      ] [ a sh:NodeShape;
+        sh:class ex:Animal
+      ]) .

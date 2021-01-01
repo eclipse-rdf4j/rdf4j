@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Model;
@@ -97,6 +98,10 @@ public class ValidationResult {
 	}
 
 	public Model asModel(Model model) {
+		return asModel(model, new HashSet<>());
+	}
+
+	public Model asModel(Model model, Set<Resource> values) {
 
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
 
@@ -118,7 +123,7 @@ public class ValidationResult {
 //			detail.asModel(model);
 //		}
 
-		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
+		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, values);
 
 		return model;
 	}

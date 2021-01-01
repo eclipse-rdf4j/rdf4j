@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.results.lazy;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -73,9 +74,11 @@ public class LazyValidationReport extends ValidationReport {
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
 		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
+		HashSet<Resource> resources = new HashSet<>();
+
 		for (ValidationResult result : validationResult) {
 			model.add(getId(), SHACL.RESULT, result.getId());
-			result.asModel(model);
+			result.asModel(model, resources);
 		}
 
 		return model;

@@ -24,18 +24,14 @@
 
 ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
   sh:targetObjectsOf ex:id, ex:username;
-  sh:and [
-      rdf:first [ a sh:PropertyShape;
-          sh:path [
-              sh:inversePath ex:id
-            ];
-          sh:maxCount 1
-        ];
-      rdf:rest (_:node1ejq3urisx5), (_:node1ejq3urisx5)
-    ] .
-
-_:node1ejq3urisx5 a sh:PropertyShape;
-  sh:path [
-      sh:inversePath ex:username
-    ];
-  sh:maxCount 1 .
+  sh:and ([ a sh:PropertyShape;
+        sh:path [
+            sh:inversePath ex:id
+          ];
+        sh:maxCount 1
+      ] [ a sh:PropertyShape;
+        sh:path [
+            sh:inversePath ex:username
+          ];
+        sh:maxCount 1
+      ]) .
