@@ -470,14 +470,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		public MinAggregate(Min operator) {
 			super(operator);
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				comparator.setStrict(false);
+			}
 		}
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
 			Value v = evaluate(s);
-			if (strategy instanceof ExtendedEvaluationStrategy) {
-				comparator.setStrict(false);
-			}
 			if (v != null && distinctValue(v)) {
 				if (min == null) {
 					min = v;
@@ -504,13 +504,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		public MaxAggregate(Max operator) {
 			super(operator);
+			if (strategy instanceof ExtendedEvaluationStrategy) {
+				comparator.setStrict(false);
+			}
 		}
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
-			if (strategy instanceof ExtendedEvaluationStrategy) {
-				comparator.setStrict(false);
-			}
 			Value v = evaluate(s);
 			if (v != null && distinctValue(v)) {
 				if (max == null) {
@@ -666,9 +666,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class ConcatAggregate extends Aggregate {
 
-		private StringBuilder concatenated = new StringBuilder();
+		private final StringBuilder concatenated = new StringBuilder();
 
-		private String separator = " ";
+		private final String separator;
 
 		public ConcatAggregate(GroupConcat groupConcatOp)
 				throws ValueExprEvaluationException, QueryEvaluationException {
@@ -677,6 +677,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			if (separatorExpr != null) {
 				Value separatorValue = strategy.evaluate(separatorExpr, parentBindings);
 				separator = separatorValue.stringValue();
+			} else {
+				separator = " ";
 			}
 		}
 
