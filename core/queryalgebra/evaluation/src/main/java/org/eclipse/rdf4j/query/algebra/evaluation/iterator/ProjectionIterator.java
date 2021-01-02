@@ -1,15 +1,17 @@
-/** *****************************************************************************
+/*******************************************************************************
  * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- ****************************************************************************** */
+ *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -21,15 +23,22 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.ArrayBindingSet;
 
+/**
+ * A projection iterator "changes" the names of the variables from inside the engine to what is used by the query
+ * result.
+ */
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *
 	 *-----------*/
-	private final Function<BindingSet, ? extends BindingSet> converter;
+	/**
+	 * This function is specialized for different scenarios. At construction time the function that is most specialized
+	 * is initialized and used.
+	 */
+	private final Function<BindingSet, BindingSet> converter;
 
 	/*--------------*
 	 * Constructors *
@@ -37,43 +46,23 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			BindingSet parentBindings) throws QueryEvaluationException {
 		super(iter);
+		this.converter = createConverter(projection, parentBindings);
+	}
+
+	public static Function<BindingSet, BindingSet> createConverter(Projection projection, BindingSet parentBindings) {
 		ProjectionElemList pel = projection.getProjectionElemList();
+		String[] targetNames = getTargetNames(pel);
 		if (parentBindings.size() == 0) {
-			if (pel.getElements().size() == 1) {
-				Function<BindingSet, ArrayBindingSet> oneVariableConversion = convertASingleVariable(pel);
-				this.converter = oneVariableConversion;
-			} else {
-				Function<BindingSet, ArrayBindingSet> manyVariableConversion = convertManyVariables(pel);
-				this.converter = manyVariableConversion;
-			}
+			return convertWithNoParentBindings(pel, targetNames);
+		} else if (!determineOuterProjection(projection)) {
+			return convertIncludingAllParentBindings(pel, parentBindings, targetNames);
 		} else {
-			this.converter = (s) -> project(pel, s, parentBindings,
-					!determineOuterProjection(projection));
+			return convertSometimesIncludingAParentBinding(pel, parentBindings, targetNames);
 		}
 	}
 
-	Function<BindingSet, ArrayBindingSet> convertASingleVariable(ProjectionElemList pel) {
-		ProjectionElem el = pel
-				.getElements()
-				.get(0);
-		String targetName = el.getTargetName();
-		ArrayBindingSet abs = new ArrayBindingSet(targetName);
-		String sourceName = el.getSourceName();
-		BiConsumer<ArrayBindingSet, Value> setter = getSetterToTarget(abs, targetName);
-		Function<BindingSet, ArrayBindingSet> oneVariableConversion = sb -> {
-			ArrayBindingSet abs2 = new ArrayBindingSet(targetName);
-			Value targetValue = sb.getValue(sourceName);
-			if (targetValue != null) {
-				setter.accept(abs2, targetValue);
-			}
-			return abs2;
-		};
-		return oneVariableConversion;
-	}
-
-	BiConsumer<ArrayBindingSet, Value> getSetterToTarget(ArrayBindingSet abs, String targetName) {
-		BiConsumer<ArrayBindingSet, Value> setter = abs.getDirectSetterForVariable(targetName);
-		return setter;
+	private static String[] getTargetNames(ProjectionElemList pel) {
+		return pel.getTargetNames().toArray(new String[0]);
 	}
 
 	private static boolean determineOuterProjection(Projection projection) {
@@ -102,26 +91,38 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
 			BindingSet parentBindings, boolean includeAllParentBindings) {
-		final QueryBindingSet resultBindings = new QueryBindingSet();
+		final String[] targetNames = getTargetNames(projElemList);
 		if (includeAllParentBindings) {
-			resultBindings.addAll(parentBindings);
+			return convertIncludingAllParentBindings(projElemList, parentBindings, targetNames)
+					.apply(sourceBindings);
+		} else {
+			return convertSometimesIncludingAParentBinding(projElemList, parentBindings, targetNames)
+					.apply(sourceBindings);
 		}
-
-		for (ProjectionElem pe : projElemList.getElements()) {
-			Value targetValue = sourceBindings.getValue(pe.getSourceName());
-			if (!includeAllParentBindings && targetValue == null) {
-				targetValue = parentBindings.getValue(pe.getSourceName());
-			}
-			if (targetValue != null) {
-				resultBindings.setBinding(pe.getTargetName(), targetValue);
-			}
-		}
-
-		return resultBindings;
 	}
 
-	private Function<BindingSet, ArrayBindingSet> convertManyVariables(ProjectionElemList pel) {
-		String[] targetNames = pel.getTargetNames().toArray(new String[0]);
+	private static Function<BindingSet, BindingSet> convertSometimesIncludingAParentBinding(ProjectionElemList pel,
+			BindingSet parentBindings,
+			String[] targetNames) {
+		final int size = pel.getElements().size();
+		final String[] sourcenames = new String[size];
+		@SuppressWarnings("unchecked")
+		final BiConsumer<ArrayBindingSet, Value>[] setters = new BiConsumer[size];
+
+		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
+		Supplier<ArrayBindingSet> sup = () -> new ArrayBindingSet(targetNames);
+		final BiFunction<BindingSet, String, Value> extractor = (sb, var) -> {
+			final Value value = sb.getValue(var);
+			if (value == null)
+				return parentBindings.getValue(var);
+			return value;
+		};
+		return makeConverterFunction(size, sourcenames, setters, sup, extractor);
+	}
+
+	private static Function<BindingSet, BindingSet> convertIncludingAllParentBindings(ProjectionElemList pel,
+			BindingSet parentBindings,
+			String[] targetNames) {
 
 		final int size = pel.getElements().size();
 		final String[] sourcenames = new String[size];
@@ -129,9 +130,37 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		final BiConsumer<ArrayBindingSet, Value>[] setters = new BiConsumer[size];
 
 		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
-
-		return sourceBindings -> {
+		Supplier<ArrayBindingSet> sup = () -> {
 			ArrayBindingSet abs2 = new ArrayBindingSet(targetNames);
+			for (int j = 0; j < size; j++) {
+				Value targetValue = parentBindings.getValue(sourcenames[j]);
+				if (targetValue != null) {
+					setters[j].accept(abs2, targetValue);
+				}
+			}
+			return abs2;
+		};
+		return makeConverterFunction(size, sourcenames, setters, sup, (sb, var) -> sb.getValue(var));
+	}
+
+	private static Function<BindingSet, BindingSet> convertWithNoParentBindings(ProjectionElemList pel,
+			String[] targetNames) {
+
+		final int size = pel.getElements().size();
+		final String[] sourcenames = new String[size];
+		@SuppressWarnings("unchecked")
+		final BiConsumer<ArrayBindingSet, Value>[] setters = new BiConsumer[size];
+
+		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
+		Supplier<ArrayBindingSet> sup = () -> new ArrayBindingSet(targetNames);
+		return makeConverterFunction(size, sourcenames, setters, sup, (sb, var) -> sb.getValue(var));
+	}
+
+	private static Function<BindingSet, BindingSet> makeConverterFunction(final int size, final String[] sourcenames,
+			final BiConsumer<ArrayBindingSet, Value>[] setters, Supplier<ArrayBindingSet> sup,
+			BiFunction<BindingSet, String, Value> extractor) {
+		return sourceBindings -> {
+			ArrayBindingSet abs2 = sup.get();
 
 			for (int j = 0; j < size; j++) {
 				Value targetValue = sourceBindings.getValue(sourcenames[j]);
@@ -143,14 +172,15 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		};
 	}
 
-	private void getSourceToTargetSetters(ProjectionElemList pel, String[] targetNames, final String[] sourcenames,
+	private static void getSourceToTargetSetters(ProjectionElemList pel, String[] targetNames,
+			final String[] sourcenames,
 			final BiConsumer<ArrayBindingSet, Value>[] setters) {
 		ArrayBindingSet abs = new ArrayBindingSet(targetNames);
 		List<ProjectionElem> elements = pel.getElements();
 		for (int i = 0; i < elements.size(); i++) {
 			ProjectionElem el = elements.get(i);
 			sourcenames[i] = el.getSourceName();
-			setters[i] = getSetterToTarget(abs, el.getTargetName());
+			setters[i] = abs.getDirectSetterForVariable(el.getTargetName());
 		}
 	}
 }

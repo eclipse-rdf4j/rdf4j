@@ -467,7 +467,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @param <T> the specific type of BindingSet being used at this stage.
 	 */
-	private static final class IntoBindingSetCoverter<T extends BindingSet>
+	private static final class IntoBindingSetConverter<T extends BindingSet>
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
 		private final BiConsumer<T, Statement> consumer;
 		private final Supplier<T> newbindings;
@@ -484,7 +484,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		 * @param addToBinding a {@link java.util.function.Function} that creates the BiConsumers that adds the Binding
 		 *                     to the BindingSet in an optimal manner.
 		 */
-		private IntoBindingSetCoverter(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+		private IntoBindingSetConverter(Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BindingSet bindings, Var conVar, Var objVar, Var predVar, Var subjVar,
 				Supplier<T> newbindings,
 				java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
@@ -500,8 +500,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			if (consumers.isEmpty())
 				consumer = (b, s) -> {
 				};
-			else if (consumers.size() == 1)
-				consumer = consumers.get(0);
 			else {
 				BiConsumer<T, Statement> temp = consumers.get(0);
 				for (int i = 1; i < consumers.size(); i++) {
@@ -644,7 +642,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	/**
-	 * To make it easier to compile this hot method it is extracted from the TupleExpresion evaluation
+	 * To make it easier to reason about TupleExpresion evaluation, the logic for which contexts are chosen is isolated
+	 * here.
 	 * 
 	 * @param statementPattern
 	 * @param contextValue
@@ -670,7 +669,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// Search zero contexts
 			contexts = null;
 		} else if (graphs == null || graphs.isEmpty()) {
-			// store default behaviour
+			// store default behavior
 			if (contextValue != null) {
 				if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
 					contexts = new Resource[] { (Resource) null };
@@ -778,23 +777,21 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					.map(Var::getName)
 					.collect(Collectors.toList())
 					.toArray(new String[0]);
-			Supplier<ArrayBindingSet> sup = () -> {
-				return new ArrayBindingSet(names);
-			};
+			Supplier<ArrayBindingSet> sup = () -> new ArrayBindingSet(names);
 
 			java.util.function.Function<Var, BiConsumer<ArrayBindingSet, Value>> addToBinding = (var) -> {
 				if (var == null) {
-					// if var is null we will throw this value away
+					// if var is null we will throw this lambda away later
 					return null;
 				} else {
 					return sup.get().getDirectSetterForVariable(var.getName());
 				}
 			};
-			resultingIterator = new IntoBindingSetCoverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
+			resultingIterator = new IntoBindingSetConverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
 					sup, addToBinding);
 		} else {
 			java.util.function.Function<Var, BiConsumer<QueryBindingSet, Value>> addToBinding = makeAddToBindingFunction();
-			resultingIterator = new IntoBindingSetCoverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
+			resultingIterator = new IntoBindingSetConverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
 					() -> new QueryBindingSet(bindings), addToBinding);
 		}
 		return resultingIterator;
@@ -811,14 +808,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return (r, v) -> r.addBinding(name, v);
 			}
 		};
-	}
-
-	private Supplier<QueryBindingSet> makeBindingSetSupplier(final BindingSet bindings) {
-		if (bindings == null || bindings.size() == 0) {
-			return QueryBindingSet::new;
-		} else {
-			return () -> new QueryBindingSet(bindings);
-		}
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
