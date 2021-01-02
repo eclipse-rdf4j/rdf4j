@@ -274,6 +274,40 @@ public class ComplexLargeBenchmark {
 	}
 
 	@Benchmark
+	public void noPreloadingNonEmpty() {
+
+		try {
+			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).disableValidation();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				SimpleValueFactory vf = SimpleValueFactory.getInstance();
+				connection.add(vf.createBNode(), vf.createIRI("http://fjljfiwoejfoiwefiew/a"), vf.createBNode());
+				connection.commit();
+			}
+			((ShaclSail) repository.getSail()).enableValidation();
+
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getData()) {
+					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
 	public void noPreloadingNonEmptyParallel() {
 
 		try {
@@ -454,4 +488,13 @@ public class ComplexLargeBenchmark {
 		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/datagovbe-valid.ttl"));
 	}
 
+
+//	public static void main(String[] args) throws InterruptedException {
+//		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
+//		complexLargeBenchmark.setUp();
+//		while(true){
+//			complexLargeBenchmark.noPreloadingNonEmpty();
+//			System.out.println(".");
+//		}
+//	}
 }
