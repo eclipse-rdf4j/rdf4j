@@ -715,14 +715,19 @@ public class Models {
 			return true;
 		}
 
-		Set<Statement> set1 = toSet(model1);
+		Model set1 = toModel(model1);
 		Model set2 = toModel(model2);
-		// Compare the number of statements in both sets
-		if (set1.size() != set2.size()) {
-			return false;
-		}
 
-		return isSubsetInternal(set1, set2);
+		return GraphComparisons.isomorphic(set1, set2);
+
+//		Set<Statement> set1 = toSet(model1);
+//		Model set2 = toModel(model2);
+//		// Compare the number of statements in both sets
+//		if (set1.size() != set2.size()) {
+//			return false;
+//		}
+//
+//		return isSubsetInternal(set1, set2);
 	}
 
 	/**

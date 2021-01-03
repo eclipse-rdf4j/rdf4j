@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -118,9 +119,20 @@ public class ModelsTest {
 		model2.add(foo, RDF.TYPE, bar);
 
 		assertTrue(Models.isomorphic(model1, model2));
+	}
+
+	/**
+	 * We are, for now, ignoring the handling of blank nodes as context identifiers for isomorphism.
+	 * 
+	 * See https://github.com/eclipse/rdf4j/issues/2768
+	 */
+	@Test
+	@Ignore
+	public void testModelsIsomorphic_BlankNodeContext() {
+		model1.add(foo, RDF.TYPE, bar);
+		model2.add(foo, RDF.TYPE, bar);
 
 		model1.add(foo, RDF.TYPE, bar, baz);
-
 		assertFalse(Models.isomorphic(model1, model2));
 
 		model2.add(foo, RDF.TYPE, bar, VF.createBNode());
