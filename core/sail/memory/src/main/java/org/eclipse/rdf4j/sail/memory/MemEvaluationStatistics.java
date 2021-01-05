@@ -51,7 +51,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 		public double getCardinality(StatementPattern sp) {
 
 			Value subj = getConstantValue(sp.getSubjectVar());
-			if (!(subj!= null && subj.isResource())) {
+			if (!(subj != null && subj.isResource())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator.
 				// this can cause, for example, the subject variable to be
@@ -60,14 +60,14 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				subj = null;
 			}
 			Value pred = getConstantValue(sp.getPredicateVar());
-			if (!(pred!= null && pred.isIRI())) {
+			if (!(pred != null && pred.isIRI())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator. See SES-970 / SES-998
 				pred = null;
 			}
 			Value obj = getConstantValue(sp.getObjectVar());
 			Value context = getConstantValue(sp.getContextVar());
-			if (!(context!= null && context.isResource())) {
+			if (!(context != null && context.isResource())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator. See SES-970 / SES-998
 				context = null;

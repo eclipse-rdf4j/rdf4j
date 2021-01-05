@@ -40,6 +40,6 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterIsSubject{" +
-			'}';
+				'}';
 	}
 }

@@ -488,7 +488,6 @@ public class ComplexLargeBenchmark {
 		return new BufferedInputStream(classLoader.getResourceAsStream("complexBenchmark/datagovbe-valid.ttl"));
 	}
 
-
 //	public static void main(String[] args) throws InterruptedException {
 //		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
 //		complexLargeBenchmark.setUp();
