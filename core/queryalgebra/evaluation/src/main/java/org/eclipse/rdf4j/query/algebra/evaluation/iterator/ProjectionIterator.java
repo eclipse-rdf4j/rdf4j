@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.impl.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 
 /**
  * A projection iterator "changes" the names of the variables from inside the engine to what is used by the query

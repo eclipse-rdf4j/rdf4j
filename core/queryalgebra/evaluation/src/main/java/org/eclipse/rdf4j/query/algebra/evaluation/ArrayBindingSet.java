@@ -5,26 +5,31 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.impl;
+package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
  * An array implementation of the {@link BindingSet} interface.
  *
  * @author Jerven Bolleman
  */
+@InternalUseOnly
 public class ArrayBindingSet extends AbstractBindingSet {
 
-	private static final long serialVersionUID = -2907809218835403743L;
+	private static final long serialVersionUID = -1L;
 
 	private final String[] bindingNames;
 
@@ -32,7 +37,7 @@ public class ArrayBindingSet extends AbstractBindingSet {
 
 	/**
 	 * Creates a new Array-based BindingSet for the supplied bindings names. <em>The supplied list of binding names is
-	 * assumed to be constant</em>; care should be taken that the contents of this list doesn't change after supplying
+	 * assumed to be constant</em>; care should be taken that the contents of this array doesn't change after supplying
 	 * it to this solution.
 	 *
 	 * @param names The binding names.
@@ -42,13 +47,31 @@ public class ArrayBindingSet extends AbstractBindingSet {
 		this.values = new Value[names.length];
 	}
 
+	public ArrayBindingSet(BindingSet toCopy, String... names) {
+		final HashSet<String> temp = new HashSet<String>(Arrays.asList(names));
+		temp.addAll(toCopy.getBindingNames());
+		this.bindingNames = temp.toArray(new String[0]);
+		this.values = new Value[bindingNames.length];
+		for (int i = 0; i < values.length; i++) {
+			this.values[i] = toCopy.getValue(bindingNames[i]);
+		}
+	}
+
+	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
+		this.bindingNames = Arrays.copyOf(toCopy.bindingNames, toCopy.bindingNames.length + names.length);
+		assert this.bindingNames.length == (int) Arrays.stream(this.bindingNames).distinct().count();
+		System.arraycopy(names, 0, bindingNames, bindingNames.length, names.length);
+		this.values = Arrays.copyOf(toCopy.values, toCopy.bindingNames.length + names.length);
+		;
+	}
+
 	/**
 	 * This is used to generate a direct setter into the array to put a binding value into. Can be used to avoid many
 	 * comparisons to the bindingNames.
 	 * 
 	 * @param bindingName for which you want the setter
 	 * @return the setter biconsumer which can operate on any ArrayBindingSet but should only be used on ones with an
-	 *         identical bindingNames array.
+	 *         identical bindingNames array. Otherwise returns null.
 	 */
 	public BiConsumer<ArrayBindingSet, Value> getDirectSetterForVariable(String bindingName) {
 		for (int i = 0; i < this.bindingNames.length; i++) {
@@ -105,7 +128,7 @@ public class ArrayBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return new ListBindingSetIterator();
+		return new ArrayBindingSetIterator();
 	}
 
 	@Override
@@ -122,35 +145,29 @@ public class ArrayBindingSet extends AbstractBindingSet {
 	}
 
 	/*------------------------------------*
-	 * Inner class ListBindingSetIterator *
+	 * Inner class ArrayBindingSetIterator *
 	 *------------------------------------*/
 
-	private class ListBindingSetIterator implements Iterator<Binding> {
+	private class ArrayBindingSetIterator implements Iterator<Binding> {
 
-		private int index = -1;
+		private int index = 0;
 
-		public ListBindingSetIterator() {
-			findNextElement();
-		}
-
-		private void findNextElement() {
-			for (index++; index < values.length; index++) {
-				if (values[index] != null) {
-					break;
-				}
-			}
+		public ArrayBindingSetIterator() {
 		}
 
 		@Override
 		public boolean hasNext() {
-			return index < values.length;
+			for (; index < values.length; index++) {
+				if (values[index] != null) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		@Override
 		public Binding next() {
-			Binding result = new SimpleBinding(bindingNames[index], values[index]);
-			findNextElement();
-			return result;
+			return new SimpleBinding(bindingNames[index], values[index++]);
 		}
 
 		@Override

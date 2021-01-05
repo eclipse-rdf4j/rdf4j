@@ -121,6 +121,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -157,7 +158,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
-import org.eclipse.rdf4j.query.impl.ArrayBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
@@ -464,6 +464,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * This class converts statements into BindingSets. It tries to do so by creating {@link BiConsumer}s for each no
 	 * null {@link Var}iable. That BiConsumer injects the Value directly into the new binding set.
+	 * 
+	 * This complication is done so that we can avoid lookups and map creation, and even in some cases array bounds
+	 * checks.
 	 *
 	 * @param <T> the specific type of BindingSet being used at this stage.
 	 */
@@ -767,47 +770,29 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			final BindingSet bindings, final Var subjVar, final Var predVar, final Var objVar, final Var conVar,
 			CloseableIteration<? extends Statement, QueryEvaluationException> stIter3) {
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator;
+		final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
+				.filter(Objects::nonNull)
+				.map(Var::getName)
+				.collect(Collectors.toList())
+				.toArray(new String[0]);
+		Supplier<ArrayBindingSet> sup;
 		if (bindings == null || bindings.size() == 0) {
-			// If there are no prior bindings we can use a smaller and optimized
-			// Array BindingSet.
 			// We use invoke dynamic to make a function that sets a variables value
 			// directly into the array without any further logic.
-			final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
-					.filter(Objects::nonNull)
-					.map(Var::getName)
-					.collect(Collectors.toList())
-					.toArray(new String[0]);
-			Supplier<ArrayBindingSet> sup = () -> new ArrayBindingSet(names);
-
-			java.util.function.Function<Var, BiConsumer<ArrayBindingSet, Value>> addToBinding = (var) -> {
-				if (var == null) {
-					// if var is null we will throw this lambda away later
-					return null;
-				} else {
-					return sup.get().getDirectSetterForVariable(var.getName());
-				}
-			};
-			resultingIterator = new IntoBindingSetConverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
-					sup, addToBinding);
+			sup = () -> new ArrayBindingSet(names);
 		} else {
-			java.util.function.Function<Var, BiConsumer<QueryBindingSet, Value>> addToBinding = makeAddToBindingFunction();
-			resultingIterator = new IntoBindingSetConverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
-					() -> new QueryBindingSet(bindings), addToBinding);
+			sup = () -> new ArrayBindingSet(bindings, names);
 		}
+		resultingIterator = new IntoBindingSetConverter<>(stIter3, bindings, conVar, objVar, predVar, subjVar,
+				sup, (var) -> {
+					if (var == null) {
+						// if var is null we will throw this lambda away later
+						return null;
+					} else {
+						return sup.get().getDirectSetterForVariable(var.getName());
+					}
+				});
 		return resultingIterator;
-	}
-
-	private java.util.function.Function<Var, BiConsumer<QueryBindingSet, Value>> makeAddToBindingFunction() {
-
-		return (var) -> {
-			// if var is null we will throw this value away
-			if (var == null) {
-				return null;
-			} else {
-				final String name = var.getName();
-				return (r, v) -> r.addBinding(name, v);
-			}
-		};
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
