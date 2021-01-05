@@ -131,14 +131,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 		getSourceToTargetSetters(pel, targetNames, sourcenames, setters);
 		Supplier<ArrayBindingSet> sup = () -> {
-			ArrayBindingSet abs2 = new ArrayBindingSet(targetNames);
-			for (int j = 0; j < size; j++) {
-				Value targetValue = parentBindings.getValue(sourcenames[j]);
-				if (targetValue != null) {
-					setters[j].accept(abs2, targetValue);
-				}
-			}
-			return abs2;
+			return new ArrayBindingSet(parentBindings, targetNames);
 		};
 		return makeConverterFunction(size, sourcenames, setters, sup, (sb, var) -> sb.getValue(var));
 	}

@@ -11,20 +11,18 @@ package org.eclipse.rdf4j.sail.memory.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -63,12 +61,14 @@ public class SparqlOverheadBenchmark {
 
 	private static final String query5;
 	private static final String query6;
+	private static final String query7;
 
 	static {
 		try {
 
 			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
 			query6 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query6.qr"), StandardCharsets.UTF_8);
+			query7 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -91,6 +91,7 @@ public class SparqlOverheadBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
+
 			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
 			connection.commit();
 		}
@@ -114,6 +115,19 @@ public class SparqlOverheadBenchmark {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<BindingSet> stream = connection
 					.prepareTupleQuery(query5)
+					.evaluate()
+					.stream()) {
+				return stream.count();
+			}
+		}
+	}
+
+	@Benchmark
+	public long getAllTypesStatementSparql() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (Stream<BindingSet> stream = connection
+					.prepareTupleQuery(query7)
 					.evaluate()
 					.stream()) {
 				return stream.count();
