@@ -64,10 +64,10 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	private String getInSetAsString() {
 		return in.stream()
 				.map(targetNode -> {
-					if (targetNode instanceof Resource) {
+					if (targetNode.isResource()) {
 						return "<" + targetNode + ">";
 					}
-					if (targetNode instanceof Literal) {
+					if (targetNode.isLiteral()) {
 						IRI datatype = ((Literal) targetNode).getDatatype();
 						if (datatype == null) {
 							return "\"" + targetNode.stringValue() + "\"";

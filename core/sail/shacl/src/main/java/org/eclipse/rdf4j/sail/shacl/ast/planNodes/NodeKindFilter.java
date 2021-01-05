@@ -37,17 +37,17 @@ public class NodeKindFilter extends FilterPlanNode {
 
 		switch (nodeKind) {
 		case IRI:
-			return value instanceof IRI;
+			return value.isIRI();
 		case Literal:
-			return value instanceof Literal;
+			return value.isLiteral();
 		case BlankNode:
-			return value instanceof BNode;
+			return value.isBNode();
 		case IRIOrLiteral:
-			return value instanceof IRI || value instanceof Literal;
+			return value.isIRI() || value.isLiteral();
 		case BlankNodeOrIRI:
-			return value instanceof BNode || value instanceof IRI;
+			return value.isBNode() || value.isIRI();
 		case BlankNodeOrLiteral:
-			return value instanceof BNode || value instanceof Literal;
+			return value.isBNode() || value.isLiteral();
 		}
 
 		throw new IllegalStateException("Unknown nodeKind");

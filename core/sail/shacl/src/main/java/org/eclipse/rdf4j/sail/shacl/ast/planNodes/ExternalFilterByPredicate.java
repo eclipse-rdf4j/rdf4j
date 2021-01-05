@@ -72,7 +72,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 			private IRI matchesFilter(Value node) {
 
-				if (node instanceof Resource && on == On.Subject) {
+				if (node.isResource() && on == On.Subject) {
 
 					return filterOnPredicates.stream()
 							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))

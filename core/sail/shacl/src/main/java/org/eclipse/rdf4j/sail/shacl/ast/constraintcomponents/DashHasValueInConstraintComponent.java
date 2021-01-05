@@ -177,11 +177,11 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					.map(value -> {
 //						Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
 
-						if (value instanceof IRI) {
+						if (value.isIRI()) {
 							return "BIND(<" + value + "> as ?" + object.getName() + ")\n"
 									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 						}
-						if (value instanceof Literal) {
+						if (value.isLiteral()) {
 							return "BIND(" + value.toString() + " as ?" + object.getName() + ")\n"
 									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
 						}
@@ -200,9 +200,9 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			String sparql = hasValueIn
 					.stream()
 					.map(value -> {
-						if (value instanceof IRI) {
+						if (value.isIRI()) {
 							return "?" + object.getName() + " = <" + value + ">";
-						} else if (value instanceof Literal) {
+						} else if (value.isLiteral()) {
 							return "?" + object.getName() + " = " + value;
 						}
 						throw new UnsupportedOperationException(

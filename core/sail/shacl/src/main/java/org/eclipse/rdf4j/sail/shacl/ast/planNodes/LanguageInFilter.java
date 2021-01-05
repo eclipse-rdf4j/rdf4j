@@ -32,7 +32,7 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	boolean checkTuple(ValidationTuple t) {
-		if (!(t.getValue() instanceof Literal)) {
+		if (!(t.getValue().isLiteral())) {
 			return false;
 		}
 

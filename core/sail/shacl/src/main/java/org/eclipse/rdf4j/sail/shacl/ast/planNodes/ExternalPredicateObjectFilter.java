@@ -105,7 +105,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			}
 
 			private Resource isType(Value subject) {
-				if (subject instanceof Resource) {
+				if (subject.isResource()) {
 					return filterOnObject.stream()
 							.filter(type -> connection.hasStatement((Resource) subject, filterOnPredicate, type, true))
 							.findFirst()

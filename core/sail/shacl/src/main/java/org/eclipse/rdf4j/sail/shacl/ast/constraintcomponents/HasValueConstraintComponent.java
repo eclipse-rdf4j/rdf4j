@@ -154,11 +154,11 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
 
-			if (hasValue instanceof IRI) {
+			if (hasValue.isIRI()) {
 				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n"
 						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner));
 			}
-			if (hasValue instanceof Literal) {
+			if (hasValue.isLiteral()) {
 				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n"
 						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner));
 			}
@@ -167,9 +167,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 					"value was unsupported type: " + hasValue.getClass().getSimpleName());
 
 		} else {
-			if (hasValue instanceof IRI) {
+			if (hasValue.isIRI()) {
 				return SparqlFragment.filterCondition("?" + object.getName() + " = <" + hasValue + ">");
-			} else if (hasValue instanceof Literal) {
+			} else if (hasValue.isLiteral()) {
 				return SparqlFragment.filterCondition("?" + object.getName() + " = " + hasValue);
 			}
 			throw new UnsupportedOperationException(

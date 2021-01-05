@@ -46,10 +46,10 @@ public class TargetNode extends Target {
 
 		targetNodes.stream()
 				.map(targetNode -> {
-					if (targetNode instanceof Resource) {
+					if (targetNode.isResource()) {
 						return "<" + targetNode + ">";
 					}
-					if (targetNode instanceof Literal) {
+					if (targetNode.isLiteral()) {
 						IRI datatype = ((Literal) targetNode).getDatatype();
 						if (datatype == null) {
 							return "\"" + targetNode.stringValue() + "\"";
@@ -101,10 +101,10 @@ public class TargetNode extends Target {
 
 		targetNodes.stream()
 				.map(targetNode -> {
-					if (targetNode instanceof Resource) {
+					if (targetNode.isResource()) {
 						return "<" + targetNode + ">";
 					}
-					if (targetNode instanceof Literal) {
+					if (targetNode.isLiteral()) {
 						IRI datatype = ((Literal) targetNode).getDatatype();
 						if (datatype == null) {
 							return "\"" + targetNode.stringValue() + "\"";

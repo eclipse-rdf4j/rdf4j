@@ -103,7 +103,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 					boolean hasStatement;
 
-					if (!(tuple.getActiveTarget() instanceof Resource)) {
+					if (!(tuple.getActiveTarget().isResource())) {
 						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true);
 					} else {
 						hasStatement = previousStateConnection

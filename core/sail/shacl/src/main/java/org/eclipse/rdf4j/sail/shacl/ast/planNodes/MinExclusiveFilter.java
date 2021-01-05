@@ -29,7 +29,7 @@ public class MinExclusiveFilter extends FilterPlanNode {
 	boolean checkTuple(ValidationTuple t) {
 		Value literal = t.getValue();
 
-		if (literal instanceof Literal) {
+		if (literal.isLiteral()) {
 			BigDecimal bigDecimal = ((Literal) literal).decimalValue();
 			return min.compareTo(bigDecimal) < 0;
 

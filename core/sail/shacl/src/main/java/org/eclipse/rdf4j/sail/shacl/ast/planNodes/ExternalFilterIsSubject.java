@@ -29,7 +29,7 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 
 		Value value = t.getValue();
 
-		if (value instanceof Resource) {
+		if (value.isResource()) {
 			return connection.hasStatement((Resource) value, null, null, true);
 		} else {
 			return false;
@@ -40,6 +40,6 @@ public class ExternalFilterIsSubject extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "ExternalFilterIsSubject{" +
-				'}';
+			'}';
 	}
 }
