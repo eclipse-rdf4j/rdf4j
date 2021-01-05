@@ -46,15 +46,16 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			BindingSet parentBindings) throws QueryEvaluationException {
 		super(iter);
-		this.converter = createConverter(projection, parentBindings);
+		ProjectionElemList pel = projection.getProjectionElemList();
+		this.converter = createConverter(pel, parentBindings, !determineOuterProjection(projection));
 	}
 
-	public static Function<BindingSet, BindingSet> createConverter(Projection projection, BindingSet parentBindings) {
-		ProjectionElemList pel = projection.getProjectionElemList();
+	public static Function<BindingSet, BindingSet> createConverter(ProjectionElemList pel, BindingSet parentBindings,
+			boolean includeAllParent) {
 		String[] targetNames = getTargetNames(pel);
 		if (parentBindings.size() == 0) {
 			return convertWithNoParentBindings(pel, targetNames);
-		} else if (!determineOuterProjection(projection)) {
+		} else if (includeAllParent) {
 			return convertIncludingAllParentBindings(pel, parentBindings, targetNames);
 		} else {
 			return convertSometimesIncludingAParentBinding(pel, parentBindings, targetNames);

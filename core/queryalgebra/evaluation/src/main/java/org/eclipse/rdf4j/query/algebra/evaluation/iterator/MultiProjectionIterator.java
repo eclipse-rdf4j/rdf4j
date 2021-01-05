@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -18,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 
 /**
+ * @author Jerven Bolleman
  * @author Arjohn Kampman
  * @author James Leigh
  */
@@ -27,7 +30,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	 * Attributes *
 	 *------------*/
 
-	private final List<ProjectionElemList> projections;
+	private final List<Function<BindingSet, BindingSet>> convertors;
 
 	private final CloseableIteration<BindingSet, QueryEvaluationException> iter;
 
@@ -45,10 +48,14 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 	public MultiProjectionIterator(MultiProjection multiProjection,
 			CloseableIteration<BindingSet, QueryEvaluationException> iter, BindingSet bindings) {
-		this.projections = multiProjection.getProjections();
+		List<ProjectionElemList> projections = multiProjection.getProjections();
 		this.iter = iter;
 		this.parentBindings = bindings;
 		this.previousBindings = new BindingSet[projections.size()];
+		//Initialize the converter lambda's. These will be used to convert each sub projection at a time.
+		convertors = projections.stream()
+				.map(pel -> ProjectionIterator.createConverter(pel, parentBindings, false))
+				.collect(Collectors.toList());
 
 		// initialize out-of-range to enforce a fetch of the first result upon
 		// first use
@@ -68,10 +75,9 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 			int projIdx = nextProjectionIdx;
 
-			if (projIdx >= 0 && projIdx < projections.size()) {
+			if (projIdx >= 0 && projIdx < convertors.size()) {
 				// Apply next projection in the list
-				ProjectionElemList projection = projections.get(projIdx);
-				BindingSet result = ProjectionIterator.project(projection, currentBindings, parentBindings);
+				BindingSet result = convertors.get(projIdx).apply(currentBindings);
 
 				nextProjectionIdx++;
 
