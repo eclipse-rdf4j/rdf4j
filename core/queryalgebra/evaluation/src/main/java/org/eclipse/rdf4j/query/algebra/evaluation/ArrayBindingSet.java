@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -54,9 +53,13 @@ public class ArrayBindingSet extends AbstractBindingSet {
 			System.arraycopy(names, 0, bindingNames, abs.bindingNames.length, names.length);
 			this.values = Arrays.copyOf(abs.values, abs.bindingNames.length + names.length);
 		} else {
-			final HashSet<String> temp = new HashSet<String>(Arrays.asList(names));
-			temp.addAll(toCopy.getBindingNames());
-			this.bindingNames = temp.toArray(new String[0]);
+			final int copySize = toCopy.size();
+			this.bindingNames = new String[copySize + names.length];
+			final Iterator<String> iter = toCopy.getBindingNames().iterator();
+			for (int i = 0; iter.hasNext(); i++) {
+				this.bindingNames[i] = iter.next();
+			}
+			System.arraycopy(names, 0, bindingNames, copySize, names.length);
 			this.values = new Value[bindingNames.length];
 			for (int i = 0; i < values.length; i++) {
 				this.values[i] = toCopy.getValue(bindingNames[i]);

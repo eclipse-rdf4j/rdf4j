@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.NoSuchElementException;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -34,28 +35,25 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Variables *
 	 *-----------*/
 
-	private final EvaluationStrategy strategy;
-
-	private final Join join;
-
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
 	private volatile CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+
+	private final Function<BindingSet, CloseableIteration<BindingSet, QueryEvaluationException>> fun;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) throws QueryEvaluationException {
-		this.strategy = strategy;
-		this.join = join;
-
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
 
 		join.setAlgorithm(this);
+		TupleExpr rightArg = join.getRightArg();
+		fun = bs -> strategy.evaluate(rightArg, bs);
 	}
 
 	/*---------*
@@ -74,8 +72,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 				rightIter.close();
 
 				if (leftIter.hasNext()) {
-					TupleExpr rightArg = join.getRightArg();
-					rightIter = strategy.evaluate(rightArg, leftIter.next());
+
+					rightIter = fun.apply(leftIter.next());
 				}
 			}
 		} catch (NoSuchElementException ignore) {
