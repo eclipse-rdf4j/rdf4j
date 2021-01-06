@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Date;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -83,5 +82,9 @@ public interface QueryEvaluationContext {
 
 	public default BiConsumer<Value, MutableBindingSet> addVariable(String variableName) {
 		return (val, bs) -> bs.addBinding(variableName, val);
+	}
+
+	public default MutableBindingSet createBindingSet(BindingSet bindings) {
+		return new QueryBindingSet(bindings);
 	}
 }
