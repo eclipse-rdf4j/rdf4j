@@ -53,15 +53,15 @@ public class ArrayBindingSet extends AbstractBindingSet {
 			System.arraycopy(names, 0, bindingNames, abs.bindingNames.length, names.length);
 			this.values = Arrays.copyOf(abs.values, abs.bindingNames.length + names.length);
 		} else {
-			final int copySize = toCopy.size();
-			this.bindingNames = new String[copySize + names.length];
+			final int toCopySize = toCopy.size();
+			this.bindingNames = new String[toCopySize + names.length];
 			final Iterator<String> iter = toCopy.getBindingNames().iterator();
 			for (int i = 0; iter.hasNext(); i++) {
 				this.bindingNames[i] = iter.next();
 			}
-			System.arraycopy(names, 0, bindingNames, copySize, names.length);
+			System.arraycopy(names, 0, bindingNames, toCopySize, names.length);
 			this.values = new Value[bindingNames.length];
-			for (int i = 0; i < values.length; i++) {
+			for (int i = 0; i < toCopySize; i++) {
 				this.values[i] = toCopy.getValue(bindingNames[i]);
 			}
 		}
