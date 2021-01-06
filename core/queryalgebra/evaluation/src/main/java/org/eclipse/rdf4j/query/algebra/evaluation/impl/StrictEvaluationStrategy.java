@@ -15,12 +15,9 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
@@ -28,7 +25,6 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -126,6 +122,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQ
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
@@ -505,6 +503,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	public QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context) throws QueryEvaluationException {
+
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		return new QueryRootQueryEvaluationStep(arg);
 	}
@@ -1801,161 +1800,24 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return iteration over the solutions
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref, BindingSet bindings) {
+		return precompile(ref).evaluate(bindings);
+	}
+
+	public QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
 		// Naive implementation that walks over all statements matching (x rdf:type rdf:Statement)
 		// and filter those that do not match the bindings for subject, predicate and object vars (if bound)
 		final org.eclipse.rdf4j.query.algebra.Var subjVar = ref.getSubjectVar();
 		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();
 		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();
 		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();
-
-		final Value subjValue = getVarValue(subjVar, bindings);
-		final Value predValue = getVarValue(predVar, bindings);
-		final Value objValue = getVarValue(objVar, bindings);
-		final Value extValue = getVarValue(extVar, bindings);
-
-		// case1: when we have a binding for extVar we use it in the reified nodes lookup
-		// case2: in which we have unbound extVar
-		// in both cases:
-		// 1. iterate over all statements matching ((* | extValue), rdf:type, rdf:Statement)
-		// 2. construct a look ahead iteration and filter these solutions that do not match the
-		// bindings for the subject, predicate and object vars (if these are bound)
-		// return set of solution where the values of the statements (extVar, rdf:subject/predicate/object, value)
-		// are bound to the variables of the respective TripleRef variables for subject, predicate, object
-		// NOTE: if the tripleSource is extended to allow for lookup over asserted Triple values in the underlying sail
-		// the evaluation of the TripleRef should be suitably forwarded down the sail and filter/construct
-		// the correct solution out of the results of that call
-		if (extValue != null && !(extValue instanceof Resource)) {
-			return new EmptyIteration<>();
-		}
-
 		// whether the TripleSouce support access to RDF star
 		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
-
-		// in case the
 		if (sourceSupportsRdfStar) {
-			CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = ((RDFStarTripleSource) tripleSource)
-					.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
-
-			FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
-					sourceIter) {
-				@Override
-				protected boolean accept(Triple triple) throws QueryEvaluationException {
-					if (subjValue != null && !subjValue.equals(triple.getSubject())) {
-						return false;
-					}
-					if (predValue != null && !predValue.equals(triple.getPredicate())) {
-						return false;
-					}
-					if (objValue != null && !objValue.equals(triple.getObject())) {
-						return false;
-					}
-					if (extValue != null && !extValue.equals(triple)) {
-						return false;
-					}
-					return true;
-				}
-			};
-
-			return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
-				@Override
-				protected BindingSet convert(Triple triple) throws QueryEvaluationException {
-					QueryBindingSet result = new QueryBindingSet(bindings);
-					if (subjValue == null) {
-						result.addBinding(subjVar.getName(), triple.getSubject());
-					}
-					if (predValue == null) {
-						result.addBinding(predVar.getName(), triple.getPredicate());
-					}
-					if (objValue == null) {
-						result.addBinding(objVar.getName(), triple.getObject());
-					}
-					// add the extVar binding if we do not have a value bound.
-					if (extValue == null) {
-						result.addBinding(extVar.getName(), triple);
-					}
-					return result;
-				}
-			};
+			return new RdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, (RDFStarTripleSource) tripleSource,
+					context);
 		} else {
-			// standard reification iteration
-			// 1. walk over resources used as subjects of (x rdf:type rdf:Statement)
-			final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
-					tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
-
-				@Override
-				protected Resource convert(Statement sourceObject)
-						throws QueryEvaluationException {
-					return sourceObject.getSubject();
-				}
-			};
-			// for each reification node, fetch and check the subject, predicate and object values against
-			// the expected values from TripleRef pattern and supplied bindings collection
-			return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
-				@Override
-				protected void handleClose()
-						throws QueryEvaluationException {
-					super.handleClose();
-					iter.close();
-				}
-
-				@Override
-				protected BindingSet getNextElement()
-						throws QueryEvaluationException {
-					while (iter.hasNext()) {
-						Resource theNode = iter.next();
-						QueryBindingSet result = new QueryBindingSet(bindings);
-						// does it match the subjectValue/subjVar
-						if (!matchValue(theNode, subjValue, subjVar, result, RDF.SUBJECT)) {
-							continue;
-						}
-						// the predicate, if not, remove the binding that hass been added
-						// when the subjValue has been checked and its value added to the solution
-						if (!matchValue(theNode, predValue, predVar, result, RDF.PREDICATE)) {
-							continue;
-						}
-						// check the object, if it do not match
-						// remove the bindings added for subj and pred
-						if (!matchValue(theNode, objValue, objVar, result, RDF.OBJECT)) {
-							continue;
-						}
-						// add the extVar binding if we do not have a value bound.
-						if (extValue == null) {
-							result.addBinding(extVar.getName(), theNode);
-						} else if (!extValue.equals(theNode)) {
-							// the extVar value do not match theNode
-							continue;
-						}
-						return result;
-					}
-					return null;
-				}
-
-				private boolean matchValue(Resource theNode, Value value, Var var, QueryBindingSet result,
-						IRI predicate) {
-					try (CloseableIteration<? extends Statement, QueryEvaluationException> valueiter = tripleSource
-							.getStatements(theNode, predicate, null)) {
-						while (valueiter.hasNext()) {
-							Statement valueStatement = valueiter.next();
-							if (theNode.equals(valueStatement.getSubject())) {
-								if (value == null || value.equals(valueStatement.getObject())) {
-									if (value == null) {
-										result.addBinding(var.getName(), valueStatement.getObject());
-									}
-									return true;
-								}
-							}
-						}
-						return false;
-					}
-				}
-
-			};
-		} // else standard reification iteration
-
-	}
-
-	public QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
-		return QueryEvaluationStep.minimal(this, ref);
+			return new ReificationRdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
+		}
 	}
 
 	/**
