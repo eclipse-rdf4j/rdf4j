@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -770,11 +771,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			final BindingSet bindings, final Var subjVar, final Var predVar, final Var objVar, final Var conVar,
 			CloseableIteration<? extends Statement, QueryEvaluationException> stIter3) {
 		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator;
-		final String[] names = Stream.of(conVar, objVar, predVar, subjVar)
-				.filter(Objects::nonNull)
-				.map(Var::getName)
-				.collect(Collectors.toList())
-				.toArray(new String[0]);
+		final String[] names = getNamesOfVariables(subjVar, predVar, objVar, conVar);
 		Supplier<ArrayBindingSet> sup;
 		if (bindings == null || bindings.size() == 0) {
 			// We use invoke dynamic to make a function that sets a variables value
@@ -793,6 +790,23 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					}
 				});
 		return resultingIterator;
+	}
+
+	private static String[] getNamesOfVariables(final Var subjVar, final Var predVar, final Var objVar,
+			final Var conVar) {
+		Var[] vars = new Var[] { subjVar, predVar, objVar, conVar };
+		String[] names = new String[4];
+		int set = 0;
+		for (int i = 0; i < vars.length; i++) {
+			if (vars[i] != null) {
+				names[set++] = vars[i].getName();
+			}
+		}
+		if (set == 4) {
+			return names;
+		} else {
+			return Arrays.copyOf(names, set);
+		}
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
