@@ -47,6 +47,10 @@ public class ArrayBindingSet extends AbstractBindingSet {
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, String... names) {
+		// Names might already be present in the toCopy BindingSet.
+		// This is ok, because we always take the first name/value pair.
+		// However we do need to make sure that we don't accidentally set
+		// the value for the duplicated name.
 		if (toCopy instanceof ArrayBindingSet) {
 			ArrayBindingSet abs = (ArrayBindingSet) toCopy;
 			this.bindingNames = Arrays.copyOf(abs.bindingNames, abs.bindingNames.length + names.length);
