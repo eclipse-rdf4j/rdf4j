@@ -19,6 +19,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -493,45 +494,22 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
 			super(iter);
 			this.newbindings = newbindings;
-			BiConsumer<T, Statement>[] consumers = generateConsumers(bindings, conVar, objVar, predVar, subjVar,
-					addToBinding);
-			if (consumers.length == 0)
+			List<BiConsumer<T, Statement>> consumers = Stream.of(
+					createConsumer(subjVar, Statement::getSubject, bindings, addToBinding),
+					createConsumer(predVar, Statement::getPredicate, bindings, addToBinding),
+					createConsumer(objVar, Statement::getObject, bindings, addToBinding),
+					createConsumer(conVar, Statement::getContext, bindings, addToBinding))
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+			if (consumers.isEmpty())
 				consumer = (b, s) -> {
 				};
 			else {
-				BiConsumer<T, Statement> temp = consumers[0];
-				for (int i = 1; i < consumers.length; i++) {
-					temp = temp.andThen(consumers[i]);
+				BiConsumer<T, Statement> temp = consumers.get(0);
+				for (int i = 1; i < consumers.size(); i++) {
+					temp = temp.andThen(consumers.get(i));
 				}
 				consumer = temp;
-			}
-		}
-
-		// This ends up being very often invoked in joins. It is therefore optimized beyond it's more
-		// straightforward code as seen in the history.
-		private BiConsumer<T, Statement>[] generateConsumers(BindingSet bindings, Var conVar, Var objVar,
-				Var predVar, Var subjVar, java.util.function.Function<Var, BiConsumer<T, Value>> addToBinding) {
-			Var[] vars = new Var[] { subjVar, predVar, objVar, conVar };
-			List<java.util.function.Function<Statement, Value>> accessors = Arrays.asList(
-					Statement::getSubject,
-					Statement::getPredicate,
-					Statement::getObject,
-					Statement::getContext
-			);
-			@SuppressWarnings("unchecked")
-			BiConsumer<T, Statement>[] consumers = new BiConsumer[4];
-			int set = 0;
-			for (int i = 0; i < vars.length; i++) {
-				final BiConsumer<T, Statement> consumer = createConsumer(vars[i], accessors.get(i), bindings,
-						addToBinding);
-				if (consumer != null) {
-					consumers[set++] = consumer;
-				}
-			}
-			if (set == 4) {
-				return consumers;
-			} else {
-				return Arrays.copyOf(consumers, set);
 			}
 		}
 
