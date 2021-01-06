@@ -48,21 +48,26 @@ public class ArrayBindingSet extends AbstractBindingSet {
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, String... names) {
-		final HashSet<String> temp = new HashSet<String>(Arrays.asList(names));
-		temp.addAll(toCopy.getBindingNames());
-		this.bindingNames = temp.toArray(new String[0]);
-		this.values = new Value[bindingNames.length];
-		for (int i = 0; i < values.length; i++) {
-			this.values[i] = toCopy.getValue(bindingNames[i]);
+		if (toCopy instanceof ArrayBindingSet) {
+			ArrayBindingSet abs = (ArrayBindingSet) toCopy;
+			this.bindingNames = Arrays.copyOf(abs.bindingNames, abs.bindingNames.length + names.length);
+			System.arraycopy(names, 0, bindingNames, abs.bindingNames.length, names.length);
+			this.values = Arrays.copyOf(abs.values, abs.bindingNames.length + names.length);
+		} else {
+			final HashSet<String> temp = new HashSet<String>(Arrays.asList(names));
+			temp.addAll(toCopy.getBindingNames());
+			this.bindingNames = temp.toArray(new String[0]);
+			this.values = new Value[bindingNames.length];
+			for (int i = 0; i < values.length; i++) {
+				this.values[i] = toCopy.getValue(bindingNames[i]);
+			}
 		}
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
 		this.bindingNames = Arrays.copyOf(toCopy.bindingNames, toCopy.bindingNames.length + names.length);
-		assert this.bindingNames.length == (int) Arrays.stream(this.bindingNames).distinct().count();
-		System.arraycopy(names, 0, bindingNames, bindingNames.length, names.length);
+		System.arraycopy(names, 0, bindingNames, toCopy.bindingNames.length, names.length);
 		this.values = Arrays.copyOf(toCopy.values, toCopy.bindingNames.length + names.length);
-		;
 	}
 
 	/**

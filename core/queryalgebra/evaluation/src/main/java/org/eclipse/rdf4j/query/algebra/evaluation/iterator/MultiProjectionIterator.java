@@ -52,7 +52,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 		this.iter = iter;
 		this.parentBindings = bindings;
 		this.previousBindings = new BindingSet[projections.size()];
-		//Initialize the converter lambda's. These will be used to convert each sub projection at a time.
+		// Initialize the converter lambda's. These will be used to convert each sub projection at a time.
 		convertors = projections.stream()
 				.map(pel -> ProjectionIterator.createConverter(pel, parentBindings, false))
 				.collect(Collectors.toList());
