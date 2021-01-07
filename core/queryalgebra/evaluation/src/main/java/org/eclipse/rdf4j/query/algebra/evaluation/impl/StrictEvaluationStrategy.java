@@ -794,19 +794,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	private static String[] getNamesOfVariables(final Var subjVar, final Var predVar, final Var objVar,
 			final Var conVar) {
-		Var[] vars = new Var[] { subjVar, predVar, objVar, conVar };
-		String[] names = new String[4];
-		int set = 0;
-		for (int i = 0; i < vars.length; i++) {
-			if (vars[i] != null) {
-				names[set++] = vars[i].getName();
-			}
-		}
-		if (set == 4) {
-			return names;
-		} else {
-			return Arrays.copyOf(names, set);
-		}
+		return Stream.of(conVar, objVar, predVar, subjVar)
+				.filter(Objects::nonNull)
+				.map(Var::getName)
+				.collect(Collectors.toList())
+				.toArray(new String[0]);
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
