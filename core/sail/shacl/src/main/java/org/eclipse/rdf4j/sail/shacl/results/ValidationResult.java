@@ -8,16 +8,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.results;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -36,7 +38,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 @Deprecated
 public class ValidationResult {
 
-	private final Resource id = SimpleValueFactory.getInstance().createBNode(UUID.randomUUID() + "");
+	private final Resource id = bnode(UUID.randomUUID() + "");
 	private final Optional<Value> value;
 	private final Shape shape;
 
@@ -57,9 +59,7 @@ public class ValidationResult {
 			assert value != null;
 			this.value = Optional.of(value);
 		} else {
-			if (scope == ConstraintComponent.Scope.propertyShape) {
-				assert value == null;
-			}
+			assert scope != ConstraintComponent.Scope.propertyShape || value == null;
 			this.value = Optional.empty();
 		}
 
@@ -98,6 +98,10 @@ public class ValidationResult {
 	}
 
 	public Model asModel(Model model) {
+		return asModel(model, new HashSet<>());
+	}
+
+	public Model asModel(Model model, Set<Resource> values) {
 
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
 
@@ -119,7 +123,7 @@ public class ValidationResult {
 //			detail.asModel(model);
 //		}
 
-		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
+		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, values);
 
 		return model;
 	}

@@ -80,7 +80,7 @@ public enum SourceConstraintComponent {
 		PropertyPair,
 		Logical,
 		ShapeBased,
-		Other;
+		Other
 
 	}
 

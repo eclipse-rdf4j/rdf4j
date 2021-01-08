@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.io.StringWriter;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -8,13 +7,9 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -219,17 +214,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		nodeShape.constraintComponents = constraintComponents.stream()
 				.map(ConstraintComponent::deepClone)
 				.collect(Collectors.toList());
-		;
 
 		return nodeShape;
-	}
-
-	@Override
-	public String toString() {
-		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
-		StringWriter stringWriter = new StringWriter();
-		Rio.write(statements, stringWriter, RDFFormat.TURTLE);
-		return stringWriter.toString();
 	}
 
 	@Override

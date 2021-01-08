@@ -123,7 +123,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 			Value value = next.getValue();
 
-			if (value instanceof Literal) {
+			if (value.isLiteral()) {
 				Optional<String> lang = ((Literal) value).getLanguage();
 
 				if (!lang.isPresent()) {

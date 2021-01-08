@@ -1,5 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -10,8 +12,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
@@ -21,14 +21,13 @@ public class HelperTool {
 		// The Turtle parser does not add "a rdf:List" statements when parsing the shorthand list format,
 		// so we don't add rdf:List when writing it out either.
 
-		ValueFactory vf = SimpleValueFactory.getInstance();
 		Iterator<? extends Value> iter = values.iterator();
 		while (iter.hasNext()) {
 			Value value = iter.next();
 			model.add(head, RDF.FIRST, value);
 
 			if (iter.hasNext()) {
-				Resource next = vf.createBNode();
+				Resource next = bnode();
 				model.add(head, RDF.REST, next);
 				head = next;
 			} else {

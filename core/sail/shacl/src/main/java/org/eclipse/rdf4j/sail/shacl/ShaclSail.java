@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -39,7 +41,6 @@ import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -209,8 +210,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static SchemaCachingRDFSInferencer shaclVocabulary;
-	private final static IRI shaclVocabularyGraph = SimpleValueFactory.getInstance()
-			.createIRI(RDF4J.NAMESPACE, "shaclVocabularyGraph");
+	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, "shaclVocabularyGraph");
 
 	static {
 		try {
@@ -387,7 +387,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 
 		SailRepository shapesRepoCache = new SailRepository(
-				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
 		shapesRepoCache.init();
 		List<Shape> shapes;
@@ -505,7 +505,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private void implicitTargetClass(SailRepositoryConnection shaclSailConnection) {
-		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, true).stream()) {
+		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
 			stream
 					.map(Statement::getSubject)
 					.filter(s ->

@@ -34,7 +34,7 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 			return null;
 		}
 
-		if (id instanceof BNode) {
+		if (id.isBNode()) {
 			List<Statement> collect = connection.getStatements(id, null, null, true)
 					.stream()
 					.collect(Collectors.toList());

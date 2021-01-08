@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -12,12 +13,18 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -521,6 +528,19 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			}
 			return collect;
 		}
+	}
+
+	@Override
+	public String toString() {
+		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
+		statements.setNamespace(SHACL.NS);
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(statements, stringWriter, RDFFormat.TURTLE, writerConfig);
+		return stringWriter.toString().replace("@prefix sh: <http://www.w3.org/ns/shacl#> .", "").trim();
 	}
 
 }

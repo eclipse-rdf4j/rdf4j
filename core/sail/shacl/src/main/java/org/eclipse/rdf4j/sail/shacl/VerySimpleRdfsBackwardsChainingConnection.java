@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -20,7 +22,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -75,10 +76,10 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 				return new LookAheadIteration<Statement, SailException>() {
 
-					UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
+					final UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
 							statementsMatchingInferredTypes);
 
-					HashSet<Statement> dedupe = new HashSet<>();
+					final HashSet<Statement> dedupe = new HashSet<>();
 
 					@Override
 					protected Statement getNextElement() throws SailException {
@@ -86,8 +87,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 						while (next == null && unionIteration.hasNext()) {
 							Statement temp = unionIteration.next();
-							temp = SimpleValueFactory.getInstance()
-									.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
+							temp = statement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
 
 							if (!dedupe.isEmpty()) {
 								boolean contains = dedupe.contains(temp);

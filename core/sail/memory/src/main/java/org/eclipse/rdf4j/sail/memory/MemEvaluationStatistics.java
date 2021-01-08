@@ -51,7 +51,7 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 		public double getCardinality(StatementPattern sp) {
 
 			Value subj = getConstantValue(sp.getSubjectVar());
-			if (!(subj instanceof Resource)) {
+			if (!(subj != null && subj.isResource())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator.
 				// this can cause, for example, the subject variable to be
@@ -60,14 +60,14 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				subj = null;
 			}
 			Value pred = getConstantValue(sp.getPredicateVar());
-			if (!(pred instanceof IRI)) {
+			if (!(pred != null && pred.isIRI())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator. See SES-970 / SES-998
 				pred = null;
 			}
 			Value obj = getConstantValue(sp.getObjectVar());
 			Value context = getConstantValue(sp.getContextVar());
-			if (!(context instanceof Resource)) {
+			if (!(context != null && context.isResource())) {
 				// can happen when a previous optimizer has inlined a comparison
 				// operator. See SES-970 / SES-998
 				context = null;
@@ -86,27 +86,27 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			}
 
 			// Search for the smallest list that can be used by the iterator
-			List<Integer> listSizes = new ArrayList<>(4);
+			int minListSizes = Integer.MAX_VALUE;
 			if (memSubj != null) {
-				listSizes.add(memSubj.getSubjectStatementCount());
+				minListSizes = Math.min(minListSizes, memSubj.getSubjectStatementCount());
 			}
 			if (memPred != null) {
-				listSizes.add(memPred.getPredicateStatementCount());
+				minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());
 			}
 			if (memObj != null) {
-				listSizes.add(memObj.getObjectStatementCount());
+				minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());
 			}
 			if (memContext != null) {
-				listSizes.add(memContext.getContextStatementCount());
+				minListSizes = Math.min(minListSizes, memContext.getContextStatementCount());
 			}
 
 			double cardinality;
 
-			if (listSizes.isEmpty()) {
+			if (minListSizes == Integer.MAX_VALUE) {
 				// all wildcards
 				cardinality = memStatementList.size();
 			} else {
-				cardinality = (double) Collections.min(listSizes);
+				cardinality = minListSizes;
 
 				// List<Var> vars = getVariables(sp);
 				// int constantVarCount = countConstantVars(vars);

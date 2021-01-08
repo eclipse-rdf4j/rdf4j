@@ -58,13 +58,14 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		model.add(subject, SHACL.AND, getId());
-		HelperTool.listToRdf(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
-
 		if (exported.contains(getId())) {
 			return;
 		}
 		exported.add(getId());
+
+		model.add(subject, SHACL.AND, getId());
+		HelperTool.listToRdf(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+
 		and.forEach(o -> o.toModel(null, null, model, exported));
 
 	}

@@ -34,6 +34,10 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+		if (exported.contains(getId())) {
+			return;
+		}
+		exported.add(getId());
 		model.add(subject, SHACL.IN, getId());
 		HelperTool.listToRdf(in, getId(), model);
 	}
@@ -60,10 +64,10 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	private String getInSetAsString() {
 		return in.stream()
 				.map(targetNode -> {
-					if (targetNode instanceof Resource) {
+					if (targetNode.isResource()) {
 						return "<" + targetNode + ">";
 					}
-					if (targetNode instanceof Literal) {
+					if (targetNode.isLiteral()) {
 						IRI datatype = ((Literal) targetNode).getDatatype();
 						if (datatype == null) {
 							return "\"" + targetNode.stringValue() + "\"";

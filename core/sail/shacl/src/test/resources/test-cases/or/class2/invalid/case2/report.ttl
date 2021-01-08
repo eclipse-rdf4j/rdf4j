@@ -27,17 +27,13 @@
 ex:personShapeOr a sh:PropertyShape;
   sh:path ex:knows;
   sh:not [ a sh:NodeShape;
-      sh:and [
-          rdf:first [ a sh:NodeShape;
-              sh:not [ a sh:NodeShape;
-                  sh:class ex:Person
-                ]
-            ];
-          rdf:rest (_:node1ejq3v6djx6), (_:node1ejq3v6djx6)
-        ]
-    ] .
-
-_:node1ejq3v6djx6 a sh:NodeShape;
-  sh:not [ a sh:NodeShape;
-      sh:class ex:Animal
+      sh:and ([ a sh:NodeShape;
+            sh:not [ a sh:NodeShape;
+                sh:class ex:Person
+              ]
+          ] [ a sh:NodeShape;
+            sh:not [ a sh:NodeShape;
+                sh:class ex:Animal
+              ]
+          ])
     ] .
