@@ -18,16 +18,16 @@ For details on what’s new and how to upgrade, see the [release and upgrade not
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
 
-## RDF4J 3.6.0-M1
+## RDF4J 3.6.0-M2
 
-RDF4J 3.6.0-M1 is the first milestone build of the upcoming 3.6.0 release.
+RDF4J 3.6.0-M2 is the second milestone build of the upcoming 3.6.0 release.
 
 This is a milestone build, not an official release, intended for early access and testing. We do not recommend its use in production environments.
 
-- [RDF4J 3.6.0 M1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.6.0-M1-sdk.zip)<br/>
+- [RDF4J 3.6.0-M2 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.6.0-M2-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
 
-- [RDF4J 3.6.0 M1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.6.0-M1-onejar.jar)<br/>
+- [RDF4J 3.6.0-M2 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-3.6.0-M2-onejar.jar)<br/>
   Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
 
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
