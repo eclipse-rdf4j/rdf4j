@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -25,19 +24,15 @@ import org.slf4j.LoggerFactory;
  */
 public class Unique implements PlanNode {
 	private final Logger logger = LoggerFactory.getLogger(Unique.class);
-	private final int id;
 
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	static AtomicInteger counter = new AtomicInteger();
-
 	public Unique(PlanNode parent) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.parent = parent;
-		this.id = counter.incrementAndGet();
 	}
 
 	@Override
@@ -153,11 +148,6 @@ public class Unique implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "Unique";
-	}
-
-	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
@@ -193,5 +183,12 @@ public class Unique implements PlanNode {
 	@Override
 	public int hashCode() {
 		return Objects.hash(parent, Unique.class);
+	}
+
+	@Override
+	public String toString() {
+		return "Unique{" +
+				"parent=" + parent +
+				'}';
 	}
 }

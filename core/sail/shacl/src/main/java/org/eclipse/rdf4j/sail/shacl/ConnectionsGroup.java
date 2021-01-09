@@ -98,12 +98,6 @@ public class ConnectionsGroup implements Closeable {
 			return planNode;
 		}
 
-//		if(!nodeCache.containsKey(planNode)){
-//			System.out.println("NOT Cached: "+planNode.getClass().getSimpleName());
-//		}else {
-//			System.out.println("Cached: "+planNode.getClass().getSimpleName());
-//		}
-
 		BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, BufferedSplitter::new);
 
 		return bufferedSplitter.getPlanNode();

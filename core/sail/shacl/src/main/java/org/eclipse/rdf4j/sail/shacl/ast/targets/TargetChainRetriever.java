@@ -270,4 +270,14 @@ public class TargetChainRetriever implements PlanNode {
 	public int hashCode() {
 		return Objects.hash(statementPatterns, removedStatementMatchers, query, scope);
 	}
+
+	@Override
+	public String toString() {
+		return "TargetChainRetriever{" +
+				"statementPatterns=" + statementPatterns +
+				", removedStatementMatchers=" + removedStatementMatchers +
+				", query='" + query + '\'' +
+				", scope=" + scope +
+				'}';
+	}
 }

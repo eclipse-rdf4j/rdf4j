@@ -39,6 +39,7 @@ public class Select implements PlanNode {
 
 	private final String query;
 	private final boolean sorted;
+	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -57,6 +58,7 @@ public class Select implements PlanNode {
 		sorted = orderBy != null;
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
+
 	}
 
 	@Override
@@ -169,13 +171,28 @@ public class Select implements PlanNode {
 			return false;
 		}
 		Select select = (Select) o;
-		return connection.equals(select.connection) &&
-				mapper.equals(select.mapper) &&
-				query.equals(select.query);
+		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
+			return sorted == select.sorted &&
+					((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) select.connection).getSail())
+					&&
+					mapper.equals(select.mapper) &&
+					query.equals(select.query);
+		} else {
+			return sorted == select.sorted &&
+					connection.equals(select.connection) &&
+					mapper.equals(select.mapper) &&
+					query.equals(select.query);
+		}
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(connection, mapper, query);
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted);
+		} else {
+			return Objects.hash(connection, mapper, query, sorted);
+		}
+
 	}
 }

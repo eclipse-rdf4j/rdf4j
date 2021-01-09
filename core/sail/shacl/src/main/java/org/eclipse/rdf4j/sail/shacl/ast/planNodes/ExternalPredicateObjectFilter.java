@@ -8,7 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -169,14 +169,6 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "ExternalPredicateObjectFilter{" +
-				", filterOnPredicate=" + filterOnPredicate +
-				"filterOnObject=" + Arrays.toString(filterOnObject.stream().map(Formatter::prefix).toArray()) +
-				'}';
-	}
-
-	@Override
 	public String getId() {
 		return System.identityHashCode(this) + "";
 	}
@@ -200,5 +192,55 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	public enum FilterOn {
 		activeTarget,
 		value
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		ExternalPredicateObjectFilter that = (ExternalPredicateObjectFilter) o;
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return returnMatching == that.returnMatching &&
+					((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) that.connection).getSail())
+					&&
+					filterOnObject.equals(that.filterOnObject) &&
+					filterOnPredicate.equals(that.filterOnPredicate) &&
+					filterOn == that.filterOn &&
+					parent.equals(that.parent);
+		} else {
+			return returnMatching == that.returnMatching &&
+					connection.equals(that.connection) &&
+					filterOnObject.equals(that.filterOnObject) &&
+					filterOnPredicate.equals(that.filterOnPredicate) &&
+					filterOn == that.filterOn &&
+					parent.equals(that.parent);
+		}
+	}
+
+	@Override
+	public int hashCode() {
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnObject, filterOnPredicate,
+					filterOn, parent, returnMatching);
+
+		} else {
+			return Objects.hash(connection, filterOnObject, filterOnPredicate, filterOn, parent, returnMatching);
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "ExternalPredicateObjectFilter{" +
+				"filterOnObject=" + filterOnObject +
+				", filterOnPredicate=" + filterOnPredicate +
+				", filterOn=" + filterOn +
+				", parent=" + parent +
+				", returnMatching=" + returnMatching +
+				'}';
 	}
 }

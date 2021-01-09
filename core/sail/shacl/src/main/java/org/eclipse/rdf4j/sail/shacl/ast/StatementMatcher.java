@@ -145,6 +145,25 @@ public class StatementMatcher {
 		public int hashCode() {
 			return Objects.hash(name, value);
 		}
+
+		@Override
+		public String toString() {
+			return "Variable{" +
+					"name='" + name + '\'' +
+					", value=" + value +
+					'}';
+		}
 	}
 
+	@Override
+	public String toString() {
+		return "StatementMatcher{" +
+				"subjectName='" + subjectName + '\'' +
+				", subjectValue=" + subjectValue +
+				", predicateName='" + predicateName + '\'' +
+				", predicateValue=" + predicateValue +
+				", objectName='" + objectName + '\'' +
+				", objectValue=" + objectValue +
+				'}';
+	}
 }

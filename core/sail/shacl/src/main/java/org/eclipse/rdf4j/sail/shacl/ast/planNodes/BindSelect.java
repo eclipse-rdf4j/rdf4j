@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
@@ -57,16 +56,19 @@ public class BindSelect implements PlanNode {
 	private final PlanNode source;
 	private final EffectiveTarget.Extend direction;
 	private final boolean includePropertyShapeValues;
+	private final List<String> varNames;
+	private final ConstraintComponent.Scope scope;
 	private StackTraceElement[] stackTrace;
-	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public BindSelect(SailConnection connection, String query, List<StatementMatcher.Variable> vars, PlanNode source,
-			Function<BindingSet, ValidationTuple> mapper, int bulkSize, EffectiveTarget.Extend direction,
-			boolean includePropertyShapeValues, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
+			boolean includePropertyShapeValues) {
 		this.connection = connection;
-		this.mapper = mapper;
+		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
+		this.varNames = varNames;
+		this.scope = scope;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
 		source = PlanNodeHelper.handleSorting(this, source);
@@ -80,7 +82,6 @@ public class BindSelect implements PlanNode {
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
 		// this.stackTrace = Thread.currentThread().getStackTrace();
-		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
 
 	}
 
@@ -286,11 +287,6 @@ public class BindSelect implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "Select{" + "query='" + query.replace("\n", "  ") + '\'' + '}';
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		source.receiveLogger(validationExecutionLogger);
@@ -315,17 +311,54 @@ public class BindSelect implements PlanNode {
 			return false;
 		}
 		BindSelect that = (BindSelect) o;
-		return includePropertyShapeValues == that.includePropertyShapeValues &&
-				Objects.equals(mapper, that.mapper) &&
-				Objects.equals(query, that.query) &&
-				Objects.equals(vars, that.vars) &&
-				Objects.equals(source, that.source) &&
-				direction == that.direction &&
-				Objects.equals(rdfsSubClassOfReasoner, that.rdfsSubClassOfReasoner);
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return bulkSize == that.bulkSize &&
+					includePropertyShapeValues == that.includePropertyShapeValues &&
+					((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) that.connection).getSail())
+					&&
+					varNames.equals(that.varNames) &&
+					scope.equals(that.scope) &&
+					query.equals(that.query) &&
+					vars.equals(that.vars) &&
+					source.equals(that.source) &&
+					direction == that.direction;
+		} else {
+			return bulkSize == that.bulkSize &&
+					includePropertyShapeValues == that.includePropertyShapeValues &&
+					connection.equals(that.connection) &&
+					varNames.equals(that.varNames) &&
+					scope.equals(that.scope) &&
+					query.equals(that.query) &&
+					vars.equals(that.vars) &&
+					source.equals(that.source) &&
+					direction == that.direction;
+		}
+
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(mapper, query, vars, source, direction, includePropertyShapeValues, rdfsSubClassOfReasoner);
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize,
+					source, direction, includePropertyShapeValues);
+		} else {
+			return Objects.hash(connection, varNames, scope, query, vars, bulkSize, source, direction,
+					includePropertyShapeValues);
+		}
+	}
+
+	@Override
+	public String toString() {
+		return "BindSelect{" +
+				"query='" + query + '\'' +
+				", vars=" + vars +
+				", bulkSize=" + bulkSize +
+				", source=" + source +
+				", direction=" + direction +
+				", includePropertyShapeValues=" + includePropertyShapeValues +
+				", varNames=" + varNames +
+				", scope=" + scope +
+				'}';
 	}
 }
