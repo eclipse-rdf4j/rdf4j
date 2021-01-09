@@ -192,6 +192,6 @@ public class Unique implements PlanNode {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(parent);
+		return Objects.hash(parent, Unique.class);
 	}
 }

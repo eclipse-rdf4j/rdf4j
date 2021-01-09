@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -248,5 +249,25 @@ public class TargetChainRetriever implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		TargetChainRetriever that = (TargetChainRetriever) o;
+		return statementPatterns.equals(that.statementPatterns) &&
+				removedStatementMatchers.equals(that.removedStatementMatchers) &&
+				query.equals(that.query) &&
+				scope == that.scope;
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(statementPatterns, removedStatementMatchers, query, scope);
 	}
 }

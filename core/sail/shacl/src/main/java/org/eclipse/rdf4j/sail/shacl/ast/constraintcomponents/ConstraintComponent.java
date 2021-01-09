@@ -45,8 +45,7 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	enum Scope {
 		none,
 		nodeShape,
-		propertyShape,
-		not
+		propertyShape
 	}
 
 	ConstraintComponent deepClone();

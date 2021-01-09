@@ -141,15 +141,31 @@ public class UnorderedSelect implements PlanNode {
 			return false;
 		}
 		UnorderedSelect that = (UnorderedSelect) o;
-		return connection.equals(that.connection) &&
-				Objects.equals(subject, that.subject) &&
-				Objects.equals(predicate, that.predicate) &&
-				Objects.equals(object, that.object) &&
-				mapper.equals(that.mapper);
+
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return ((MemoryStoreConnection) connection).getSail()
+					.equals(((MemoryStoreConnection) that.connection).getSail()) &&
+					Objects.equals(subject, that.subject) &&
+					Objects.equals(predicate, that.predicate) &&
+					Objects.equals(object, that.object) &&
+					mapper.equals(that.mapper);
+		} else {
+			return connection.equals(that.connection) &&
+					Objects.equals(subject, that.subject) &&
+					Objects.equals(predicate, that.predicate) &&
+					Objects.equals(object, that.object) &&
+					mapper.equals(that.mapper);
+		}
+
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(connection, subject, predicate, object, mapper);
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), subject, predicate, object, mapper,
+					UnorderedSelect.class);
+		}
+
+		return Objects.hash(connection, subject, predicate, object, mapper, UnorderedSelect.class);
 	}
 }

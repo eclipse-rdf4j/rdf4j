@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterIsObject;
@@ -51,9 +52,8 @@ public class DashAllObjects extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			SailConnection connection) {
 
-		return connectionsGroup
-				.getCachedNodeFor(new Unique(new UnorderedSelect(connection, null,
-						null, null, s -> new ValidationTuple(s.getObject(), scope, false))));
+		return new Unique(new UnorderedSelect(connection, null,
+				null, null, HelperTool.ObjectScopedMapper.getFunction(scope)));
 
 	}
 

@@ -139,7 +139,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(parent);
+		return Objects.hash(parent, Sort.class);
 	}
 
 	@Override

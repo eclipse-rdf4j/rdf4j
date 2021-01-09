@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
@@ -49,13 +50,11 @@ public class TargetClass extends Target {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
-			planNode = connectionsGroup
-					.getCachedNodeFor(new UnorderedSelect(connection, null,
-							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false)));
+			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
+					HelperTool.SubjectScopedMapper.getFunction(scope));
 		} else {
-			planNode = connectionsGroup.getCachedNodeFor(
-					new Select(connection, getQueryFragment("?a", "?c", null),
-							"?a", b -> new ValidationTuple(b.getValue("a"), scope, false)));
+			planNode = new Select(connection, getQueryFragment("?a", "?c", null),
+					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}
 
 		return new Unique(planNode);

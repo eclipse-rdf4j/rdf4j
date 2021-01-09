@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
@@ -76,7 +77,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+							clazz, HelperTool.SubjectScopedMapper.getFunction(Scope.nodeShape));
 
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", Scope.nodeShape,
@@ -131,7 +132,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-							clazz, s -> new ValidationTuple(s.getSubject(), scope, false));
+							clazz, HelperTool.SubjectScopedMapper.getFunction(scope));
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 							.getTargetFilter(connectionsGroup, deletedTypes);
@@ -166,7 +167,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// removed type statements that match clazz could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+						clazz, HelperTool.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				deletedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getTargetFilter(connectionsGroup, deletedTypes);
@@ -179,7 +180,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// added type statements that match clazz could affect sh:not
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
-						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+						clazz, HelperTool.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				addedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getTargetFilter(connectionsGroup, addedTypes);
@@ -196,7 +197,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// removed type statements that match clazz could affect sh:or
 		if (connectionsGroup.getStats().hasRemoved()) {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
-					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+					HelperTool.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			deletedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getTargetFilter(connectionsGroup, deletedTypes);
@@ -210,7 +211,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// added type statements that match clazz could affect sh:not
 		if (connectionsGroup.getStats().hasAdded()) {
 			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
-					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+					HelperTool.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			addedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getTargetFilter(connectionsGroup, addedTypes);

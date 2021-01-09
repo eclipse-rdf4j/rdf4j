@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -53,11 +54,8 @@ public class TargetObjectsOf extends Target {
 			SailConnection connection) {
 
 		PlanNode planNode = targetObjectsOf.stream()
-				.map(predicate -> {
-					return connectionsGroup
-							.getCachedNodeFor(new UnorderedSelect(connection, null,
-									predicate, null, s -> new ValidationTuple(s.getObject(), scope, false)));
-				})
+				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
+						predicate, null, HelperTool.ObjectScopedMapper.getFunction(scope)))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 

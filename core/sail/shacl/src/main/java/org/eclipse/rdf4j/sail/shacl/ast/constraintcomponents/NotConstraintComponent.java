@@ -69,7 +69,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			boolean negatePlan, boolean negateChildren, Scope scope) {
-		return not.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, !negatePlan, false, Scope.not);
+		return not.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, !negatePlan, false, scope);
 	}
 
 	@Override

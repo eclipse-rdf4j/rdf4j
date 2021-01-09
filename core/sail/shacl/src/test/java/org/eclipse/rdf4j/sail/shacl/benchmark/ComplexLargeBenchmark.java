@@ -48,11 +48,11 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ComplexLargeBenchmark {
 	{
@@ -255,6 +255,32 @@ public class ComplexLargeBenchmark {
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getData()) {
+					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
+	public void noPreloadingParallelNoCache() {
+
+		try {
+			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
 //			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {

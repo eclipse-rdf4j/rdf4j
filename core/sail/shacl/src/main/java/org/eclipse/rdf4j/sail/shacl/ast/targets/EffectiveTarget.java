@@ -150,7 +150,7 @@ public class EffectiveTarget {
 
 			EffectiveTargetObject last = chain.getLast();
 			if (last.target instanceof Target) {
-				return ((Target) last.target).getAdded(connectionsGroup, scope);
+				return connectionsGroup.getCachedNodeFor(((Target) last.target).getAdded(connectionsGroup, scope));
 			} else {
 				throw new ShaclUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
@@ -159,7 +159,7 @@ public class EffectiveTarget {
 		} else {
 			// complex chain
 
-			List<StatementMatcher> collect = chain.stream()
+			List<StatementMatcher> statementMatchers = chain.stream()
 					.flatMap(EffectiveTargetObject::getStatementMatcher)
 					.collect(Collectors.toList());
 
@@ -168,25 +168,28 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
+			TargetChainRetriever targetChainRetriever;
 			if (includeTargetsAffectedByRemoval && optional != null) {
-				return new TargetChainRetriever(
+				targetChainRetriever = new TargetChainRetriever(
 						connectionsGroup,
-						collect,
+						statementMatchers,
 						optional.getStatementMatcher().collect(Collectors.toList()),
 						query,
 						getVars(),
 						scope
 				);
 			} else {
-				return new TargetChainRetriever(
+				targetChainRetriever = new TargetChainRetriever(
 						connectionsGroup,
-						collect,
+						statementMatchers,
 						null,
 						query,
 						getVars(),
 						scope
 				);
 			}
+
+			return connectionsGroup.getCachedNodeFor(targetChainRetriever);
 
 		}
 

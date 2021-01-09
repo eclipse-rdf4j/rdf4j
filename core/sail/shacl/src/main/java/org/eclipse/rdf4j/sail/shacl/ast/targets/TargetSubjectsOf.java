@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -20,7 +21,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 public class TargetSubjectsOf extends Target {
 
@@ -53,11 +53,8 @@ public class TargetSubjectsOf extends Target {
 			SailConnection connection) {
 
 		PlanNode planNode = targetSubjectsOf.stream()
-				.map(predicate -> {
-					return connectionsGroup
-							.getCachedNodeFor(new UnorderedSelect(connection, null,
-									predicate, null, s -> new ValidationTuple(s.getSubject(), scope, false)));
-				})
+				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
+						predicate, null, HelperTool.SubjectScopedMapper.getFunction(scope)))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
