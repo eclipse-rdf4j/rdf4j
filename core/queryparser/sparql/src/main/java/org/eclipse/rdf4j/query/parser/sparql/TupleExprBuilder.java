@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -211,6 +210,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSubstr;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSum;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTimezone;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTz;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUUID;
@@ -1153,7 +1153,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	@Override
-	public Object visit(ASTGraphPatternGroup node, Object data) throws VisitorException {
+	public TupleExpr visit(ASTGraphPatternGroup node, Object data) throws VisitorException {
 		GraphPattern parentGP = graphPattern;
 		graphPattern = new GraphPattern(parentGP);
 
@@ -1305,23 +1305,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	@Override
-	public Object visit(ASTPathAlternative pathAltNode, Object data) throws VisitorException {
-
+	public TupleExpr visit(ASTPathAlternative pathAltNode, Object data) throws VisitorException {
+		// a path alternative consists of 1 or more PathSequence elements
 		int altCount = pathAltNode.jjtGetNumChildren();
 
 		if (altCount > 1) {
-			GraphPattern parentGP = graphPattern;
 			Union union = new Union();
 			Union currentUnion = union;
 			for (int i = 0; i < altCount - 1; i++) {
-				graphPattern = new GraphPattern(parentGP);
-				pathAltNode.jjtGetChild(i).jjtAccept(this, data);
-				TupleExpr arg = graphPattern.buildTupleExpr();
+				TupleExpr arg = (TupleExpr) pathAltNode.jjtGetChild(i).jjtAccept(this, data);
 				currentUnion.setLeftArg(arg);
 				if (i == altCount - 2) { // second-to-last item
-					graphPattern = new GraphPattern(parentGP);
-					pathAltNode.jjtGetChild(i + 1).jjtAccept(this, data);
-					arg = graphPattern.buildTupleExpr();
+					arg = (TupleExpr) pathAltNode.jjtGetChild(i + 1).jjtAccept(this, data);
 					currentUnion.setRightArg(arg);
 				} else {
 					Union newUnion = new Union();
@@ -1332,13 +1327,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 			// when using union to execute path expressions, the scope does not not change
 			union.setVariableScopeChange(false);
-			parentGP.addRequiredTE(union);
-			graphPattern = parentGP;
-		} else {
-			pathAltNode.jjtGetChild(0).jjtAccept(this, data);
+			return union;
 		}
-
-		return null;
+		return (TupleExpr) pathAltNode.jjtGetChild(0).jjtAccept(this, data);
 	}
 
 	@Override
@@ -1363,272 +1354,146 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 	}
 
-	private boolean checkInverse(Node node) {
-		if (node instanceof ASTPathElt) {
-			return ((ASTPathElt) node).isInverse();
-		} else {
-			Node parent = node.jjtGetParent();
-			if (parent != null) {
-				return checkInverse(parent);
-			} else {
-				return false;
-			}
+	private static class PathSequenceContext {
+
+		public Scope scope;
+		public Var contextVar;
+		public Var startVar;
+		public Var endVar;
+
+		public PathSequenceContext(PathSequenceContext pathSequenceContext) {
+			this.scope = pathSequenceContext.scope;
+			this.contextVar = pathSequenceContext.contextVar;
+			this.startVar = pathSequenceContext.startVar;
+			this.endVar = pathSequenceContext.endVar;
+		}
+
+		/**
+		 * 
+		 */
+		public PathSequenceContext() {
+			// TODO Auto-generated constructor stub
 		}
 	}
 
 	@Override
-	public Object visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
-		// FIXME the entire path sequence processing needs to be separated out and more cleanly implemented, as it is
-		// currently a very messy operation involving way too many if...else conditions and strange edge case handling.
-
-		Var subjVar = mapValueExprToVar(data);
-
-		// check if we should invert subject and object.
-		boolean invertSequence = checkInverse(pathSeqNode);
-
-		@SuppressWarnings("unchecked")
-		List<ValueExpr> objectList = (List<ValueExpr>) getObjectList(pathSeqNode).jjtAccept(this, null);
+	public TupleExpr visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
+		Var subjVar;
+		PathSequenceContext pathSequenceContext;
+		Var parentEndVar = null;
+		if (data instanceof PathSequenceContext) {
+			// nested path sequence
+			pathSequenceContext = (PathSequenceContext) data;
+			subjVar = pathSequenceContext.startVar;
+			parentEndVar = pathSequenceContext.endVar;
+		} else {
+			pathSequenceContext = new PathSequenceContext();
+			subjVar = mapValueExprToVar(data);
+		}
 
 		List<ASTPathElt> pathElements = pathSeqNode.getPathElements();
-
 		int pathLength = pathElements.size();
 
 		GraphPattern pathSequencePattern = new GraphPattern(graphPattern);
-
-		Scope scope = pathSequencePattern.getStatementPatternScope();
-		Var contextVar = pathSequencePattern.getContextVar();
-
-		Var startVar = subjVar;
+		pathSequenceContext.scope = pathSequencePattern.getStatementPatternScope();
+		pathSequenceContext.contextVar = pathSequencePattern.getContextVar();
 
 		for (int i = 0; i < pathLength; i++) {
 			ASTPathElt pathElement = pathElements.get(i);
 
-			ASTPathMod pathMod = pathElement.getPathMod();
+			pathSequenceContext.startVar = i == 0 ? subjVar : mapValueExprToVar(pathSequenceContext.endVar);
+			pathSequenceContext.endVar = createAnonVar();
 
-			long lowerBound = Long.MIN_VALUE;
-			long upperBound = Long.MIN_VALUE;
+			TupleExpr elementExpresion = (TupleExpr) pathElement.jjtAccept(this, pathSequenceContext);
+			// last item in sequence
+			if (i == pathLength - 1) {
+				if (parentEndVar == null) { // not a nested sequence
+					// replace last endVar occurrences with the actual (list of) object var(s)
 
-			if (pathMod != null) {
-				lowerBound = pathMod.getLowerBound();
-				upperBound = pathMod.getUpperBound();
+					// We handle this here instead of higher up in the tree visitor because here we have
+					// a reference to the the "temporary" endVar that needs to be replaced.
+					@SuppressWarnings("unchecked")
+					List<ValueExpr> objectList = (List<ValueExpr>) getObjectList(pathSeqNode).jjtAccept(this, null);
 
-				if (upperBound == Long.MIN_VALUE) {
-					upperBound = lowerBound;
-				} else if (lowerBound == Long.MIN_VALUE) {
-					lowerBound = upperBound;
-				}
-			}
-
-			if (pathElement.isNegatedPropertySet()) {
-
-				// create a temporary negated property set object and set the correct subject and object vars to
-				// continue the path sequence.
-
-				NegatedPropertySet nps = new NegatedPropertySet();
-				nps.setScope(scope);
-				nps.setSubjectVar(startVar);
-				nps.setContextVar(contextVar);
-
-				for (Node child : pathElement.jjtGetChildren()) {
-					if (child instanceof ASTPathMod) {
-						// skip the modifier
-						continue;
-					}
-					nps.addPropertySetElem((PropertySetElem) child.jjtAccept(this, data));
-				}
-
-				Var[] objVarReplacement = null;
-				if (i == pathLength - 1) {
-					if (objectList.contains(subjVar)) { // See SES-1685
-						Var objVar = mapValueExprToVar(objectList.get(objectList.indexOf(subjVar)));
-						objVarReplacement = new Var[] { objVar, createAnonVar() };
-						objectList.remove(objVar);
-						objectList.add(objVarReplacement[1]);
-					} else {
-						List<ValueExpr> collect = objectList.stream().map(o -> {
-							if (o instanceof Var) {
-								return o;
-							}
-
-							return mapValueExprToVar(o);
-						}).collect(Collectors.toList());
-
-						nps.setObjectList(collect);
+					for (ValueExpr objectItem : objectList) {
+						TupleExpr copy = elementExpresion.clone();
+						copy.visit(new VarReplacer(pathSequenceContext.endVar, mapValueExprToVar(objectItem)));
+						pathSequencePattern.addRequiredTE(copy);
 					}
 				} else {
-					// not last element in path.
-					Var nextVar = createAnonVar();
-
-					List<ValueExpr> nextVarList = new ArrayList<>();
-					nextVarList.add(nextVar);
-					nps.setObjectList(nextVarList);
-
-					startVar = nextVar;
+					// nested sequence, replace endVar with parent endVar
+					TupleExpr copy = elementExpresion.clone();
+					copy.visit(new VarReplacer(pathSequenceContext.endVar, parentEndVar));
+					pathSequencePattern.addRequiredTE(copy);
 				}
-
-				// convert the NegatedPropertySet to a proper TupleExpr
-				TupleExpr te = createTupleExprForNegatedPropertySet(nps, i, invertSequence);
-				if (objVarReplacement != null) {
-					SameTerm condition = new SameTerm(objVarReplacement[0], objVarReplacement[1]);
-					pathSequencePattern.addConstraint(condition);
-				}
-				for (ValueExpr object : objectList) {
-					Var objVar = mapValueExprToVar(object);
-					te = handlePathModifiers(scope, subjVar, te, objVar, contextVar, lowerBound, upperBound);
-				}
-				pathSequencePattern.addRequiredTE(te);
-
-			} else if (pathElement.isNestedPath()) {
-				GraphPattern parentGP = graphPattern;
-
-				graphPattern = new GraphPattern(parentGP);
-
-				if (i == pathLength - 1) {
-					// last element in the path
-					pathElement.jjtGetChild(0).jjtAccept(this, startVar);
-
-					TupleExpr te = graphPattern.buildTupleExpr();
-
-					for (ValueExpr object : objectList) {
-						Var objVar = mapValueExprToVar(object);
-						if (objVar.equals(subjVar)) { // see SES-1685
-							Var objVarReplacement = createAnonVar();
-							te = handlePathModifiers(scope, startVar, te, objVarReplacement, contextVar, lowerBound,
-									upperBound);
-							SameTerm condition = new SameTerm(objVar, objVarReplacement);
-							pathSequencePattern.addConstraint(condition);
-						} else {
-							te = handlePathModifiers(scope, startVar, te, objVar, contextVar, lowerBound, upperBound);
-						}
-						pathSequencePattern.addRequiredTE(te);
-					}
-				} else {
-					// not the last element in the path, introduce an anonymous var to connect.
-					Var nextVar = createAnonVar();
-
-					pathElement.jjtGetChild(0).jjtAccept(this, startVar);
-
-					TupleExpr te = graphPattern.buildTupleExpr();
-
-					// replace all object list occurrences with the intermediate var.
-
-					te = replaceVarOccurrence(te, objectList, nextVar);
-					te = handlePathModifiers(scope, startVar, te, nextVar, contextVar, lowerBound, upperBound);
-					pathSequencePattern.addRequiredTE(te);
-
-					startVar = nextVar;
-				}
-
-				graphPattern = parentGP;
 			} else {
-
-				ValueExpr pred = (ValueExpr) pathElement.jjtAccept(this, data);
-				Var predVar = mapValueExprToVar(pred);
-
-				TupleExpr te;
-
-				if (i == pathLength - 1) {
-					// last element in the path, connect to list of defined objects
-					for (ValueExpr object : objectList) {
-						Var objVar = mapValueExprToVar(object);
-						boolean replaced = false;
-
-						// See SES-1685 we introduce a new var and a SameTerm filter to avoid problems in cyclic paths
-						if (objVar.equals(subjVar)) {
-							objVar = createAnonVar();
-							replaced = true;
-						}
-						Var endVar = objVar;
-
-						if (invertSequence) {
-							endVar = subjVar;
-							// only swap startVar if it is not an intermediate var for a path sequence of length > 1
-							// or otherwise we'd create a reflexive path (possible in nested expressions)
-							if (subjVar.equals(startVar)
-									|| !(startVar.isAnonymous() && startVar.getName().startsWith("_anon_"))) {
-								startVar = objVar;
-							}
-						}
-
-						if (pathElement.isInverse()) {
-							te = new StatementPattern(scope, endVar, predVar, startVar, contextVar);
-							te = handlePathModifiers(scope, endVar, te, startVar, contextVar, lowerBound, upperBound);
-						} else {
-							te = new StatementPattern(scope, startVar, predVar, endVar, contextVar);
-							te = handlePathModifiers(scope, startVar, te, endVar, contextVar, lowerBound, upperBound);
-						}
-
-						if (replaced) {
-							SameTerm condition = new SameTerm(objVar, mapValueExprToVar(object));
-							pathSequencePattern.addConstraint(condition);
-						}
-						pathSequencePattern.addRequiredTE(te);
-
-					}
-				} else {
-					// not the last element in the path, introduce an anonymous var to connect.
-					Var nextVar = createAnonVar();
-
-					// first element in inverted sequence
-					if (invertSequence && startVar.equals(subjVar)) {
-						for (ValueExpr object : objectList) {
-							Var objVar = mapValueExprToVar(object);
-							startVar = objVar;
-
-							if (pathElement.isInverse()) {
-								Var temp = startVar;
-								startVar = nextVar;
-								nextVar = temp;
-							}
-
-							te = new StatementPattern(scope, startVar, predVar, nextVar, contextVar);
-							te = handlePathModifiers(scope, startVar, te, nextVar, contextVar, lowerBound, upperBound);
-
-							pathSequencePattern.addRequiredTE(te);
-						}
-					} else {
-
-						if (pathElement.isInverse()) {
-							final Var oldStartVar = startVar;
-							startVar = nextVar;
-							nextVar = oldStartVar;
-						}
-
-						te = new StatementPattern(scope, startVar, predVar, nextVar, contextVar);
-						te = handlePathModifiers(scope, startVar, te, nextVar, contextVar, lowerBound, upperBound);
-
-						pathSequencePattern.addRequiredTE(te);
-					}
-
-					// set the subject for the next element in the path.
-					startVar = (pathElement.isInverse() ? startVar : nextVar);
-				}
+				pathSequencePattern.addRequiredTE(elementExpresion);
 			}
 		}
-
-		// add the created path sequence to the graph pattern.
-		for (TupleExpr te : pathSequencePattern.getRequiredTEs()) {
-			graphPattern.addRequiredTE(te);
-		}
-		if (pathSequencePattern.getConstraints() != null) {
-			for (ValueExpr constraint : pathSequencePattern.getConstraints()) {
-				graphPattern.addConstraint(constraint);
-			}
-		}
-
-		return null;
+		return pathSequencePattern.buildTupleExpr();
 	}
 
-	private TupleExpr createTupleExprForNegatedPropertySet(NegatedPropertySet nps, int index, boolean invertSequence) {
-		Var subjVar = nps.getSubjectVar();
+	@Override
+	public TupleExpr visit(ASTPathElt pathElement, Object data) throws VisitorException {
+		final PathSequenceContext pathSequenceContext = (PathSequenceContext) data;
 
+		final Var startVar = pathElement.isInverse() ? pathSequenceContext.endVar : pathSequenceContext.startVar;
+		final Var endVar = pathElement.isInverse() ? pathSequenceContext.startVar : pathSequenceContext.endVar;
+
+		TupleExpr pathElementExpression;
+		if (pathElement.isNestedPath()) {
+			// child is a new (nested) path alternative
+			PathSequenceContext nestedContext = new PathSequenceContext(pathSequenceContext);
+			nestedContext.startVar = startVar;
+			nestedContext.endVar = endVar;
+
+			pathElementExpression = (TupleExpr) pathElement.jjtGetChild(0).jjtAccept(this, nestedContext);
+		} else if (pathElement.isNegatedPropertySet()) {
+			List<PropertySetElem> psElems = new ArrayList<>();
+			for (Node child : pathElement.jjtGetChildren()) {
+				if (child instanceof ASTPathMod) {
+					// skip the modifier
+					continue;
+				}
+				psElems.add((PropertySetElem) child.jjtAccept(this, pathSequenceContext));
+			}
+			pathElementExpression = createTupleExprForNegatedPropertySets(psElems, pathSequenceContext);
+		} else {
+			final ValueExpr pred = (ValueExpr) pathElement.jjtGetChild(0).jjtAccept(this, pathSequenceContext);
+			final Var predVar = mapValueExprToVar(pred);
+			pathElementExpression = new StatementPattern(pathSequenceContext.scope, startVar, predVar, endVar,
+					pathSequenceContext.contextVar);
+		}
+
+		final ASTPathMod pathMod = pathElement.getPathMod();
+		if (pathMod != null) {
+			long lowerBound = pathMod.getLowerBound();
+			long upperBound = pathMod.getUpperBound();
+
+			if (upperBound == Long.MIN_VALUE) {
+				upperBound = lowerBound;
+			} else if (lowerBound == Long.MIN_VALUE) {
+				lowerBound = upperBound;
+			}
+			pathElementExpression = handlePathModifiers(pathSequenceContext.scope, startVar, pathElementExpression,
+					endVar, pathSequenceContext.contextVar,
+					lowerBound, upperBound);
+		}
+
+		return pathElementExpression;
+	}
+
+	private TupleExpr createTupleExprForNegatedPropertySets(List<PropertySetElem> nps,
+			PathSequenceContext pathSequenceContext) {
+		Var subjVar = pathSequenceContext.startVar;
 		Var predVar = createAnonVar();
+		Var endVar = pathSequenceContext.endVar;
 
 		ValueExpr filterCondition = null;
 		ValueExpr filterConditionInverse = null;
 
 		// build (inverted) filter conditions for each negated path element.
-		for (PropertySetElem elem : nps.getPropertySetElems()) {
+		for (PropertySetElem elem : nps) {
 			ValueConstant predicate = elem.getPredicate();
 
 			if (elem.isInverse()) {
@@ -1648,49 +1513,21 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		TupleExpr patternMatch = null;
-
-		// build a regular statement pattern (or a join of several patterns if the object list has more than one item)
-		if (filterCondition != null) {
-			for (ValueExpr obj : nps.getObjectList()) {
-				Var patternSubjVar = subjVar;
-				Var patternObjVar = mapValueExprToVar(obj);
-				if (invertSequence) {
-					patternSubjVar = patternObjVar;
-					patternObjVar = subjVar;
-				}
-				if (patternMatch == null) {
-					patternMatch = new StatementPattern(nps.getScope(), patternSubjVar, predVar,
-							patternObjVar,
-							nps.getContextVar());
-				} else {
-					patternMatch = new Join(
-							new StatementPattern(nps.getScope(), patternSubjVar, predVar, patternObjVar,
-									nps.getContextVar()),
-							patternMatch);
-				}
-			}
-		}
+		TupleExpr patternMatch = new StatementPattern(pathSequenceContext.scope, subjVar, predVar,
+				endVar,
+				pathSequenceContext.contextVar);
 
 		TupleExpr patternMatchInverse = null;
 
-		// build a inverse statement pattern (or a join of several patterns if the object list has more than one item):
+		// build a inverse statement pattern if needed
 		if (filterConditionInverse != null) {
-			for (ValueExpr objVar : nps.getObjectList()) {
-				if (patternMatchInverse == null) {
-					patternMatchInverse = new StatementPattern(nps.getScope(), (Var) objVar, predVar, subjVar,
-							nps.getContextVar());
-				} else {
-					patternMatchInverse = new Join(
-							new StatementPattern(nps.getScope(), (Var) objVar, predVar, subjVar, nps.getContextVar()),
-							patternMatchInverse);
-				}
-			}
+			patternMatchInverse = new StatementPattern(pathSequenceContext.scope, endVar, predVar, subjVar,
+					pathSequenceContext.contextVar);
 		}
 
 		TupleExpr completeMatch = null;
 
-		if (patternMatch != null) {
+		if (filterCondition != null) {
 			completeMatch = new Filter(patternMatch, filterCondition);
 		}
 
@@ -1703,16 +1540,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		return completeMatch;
-	}
-
-	private TupleExpr replaceVarOccurrence(TupleExpr te, List<ValueExpr> objectList, Var replacementVar)
-			throws VisitorException {
-		for (ValueExpr objExpr : objectList) {
-			Var objVar = mapValueExprToVar(objExpr);
-			VarReplacer replacer = new VarReplacer(objVar, replacementVar);
-			te.visit(replacer);
-		}
-		return te;
 	}
 
 	private TupleExpr handlePathModifiers(Scope scope, Var subjVar, TupleExpr te, Var endVar, Var contextVar,
@@ -1884,7 +1711,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	@Override
 	public Object visit(ASTPropertyListPath propListNode, Object data) throws VisitorException {
 		Object subject = data;
-		ValueExpr verbPath = (ValueExpr) propListNode.getVerb().jjtAccept(this, data);
+		Object verbPath = propListNode.getVerb().jjtAccept(this, data);
 
 		if (verbPath instanceof Var) {
 
@@ -1898,9 +1725,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				Var objVar = mapValueExprToVar(object);
 				graphPattern.addRequiredSP(subjVar, predVar, objVar);
 			}
-		} else {
-			// path is a single IRI or a more complex path. handled by the
-			// visitor.
+		} else if (verbPath instanceof TupleExpr) {
+			graphPattern.addRequiredTE((TupleExpr) verbPath);
 		}
 
 		ASTPropertyListPath nextPropList = propListNode.getNextPropertyList();
@@ -2854,6 +2680,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		graphPattern.addRequiredTE(ret);
 
 		return ret;
+	}
+
+	@Override
+	public Object visit(ASTTriplesSameSubjectPath node, Object data) throws VisitorException {
+		return super.visit(node, data);
 	}
 
 	@Override
