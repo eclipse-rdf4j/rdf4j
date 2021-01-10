@@ -223,12 +223,13 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
+ * A SPARQL AST visitor implementation that creates a query algebra representation of the query.
+ * 
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
-@Deprecated
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
 
@@ -1354,28 +1355,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 	}
 
-	private static class PathSequenceContext {
-
-		public Scope scope;
-		public Var contextVar;
-		public Var startVar;
-		public Var endVar;
-
-		public PathSequenceContext(PathSequenceContext pathSequenceContext) {
-			this.scope = pathSequenceContext.scope;
-			this.contextVar = pathSequenceContext.contextVar;
-			this.startVar = pathSequenceContext.startVar;
-			this.endVar = pathSequenceContext.endVar;
-		}
-
-		/**
-		 * 
-		 */
-		public PathSequenceContext() {
-			// TODO Auto-generated constructor stub
-		}
-	}
-
 	@Override
 	public TupleExpr visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
 		Var subjVar;
@@ -1383,7 +1362,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		Var parentEndVar = null;
 		if (data instanceof PathSequenceContext) {
 			// nested path sequence
-			pathSequenceContext = (PathSequenceContext) data;
+			pathSequenceContext = new PathSequenceContext((PathSequenceContext) data);
 			subjVar = pathSequenceContext.startVar;
 			parentEndVar = pathSequenceContext.endVar;
 		} else {
@@ -1405,25 +1384,42 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			pathSequenceContext.endVar = createAnonVar();
 
 			TupleExpr elementExpresion = (TupleExpr) pathElement.jjtAccept(this, pathSequenceContext);
-			// last item in sequence
-			if (i == pathLength - 1) {
+
+			if (i == pathLength - 1) { // last item in sequence
 				if (parentEndVar == null) { // not a nested sequence
 					// replace last endVar occurrences with the actual (list of) object var(s)
 
 					// We handle this here instead of higher up in the tree visitor because here we have
-					// a reference to the the "temporary" endVar that needs to be replaced.
+					// a reference to the "temporary" endVar that needs to be replaced.
 					@SuppressWarnings("unchecked")
 					List<ValueExpr> objectList = (List<ValueExpr>) getObjectList(pathSeqNode).jjtAccept(this, null);
 
 					for (ValueExpr objectItem : objectList) {
+						Var objectVar = mapValueExprToVar(objectItem);
+						Var replacement = objectVar;
+						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
+							replacement = createAnonVar();
+						}
 						TupleExpr copy = elementExpresion.clone();
-						copy.visit(new VarReplacer(pathSequenceContext.endVar, mapValueExprToVar(objectItem)));
+						copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
+						if (!replacement.equals(objectVar)) {
+							SameTerm condition = new SameTerm(objectVar, replacement);
+							pathSequencePattern.addConstraint(condition);
+						}
 						pathSequencePattern.addRequiredTE(copy);
 					}
 				} else {
 					// nested sequence, replace endVar with parent endVar
+					Var replacement = parentEndVar;
+					if (parentEndVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
+						replacement = createAnonVar();
+					}
 					TupleExpr copy = elementExpresion.clone();
-					copy.visit(new VarReplacer(pathSequenceContext.endVar, parentEndVar));
+					copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
+					if (!replacement.equals(parentEndVar)) {
+						SameTerm condition = new SameTerm(parentEndVar, replacement);
+						pathSequencePattern.addConstraint(condition);
+					}
 					pathSequencePattern.addRequiredTE(copy);
 				}
 			} else {
@@ -1554,6 +1550,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					// create set of unions for all path lengths between lower and upper bound.
 					Union union = new Union();
+					union.setVariableScopeChange(false);
 					Union currentUnion = union;
 
 					for (long length = lowerBound; length < upperBound; length++) {
@@ -1577,10 +1574,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 						pelist.addElement(pe);
 					}
 
-					result = new Distinct(new Projection(union, pelist, false));
+					result = new Distinct(new Projection(union, pelist));
 				} else {
 					// upperbound is abitrary-length
-
 					result = new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
 							lowerBound);
 				}
@@ -1704,6 +1700,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				Var replacementVar = replacement.clone();
 				parent.replaceChildNode(var, replacementVar);
 				replacementVar.setParentNode(parent);
+			}
+		}
+
+		@Override
+		public void meet(ProjectionElem node) throws VisitorException {
+			if (node.getSourceName().equals(toBeReplaced.getName())) {
+				node.setSourceName(replacement.getName());
+				node.setTargetName(replacement.getName());
 			}
 		}
 	}
@@ -2701,5 +2705,35 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		return new ValueConstant(triple);
+	}
+
+	/**
+	 * Internal class for keeping track of contextual information relevant for path sequence processing: current scope,
+	 * context, start and end variable of the path expression. Passed through to visitor methods via the
+	 * <code>data</code> input parameter.
+	 * 
+	 * @author Jeen Broekstra
+	 */
+	private static class PathSequenceContext {
+
+		public Scope scope;
+		public Var contextVar;
+		public Var startVar;
+		public Var endVar;
+
+		/**
+		 * Create a new {@link PathSequenceContext} that is a copy of the supplied <code>pathSequenceContext</code>.
+		 * 
+		 * @param pathSequenceContext the {@link PathSequenceContext} to copy.
+		 */
+		public PathSequenceContext(PathSequenceContext pathSequenceContext) {
+			this.scope = pathSequenceContext.scope;
+			this.contextVar = pathSequenceContext.contextVar;
+			this.startVar = pathSequenceContext.startVar;
+			this.endVar = pathSequenceContext.endVar;
+		}
+
+		public PathSequenceContext() {
+		}
 	}
 }
