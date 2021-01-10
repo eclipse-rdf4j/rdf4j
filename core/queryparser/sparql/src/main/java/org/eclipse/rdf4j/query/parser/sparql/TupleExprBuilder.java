@@ -1541,109 +1541,30 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	private TupleExpr handlePathModifiers(Scope scope, Var subjVar, TupleExpr te, Var endVar, Var contextVar,
 			long lowerBound, long upperBound) throws VisitorException {
 
-		TupleExpr result = te;
-
-		if (lowerBound >= 0L) {
-			if (lowerBound < upperBound) {
-				if (upperBound < Long.MAX_VALUE) {
-					// upperbound is fixed-length
-
-					// create set of unions for all path lengths between lower and upper bound.
-					Union union = new Union();
-					union.setVariableScopeChange(false);
-					Union currentUnion = union;
-
-					for (long length = lowerBound; length < upperBound; length++) {
-
-						TupleExpr path = createPath(scope, subjVar, te, endVar, contextVar, length);
-
-						currentUnion.setLeftArg(path);
-						if (length == upperBound - 1) {
-							path = createPath(scope, subjVar, te, endVar, contextVar, length + 1);
-							currentUnion.setRightArg(path);
-						} else {
-							Union nextUnion = new Union();
-							currentUnion.setRightArg(nextUnion);
-							currentUnion = nextUnion;
-						}
-					}
-
-					ProjectionElemList pelist = new ProjectionElemList();
-					for (String name : union.getAssuredBindingNames()) {
-						ProjectionElem pe = new ProjectionElem(name);
-						pelist.addElement(pe);
-					}
-
-					result = new Distinct(new Projection(union, pelist));
-				} else {
-					// upperbound is abitrary-length
-					result = new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
-							lowerBound);
-				}
-			} else {
-				// create single path of fixed length.
-				TupleExpr path = createPath(scope, subjVar, te, endVar, contextVar, lowerBound);
-				result = path;
-			}
+		// * and + modifiers
+		if (upperBound == Long.MAX_VALUE) {
+			// upperbound is abitrary-length
+			return new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(), contextVar,
+					lowerBound);
 		}
 
-		return result;
-	}
-
-	private TupleExpr createPath(Scope scope, Var subjVar, TupleExpr pathExpression, Var endVar, Var contextVar,
-			long length) throws VisitorException {
-		if (pathExpression instanceof StatementPattern) {
-			Var predVar = ((StatementPattern) pathExpression).getPredicateVar();
-
-			if (length == 0L) {
-				return new ZeroLengthPath(scope, subjVar, endVar, contextVar);
-			} else {
-				GraphPattern gp = new GraphPattern();
-				gp.setContextVar(contextVar);
-				gp.setStatementPatternScope(scope);
-
-				Var nextVar = null;
-
-				for (long i = 0L; i < length; i++) {
-					if (i < length - 1) {
-						nextVar = createAnonVar();
-					} else {
-						nextVar = endVar;
-					}
-					gp.addRequiredSP(subjVar, predVar, nextVar);
-					subjVar = nextVar;
-				}
-				return gp.buildTupleExpr();
+		// ? modifier
+		if (lowerBound == 0L && upperBound == 1L) {
+			final Union zeroOne = new Union();
+			zeroOne.setVariableScopeChange(false);
+			zeroOne.setLeftArg(new ZeroLengthPath(scope, subjVar, endVar, contextVar));
+			zeroOne.setRightArg(te);
+			ProjectionElemList pelist = new ProjectionElemList();
+			for (String name : zeroOne.getAssuredBindingNames()) {
+				ProjectionElem pe = new ProjectionElem(name);
+				pelist.addElement(pe);
 			}
-		} else {
-			if (length == 0L) {
-				return new ZeroLengthPath(scope, subjVar, endVar, contextVar);
-			} else {
-				GraphPattern gp = new GraphPattern();
-				gp.setContextVar(contextVar);
-				gp.setStatementPatternScope(scope);
 
-				Var nextVar = null;
-				for (long i = 0L; i < length; i++) {
-					if (i < length - 1L) {
-						nextVar = createAnonVar();
-					} else {
-						nextVar = endVar;
-					}
-
-					// create a clone of the path expression.
-					TupleExpr clone = pathExpression.clone();
-
-					VarReplacer replacer = new VarReplacer(endVar, nextVar);
-					clone.visit(replacer);
-
-					gp.addRequiredTE(clone);
-
-					subjVar = nextVar;
-				}
-				return gp.buildTupleExpr();
-			}
+			return new Distinct(new Projection(zeroOne, pelist));
 		}
+
+		// nothing to modify
+		return te;
 	}
 
 	protected class VarCollector extends AbstractQueryModelVisitor<VisitorException> {

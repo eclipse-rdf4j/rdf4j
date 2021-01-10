@@ -2025,6 +2025,32 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	@Test
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/2727
+	 */
+	public void testNestedInversePropertyPathWithZeroLength() throws Exception {
+		String insert = "insert data {\n"
+				+ "    <urn:1> <urn:prop> <urn:object> .\n"
+				+ "    <urn:2> <urn:prop> <urn:mid:1> .\n"
+				+ "    <urn:mid:1> <urn:prop> <urn:object> .\n"
+				+ "    <urn:3> <urn:prop> <urn:mid:2> .\n"
+				+ "    <urn:mid:2> <urn:prop> <urn:mid:3> .\n"
+				+ "    <urn:mid:3> <urn:prop> <urn:object> .\n"
+				+ "}";
+
+		String query = "select * where { \n"
+				+ "    <urn:object> (^<urn:prop>)? ?o .\n"
+				+ "}";
+
+		conn.prepareUpdate(insert).execute();
+
+		TupleQuery tq = conn.prepareTupleQuery(query);
+
+		List<BindingSet> result = QueryResults.asList(tq.evaluate());
+		assertThat(result).hasSize(4);
+	}
+
+	@Test
 	public void testSES2147PropertyPathsWithIdenticalSubsPreds() throws Exception {
 
 		StringBuilder data = new StringBuilder();
