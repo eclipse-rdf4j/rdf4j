@@ -66,6 +66,8 @@ public class QueryBenchmark {
 	private static final String query2;
 	private static final String query3;
 	private static final String query4;
+	private static final String query7_pathexpression1;
+	private static final String query8_pathexpression2;
 
 	static {
 		try {
@@ -73,6 +75,10 @@ public class QueryBenchmark {
 			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
+			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
+					StandardCharsets.UTF_8);
+			query8_pathexpression2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"),
+					StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -82,7 +88,7 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.groupByQuery") // adapt to run other benchmark tests
+				.include("QueryBenchmark") // adapt to run other benchmark tests
 				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
@@ -189,6 +195,25 @@ public class QueryBenchmark {
 		}
 		return hasStatement();
 
+	}
+
+	@Benchmark
+	public List<BindingSet> pathExpressionQuery1() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return Iterations.asList(connection
+					.prepareTupleQuery(query7_pathexpression1)
+					.evaluate());
+		}
+	}
+
+	@Benchmark
+	public List<BindingSet> pathExpressionQuery2() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return Iterations.asList(connection
+					.prepareTupleQuery(query8_pathexpression2)
+					.evaluate());
+		}
 	}
 
 	private boolean hasStatement() {
