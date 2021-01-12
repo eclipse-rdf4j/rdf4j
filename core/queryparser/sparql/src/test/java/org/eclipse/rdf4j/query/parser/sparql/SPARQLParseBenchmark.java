@@ -68,4 +68,21 @@ public class SPARQLParseBenchmark {
 
 	}
 
+	@Benchmark
+	public int complexPathExpressionQuery() {
+		int temp = 0;
+		for (int i = 0; i < 1000; i++) {
+			String sparqlQuery = "select * where { ?a (<foo:comment>/^(<foo:subClassOf>|(<foo:type>/<foo:label>))/<foo:type>)* ?b }";
+
+			SPARQLParser parser = new SPARQLParser();
+
+			ParsedQuery q = parser.parseQuery(sparqlQuery, null);
+
+			temp += q.hashCode();
+		}
+
+		return temp;
+
+	}
+
 }
