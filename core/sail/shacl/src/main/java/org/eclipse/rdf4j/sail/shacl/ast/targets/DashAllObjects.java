@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 public class DashAllObjects extends Target {
 
@@ -51,9 +50,8 @@ public class DashAllObjects extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			SailConnection connection) {
 
-		return connectionsGroup
-				.getCachedNodeFor(new Unique(new UnorderedSelect(connection, null,
-						null, null, s -> new ValidationTuple(s.getObject(), scope, false))));
+		return new Unique(new UnorderedSelect(connection, null,
+				null, null, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)));
 
 	}
 

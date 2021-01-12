@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.Objects;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -72,6 +73,28 @@ public class StatementMatcher {
 		return objectName == null && objectValue == null;
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		StatementMatcher that = (StatementMatcher) o;
+		return Objects.equals(subjectName, that.subjectName) &&
+				Objects.equals(subjectValue, that.subjectValue) &&
+				Objects.equals(predicateName, that.predicateName) &&
+				Objects.equals(predicateValue, that.predicateValue) &&
+				Objects.equals(objectName, that.objectName) &&
+				Objects.equals(objectValue, that.objectValue);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(subjectName, subjectValue, predicateName, predicateValue, objectName, objectValue);
+	}
+
 	public static class Variable {
 		String name;
 		Value value;
@@ -104,6 +127,43 @@ public class StatementMatcher {
 		public static Variable getRandomInstance() {
 			return new Variable(UUID.randomUUID().toString().replace("-", ""));
 		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			Variable variable = (Variable) o;
+			return Objects.equals(name, variable.name) &&
+					Objects.equals(value, variable.value);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(name, value);
+		}
+
+		@Override
+		public String toString() {
+			return "Variable{" +
+					"name='" + name + '\'' +
+					", value=" + value +
+					'}';
+		}
 	}
 
+	@Override
+	public String toString() {
+		return "StatementMatcher{" +
+				"subjectName='" + subjectName + '\'' +
+				", subjectValue=" + subjectValue +
+				", predicateName='" + predicateName + '\'' +
+				", predicateValue=" + predicateValue +
+				", objectName='" + objectName + '\'' +
+				", objectValue=" + objectValue +
+				'}';
+	}
 }

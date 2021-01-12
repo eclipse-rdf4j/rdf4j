@@ -49,13 +49,11 @@ public class TargetClass extends Target {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
-			planNode = connectionsGroup
-					.getCachedNodeFor(new UnorderedSelect(connection, null,
-							RDF.TYPE, clazz, s -> new ValidationTuple(s.getSubject(), scope, false)));
+			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
-			planNode = connectionsGroup.getCachedNodeFor(
-					new Select(connection, getQueryFragment("?a", "?c", null),
-							"?a", b -> new ValidationTuple(b.getValue("a"), scope, false)));
+			planNode = new Select(connection, getQueryFragment("?a", "?c", null),
+					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}
 
 		return new Unique(planNode);

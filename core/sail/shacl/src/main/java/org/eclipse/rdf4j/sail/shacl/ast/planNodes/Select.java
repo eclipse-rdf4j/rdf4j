@@ -39,6 +39,7 @@ public class Select implements PlanNode {
 
 	private final String query;
 	private final boolean sorted;
+	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -57,6 +58,7 @@ public class Select implements PlanNode {
 		sorted = orderBy != null;
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
+
 	}
 
 	@Override
@@ -125,6 +127,8 @@ public class Select implements PlanNode {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
 					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
@@ -169,13 +173,32 @@ public class Select implements PlanNode {
 			return false;
 		}
 		Select select = (Select) o;
-		return connection.equals(select.connection) &&
-				mapper.equals(select.mapper) &&
-				query.equals(select.query);
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
+		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
+			return sorted == select.sorted &&
+					((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) select.connection).getSail())
+					&&
+					mapper.equals(select.mapper) &&
+					query.equals(select.query);
+		} else {
+			return sorted == select.sorted &&
+					connection.equals(select.connection) &&
+					mapper.equals(select.mapper) &&
+					query.equals(select.query);
+		}
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(connection, mapper, query);
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted);
+		} else {
+			return Objects.hash(connection, mapper, query, sorted);
+		}
+
 	}
 }

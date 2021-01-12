@@ -121,11 +121,6 @@ public class Sort implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "Sort";
-	}
-
-	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
@@ -139,7 +134,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(parent);
+		return Objects.hash(parent, Sort.class);
 	}
 
 	@Override
@@ -156,5 +151,12 @@ public class Sort implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public String toString() {
+		return "Sort{" +
+				"parent=" + parent +
+				'}';
 	}
 }

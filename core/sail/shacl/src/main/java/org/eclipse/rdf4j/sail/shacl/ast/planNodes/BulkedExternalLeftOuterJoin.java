@@ -158,6 +158,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 		leftNode.getPlanAsGraphvizDot(stringBuilder);
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
 					+ getId() + " [label=\"right\"]").append("\n");

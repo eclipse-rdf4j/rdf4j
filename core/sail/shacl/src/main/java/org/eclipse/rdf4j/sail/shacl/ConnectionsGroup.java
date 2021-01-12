@@ -18,6 +18,8 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 
 /**
  *
@@ -44,7 +46,7 @@ public class ConnectionsGroup implements Closeable {
 	private final ConcurrentLinkedQueue<SailConnection> connectionsToClose = new ConcurrentLinkedQueue<>();
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
-	private final Map<PlanNode, BufferedSplitter> selectNodeCache = new HashMap<>();
+	private final Map<PlanNode, BufferedSplitter> nodeCache = new HashMap<>();
 
 	ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
@@ -86,13 +88,17 @@ public class ConnectionsGroup implements Closeable {
 		return baseConnection;
 	}
 
-	synchronized public PlanNode getCachedNodeFor(PlanNode select) {
+	synchronized public PlanNode getCachedNodeFor(PlanNode planNode) {
 
 		if (!transactionSettings.isCacheSelectNodes()) {
-			return select;
+			return planNode;
 		}
 
-		BufferedSplitter bufferedSplitter = selectNodeCache.computeIfAbsent(select, BufferedSplitter::new);
+		if (planNode instanceof UnorderedSelect || planNode instanceof UnBufferedPlanNode) {
+			return planNode;
+		}
+
+		BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, BufferedSplitter::new);
 
 		return bufferedSplitter.getPlanNode();
 	}

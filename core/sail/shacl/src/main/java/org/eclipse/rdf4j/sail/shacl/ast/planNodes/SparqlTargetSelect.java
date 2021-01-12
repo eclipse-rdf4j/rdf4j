@@ -109,6 +109,8 @@ public class SparqlTargetSelect implements PlanNode {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
 					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
@@ -139,6 +141,8 @@ public class SparqlTargetSelect implements PlanNode {
 		}
 		SparqlTargetSelect select = (SparqlTargetSelect) o;
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		return Objects.equals(
 				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
 						: connection,
@@ -151,6 +155,8 @@ public class SparqlTargetSelect implements PlanNode {
 	@Override
 	public int hashCode() {
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(System.identityHashCode(((MemoryStoreConnection) connection).getSail()), query);
 		}

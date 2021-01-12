@@ -3,9 +3,12 @@ package org.eclipse.rdf4j.sail.shacl.ast.targets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
@@ -78,9 +81,9 @@ public class EffectiveTarget {
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		return new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, (bindingSet) -> {
-			return new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
-		}, 100, direction, includePropertyShapeValues, rdfsSubClassOfReasoner));
+		return connectionsGroup.getCachedNodeFor(
+				new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
+						100, direction, includePropertyShapeValues)));
 	}
 
 	private List<StatementMatcher.Variable> getVars() {
@@ -138,7 +141,7 @@ public class EffectiveTarget {
 		List<String> varNames = getVars().stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		return new Select(connectionsGroup.getBaseConnection(), query, null,
-				b -> new ValidationTuple(b, varNames, scope, false));
+				new AllTargetsBindingSetMapper(varNames, scope, false));
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
@@ -150,7 +153,7 @@ public class EffectiveTarget {
 
 			EffectiveTargetObject last = chain.getLast();
 			if (last.target instanceof Target) {
-				return ((Target) last.target).getAdded(connectionsGroup, scope);
+				return connectionsGroup.getCachedNodeFor(((Target) last.target).getAdded(connectionsGroup, scope));
 			} else {
 				throw new ShaclUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
@@ -159,7 +162,7 @@ public class EffectiveTarget {
 		} else {
 			// complex chain
 
-			List<StatementMatcher> collect = chain.stream()
+			List<StatementMatcher> statementMatchers = chain.stream()
 					.flatMap(EffectiveTargetObject::getStatementMatcher)
 					.collect(Collectors.toList());
 
@@ -168,25 +171,28 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
+			TargetChainRetriever targetChainRetriever;
 			if (includeTargetsAffectedByRemoval && optional != null) {
-				return new TargetChainRetriever(
+				targetChainRetriever = new TargetChainRetriever(
 						connectionsGroup,
-						collect,
+						statementMatchers,
 						optional.getStatementMatcher().collect(Collectors.toList()),
 						query,
 						getVars(),
 						scope
 				);
 			} else {
-				return new TargetChainRetriever(
+				targetChainRetriever = new TargetChainRetriever(
 						connectionsGroup,
-						collect,
+						statementMatchers,
 						null,
 						query,
 						getVars(),
 						scope
 				);
 			}
+
+			return connectionsGroup.getCachedNodeFor(targetChainRetriever);
 
 		}
 
@@ -270,6 +276,42 @@ public class EffectiveTarget {
 			} else {
 				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
 			}
+		}
+	}
+
+	class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
+		List<String> varNames;
+		ConstraintComponent.Scope scope;
+		boolean hasValue;
+
+		public AllTargetsBindingSetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue) {
+			this.varNames = varNames;
+			this.scope = scope;
+			this.hasValue = hasValue;
+		}
+
+		@Override
+		public ValidationTuple apply(BindingSet b) {
+			return new ValidationTuple(b, varNames, scope, false);
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			AllTargetsBindingSetMapper that = (AllTargetsBindingSetMapper) o;
+			return hasValue == that.hasValue &&
+					varNames.equals(that.varNames) &&
+					scope == that.scope;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(varNames, scope, hasValue, AllTargetsBindingSetMapper.class);
 		}
 	}
 

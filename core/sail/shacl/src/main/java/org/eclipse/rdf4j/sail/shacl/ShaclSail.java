@@ -359,30 +359,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-//	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
-//
-//		SailRepository shapesRepoCache = new SailRepository(
-//				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore()));
-//
-//		shapesRepoCache.init();
-//		List<NodeShape> shapes;
-//
-//		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
-//			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
-//			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
-//				shapesRepoCacheConnection.add(statements);
-//			}
-//
-//			runInferencingSparqlQueries(shapesRepoCacheConnection);
-//			shapesRepoCacheConnection.commit();
-//
-//			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
-//		}
-//
-//		shapesRepoCache.shutDown();
-//		return shapes;
-//	}
-
 	@Experimental
 	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 
@@ -583,25 +559,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		return null;
 	}
-
-//	Lock convertToReadLock(Lock writeLockStamp) {
-//		assert writeLockStamp != null;
-//
-//		writeLockStamp.release();
-//
-//		Lock readLock = null;
-//		while (readLock == null) {
-//			try {
-//				readLock = lockManager.getReadLock();
-//			} catch (InterruptedException e) {
-//				e.printStackTrace();
-//			}
-//		}
-//
-//		return readLock;
-//
-//
-//	}
 
 	void setShapes(List<Shape> shapes) {
 		this.shapes = shapes;

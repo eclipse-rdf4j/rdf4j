@@ -76,7 +76,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-							clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+							clazz, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", Scope.nodeShape,
@@ -131,7 +131,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-							clazz, s -> new ValidationTuple(s.getSubject(), scope, false));
+							clazz, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 							.getTargetFilter(connectionsGroup, deletedTypes);
@@ -166,7 +166,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// removed type statements that match clazz could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
-						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+						clazz, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				deletedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getTargetFilter(connectionsGroup, deletedTypes);
@@ -179,7 +179,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			// added type statements that match clazz could affect sh:not
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
-						clazz, s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+						clazz, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				addedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getTargetFilter(connectionsGroup, addedTypes);
@@ -196,7 +196,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// removed type statements that match clazz could affect sh:or
 		if (connectionsGroup.getStats().hasRemoved()) {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
-					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			deletedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getTargetFilter(connectionsGroup, deletedTypes);
@@ -210,7 +210,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// added type statements that match clazz could affect sh:not
 		if (connectionsGroup.getStats().hasAdded()) {
 			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
-					s -> new ValidationTuple(s.getSubject(), Scope.nodeShape, false));
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			addedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getTargetFilter(connectionsGroup, addedTypes);

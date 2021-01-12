@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 public class TargetObjectsOf extends Target {
 
@@ -53,11 +52,8 @@ public class TargetObjectsOf extends Target {
 			SailConnection connection) {
 
 		PlanNode planNode = targetObjectsOf.stream()
-				.map(predicate -> {
-					return connectionsGroup
-							.getCachedNodeFor(new UnorderedSelect(connection, null,
-									predicate, null, s -> new ValidationTuple(s.getObject(), scope, false)));
-				})
+				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
+						predicate, null, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
