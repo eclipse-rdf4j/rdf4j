@@ -141,7 +141,7 @@ public class EffectiveTarget {
 		List<String> varNames = getVars().stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		return new Select(connectionsGroup.getBaseConnection(), query, null,
-				new AllTargetsBindinsetMapper(varNames, scope, false));
+				new AllTargetsBindingSetMapper(varNames, scope, false));
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
@@ -279,12 +279,12 @@ public class EffectiveTarget {
 		}
 	}
 
-	class AllTargetsBindinsetMapper implements Function<BindingSet, ValidationTuple> {
+	class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
 		List<String> varNames;
 		ConstraintComponent.Scope scope;
 		boolean hasValue;
 
-		public AllTargetsBindinsetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue) {
+		public AllTargetsBindingSetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue) {
 			this.varNames = varNames;
 			this.scope = scope;
 			this.hasValue = hasValue;
@@ -303,7 +303,7 @@ public class EffectiveTarget {
 			if (o == null || getClass() != o.getClass()) {
 				return false;
 			}
-			AllTargetsBindinsetMapper that = (AllTargetsBindinsetMapper) o;
+			AllTargetsBindingSetMapper that = (AllTargetsBindingSetMapper) o;
 			return hasValue == that.hasValue &&
 					varNames.equals(that.varNames) &&
 					scope == that.scope;
@@ -311,7 +311,7 @@ public class EffectiveTarget {
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(varNames, scope, hasValue, AllTargetsBindinsetMapper.class);
+			return Objects.hash(varNames, scope, hasValue, AllTargetsBindingSetMapper.class);
 		}
 	}
 

@@ -127,6 +127,8 @@ public class Select implements PlanNode {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
 					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
@@ -171,6 +173,8 @@ public class Select implements PlanNode {
 			return false;
 		}
 		Select select = (Select) o;
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
 			return sorted == select.sorted &&
 					((MemoryStoreConnection) connection).getSail()
@@ -188,6 +192,8 @@ public class Select implements PlanNode {
 
 	@Override
 	public int hashCode() {
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted);
 		} else {

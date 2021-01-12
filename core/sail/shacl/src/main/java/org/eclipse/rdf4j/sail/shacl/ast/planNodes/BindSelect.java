@@ -271,6 +271,8 @@ public class BindSelect implements PlanNode {
 		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
 				.append("\n");
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder
 					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
@@ -311,6 +313,9 @@ public class BindSelect implements PlanNode {
 			return false;
 		}
 		BindSelect that = (BindSelect) o;
+
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return bulkSize == that.bulkSize &&
 					includePropertyShapeValues == that.includePropertyShapeValues &&
@@ -339,6 +344,8 @@ public class BindSelect implements PlanNode {
 
 	@Override
 	public int hashCode() {
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize,
 					source, direction, includePropertyShapeValues);

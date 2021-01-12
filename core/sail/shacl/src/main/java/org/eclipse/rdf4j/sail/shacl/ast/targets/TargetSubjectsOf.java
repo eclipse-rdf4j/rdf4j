@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -54,7 +53,7 @@ public class TargetSubjectsOf extends Target {
 
 		PlanNode planNode = targetSubjectsOf.stream()
 				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
-						predicate, null, HelperTool.SubjectScopedMapper.getFunction(scope)))
+						predicate, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)))
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 

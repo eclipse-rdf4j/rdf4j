@@ -404,6 +404,41 @@ public class ComplexLargeBenchmark {
 	}
 
 	@Benchmark
+	public void noPreloadingRevalidateLowMem() {
+
+		try {
+			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+
+			((ShaclSail) repository.getSail()).disableValidation();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getData()) {
+					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+			}
+
+			((ShaclSail) repository.getSail()).enableValidation();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				((ShaclSailConnection) connection.getSailConnection()).revalidate();
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
 	public void noPreloadingBulk() {
 
 		try {

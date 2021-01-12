@@ -157,6 +157,8 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
 					+ getId() + " [label=\"filter source\"]").append("\n");
@@ -203,6 +205,8 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			return false;
 		}
 		ExternalPredicateObjectFilter that = (ExternalPredicateObjectFilter) o;
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return returnMatching == that.returnMatching &&
 					((MemoryStoreConnection) connection).getSail()
@@ -224,6 +228,8 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 	@Override
 	public int hashCode() {
+		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnObject, filterOnPredicate,
 					filterOn, parent, returnMatching);

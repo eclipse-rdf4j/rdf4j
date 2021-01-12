@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterIsSubject;
@@ -50,7 +49,7 @@ public class DashAllSubjects extends Target {
 			SailConnection connection) {
 
 		return new Unique(new UnorderedSelect(connection, null,
-				null, null, HelperTool.SubjectScopedMapper.getFunction(scope)));
+				null, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)));
 
 	}
 

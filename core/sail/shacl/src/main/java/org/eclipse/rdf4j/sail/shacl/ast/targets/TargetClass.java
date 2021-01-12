@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
@@ -51,7 +50,7 @@ public class TargetClass extends Target {
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
-					HelperTool.SubjectScopedMapper.getFunction(scope));
+					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
 			planNode = new Select(connection, getQueryFragment("?a", "?c", null),
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
