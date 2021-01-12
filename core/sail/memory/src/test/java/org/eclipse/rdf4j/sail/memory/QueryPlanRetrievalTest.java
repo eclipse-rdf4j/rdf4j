@@ -84,37 +84,34 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
 			String actual = query.explain(Explanation.Level.Unoptimized).toString();
-
-			String expected = "Projection\n" +
-					"╠══ProjectionElemList\n" +
-					"║     ProjectionElem \"a\"\n" +
-					"╚══Filter\n" +
-					"   ├──Compare (!=)\n" +
-					"   │     Var (name=c)\n" +
-					"   │     Var (name=d)\n" +
-					"   └──LeftJoin\n" +
-					"      ╠══Join\n" +
-					"      ║  ├──Join\n" +
-					"      ║  │  ╠══LeftJoin (new scope)\n" +
-					"      ║  │  ║  ├──SingletonSet\n" +
-					"      ║  │  ║  └──StatementPattern\n" +
-					"      ║  │  ║        Var (name=d)\n" +
-					"      ║  │  ║        Var (name=e)\n" +
-					"      ║  │  ║        Var (name=f)\n" +
-					"      ║  │  ╚══StatementPattern\n" +
-					"      ║  │        Var (name=a)\n" +
-					"      ║  │        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"      ║  │        Var (name=c)\n" +
-					"      ║  └──StatementPattern\n" +
-					"      ║        Var (name=a)\n" +
-					"      ║        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"      ║        Var (name=d)\n" +
-					"      ╚══StatementPattern\n" +
-					"            Var (name=d)\n" +
-					"            Var (name=e)\n" +
-					"            Var (name=f)\n";
+			String expected = "Projection\n"
+					+ "╠══ProjectionElemList\n"
+					+ "║     ProjectionElem \"a\"\n"
+					+ "╚══Filter\n"
+					+ "   ├──Compare (!=)\n"
+					+ "   │     Var (name=c)\n"
+					+ "   │     Var (name=d)\n"
+					+ "   └──LeftJoin\n"
+					+ "      ╠══Join\n"
+					+ "      ║  ├──LeftJoin (new scope)\n"
+					+ "      ║  │  ╠══SingletonSet\n"
+					+ "      ║  │  ╚══StatementPattern\n"
+					+ "      ║  │        Var (name=d)\n"
+					+ "      ║  │        Var (name=e)\n"
+					+ "      ║  │        Var (name=f)\n"
+					+ "      ║  └──Join\n"
+					+ "      ║     ╠══StatementPattern\n"
+					+ "      ║     ║     Var (name=a)\n"
+					+ "      ║     ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "      ║     ║     Var (name=c)\n"
+					+ "      ║     ╚══StatementPattern\n"
+					+ "      ║           Var (name=a)\n"
+					+ "      ║           Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "      ║           Var (name=d)\n"
+					+ "      ╚══StatementPattern\n"
+					+ "            Var (name=d)\n"
+					+ "            Var (name=e)\n"
+					+ "            Var (name=f)\n";
 
 			Assert.assertEquals(expected, actual);
 
@@ -536,48 +533,46 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(SUB_QUERY);
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
-			String expected = "Projection (resultSizeActual=4)\n" +
-					"╠══ProjectionElemList\n" +
-					"║     ProjectionElem \"a\"\n" +
-					"╚══Join (HashJoinIteration) (resultSizeActual=4)\n" +
-					"   ├──Projection (new scope) (resultSizeActual=4)\n" +
-					"   │  ╠══ProjectionElemList\n" +
-					"   │  ║     ProjectionElem \"a\"\n" +
-					"   │  ╚══StatementPattern (resultSizeActual=4)\n" +
-					"   │        Var (name=a)\n" +
-					"   │        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"   │        Var (name=type)\n" +
-					"   └──Projection (new scope) (resultSizeActual=2)\n" +
-					"      ╠══ProjectionElemList\n" +
-					"      ║     ProjectionElem \"a\"\n" +
-					"      ╚══LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"         ├──Join (JoinIterator) (resultSizeActual=2)\n" +
-					"         │  ╠══Filter (resultSizeActual=44)\n" +
-					"         │  ║  ├──Compare (!=)\n" +
-					"         │  ║  │     Var (name=c)\n" +
-					"         │  ║  │     Var (name=d)\n" +
-					"         │  ║  └──Join (JoinIterator) (resultSizeActual=48)\n" +
-					"         │  ║     ╠══LeftJoin (new scope) (LeftJoinIterator) (resultSizeActual=12)\n" +
-					"         │  ║     ║  ├──SingletonSet (resultSizeActual=1)\n" +
-					"         │  ║     ║  └──StatementPattern (resultSizeActual=12)\n" +
-					"         │  ║     ║        Var (name=d)\n" +
-					"         │  ║     ║        Var (name=e)\n" +
-					"         │  ║     ║        Var (name=f)\n" +
-					"         │  ║     ╚══StatementPattern (resultSizeActual=48)\n" +
-					"         │  ║           Var (name=a)\n" +
-					"         │  ║           Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"         │  ║           Var (name=c)\n" +
-					"         │  ╚══StatementPattern (resultSizeActual=2)\n" +
-					"         │        Var (name=a)\n" +
-					"         │        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"         │        Var (name=d)\n" +
-					"         └──StatementPattern (resultSizeActual=2)\n" +
-					"               Var (name=d)\n" +
-					"               Var (name=e)\n" +
-					"               Var (name=f)\n";
+			String expected = "Projection (resultSizeActual=4)\n"
+					+ "╠══ProjectionElemList\n"
+					+ "║     ProjectionElem \"a\"\n"
+					+ "╚══Join (HashJoinIteration) (resultSizeActual=4)\n"
+					+ "   ├──Projection (new scope) (resultSizeActual=4)\n"
+					+ "   │  ╠══ProjectionElemList\n"
+					+ "   │  ║     ProjectionElem \"a\"\n"
+					+ "   │  ╚══StatementPattern (resultSizeActual=4)\n"
+					+ "   │        Var (name=a)\n"
+					+ "   │        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "   │        Var (name=type)\n"
+					+ "   └──Projection (new scope) (resultSizeActual=2)\n"
+					+ "      ╠══ProjectionElemList\n"
+					+ "      ║     ProjectionElem \"a\"\n"
+					+ "      ╚══LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n"
+					+ "         ├──Join (JoinIterator) (resultSizeActual=2)\n"
+					+ "         │  ╠══LeftJoin (new scope) (LeftJoinIterator) (resultSizeActual=12)\n"
+					+ "         │  ║  ├──SingletonSet (resultSizeActual=1)\n"
+					+ "         │  ║  └──StatementPattern (resultSizeActual=12)\n"
+					+ "         │  ║        Var (name=d)\n"
+					+ "         │  ║        Var (name=e)\n"
+					+ "         │  ║        Var (name=f)\n"
+					+ "         │  ╚══Filter (resultSizeActual=2)\n"
+					+ "         │     ├──Compare (!=)\n"
+					+ "         │     │     Var (name=c)\n"
+					+ "         │     │     Var (name=d)\n"
+					+ "         │     └──Join (JoinIterator) (resultSizeActual=6)\n"
+					+ "         │        ╠══StatementPattern (resultSizeActual=48)\n"
+					+ "         │        ║     Var (name=a)\n"
+					+ "         │        ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "         │        ║     Var (name=c)\n"
+					+ "         │        ╚══StatementPattern (resultSizeActual=6)\n"
+					+ "         │              Var (name=a)\n"
+					+ "         │              Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "         │              Var (name=d)\n"
+					+ "         └──StatementPattern (resultSizeActual=2)\n"
+					+ "               Var (name=d)\n"
+					+ "               Var (name=e)\n"
+					+ "               Var (name=f)\n";
+
 			Assert.assertEquals(expected, actual);
 
 		}
