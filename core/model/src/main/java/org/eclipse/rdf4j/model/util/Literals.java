@@ -73,7 +73,7 @@ public class Literals {
 		if (l instanceof SimpleLiteral) {
 			return ((SimpleLiteral) l).getXsdDatatype();
 		}
-		return Optional.empty();
+		return XSD.Datatype.from(l.getDatatype());
 	}
 
 	/**

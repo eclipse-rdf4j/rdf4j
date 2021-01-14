@@ -14,10 +14,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Optional;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
@@ -451,4 +459,89 @@ public class QueryEvaluationUtilTest {
 				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithCustomLiterals() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral((int) 5);
+		Literal right = new Literal() {
+			Literal nested = vf.createLiteral((int) 6);
+
+			@Override
+			public String stringValue() {
+				return nested.stringValue();
+			}
+
+			@Override
+			public short shortValue() {
+				return nested.shortValue();
+			}
+
+			@Override
+			public long longValue() {
+				return nested.longValue();
+			}
+
+			@Override
+			public BigInteger integerValue() {
+				return nested.integerValue();
+			}
+
+			@Override
+			public int intValue() {
+				return nested.intValue();
+			}
+
+			@Override
+			public Optional<String> getLanguage() {
+				return nested.getLanguage();
+			}
+
+			@Override
+			public String getLabel() {
+				return nested.getLabel();
+			}
+
+			@Override
+			public IRI getDatatype() {
+				return nested.getDatatype();
+			}
+
+			@Override
+			public float floatValue() {
+				return nested.floatValue();
+			}
+
+			@Override
+			public double doubleValue() {
+				return nested.doubleValue();
+			}
+
+			@Override
+			public BigDecimal decimalValue() {
+				return nested.decimalValue();
+			}
+
+			@Override
+			public XMLGregorianCalendar calendarValue() {
+				return nested.calendarValue();
+			}
+
+			@Override
+			public byte byteValue() {
+				return nested.byteValue();
+			}
+
+			@Override
+			public boolean booleanValue() {
+				return nested.booleanValue();
+			}
+		};
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+		}
+	}
 }
