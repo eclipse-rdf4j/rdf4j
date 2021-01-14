@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *
  * @author Arjohn Kampman
  * @author Peter Ansell
- * 
+ *
  * @See {@link Values}
  */
 public class Literals {
@@ -73,7 +73,7 @@ public class Literals {
 		if (l instanceof SimpleLiteral) {
 			return ((SimpleLiteral) l).getXsdDatatype();
 		}
-		return XSD.Datatype.from(l.getDatatype());
+		return Optional.empty();
 	}
 
 	/**

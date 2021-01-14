@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -36,7 +37,7 @@ import org.junit.Test;
  */
 public class QueryEvaluationUtilTest {
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	private Literal arg1simple;
 
@@ -465,9 +466,52 @@ public class QueryEvaluationUtilTest {
 	@Test
 	public void testCompareWithCustomLiterals() {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		Literal left = vf.createLiteral((int) 5);
+		Literal left = vf.createLiteral(5);
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+		}
+	}
+
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithCustomLiteralsIncompatible() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral("abc");
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare strings with other supported types", e.getMessage());
+			}
+		}
+	}
+
+	@Test
+	public void testCompareWithCustomLiteralsInditerminate() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral("2000-01-01T12:00:00", XSD.DATETIME);
+
+		Literal right = getCustomLiteral(vf.createLiteral("1999-12-31T23:00:00Z", XSD.DATETIME));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Indeterminate result for date/time comparison", e.getMessage());
+			}
+		}
+	}
+
+	private Literal getCustomLiteral(Literal nested) {
 		Literal right = new Literal() {
-			Literal nested = vf.createLiteral((int) 6);
 
 			@Override
 			public String stringValue() {
@@ -539,9 +583,6 @@ public class QueryEvaluationUtilTest {
 				return nested.booleanValue();
 			}
 		};
-		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
-		for (CompareOp op : Compare.CompareOp.values()) {
-			QueryEvaluationUtil.compareLiterals(left, right, op, true);
-		}
+		return right;
 	}
 }

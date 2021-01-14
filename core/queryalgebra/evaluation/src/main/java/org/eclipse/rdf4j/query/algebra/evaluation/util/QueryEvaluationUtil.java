@@ -191,6 +191,31 @@ public class QueryEvaluationUtil {
 				} else if (!strict && leftXsdDatatype.isDurationDatatype() && rightXsdDatatype.isDurationDatatype()) {
 					commonDatatype = XSD.DURATION;
 				}
+			} else if (commonDatatype == null && (leftXsdDatatype != null || rightXsdDatatype != null)) {
+				if (leftDatatype.equals(rightDatatype)) {
+					commonDatatype = leftDatatype;
+				} else if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)
+						&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+					// left and right arguments have different datatypes, try to find
+					// a
+					// more general, shared datatype
+					if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
+						commonDatatype = XSD.DOUBLE;
+					} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
+						commonDatatype = XSD.FLOAT;
+					} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {
+						commonDatatype = XSD.DECIMAL;
+					} else {
+						commonDatatype = XSD.INTEGER;
+					}
+				} else if (!strict && XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
+						&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+					// We're not running in strict eval mode so we use extended datatype comparsion.
+					commonDatatype = XSD.DATETIME;
+				} else if (!strict && XMLDatatypeUtil.isDurationDatatype(leftDatatype)
+						&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
+					commonDatatype = XSD.DURATION;
+				}
 			}
 
 			if (commonDatatype != null) {
@@ -219,8 +244,10 @@ public class QueryEvaluationUtil {
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
-							if (leftXsdDatatype == XSD.Datatype.DATETIME
-									&& rightXsdDatatype == XSD.Datatype.DATETIME) {
+							if ((leftXsdDatatype == XSD.Datatype.DATETIME
+									|| (leftXsdDatatype == null && leftDatatype.equals(XSD.DATETIME)))
+									&& (rightXsdDatatype == XSD.Datatype.DATETIME
+											|| (rightXsdDatatype == null && rightDatatype.equals(XSD.DATETIME)))) {
 								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
 							} else {
 								// We fallback to the regular RDF term compare
@@ -296,12 +323,33 @@ public class QueryEvaluationUtil {
 					if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 					}
-					boolean leftString = leftXsdDatatype == XSD.Datatype.STRING;
-					boolean rightString = rightXsdDatatype == XSD.Datatype.STRING;
-					boolean leftNumeric = leftXsdDatatype.isNumericDatatype();
-					boolean rightNumeric = rightXsdDatatype.isNumericDatatype();
-					boolean leftDate = leftXsdDatatype.isCalendarDatatype();
-					boolean rightDate = rightXsdDatatype.isCalendarDatatype();
+
+					boolean leftString;
+					boolean rightString;
+					boolean leftNumeric;
+					boolean rightNumeric;
+					boolean leftDate;
+					boolean rightDate;
+
+					if (leftXsdDatatype != null) {
+						leftString = leftXsdDatatype == XSD.Datatype.STRING;
+						leftNumeric = leftXsdDatatype.isNumericDatatype();
+						leftDate = leftXsdDatatype.isCalendarDatatype();
+					} else {
+						leftString = leftDatatype.equals(XSD.STRING);
+						leftNumeric = XMLDatatypeUtil.isNumericDatatype(leftDatatype);
+						leftDate = XMLDatatypeUtil.isCalendarDatatype(leftDatatype);
+					}
+
+					if (rightXsdDatatype != null) {
+						rightString = rightXsdDatatype == XSD.Datatype.STRING;
+						rightNumeric = rightXsdDatatype.isNumericDatatype();
+						rightDate = rightXsdDatatype.isCalendarDatatype();
+					} else {
+						rightString = rightDatatype.equals(XSD.STRING);
+						rightNumeric = XMLDatatypeUtil.isNumericDatatype(rightDatatype);
+						rightDate = XMLDatatypeUtil.isCalendarDatatype(rightDatatype);
+					}
 
 					if (leftString != rightString) {
 						throw new ValueExprEvaluationException("Unable to compare strings with other supported types");
