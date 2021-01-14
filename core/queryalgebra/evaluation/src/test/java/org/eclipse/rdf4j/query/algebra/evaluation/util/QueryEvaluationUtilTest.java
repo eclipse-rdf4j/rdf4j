@@ -472,7 +472,9 @@ public class QueryEvaluationUtilTest {
 		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
 		for (CompareOp op : Compare.CompareOp.values()) {
 			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			QueryEvaluationUtil.compareLiterals(right, left, op, true);
 		}
+
 	}
 
 	/**
@@ -491,6 +493,11 @@ public class QueryEvaluationUtilTest {
 			} catch (ValueExprEvaluationException e) {
 				assertEquals("Unable to compare strings with other supported types", e.getMessage());
 			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare strings with other supported types", e.getMessage());
+			}
 		}
 	}
 
@@ -506,6 +513,32 @@ public class QueryEvaluationUtilTest {
 				QueryEvaluationUtil.compareLiterals(left, right, op, true);
 			} catch (ValueExprEvaluationException e) {
 				assertEquals("Indeterminate result for date/time comparison", e.getMessage());
+			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Indeterminate result for date/time comparison", e.getMessage());
+			}
+		}
+	}
+
+	@Test
+	public void testCompareCustomDatatypes() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral(1);
+
+		Literal right = vf.createLiteral("I", vf.createIRI("http://example.org/romanNumeral"));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare literals with unsupported types", e.getMessage());
+			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare literals with unsupported types", e.getMessage());
 			}
 		}
 	}
