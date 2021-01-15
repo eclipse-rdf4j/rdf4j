@@ -543,6 +543,21 @@ public class QueryEvaluationUtilTest {
 		}
 	}
 
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithOnlyCustomLiterals() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = getCustomLiteral(vf.createLiteral(1));
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+		}
+	}
+
 	private Literal getCustomLiteral(Literal nested) {
 		Literal right = new Literal() {
 

@@ -158,8 +158,8 @@ public class QueryEvaluationUtil {
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
 
-		// for purposes of query evaluation in SPARQL, simple literals and
-		// string-typed literals with the same lexical value are considered equal.
+		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
+		// value are considered equal.
 		IRI commonDatatype = null;
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
 			commonDatatype = XSD.STRING;
@@ -191,14 +191,12 @@ public class QueryEvaluationUtil {
 				} else if (!strict && leftXsdDatatype.isDurationDatatype() && rightXsdDatatype.isDurationDatatype()) {
 					commonDatatype = XSD.DURATION;
 				}
-			} else if (commonDatatype == null && (leftXsdDatatype != null || rightXsdDatatype != null)) {
+			} else if (commonDatatype == null && (leftXsdDatatype == null || rightXsdDatatype == null)) {
 				if (leftDatatype.equals(rightDatatype)) {
 					commonDatatype = leftDatatype;
 				} else if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)
 						&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
-					// left and right arguments have different datatypes, try to find
-					// a
-					// more general, shared datatype
+					// left and right arguments have different datatypes, try to find a more general, shared datatype
 					if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
 						commonDatatype = XSD.DOUBLE;
 					} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
@@ -238,9 +236,8 @@ public class QueryEvaluationUtil {
 
 						compareResult = left.compare(right);
 
-						// Note: XMLGregorianCalendar.compare() returns compatible
-						// values
-						// (-1, 0, 1) but INDETERMINATE needs special treatment
+						// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
+						// needs special treatment
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
@@ -266,8 +263,7 @@ public class QueryEvaluationUtil {
 						compareResult = leftLit.getLabel().compareTo(rightLit.getLabel());
 					}
 				} catch (IllegalArgumentException e) {
-					// One of the basic-type method calls failed, try syntactic match
-					// before throwing an error
+					// One of the basic-type method calls failed, try syntactic match before throwing an error
 					if (leftLit.equals(rightLit)) {
 						switch (operator) {
 						case EQ:
@@ -311,11 +307,9 @@ public class QueryEvaluationUtil {
 			if (!literalsEqual) {
 				if (!leftLangLit && !rightLangLit && isSupportedDatatype(leftDatatype)
 						&& isSupportedDatatype(rightDatatype)) {
-					// left and right arguments have incompatible but supported
-					// datatypes
+					// left and right arguments have incompatible but supported datatypes
 
-					// we need to check that the lexical-to-value mapping for both
-					// datatypes succeeds
+					// we need to check that the lexical-to-value mapping for both datatypes succeeds
 					if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + leftLit);
 					}
@@ -363,8 +357,7 @@ public class QueryEvaluationUtil {
 								"Unable to compare date types with other supported types");
 					}
 				} else if (!leftLangLit && !rightLangLit) {
-					// For literals with unsupported datatypes we don't know if their
-					// values are equal
+					// For literals with unsupported datatypes we don't know if their values are equal
 					throw new ValueExprEvaluationException("Unable to compare literals with unsupported types");
 				}
 			}
