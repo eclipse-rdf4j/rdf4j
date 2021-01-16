@@ -92,7 +92,7 @@ The default log level is INFO, indicating that only important status messages, w
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).
 
-The RDF4J Server exposes its functionality using a [REST API](/documentation/rest-api) that is an extension of the SPARQL protocol for RDF. This protocol defines exactly what operations can be achieved using specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each combination of URL pattern and HTTP method can be associated with a set of user roles, thus giving very fine-grained control.
+The RDF4J Server exposes its functionality using a [REST API](/documentation/reference/rest-api) that is an extension of the SPARQL protocol for RDF. This protocol defines exactly what operations can be achieved using specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each combination of URL pattern and HTTP method can be associated with a set of user roles, thus giving very fine-grained control.
 
 In general, read operations are effected using `GET` and write operations using `PUT`, `POST` and `DELETE`. The exception to this is that POST is allowed for SPARQL queries. This is for practical reasons, because some HTTP servers have limits on the length of the parameter values for GET requests.
 

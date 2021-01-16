@@ -79,6 +79,8 @@ public class ModelBuilder {
 
 	/**
 	 * Create a new {@link ModelBuilder} which will append to the supplied {@link Model}.
+	 * 
+	 * @param model
 	 */
 	public ModelBuilder(Model model) {
 		this.model = model;
@@ -199,8 +201,11 @@ public class ModelBuilder {
 		}
 
 		if (objectValue == null) {
-			model.setNamespace(XSD.NS);
-			objectValue = Literals.createLiteral(SimpleValueFactory.getInstance(), object);
+			Literal literal = Values.literal(object);
+			if (!literal.getDatatype().equals(XSD.STRING)) {
+				model.setNamespace(XSD.NS);
+			}
+			objectValue = literal;
 		}
 
 		if (currentNamedGraph != null) {

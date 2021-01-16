@@ -13,6 +13,16 @@
       <datatype-ill-formed>
     ) .
 
+ex:i ex:p "300"^^xsd:byte .
+ex:i ex:p "55"^^xsd:integer .
+ex:i ex:p "c"^^xsd:byte .
+
+ex:s a sh:PropertyShape ;
+  sh:targetNode ex:i ;
+  sh:path ex:p ;
+  sh:datatype xsd:byte .
+
+
 <datatype-ill-formed> rdf:type sht:Validate;
   rdfs:label "Test of validation report for ill-formed literals" ;
   mf:action [ sht:dataGraph <datatype-ill-formed-data.ttl> ;

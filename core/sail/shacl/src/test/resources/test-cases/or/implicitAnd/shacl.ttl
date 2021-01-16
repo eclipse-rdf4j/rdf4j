@@ -19,7 +19,7 @@ ex:PersonShape
                     [
                       sh:minLength 10 ;
                       sh:nodeKind sh:Literal ;
-                      sh:languageIn ("no" "en") ;
+                      sh:languageIn ("en" "no") ;
                     ]
                   ) ;
     	] .

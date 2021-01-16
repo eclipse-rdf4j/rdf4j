@@ -15,19 +15,11 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Unique;
 import org.junit.Test;
-
-/**
- * **************************************************************************** Copyright (c) 2019 Eclipse RDF4J
- * contributors. All rights reserved. This program and the accompanying materials are made available under the terms of
- * the Eclipse Distribution License v1.0 which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- * *****************************************************************************
- */
 
 public class UniqueTest {
 
@@ -64,12 +56,15 @@ public class UniqueTest {
 	private void runTest(MockInputPlanNode input) {
 		Unique unique = new Unique(input);
 
-		List<Tuple> tuples = new MockConsumePlanNode(unique).asList();
+		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 
-		ArrayList<Tuple> expected = new ArrayList<>(new HashSet<>(new MockConsumePlanNode(input).asList()));
+		ArrayList<ValidationTuple> expected = new ArrayList<>(new HashSet<>(new MockConsumePlanNode(input).asList()));
 
-		tuples.sort(Tuple::compareTo);
-		expected.sort(Tuple::compareTo);
+		tuples.sort(ValidationTuple::compareValue);
+		expected.sort(ValidationTuple::compareValue);
+
+		tuples.sort(ValidationTuple::compareTarget);
+		expected.sort(ValidationTuple::compareTarget);
 
 		assertEquals(expected, tuples);
 	}
