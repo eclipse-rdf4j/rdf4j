@@ -9,7 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.junit.Ignore;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -34,7 +34,6 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel));
 	}
 
-//	@Ignore
 	@Test
 	public void testRevalidation() {
 		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel));
@@ -47,7 +46,22 @@ public class ShaclTest extends AbstractShaclTest {
 
 	@Test
 	public void testParsing() {
+		// we don't need to run this test for every isolation level
+		if (isolationLevel != IsolationLevels.NONE) {
+			return;
+		}
+
 		runWithAutomaticLogging(() -> runParsingTest(testCasePath, path, expectedResult));
+	}
+
+	@Test
+	public void testReferenceImplementation() {
+		// we don't need to run this test for every isolation level
+		if (isolationLevel != IsolationLevels.NONE) {
+			return;
+		}
+
+		runWithAutomaticLogging(() -> referenceImplementationTestCaseValidation(testCasePath, path, expectedResult));
 	}
 
 	private void runWithAutomaticLogging(Runnable r) {
