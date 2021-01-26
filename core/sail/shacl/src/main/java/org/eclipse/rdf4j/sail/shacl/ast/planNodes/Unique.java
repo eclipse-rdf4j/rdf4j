@@ -24,15 +24,17 @@ import org.slf4j.LoggerFactory;
  */
 public class Unique implements PlanNode {
 	private final Logger logger = LoggerFactory.getLogger(Unique.class);
+	private final boolean compress;
 
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Unique(PlanNode parent) {
+	public Unique(PlanNode parent, boolean compress) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.parent = parent;
+		this.compress = compress;
 	}
 
 	@Override
@@ -57,7 +59,7 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					if (temp.getFullChainSize() > 1) {
+					if (temp.getFullChainSize(true) > 1) {
 						useMultiCardinalityDedupeSet = true;
 					}
 
@@ -115,7 +117,7 @@ public class Unique implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
-				if (previous != null && next.compareTarget(previous) < 0) {
+				if (previous != null && next.compareActiveTarget(previous) < 0) {
 					throw new AssertionError();
 				}
 				ValidationTuple temp = next;

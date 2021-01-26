@@ -55,7 +55,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 							false);
 		}
 
-		target = new Unique(new TrimToTarget(target));
+		target = new Unique(new TrimToTarget(target), false);
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 				target,
@@ -71,7 +71,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
 
-		return new Unique(new TrimToTarget(groupByCount));
+		return new Unique(new TrimToTarget(groupByCount), false);
 
 	}
 

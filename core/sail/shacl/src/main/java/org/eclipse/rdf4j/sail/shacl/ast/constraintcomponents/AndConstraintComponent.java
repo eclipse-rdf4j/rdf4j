@@ -99,7 +99,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		return new Unique(planNode);
+		return new Unique(planNode, false);
 
 	}
 
@@ -110,7 +110,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new Unique(planNode);
+		planNode = new Unique(planNode, false);
 
 		return planNode;
 	}

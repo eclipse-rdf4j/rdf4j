@@ -23,11 +23,10 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 
 /**
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+ *          warning from one release to the next.
  *
  */
-@Deprecated
 @InternalUseOnly
 public class ConnectionsGroup implements Closeable {
 

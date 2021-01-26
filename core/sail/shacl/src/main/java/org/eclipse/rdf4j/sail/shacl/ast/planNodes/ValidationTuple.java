@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -21,15 +22,15 @@ public class ValidationTuple {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);
 
-	static ValueComparator valueComparator = new ValueComparator();
-	private final Deque<Value> chain;
+	private static final ValueComparator valueComparator = new ValueComparator();
+	private final List<Value> chain;
 	private ConstraintComponent.Scope scope;
 	private boolean propertyShapeScopeWithValue;
 
 	Deque<ValidationResult> validationResults = new ArrayDeque<>();
 
 	public ValidationTuple(ValidationTuple validationTuple) {
-		this.chain = new ArrayDeque<>(validationTuple.chain);
+		this.chain = new ArrayList<>(validationTuple.chain);
 		this.scope = validationTuple.scope;
 		this.propertyShapeScopeWithValue = validationTuple.propertyShapeScopeWithValue;
 
@@ -46,32 +47,32 @@ public class ValidationTuple {
 
 	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
 			boolean hasValue) {
-		chain = new ArrayDeque<>();
+		chain = new ArrayList<>();
 		for (String variable : variables) {
-			chain.addLast(bindingSet.getValue(variable));
+			chain.add(bindingSet.getValue(variable));
 		}
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 
 	}
 
-	public ValidationTuple(Deque<Value> targets, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(List<Value> targets, ConstraintComponent.Scope scope, boolean hasValue) {
 		chain = targets;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
-		chain = new ArrayDeque<>();
-		chain.addLast(a);
-		chain.addLast(c);
+		chain = new ArrayList<>();
+		chain.add(a);
+		chain.add(c);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 	}
 
 	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
-		chain = new ArrayDeque<>();
-		chain.addLast(subject);
+		chain = new ArrayList<>();
+		chain.add(subject);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 	}
@@ -93,7 +94,7 @@ public class ValidationTuple {
 	public Value getValue() {
 		assert scope != null;
 		if (hasValue()) {
-			return chain.peekLast();
+			return chain.get(chain.size() - 1);
 		}
 
 		return null;
@@ -108,12 +109,32 @@ public class ValidationTuple {
 		this.scope = scope;
 	}
 
-	public int compareTarget(ValidationTuple other) {
+	public int compareActiveTarget(ValidationTuple other) {
 
 		Value left = getActiveTarget();
 		Value right = other.getActiveTarget();
 
 		return valueComparator.compare(left, right);
+	}
+
+	public int compareFullTarget(ValidationTuple other) {
+
+		int min = Math.min(getFullChainSize(false), other.getFullChainSize(false));
+
+		Collection<Value> targetChain = getTargetChain(false);
+		ArrayList<Value> otherTargetChain = new ArrayList<>(other.getTargetChain(false));
+
+		Iterator<Value> iterator = targetChain.iterator();
+
+		for (int i = 0; i < min; i++) {
+			Value value = iterator.next();
+			int compare = valueComparator.compare(value, otherTargetChain.get(i));
+			if (compare != 0) {
+				return compare;
+			}
+		}
+
+		return Integer.compare(getFullChainSize(true), other.getFullChainSize(true));
 	}
 
 	public Deque<ValidationResult> toValidationResult() {
@@ -130,17 +151,14 @@ public class ValidationTuple {
 	public Value getActiveTarget() {
 		assert scope != null;
 		if (!propertyShapeScopeWithValue || scope != ConstraintComponent.Scope.propertyShape) {
-			return chain.getLast();
+			return chain.get(chain.size() - 1);
 		}
 
 		if (chain.size() < 2) {
 			throw new AssertionError(chain.size());
 		}
 
-		Value value = chain.removeLast();
-		Value last = chain.getLast();
-		chain.addLast(value);
-		return last;
+		return chain.get(chain.size() - 2);
 
 	}
 
@@ -176,7 +194,7 @@ public class ValidationTuple {
 		assert scope == ConstraintComponent.Scope.propertyShape;
 		if (propertyShapeScopeWithValue) {
 			propertyShapeScopeWithValue = false;
-			chain.removeLast();
+			chain.remove(chain.size() - 1);
 		}
 		scope = ConstraintComponent.Scope.nodeShape;
 	}
@@ -188,8 +206,13 @@ public class ValidationTuple {
 		propertyShapeScopeWithValue = true;
 	}
 
-	public int getFullChainSize() {
+	public int getFullChainSize(boolean includePropertyShapeValue) {
+		if (!includePropertyShapeValue && propertyShapeScopeWithValue) {
+			return chain.size() - 1;
+		}
+
 		return chain.size();
+
 	}
 
 	/**
@@ -210,12 +233,12 @@ public class ValidationTuple {
 	public void setValue(Value value) {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
-				chain.removeLast();
+				chain.remove(chain.size() - 1);
 			}
-			chain.addLast(value);
+			chain.add(value);
 		} else {
-			chain.removeLast();
-			chain.addLast(value);
+			chain.remove(chain.size() - 1);
+			chain.add(value);
 
 		}
 
@@ -232,7 +255,7 @@ public class ValidationTuple {
 	public void trimToTarget() {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
-				chain.removeLast();
+				chain.remove(chain.size() - 1);
 				propertyShapeScopeWithValue = false;
 			}
 		}
@@ -244,13 +267,13 @@ public class ValidationTuple {
 			if (hasValue()) {
 				assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
 						+ toString();
-				chain.removeLast();
+				chain.remove(chain.size() - 1);
 			} else {
 				propertyShapeScopeWithValue = true;
 			}
 		} else {
 			assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! " + toString();
-			chain.removeLast();
+			chain.remove(chain.size() - 1);
 		}
 
 	}

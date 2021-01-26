@@ -56,7 +56,7 @@ public class TargetClass extends Target {
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}
 
-		return new Unique(planNode);
+		return new Unique(planNode, false);
 	}
 
 	@Override

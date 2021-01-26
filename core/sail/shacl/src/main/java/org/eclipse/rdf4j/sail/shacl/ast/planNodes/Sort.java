@@ -16,7 +16,6 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 
 public class Sort implements PlanNode {
@@ -24,7 +23,6 @@ public class Sort implements PlanNode {
 	private final PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
-	final static ValueComparator valueComparator = new ValueComparator();
 
 	public Sort(PlanNode parent) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
@@ -61,7 +59,7 @@ public class Sort implements PlanNode {
 						ValidationTuple next = iterator.next();
 						sortedTuples.add(next);
 						if (prev != null
-								&& valueComparator.compare(prev.getActiveTarget(), next.getActiveTarget()) > 0) {
+								&& prev.compareActiveTarget(next) > 0) {
 							alreadySorted = false;
 						}
 						prev = next;
@@ -71,11 +69,11 @@ public class Sort implements PlanNode {
 						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
 							ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
 							Arrays.parallelSort(objects,
-									(a, b) -> valueComparator.compare(a.getActiveTarget(), b.getActiveTarget()));
+									ValidationTuple::compareActiveTarget);
 							sortedTuples = Arrays.asList(objects);
 						} else {
 							sortedTuples
-									.sort((a, b) -> valueComparator.compare(a.getActiveTarget(), b.getActiveTarget()));
+									.sort(ValidationTuple::compareActiveTarget);
 						}
 					}
 					sortedTuplesIterator = sortedTuples.iterator();

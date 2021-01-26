@@ -145,7 +145,7 @@ public class BindSelect implements PlanNode {
 
 				int targetChainSize;
 				if (includePropertyShapeValues || next.getScope() != ConstraintComponent.Scope.propertyShape) {
-					targetChainSize = next.getFullChainSize();
+					targetChainSize = next.getFullChainSize(true);
 				} else {
 					targetChainSize = next.getTargetChain(includePropertyShapeValues).size();
 				}

@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
  *
  */
 @InternalUseOnly
-@Deprecated
 public class LazyValidationReport extends ValidationReport {
 
 	private List<ValidationResultIterator> validationResultIterators;

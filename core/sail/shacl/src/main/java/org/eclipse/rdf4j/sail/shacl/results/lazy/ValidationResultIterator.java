@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
-@Deprecated
 @InternalUseOnly
 public class ValidationResultIterator implements Iterator<ValidationResult> {
 

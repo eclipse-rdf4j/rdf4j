@@ -840,7 +840,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		ex.shutdown();
 	}
 
-	@Deprecated
 	@InternalUseOnly
 	public List<Shape> getCurrentShapes() {
 		return shapes;

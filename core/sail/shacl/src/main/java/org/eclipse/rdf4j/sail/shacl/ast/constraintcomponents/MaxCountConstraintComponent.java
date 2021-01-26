@@ -56,7 +56,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
-		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
+				new Unique(new TrimToTarget(addedByPath), false));
 
 		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
@@ -67,7 +68,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					EffectiveTarget.Extend.right, false);
 		}
 
-		mergeNode = new Unique(new TrimToTarget(mergeNode));
+		mergeNode = new Unique(new TrimToTarget(mergeNode), false);
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				mergeNode,
@@ -83,7 +84,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount);
 
-		return new Unique(new TrimToTarget(groupByCount));
+		return new Unique(new TrimToTarget(groupByCount), false);
 
 	}
 
@@ -94,7 +95,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			return new Unique(new ShiftToPropertyShape(allTargetsPlan), false);
 		}
 		return new EmptyNode();
 	}

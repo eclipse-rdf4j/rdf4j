@@ -546,14 +546,6 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
-		// these two are actual bugs in our implementation that we need to fix!
-		if (dataPath.equals("test-cases/class/nestedNode/invalid/case3")) {
-			return;
-		}
-		if (dataPath.equals("test-cases/class/nestedNode/invalid/case4")) {
-			return;
-		}
-
 		if (fullLogging) {
 			logger.error(shaclPath);
 			logger.error(dataPath);

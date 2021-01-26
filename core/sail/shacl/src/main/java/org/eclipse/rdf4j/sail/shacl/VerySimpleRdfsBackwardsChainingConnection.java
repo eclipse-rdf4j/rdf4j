@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
  * not support inference for SPARQL queries.
  */
 @Experimental
-@Deprecated
 @InternalUseOnly
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 

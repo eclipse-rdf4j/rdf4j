@@ -75,7 +75,7 @@ public class UnionNode implements PlanNode {
 						sortedFirst = peekList[i];
 						sortedFirstIndex = i;
 					} else {
-						if (peekList[i].compareTarget(sortedFirst) < 0) {
+						if (peekList[i].compareActiveTarget(sortedFirst) < 0) {
 							sortedFirst = peekList[i];
 							sortedFirstIndex = i;
 						}
@@ -105,7 +105,7 @@ public class UnionNode implements PlanNode {
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
-				if (prev != null && next.compareTarget(prev) < 0) {
+				if (prev != null && next.compareActiveTarget(prev) < 0) {
 					throw new AssertionError();
 				}
 

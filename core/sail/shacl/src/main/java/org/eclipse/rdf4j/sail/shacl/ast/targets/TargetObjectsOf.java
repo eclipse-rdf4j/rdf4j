@@ -57,7 +57,7 @@ public class TargetObjectsOf extends Target {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		return new Unique(planNode);
+		return new Unique(planNode, false);
 	}
 
 	@Override

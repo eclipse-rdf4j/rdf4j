@@ -119,7 +119,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
 				.orElse(new EmptyNode());
 
-		PlanNode invalid = new Unique(orPlanNodes);
+		PlanNode invalid = new Unique(orPlanNodes, false);
 
 		return invalid;
 	}
@@ -133,7 +133,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), false);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -146,7 +146,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		return new Unique(new UnionNode(allTargets, planNode));
+		return new Unique(new UnionNode(allTargets, planNode), false);
 	}
 
 	@Override

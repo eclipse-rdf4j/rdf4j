@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl;
 import static junit.framework.TestCase.assertTrue;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -270,7 +271,8 @@ public class InnerJoinTest {
 
 	}
 
-	public void verify(List<ValidationTuple> actual, List<String>... expect) {
+	@SafeVarargs
+	private final void verify(List<ValidationTuple> actual, List<String>... expect) {
 
 		Set<ValidationTuple> collect = Arrays.stream(expect)
 				.map(strings -> strings.stream()
@@ -279,7 +281,7 @@ public class InnerJoinTest {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					assert (v.size() == 2);
-					return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, true);
+					return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
 				})
 				.collect(Collectors.toSet());
 

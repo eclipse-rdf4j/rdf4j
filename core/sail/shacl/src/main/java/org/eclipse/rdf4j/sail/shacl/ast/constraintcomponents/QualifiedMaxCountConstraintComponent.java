@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
 
@@ -128,7 +129,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		planNode = new LeftOuterJoin(target, planNode);
 
 		GroupByCountFilter groupByCountFilter = new GroupByCountFilter(planNode, count -> count > qualifiedMaxCount);
-		return new Unique(new TrimToTarget(groupByCountFilter));
+		return new Unique(new TrimToTarget(groupByCountFilter), false);
 
 	}
 
@@ -148,7 +149,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 								false);
 			}
 
-			target = new Unique(new TrimToTarget(target));
+			target = new Unique(new TrimToTarget(target), false);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
@@ -165,7 +166,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				Collection<Value> targetChain = t.getTargetChain(true);
-				ValidationTuple validationTuple = new ValidationTuple(new ArrayDeque<>(targetChain),
+				ValidationTuple validationTuple = new ValidationTuple(new ArrayList<>(targetChain),
 						Scope.propertyShape, false);
 				return validationTuple;
 			});
@@ -179,7 +180,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				scope
 		);
 
-		PlanNode invalid = new Unique(planNode);
+		PlanNode invalid = new Unique(planNode, false);
 
 		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
 
@@ -190,7 +191,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 							false);
 		}
 
-		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan));
+		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan), false);
 
 		allTargetsPlan = new BulkedExternalLeftOuterJoin(
 				allTargetsPlan,
@@ -220,7 +221,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 
-		PlanNode unique = new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)));
+		PlanNode unique = new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)), false);
 		return unique;
 
 	}

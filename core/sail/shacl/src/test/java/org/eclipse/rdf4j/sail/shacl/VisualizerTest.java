@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.Test;
 
-public class VisulizerTest {
+public class VisualizerTest {
 
 	@Test
 	public void datatype() throws Exception {

@@ -231,7 +231,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			planNode = new ShiftToNodeShape(planNode);
 		}
 
-		planNode = new Unique(planNode);
+		planNode = new Unique(planNode, false);
 
 		return planNode;
 	}

@@ -278,7 +278,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			return new Unique(new ShiftToPropertyShape(allTargetsPlan), false);
 		}
 		return new EmptyNode();
 	}

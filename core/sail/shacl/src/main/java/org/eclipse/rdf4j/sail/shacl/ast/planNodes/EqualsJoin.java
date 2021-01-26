@@ -68,7 +68,7 @@ public class EqualsJoin implements PlanNode {
 							nextRight = null;
 						} else {
 
-							int compareTo = nextLeft.compareTarget(nextRight);
+							int compareTo = nextLeft.compareActiveTarget(nextRight);
 
 							if (compareTo < 0) {
 								if (leftIterator.hasNext()) {

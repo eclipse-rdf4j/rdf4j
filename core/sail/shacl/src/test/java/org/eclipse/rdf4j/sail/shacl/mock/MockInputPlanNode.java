@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.mock;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
@@ -17,7 +18,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -36,6 +36,7 @@ public class MockInputPlanNode implements PlanNode {
 		this.initialData = initialData;
 	}
 
+	@SafeVarargs
 	public MockInputPlanNode(Collection<String>... list) {
 
 		initialData = Arrays.stream(list)
@@ -45,13 +46,13 @@ public class MockInputPlanNode implements PlanNode {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					if (v.size() > 1) {
-						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, true);
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
 					} else {
-						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, false);
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, false);
 					}
 				})
 				.sorted(ValidationTuple::compareValue)
-				.sorted(ValidationTuple::compareTarget)
+				.sorted(ValidationTuple::compareFullTarget)
 				.collect(Collectors.toList());
 
 	}

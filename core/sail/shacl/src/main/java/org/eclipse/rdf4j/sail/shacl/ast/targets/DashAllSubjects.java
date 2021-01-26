@@ -49,7 +49,7 @@ public class DashAllSubjects extends Target {
 			SailConnection connection) {
 
 		return new Unique(new UnorderedSelect(connection, null,
-				null, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)));
+				null, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)), false);
 
 	}
 

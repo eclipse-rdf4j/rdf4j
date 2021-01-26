@@ -83,7 +83,7 @@ public class EffectiveTarget {
 
 		return connectionsGroup.getCachedNodeFor(
 				new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
-						100, direction, includePropertyShapeValues)));
+						100, direction, includePropertyShapeValues), true));
 	}
 
 	private List<StatementMatcher.Variable> getVars() {
@@ -279,7 +279,7 @@ public class EffectiveTarget {
 		}
 	}
 
-	class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
+	static class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
 		List<String> varNames;
 		ConstraintComponent.Scope scope;
 		boolean hasValue;
