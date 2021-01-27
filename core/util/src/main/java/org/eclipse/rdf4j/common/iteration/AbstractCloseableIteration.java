@@ -22,6 +22,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	 * Flag indicating whether this iteration has been closed.
 	 */
 	private volatile boolean closed = false;
+	private final Object MONITOR_FOR_CLOSED = new Object();
 
 	/*---------*
 	 * Methods *
@@ -47,9 +48,11 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 			// closedInThisCall will be true if we actually end up setting closed = true within this method call
 			boolean closedInThisCall = false;
 
-			// we synchronize here on _this_ so that we eliminate any race conditions
-			// then we read the variable again, since it could have been modified since last we checked it
-			synchronized (this) {
+			// We synchronize here on _MONITOR_FOR_CLOSED_ so that we eliminate any race conditions then we read the
+			// variable again, since it could have been modified since last we checked it. Do not synchronize on _this_
+			// since it causes contention with subclasses that might also use synchronization. See issue
+			// https://github.com/eclipse/rdf4j/issues/2774.
+			synchronized (MONITOR_FOR_CLOSED) {
 				if (!closed) {
 					closed = true;
 					closedInThisCall = true;
