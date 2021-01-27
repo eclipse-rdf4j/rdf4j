@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -27,10 +28,10 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
  * @author Simon Schenk
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
-@Deprecated
+@InternalUseOnly
 public class DatasetDeclProcessor {
 
 	/**
