@@ -15,15 +15,14 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * Processes escape sequences in strings, replacing the escape sequence with their actual value. Escape sequences for
- * SPARQL are documented in section <a href="http://www.w3.org/TR/rdf-sparql-query/#grammarEscapes">A.7 Escape sequences
- * in strings</a>.
+ * SPARQL strings are documented in section <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">19.7 Escape
+ * sequences in strings</a>.
  *
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apinote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
-@Deprecated
 @InternalUseOnly
 public class StringEscapesProcessor {
 
@@ -51,7 +50,7 @@ public class StringEscapesProcessor {
 		public Object visit(ASTString stringNode, Object data) throws VisitorException {
 			String value = stringNode.getValue();
 			try {
-				value = SPARQLUtil.decodeString(value);
+				value = SPARQLQueries.unescape(value);
 				stringNode.setValue(value);
 			} catch (IllegalArgumentException e) {
 				// Invalid escape sequence

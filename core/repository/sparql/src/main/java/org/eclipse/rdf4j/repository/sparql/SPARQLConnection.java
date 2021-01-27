@@ -52,7 +52,7 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -811,7 +811,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			if (st.getObject() instanceof Literal) {
 				Literal lit = (Literal) st.getObject();
 				qb.append("\"");
-				qb.append(SPARQLUtil.encodeString(lit.getLabel()));
+				qb.append(SPARQLQueries.escape(lit.getLabel()));
 				qb.append("\"");
 
 				if (Literals.isLanguageLiteral(lit)) {
@@ -971,7 +971,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			if (object instanceof Literal) {
 				Literal lit = (Literal) object;
 				qb.append("\"");
-				qb.append(SPARQLUtil.encodeString(lit.getLabel()));
+				qb.append(SPARQLQueries.escape(lit.getLabel()));
 				qb.append("\"");
 
 				if (lit.getLanguage().isPresent()) {

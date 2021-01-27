@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 /**
  * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
@@ -162,7 +162,7 @@ public class QueryStringUtil {
 
 	private static StringBuilder appendValue(StringBuilder sb, Literal lit) {
 		sb.append('"');
-		sb.append(SPARQLUtil.encodeString(lit.getLabel()));
+		sb.append(SPARQLQueries.escape(lit.getLabel()));
 		sb.append('"');
 
 		if (Literals.isLanguageLiteral(lit)) {
