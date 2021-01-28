@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.eclipse.rdf4j.model.util.Values.namespace;
 import static org.eclipse.rdf4j.model.util.Values.triple;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -29,10 +30,12 @@ import javax.xml.datatype.DatatypeFactory;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -113,6 +116,36 @@ public class ValuesTest {
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("localName may not be null");
 
+	}
+
+	@Test
+	public void testIriFromPrefixedName() {
+		Model m = new TreeModel();
+		m.setNamespace(RDF.NS);
+		m.setNamespace(namespace("ex", "http://example.org/"));
+
+		IRI test = iri(m.getNamespaces(), "ex:test");
+		assertThat(test.getLocalName()).isEqualTo("test");
+		assertThat(test.getNamespace()).isEqualTo("http://example.org/");
+	}
+
+	@Test
+	public void testIriFromPrefixedName_invalid1() {
+		Model m = new TreeModel();
+		m.setNamespace(RDF.NS);
+		m.setNamespace(namespace("ex", "http://example.org/"));
+
+		assertThatThrownBy(() -> iri(m.getNamespaces(), "extest")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Invalid prefixed name: 'extest'");
+	}
+
+	@Test
+	public void testIriFromPrefixedName_invalid2() {
+		Model m = new TreeModel();
+		m.setNamespace(RDF.NS);
+
+		assertThatThrownBy(() -> iri(m.getNamespaces(), "ex:test")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Prefix 'ex' not identified in supplied namespaces");
 	}
 
 	@Test

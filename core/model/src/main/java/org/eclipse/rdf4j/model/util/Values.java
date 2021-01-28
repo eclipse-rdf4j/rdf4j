@@ -18,11 +18,13 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.ValidatingValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -92,18 +94,65 @@ public class Values {
 	}
 
 	/**
-	 * Create a new {@link IRI} using the supplied namespace and local name
+	 * Create a new {@link IRI} using the supplied namespace name and local name
 	 * 
-	 * @param namespace the IRI's namespace
+	 * @param namespace the IRI's namespace name
 	 * @param localName the IRI's local name
 	 * 
-	 * @return an {@link IRI} object for the supplied IRI namespace and localName.
+	 * @return an {@link IRI} object for the supplied IRI namespace name and localName.
 	 * 
 	 * @throws NullPointerException     if any of the input parameters is <code>null</code>
 	 * @throws IllegalArgumentException if the supplied iri string can not be parsed as a legal IRI.
 	 */
 	public static IRI iri(String namespace, String localName) throws IllegalArgumentException {
 		return iri(VALUE_FACTORY, namespace, localName);
+	}
+
+	/**
+	 * Create a new {@link IRI} using the supplied {@link Namespace} and local name
+	 * 
+	 * @param namespace the IRI's {@link Namespace}
+	 * @param localName the IRI's local name
+	 * 
+	 * @return an {@link IRI} object for the supplied IRI namespace and localName.
+	 * 
+	 * @throws NullPointerException     if any of the input parameters is <code>null</code>
+	 * @throws IllegalArgumentException if the supplied iri string can not be parsed as a legal IRI.
+	 * @since 3.6.0
+	 */
+	public static IRI iri(Namespace namespace, String localName) throws IllegalArgumentException {
+		return iri(VALUE_FACTORY, Objects.requireNonNull(namespace.getName()), localName);
+	}
+
+	/**
+	 * Create a new {@link IRI} from a supplied prefixed name, using the supplied {@link Namespace namespaces}
+	 * 
+	 * @param namespaces   the Namespaces from which to find the correct namespace to map the prefixed name to
+	 * @param prefixedName a prefixed name that is a shorthand for a full iri, using syntax form
+	 *                     <code>prefix:localName</code>. For example, <code>rdf:type</code> is a prefixed name where
+	 *                     <code>rdf</code> is the prefix. If the correct {@link Namespace} definition is also supplied
+	 *                     this expands to the full namespace name
+	 *                     <code>http://www.w3.org/1999/02/22-rdf-syntax-ns#</code>, leading to a full IRI
+	 *                     <code>http://www.w3.org/1999/02/22-rdf-syntax-ns#type</code>.
+	 * 
+	 * @return an {@link IRI} object for the supplied IRI namespace and localName.
+	 * 
+	 * @throws NullPointerException     if any of the input parameters is <code>null</code>
+	 * @throws IllegalArgumentException if the supplied prefixed name can not be transformed to a legal IRI.
+	 * @since 3.6.0
+	 */
+	public static IRI iri(Iterable<Namespace> namespaces, String prefixedName) throws IllegalArgumentException {
+		if (prefixedName.indexOf(':') < 0) {
+			throw new IllegalArgumentException("Invalid prefixed name: '" + prefixedName + "'");
+		}
+
+		final String prefix = prefixedName.substring(0, prefixedName.indexOf(':'));
+		for (Namespace ns : namespaces) {
+			if (prefix.equals(ns.getPrefix())) {
+				return iri(ns.getName(), prefixedName.substring(prefixedName.indexOf(':') + 1));
+			}
+		}
+		throw new IllegalArgumentException("Prefix '" + prefix + "' not identified in supplied namespaces");
 	}
 
 	/**
@@ -627,6 +676,18 @@ public class Values {
 	public static Triple triple(ValueFactory vf, Statement statement) {
 		Objects.requireNonNull(statement, "statement may not be null");
 		return vf.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());
+	}
+
+	/**
+	 * Create a new {@link Namespace} object.
+	 * 
+	 * @param prefix the prefix associated with the namespace
+	 * @param name   the namespace name (typically an IRI) for the namespace.
+	 * @return a {@link Namespace} object.
+	 * @since 3.6.0
+	 */
+	public static Namespace namespace(String prefix, String name) {
+		return new SimpleNamespace(prefix, name);
 	}
 
 	/**

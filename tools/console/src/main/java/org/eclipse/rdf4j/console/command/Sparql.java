@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.console.command;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUtil;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 /**
  * SPARQL query command
@@ -64,7 +64,7 @@ public class Sparql extends QueryEvaluator {
 
 		for (Namespace namespace : namespaces) {
 			str.append(PREFIX).append(" ").append(namespace.getPrefix()).append(": ");
-			str.append("<").append(SPARQLUtil.encodeString(namespace.getName())).append("> ");
+			str.append("<").append(SPARQLQueries.escape(namespace.getName())).append("> ");
 		}
 		result.insert(0, str);
 	}
