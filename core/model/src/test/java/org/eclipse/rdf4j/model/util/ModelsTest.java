@@ -121,13 +121,7 @@ public class ModelsTest {
 		assertTrue(Models.isomorphic(model1, model2));
 	}
 
-	/**
-	 * We are, for now, ignoring the handling of blank nodes as context identifiers for isomorphism.
-	 * 
-	 * See https://github.com/eclipse/rdf4j/issues/2768
-	 */
 	@Test
-	@Ignore
 	public void testModelsIsomorphic_BlankNodeContext() {
 		model1.add(foo, RDF.TYPE, bar);
 		model2.add(foo, RDF.TYPE, bar);
@@ -138,7 +132,6 @@ public class ModelsTest {
 		model2.add(foo, RDF.TYPE, bar, VF.createBNode());
 
 		assertTrue(Models.isomorphic(model1, model2));
-
 	}
 
 	@Test

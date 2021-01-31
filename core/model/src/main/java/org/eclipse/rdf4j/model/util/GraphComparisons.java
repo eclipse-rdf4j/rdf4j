@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,42 +96,66 @@ class GraphComparisons {
 		if (model1.contexts().size() > 1) {
 			// model contains more than one context (including the null context). We compare per individual context.
 			for (Resource context : model1.contexts()) {
+				Model contextInModel1 = model1.filter(null, null, null, context);
 				if (context != null && context.isBNode()) {
-					// We currently do not handle mapping of blank nodes used as context identifiers.
-					logger.warn(
-							"isomorphism detection can not map blank nodes used as context identifiers. Comparison may give inaccurate results",
-							context
-					);
-				}
+					// context identifier is a blank node. We to find blank node identifiers in the other model that map
+					// iso-canonically.
+					Map<BNode, HashCode> mapping1 = getIsoCanonicalMapping(model1);
+					Multimap<HashCode, BNode> partitionMapping2 = partitionMapping(getIsoCanonicalMapping(model2));
 
-				Model contextInlModel1 = model1.filter(null, null, null, context);
-				Model contextInModel2 = model2.filter(null, null, null, context);
-				if (contextInlModel1.size() != contextInModel2.size()) {
-					return false;
-				}
-				final Model canonicalizedContext1 = isoCanonicalize(contextInlModel1);
-				final Model canonicalizedContext2 = isoCanonicalize(contextInModel2);
-				if (!canonicalizedContext1.equals(canonicalizedContext2)) {
-					return false;
+					Collection<BNode> contextCandidates = partitionMapping2.get(mapping1.get(context));
+					if (contextCandidates.isEmpty()) {
+						return false;
+					}
+
+					boolean foundIsomorphicBlankNodeContext = false;
+					for (BNode context2 : contextCandidates) {
+						Model contextInModel2 = model2.filter(null, null, null, context2);
+						if (contextInModel1.size() != contextInModel2.size()) {
+							continue;
+						}
+						if (isomorphicSingleContext(contextInModel1, contextInModel2)) {
+							foundIsomorphicBlankNodeContext = true;
+							break;
+						}
+					}
+					if (!foundIsomorphicBlankNodeContext) {
+						return false;
+					}
+				} else {
+					// context identifier is an iri. Simple per-context check will suffice.
+					Model contextInModel2 = model2.filter(null, null, null, context);
+					if (contextInModel1.size() != contextInModel2.size()) {
+						return false;
+					}
+					final Model canonicalizedContext1 = isoCanonicalize(contextInModel1);
+					final Model canonicalizedContext2 = isoCanonicalize(contextInModel2);
+					if (!canonicalizedContext1.equals(canonicalizedContext2)) {
+						return false;
+					}
 				}
 			}
 			return true;
 		} else {
 			// only one context (the null context), so we're dealing with one graph only.
-			final Map<BNode, HashCode> mapping1 = getIsoCanonicalMapping(model1);
-			if (mapping1.isEmpty()) {
-				// no blank nodes in model1 - simple collection equality will do
-				return model1.equals(model2);
-			}
-			final Map<BNode, HashCode> mapping2 = getIsoCanonicalMapping(model2);
-			if (mappingsIncompatible(mapping1, mapping2)) {
-				return false;
-			}
-
-			final Model c1 = labelModel(model1, mapping1);
-			final Model c2 = labelModel(model2, mapping2);
-			return c1.equals(c2);
+			return isomorphicSingleContext(model1, model2);
 		}
+	}
+
+	private static boolean isomorphicSingleContext(Model model1, Model model2) {
+		final Map<BNode, HashCode> mapping1 = getIsoCanonicalMapping(model1);
+		if (mapping1.isEmpty()) {
+			// no blank nodes in model1 - simple collection equality will do
+			return model1.equals(model2);
+		}
+		final Map<BNode, HashCode> mapping2 = getIsoCanonicalMapping(model2);
+		if (mappingsIncompatible(mapping1, mapping2)) {
+			return false;
+		}
+
+		final Model c1 = labelModel(model1, mapping1);
+		final Model c2 = labelModel(model2, mapping2);
+		return c1.equals(c2);
 	}
 
 	private static boolean mappingsIncompatible(Map<BNode, HashCode> mapping1, Map<BNode, HashCode> mapping2) {
@@ -173,6 +197,9 @@ class GraphComparisons {
 			}
 			if (st.getObject().isBNode()) {
 				blankNodes.add((BNode) st.getObject());
+			}
+			if (st.getContext() != null && st.getContext().isBNode()) {
+				blankNodes.add((BNode) st.getContext());
 			}
 		});
 		return blankNodes;
@@ -241,9 +268,7 @@ class GraphComparisons {
 					continue;
 				}
 
-				List<HashCode> difference = new ArrayList<>(om.values());
-				difference.removeAll(mapping.values());
-				if (difference.isEmpty()) {
+				if (om.values().containsAll(mapping.values())) {
 					compatibleMapping = om;
 					break;
 				}
@@ -292,10 +317,11 @@ class GraphComparisons {
 	}
 
 	private static Model labelModel(Model original, Map<BNode, HashCode> hash) {
-		Model result = new LinkedHashModel(original.size());
+		Model result = new DynamicModelFactory().createEmptyModel();
 
 		for (Statement st : original) {
-			if (st.getSubject().isBNode() || st.getObject().isBNode()) {
+			if (st.getSubject().isBNode() || st.getObject().isBNode()
+					|| (st.getContext() != null && st.getContext().isBNode())) {
 				Resource subject = st.getSubject().isBNode()
 						? createCanonicalBNode((BNode) st.getSubject(), hash)
 						: st.getSubject();
@@ -303,8 +329,11 @@ class GraphComparisons {
 				Value object = st.getObject().isBNode()
 						? createCanonicalBNode((BNode) st.getObject(), hash)
 						: st.getObject();
+				Resource context = (st.getContext() != null && st.getContext().isBNode())
+						? createCanonicalBNode((BNode) st.getContext(), hash)
+						: st.getContext();
 
-				result.add(subject, predicate, object);
+				result.add(subject, predicate, object, context);
 			} else {
 				result.add(st);
 			}
