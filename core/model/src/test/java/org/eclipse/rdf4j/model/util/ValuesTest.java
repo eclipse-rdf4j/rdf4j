@@ -176,6 +176,43 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testLanguageTaggedLiteral() {
+		String lexValue = "a literal";
+		String languageTag = "en";
+		Literal literal = literal(lexValue, languageTag);
+
+		assertThat(literal.getLabel()).isEqualTo(lexValue);
+		assertThat(literal.getLanguage()).isNotEmpty().contains(languageTag);
+		assertThat(literal.getDatatype()).isEqualTo(RDF.LANGSTRING);
+	}
+
+	@Test
+	public void testLanguageTaggedLiteral_InjectedValueFactory() {
+		String lexValue = "a literal";
+		String languageTag = "en";
+		literal(vf, lexValue, languageTag);
+		verify(vf).createLiteral(lexValue, languageTag);
+	}
+
+	@Test
+	public void testLanguageTaggedLiteralNull1() {
+		String lexicalValue = null;
+		String languageTag = "en";
+		assertThatThrownBy(() -> literal(lexicalValue, languageTag))
+				.isInstanceOf(NullPointerException.class)
+				.hasMessageContaining("lexicalValue may not be null");
+	}
+
+	@Test
+	public void testLanguageTaggedLiteralNull2() {
+		String lexicalValue = "a literal";
+		String languageTag = null;
+		assertThatThrownBy(() -> literal(lexicalValue, languageTag))
+				.isInstanceOf(NullPointerException.class)
+				.hasMessageContaining("languageTag may not be null");
+	}
+
+	@Test
 	public void testValidTypedLiteral() {
 		String lexValue = "42";
 		Literal literal = literal(lexValue, XSD.INT);
@@ -209,7 +246,8 @@ public class ValuesTest {
 	@Test
 	public void testTypedLiteralNull2() {
 		String lexValue = "42";
-		assertThatThrownBy(() -> literal(lexValue, null))
+		IRI datatype = null;
+		assertThatThrownBy(() -> literal(lexValue, datatype))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessageContaining("datatype may not be null");
 	}
@@ -573,4 +611,5 @@ public class ValuesTest {
 		assertThat(l).isNotNull();
 		assertThat(l.getDatatype()).isEqualTo(XSD.STRING);
 	}
+
 }
