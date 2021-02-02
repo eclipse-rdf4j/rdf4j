@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.ValidatingValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -253,6 +254,36 @@ public class Values {
 	 */
 	public static Literal literal(ValueFactory vf, String lexicalValue) {
 		return vf.createLiteral(Objects.requireNonNull(lexicalValue, "lexicalValue may not be null"));
+	}
+
+	/**
+	 * Creates a new {@link Literal} with the supplied lexical value.
+	 * 
+	 * @param lexicalValue the lexical value for the literal
+	 * @param languageTag  the language tag for the literal.
+	 * 
+	 * @return a new {@link Literal} of type {@link RDF#LANGSTRING}
+	 * 
+	 * @throws NullPointerException if the supplied lexical value or language tag is <code>null</code>.
+	 */
+	public static Literal literal(String lexicalValue, String languageTag) {
+		return literal(VALUE_FACTORY, lexicalValue, languageTag);
+	}
+
+	/**
+	 * Creates a new {@link Literal} with the supplied lexical value.
+	 *
+	 * @param vf           the {@link ValueFactory} to use for creation of the {@link Literal}
+	 * @param lexicalValue the lexical value for the literal
+	 * @param languageTag  the language tag for the literal.
+	 * 
+	 * @return a new {@link Literal} of type {@link RDF#LANGSTRING}
+	 * 
+	 * @throws NullPointerException if any of the input parameters is <code>null</code>
+	 */
+	public static Literal literal(ValueFactory vf, String lexicalValue, String languageTag) {
+		return vf.createLiteral(Objects.requireNonNull(lexicalValue, "lexicalValue may not be null"),
+				Objects.requireNonNull(languageTag, "languageTag may not be null"));
 	}
 
 	/**
