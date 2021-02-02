@@ -103,7 +103,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
-	private boolean silentMode;
+	private boolean silentClear;
 
 	public SPARQLConnection(SPARQLRepository repository, SPARQLProtocolSession client) {
 		this(repository, client, false); // in triple mode by default
@@ -113,7 +113,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		super(repository);
 		this.client = client;
 		this.quadMode = quadMode;
-		this.silentMode = false;
+		this.silentClear = false;
 	}
 
 	@Override
@@ -121,8 +121,60 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return client.getQueryURL();
 	}
 
+	/**
+	 * Configure the connection to execute {@link #clear(Resource...)} operations silently: the remote endpoint will not
+	 * respond with an error if the supplied named graph does not exist on the endpoint.
+	 * <p>
+	 * By default, the SPARQL connection executes the {@link #clear(Resource...)} API operation by converting it to a
+	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
+	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
+	 * SPARQL 1.1 Recommendation:
+	 * 
+	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
+	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
+	 * will always be success.
+	 * <p>
+	 * Stores that do not record empty graphs will always return success. </blockquote>
+	 * 
+	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
+	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
+	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
+	 * operation is modified to respond with a success message when removing a non-existent named graph.
+	 * 
+	 * @param silent the value to set this to.
+	 * @see https://www.w3.org/TR/sparql11-update/#clear
+	 */
+	public void setSilentClear(boolean silent) {
+		this.silentClear = silent;
+	}
+
+	/**
+	 * Configure the connection to execute {@link #clear(Resource...)} operations silently: the remote endpoint will not
+	 * respond with an error if the supplied named graph does not exist on the endpoint.
+	 * <p>
+	 * By default, the SPARQL connection executes the {@link #clear(Resource...)} API operation by converting it to a
+	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
+	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
+	 * SPARQL 1.1 Recommendation:
+	 * 
+	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
+	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
+	 * will always be success.
+	 * <p>
+	 * Stores that do not record empty graphs will always return success. </blockquote>
+	 * 
+	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
+	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
+	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
+	 * operation is modified to respond with a success message when removing a non-existent named graph.
+	 * 
+	 * @param silent the value to set this to.
+	 * @see https://www.w3.org/TR/sparql11-update/#clear
+	 * @deprecated since 3.6.0 - use {@link #setSilentClear(boolean)} instead.
+	 */
+	@Deprecated
 	public void enableSilentMode(boolean flag) {
-		this.silentMode = flag;
+		setSilentClear(flag);
 	}
 
 	@Override
@@ -616,7 +668,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		boolean localTransaction = startLocalTransaction();
 
 		String clearMode = "CLEAR";
-		if (this.isSilentMode()) {
+		if (this.isSilentClear()) {
 			clearMode = "CLEAR SILENT";
 		}
 
@@ -1002,8 +1054,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		return quadMode;
 	}
 
-	protected boolean isSilentMode() {
-		return silentMode;
+	protected boolean isSilentClear() {
+		return silentClear;
 	}
 
 	/**
