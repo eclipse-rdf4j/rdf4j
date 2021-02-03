@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 
+import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -444,7 +445,8 @@ public class GenericPlanNode {
 				.append("<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" >");
 
 		sb.append(Stream.of(
-				"<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>" + type + "</U></td></tr>",
+				"<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>" + StringEscapeUtils.escapeHtml4(type)
+						+ "</U></td></tr>",
 				"<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>",
 				"<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
 						+ "</td></tr>",
@@ -470,11 +472,14 @@ public class GenericPlanNode {
 			} else if (plans.size() == 1) {
 				linkLabel = "";
 			}
+
 			sb.append("   ")
 					.append(getUUID())
 					.append(" -> ")
 					.append(p.getUUID())
-					.append(" [label=\"" + linkLabel + "\"]")
+					.append(" [label=\"")
+					.append(linkLabel)
+					.append("\"]")
 					.append(" ;")
 					.append(newLine);
 		}
