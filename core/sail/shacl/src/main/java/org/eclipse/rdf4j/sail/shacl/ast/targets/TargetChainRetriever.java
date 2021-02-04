@@ -1,7 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
