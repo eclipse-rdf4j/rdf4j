@@ -281,7 +281,7 @@ public class InnerJoinTest {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					assert (v.size() == 2);
-					return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
+					return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, true);
 				})
 				.collect(Collectors.toSet());
 

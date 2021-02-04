@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 
@@ -48,11 +47,13 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 			if (limit < 0 || counter < limit) {
 				ValidationTuple invalidTuple = tupleIterator.next();
 
-				Deque<ValidationResult> validationResults = invalidTuple.toValidationResult();
+				List<ValidationResult> validationResults = invalidTuple.getValidationResult();
 
 				ValidationResult parent = null;
 
-				for (ValidationResult validationResult : validationResults) {
+				// we iterate in reverse order to get the most recent validation result first
+				for (int i = validationResults.size() - 1; i >= 0; i--) {
+					ValidationResult validationResult = validationResults.get(i);
 					if (parent == null) {
 						parent = validationResult;
 						next = parent;

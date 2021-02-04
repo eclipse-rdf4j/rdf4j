@@ -185,7 +185,7 @@ public class TargetChainRetriever implements PlanNode {
 							.stream()
 							.sorted()
 							.map(nextBinding::getValue)
-							.collect(Collectors.toCollection(ArrayList::new));
+							.collect(Collectors.toList());
 
 					next = new ValidationTuple(collect, scope, false);
 

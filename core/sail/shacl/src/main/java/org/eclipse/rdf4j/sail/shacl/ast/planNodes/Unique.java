@@ -16,6 +16,7 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,12 +26,14 @@ import org.slf4j.LoggerFactory;
 public class Unique implements PlanNode {
 	private final Logger logger = LoggerFactory.getLogger(Unique.class);
 	private final boolean compress;
+	private final StackTraceElement[] stackTrace;
 
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Unique(PlanNode parent, boolean compress) {
+		this.stackTrace = Thread.currentThread().getStackTrace();
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.parent = parent;

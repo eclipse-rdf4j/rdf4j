@@ -1,11 +1,9 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -22,24 +20,13 @@ import org.slf4j.LoggerFactory;
 public class ValidationTuple {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);
-
 	private static final ValueComparator valueComparator = new ValueComparator();
+
+	// all fields should be immutable
 	private final List<Value> chain;
 	private final ConstraintComponent.Scope scope;
 	private final boolean propertyShapeScopeWithValue;
-
-	Deque<ValidationResult> validationResults = new ArrayDeque<>();
-
-	public ValidationTuple(ValidationTuple validationTuple) {
-		this.chain = validationTuple.chain;
-		this.scope = validationTuple.scope;
-		this.propertyShapeScopeWithValue = validationTuple.propertyShapeScopeWithValue;
-
-		if (validationTuple.validationResults != null) {
-			this.validationResults = new ArrayDeque<>(validationTuple.validationResults);
-		}
-
-	}
+	private final List<ValidationResult> validationResults;
 
 	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope,
 			boolean hasValue) {
@@ -55,6 +42,7 @@ public class ValidationTuple {
 		this.chain = Collections.unmodifiableList(chain);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
+		this.validationResults = Collections.emptyList();
 
 	}
 
@@ -62,26 +50,26 @@ public class ValidationTuple {
 		this.chain = Collections.unmodifiableList(targets);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
+		this.validationResults = Collections.emptyList();
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
 		this.chain = Collections.unmodifiableList(Arrays.asList(a, c));
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
+		this.validationResults = Collections.emptyList();
 	}
 
 	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
-
 		this.chain = Collections.singletonList(subject);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
+		this.validationResults = Collections.emptyList();
 	}
 
-	public ValidationTuple(Deque<ValidationResult> validationResults, List<Value> chain,
+	private ValidationTuple(List<ValidationResult> validationResults, List<Value> chain,
 			ConstraintComponent.Scope scope, boolean propertyShapeScopeWithValue) {
-		if (validationResults != null) {
-			this.validationResults = new ArrayDeque<>(validationResults);
-		}
+		this.validationResults = Collections.unmodifiableList(validationResults);
 		this.chain = Collections.unmodifiableList(chain);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = propertyShapeScopeWithValue;
@@ -142,15 +130,20 @@ public class ValidationTuple {
 		return Integer.compare(getFullChainSize(true), other.getFullChainSize(true));
 	}
 
-	public Deque<ValidationResult> toValidationResult() {
+	public List<ValidationResult> getValidationResult() {
 		return validationResults;
 	}
 
-	public void addValidationResult(ValidationResult validationResult) {
-		if (validationResults == null) {
-			validationResults = new ArrayDeque<>();
+	public ValidationTuple addValidationResult(ValidationResult validationResult) {
+		List<ValidationResult> validationResults;
+		if (!this.validationResults.isEmpty()) {
+			validationResults = new ArrayList<>(this.validationResults);
+			validationResults.add(validationResult);
+		} else {
+			validationResults = Collections.singletonList(validationResult);
 		}
-		this.validationResults.addFirst(validationResult);
+
+		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue);
 	}
 
 	public Value getActiveTarget() {
@@ -239,7 +232,7 @@ public class ValidationTuple {
 	 * @return
 	 * @param includePropertyShapeValues
 	 */
-	public Collection<Value> getTargetChain(boolean includePropertyShapeValues) {
+	public List<Value> getTargetChain(boolean includePropertyShapeValues) {
 
 		if (scope == ConstraintComponent.Scope.propertyShape && hasValue() && !includePropertyShapeValues) {
 			return chain.stream().limit(chain.size() - 1).collect(Collectors.toList());

@@ -145,9 +145,9 @@ public class EqualsJoinTest {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					if (v.size() > 1) {
-						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, true);
 					} else {
-						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, false);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, false);
 					}
 				})
 				.collect(Collectors.toSet());

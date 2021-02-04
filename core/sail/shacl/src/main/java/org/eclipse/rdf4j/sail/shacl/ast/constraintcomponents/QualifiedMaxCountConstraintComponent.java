@@ -9,9 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -165,10 +163,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 			);
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
-				Collection<Value> targetChain = t.getTargetChain(true);
-				ValidationTuple validationTuple = new ValidationTuple(new ArrayList<>(targetChain),
-						Scope.propertyShape, false);
-				return validationTuple;
+				List<Value> targetChain = t.getTargetChain(true);
+				return new ValidationTuple(targetChain, Scope.propertyShape, false);
 			});
 
 		};

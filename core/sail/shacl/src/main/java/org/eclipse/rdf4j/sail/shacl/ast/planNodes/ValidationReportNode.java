@@ -48,8 +48,7 @@ public class ValidationReportNode implements PlanNode {
 			@Override
 			public ValidationTuple next() throws SailException {
 				ValidationTuple next = iterator.next();
-				next.addValidationResult(validationResultFunction.apply(next));
-				return next;
+				return next.addValidationResult(validationResultFunction.apply(next));
 			}
 
 			@Override
