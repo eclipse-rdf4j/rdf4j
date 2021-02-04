@@ -14,15 +14,9 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 public class ValidationTupleHelper {
 
 	public static ValidationTuple join(ValidationTuple left, ValidationTuple right) {
-
-		ValidationTuple validationTuple = new ValidationTuple(left);
 		if (right.hasValue()) {
-			validationTuple.setValue(right.getValue());
+			return left.setValue(right.getValue());
 		}
-		if (right.validationResults != null && !right.validationResults.isEmpty()) {
-			System.out.println(
-					"WARNING! There are validation results in the right tuple! Should we do soemthing about that?");
-		}
-		return validationTuple;
+		return left;
 	}
 }

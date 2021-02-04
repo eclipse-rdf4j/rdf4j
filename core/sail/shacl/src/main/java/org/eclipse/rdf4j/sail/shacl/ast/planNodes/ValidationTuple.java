@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -24,13 +25,13 @@ public class ValidationTuple {
 
 	private static final ValueComparator valueComparator = new ValueComparator();
 	private final List<Value> chain;
-	private ConstraintComponent.Scope scope;
-	private boolean propertyShapeScopeWithValue;
+	private final ConstraintComponent.Scope scope;
+	private final boolean propertyShapeScopeWithValue;
 
 	Deque<ValidationResult> validationResults = new ArrayDeque<>();
 
 	public ValidationTuple(ValidationTuple validationTuple) {
-		this.chain = new ArrayList<>(validationTuple.chain);
+		this.chain = validationTuple.chain;
 		this.scope = validationTuple.scope;
 		this.propertyShapeScopeWithValue = validationTuple.propertyShapeScopeWithValue;
 
@@ -47,34 +48,43 @@ public class ValidationTuple {
 
 	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
 			boolean hasValue) {
-		chain = new ArrayList<>();
+		List<Value> chain = new ArrayList<>();
 		for (String variable : variables) {
 			chain.add(bindingSet.getValue(variable));
 		}
+		this.chain = Collections.unmodifiableList(chain);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 
 	}
 
 	public ValidationTuple(List<Value> targets, ConstraintComponent.Scope scope, boolean hasValue) {
-		chain = targets;
+		this.chain = Collections.unmodifiableList(targets);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
-		chain = new ArrayList<>();
-		chain.add(a);
-		chain.add(c);
+		this.chain = Collections.unmodifiableList(Arrays.asList(a, c));
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 	}
 
 	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
-		chain = new ArrayList<>();
-		chain.add(subject);
+
+		this.chain = Collections.singletonList(subject);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
+	}
+
+	public ValidationTuple(Deque<ValidationResult> validationResults, List<Value> chain,
+			ConstraintComponent.Scope scope, boolean propertyShapeScopeWithValue) {
+		if (validationResults != null) {
+			this.validationResults = new ArrayDeque<>(validationResults);
+		}
+		this.chain = Collections.unmodifiableList(chain);
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = propertyShapeScopeWithValue;
 	}
 
 	public boolean sameTargetAs(ValidationTuple other) {
@@ -102,11 +112,6 @@ public class ValidationTuple {
 
 	public ConstraintComponent.Scope getScope() {
 		return scope;
-	}
-
-	public void setScope(ConstraintComponent.Scope scope) {
-		assert this.scope == null;
-		this.scope = scope;
 	}
 
 	public int compareActiveTarget(ValidationTuple other) {
@@ -190,20 +195,33 @@ public class ValidationTuple {
 				'}';
 	}
 
-	public void shiftToNodeShape() {
+	public ValidationTuple shiftToNodeShape() {
 		assert scope == ConstraintComponent.Scope.propertyShape;
-		if (propertyShapeScopeWithValue) {
+
+		ArrayList<Value> chain = new ArrayList<>(this.chain);
+		boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
+		ConstraintComponent.Scope scope = this.scope;
+
+		if (this.propertyShapeScopeWithValue) {
 			propertyShapeScopeWithValue = false;
 			chain.remove(chain.size() - 1);
 		}
 		scope = ConstraintComponent.Scope.nodeShape;
+
+		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue);
+
 	}
 
-	public void shiftToPropertyShapeScope() {
+	public ValidationTuple shiftToPropertyShapeScope() {
 		assert scope == ConstraintComponent.Scope.nodeShape;
 		assert chain.size() >= 2;
-		scope = ConstraintComponent.Scope.propertyShape;
-		propertyShapeScopeWithValue = true;
+
+		ArrayList<Value> chain = new ArrayList<>(this.chain);
+		boolean propertyShapeScopeWithValue = true;
+		ConstraintComponent.Scope scope = ConstraintComponent.Scope.propertyShape;
+
+		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue);
+
 	}
 
 	public int getFullChainSize(boolean includePropertyShapeValue) {
@@ -230,19 +248,23 @@ public class ValidationTuple {
 		return new ArrayList<>(chain);
 	}
 
-	public void setValue(Value value) {
+	public ValidationTuple setValue(Value value) {
+
+		List<Value> chain = new ArrayList<>(this.chain);
+
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
-				chain.remove(chain.size() - 1);
+				chain.remove(this.chain.size() - 1);
 			}
 			chain.add(value);
 		} else {
-			chain.remove(chain.size() - 1);
+			chain.remove(this.chain.size() - 1);
 			chain.add(value);
 
 		}
 
-		propertyShapeScopeWithValue = true;
+		boolean propertyShapeScopeWithValue = true;
+		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue);
 	}
 
 	public int compareValue(ValidationTuple other) {
@@ -252,17 +274,21 @@ public class ValidationTuple {
 		return valueComparator.compare(left, right);
 	}
 
-	public void trimToTarget() {
+	public ValidationTuple trimToTarget() {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
-				chain.remove(chain.size() - 1);
-				propertyShapeScopeWithValue = false;
+				List<Value> chain = new ArrayList<>(this.chain);
+				chain.remove(this.chain.size() - 1);
+				boolean propertyShapeScopeWithValue = false;
+				return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue);
 			}
 		}
+		return this;
 	}
 
-	public void pop() {
-
+	public ValidationTuple pop() {
+		List<Value> chain = new ArrayList<>(this.chain);
+		boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 		if (getScope() == ConstraintComponent.Scope.propertyShape) {
 			if (hasValue()) {
 				assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
@@ -275,6 +301,8 @@ public class ValidationTuple {
 			assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! " + toString();
 			chain.remove(chain.size() - 1);
 		}
+
+		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue);
 
 	}
 }

@@ -49,12 +49,7 @@ public class ShiftToNodeShape implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 
-				ValidationTuple next = parentIterator.next();
-				ValidationTuple validationTuple = new ValidationTuple(next);
-
-				validationTuple.shiftToNodeShape();
-
-				return validationTuple;
+				return parentIterator.next().shiftToNodeShape();
 			}
 
 			@Override

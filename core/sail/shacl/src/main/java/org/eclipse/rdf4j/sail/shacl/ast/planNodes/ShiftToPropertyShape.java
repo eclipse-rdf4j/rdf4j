@@ -47,12 +47,8 @@ public class ShiftToPropertyShape implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 
-				ValidationTuple next = parentIterator.next();
-				ValidationTuple validationTuple = new ValidationTuple(next);
+				return parentIterator.next().shiftToPropertyShapeScope();
 
-				validationTuple.shiftToPropertyShapeScope();
-
-				return validationTuple;
 			}
 
 			@Override

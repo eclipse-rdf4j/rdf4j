@@ -53,11 +53,7 @@ public class TargetChainPopper implements PlanNode {
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
-
-				ValidationTuple next = iterator.next();
-				next = new ValidationTuple(next);
-				next.pop();
-				return next;
+				return iterator.next().pop();
 			}
 
 			@Override
