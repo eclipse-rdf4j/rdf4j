@@ -123,8 +123,7 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 				options.setDocumentLoader(loader);
 			}
 			JsonFactory factory = configureNewJsonFactory();
-			JsonParser nextParser = (in != null) ? factory.createParser(in) : factory.createParser(reader);
-			final Object parsedJson = JsonUtils.fromJsonParser(nextParser);
+			final Object parsedJson = getJSONObject(in, reader, factory);
 
 			JsonLdProcessor.toRDF(parsedJson, callback, options);
 		} catch (JsonLdError e) {
@@ -140,6 +139,11 @@ public class JSONLDParser extends AbstractRDFParser implements RDFParser {
 		} finally {
 			clear();
 		}
+	}
+
+	protected Object getJSONObject(InputStream in, Reader reader, JsonFactory factory) throws IOException {
+		JsonParser nextParser = (in != null) ? factory.createParser(in) : factory.createParser(reader);
+		return JsonUtils.fromJsonParser(nextParser);
 	}
 
 	/**
