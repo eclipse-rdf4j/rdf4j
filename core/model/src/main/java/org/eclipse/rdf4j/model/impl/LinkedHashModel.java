@@ -475,28 +475,32 @@ public class LinkedHashModel extends AbstractModel {
 		Set<ModelStatement> p = null;
 		Set<ModelStatement> o = null;
 		if (subj != null) {
-			if (!values.containsKey(subj)) {
+			ModelNode modelNode = values.get(subj);
+			if (modelNode == null) {
 				return Collections.emptySet();
 			}
-			s = values.get(subj).subjects;
+			s = modelNode.subjects;
 		}
 		if (pred != null) {
-			if (!values.containsKey(pred)) {
+			ModelNode modelNode = values.get(pred);
+			if (modelNode == null) {
 				return Collections.emptySet();
 			}
-			p = values.get(pred).predicates;
+			p = modelNode.predicates;
 		}
 		if (obj != null) {
-			if (!values.containsKey(obj)) {
+			ModelNode modelNode = values.get(obj);
+			if (modelNode == null) {
 				return Collections.emptySet();
 			}
-			o = values.get(obj).objects;
+			o = modelNode.objects;
 		}
 		if (contexts.length == 1) {
-			if (!values.containsKey(contexts[0])) {
+			ModelNode modelNode = values.get(contexts[0]);
+			if (modelNode == null) {
 				return Collections.emptySet();
 			}
-			Set<ModelStatement> c = values.get(contexts[0]).contexts;
+			Set<ModelStatement> c = modelNode.contexts;
 			return smallest(statements, s, p, o, c);
 		} else {
 			return smallest(statements, s, p, o);
