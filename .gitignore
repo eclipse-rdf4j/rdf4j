@@ -40,3 +40,4 @@ compliance/repository/overlays
 tempElasticsearchDownload
 cache.db
 formatter-maven-cache.properties
+compliance/sparql/overlays
