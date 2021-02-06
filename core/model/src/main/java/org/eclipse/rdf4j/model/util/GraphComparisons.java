@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.model.util;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -53,9 +54,7 @@ class GraphComparisons {
 
 	private static final Logger logger = LoggerFactory.getLogger(GraphComparisons.class);
 
-	// We use a 32-bit hash function. This is not strong enough for globally unique identifiers (so we cannot use this
-	// for skolemization purposes) but is fine for isomorphism (where only local uniqueness really matters)
-	private static final HashFunction hashFunction = Hashing.murmur3_32();
+	private static final HashFunction hashFunction = Hashing.murmur3_128();
 
 	private static final HashCode initialHashCode = hashFunction.hashString("", Charsets.UTF_8);
 	private static final HashCode outgoing = hashFunction.hashString("+", Charsets.UTF_8);
@@ -220,10 +219,9 @@ class GraphComparisons {
 					HashCode hashOfA = blankNodeMapping.get(a.iterator().next());
 					HashCode hashOfB = blankNodeMapping.get(b.iterator().next());
 
-					return Long.compare(hashOfA.padToLong(), hashOfB.padToLong());
-//					BigInteger difference = new BigInteger(1, hashOfA.asBytes())
-//							.subtract(new BigInteger(1, hashOfB.asBytes()));
-//					result = difference.compareTo(BigInteger.ZERO);
+					BigInteger difference = new BigInteger(1, hashOfA.asBytes())
+							.subtract(new BigInteger(1, hashOfB.asBytes()));
+					result = difference.compareTo(BigInteger.ZERO);
 				}
 				return result;
 			}
@@ -244,7 +242,7 @@ class GraphComparisons {
 			Multimap<HashCode, BNode> partitionPrime = partitionMapping(hashDoublePrime);
 			if (isFine(partitionPrime)) {
 				finePartitionMappings.add(hashDoublePrime);
-				if (lowestFound == null || mappingSize(hashDoublePrime) < (mappingSize(blankNodeMapping))) {
+				if (lowestFound == null || mappingSize(hashDoublePrime).compareTo(mappingSize(blankNodeMapping)) < 0) {
 					lowestFound = hashDoublePrime;
 				}
 			} else {
@@ -311,12 +309,11 @@ class GraphComparisons {
 		return Multimaps.invertFrom(Multimaps.forMap(blankNodeMapping), HashMultimap.create());
 	}
 
-	private static long mappingSize(Map<BNode, HashCode> mapping) {
-		// we use long math instead of int (despite a 32-bit hashcode) to reduce the risk of possible overflows here
-		long size = mapping.values()
+	private static BigInteger mappingSize(Map<BNode, HashCode> mapping) {
+		BigInteger size = mapping.values()
 				.stream()
-				.map(HashCode::padToLong)
-				.reduce(0L, (v1, v2) -> v1 + v2);
+				.map(h -> new BigInteger(1, h.asBytes()))
+				.reduce(BigInteger.ZERO, (v1, v2) -> v1.add(v2));
 		return size;
 	}
 

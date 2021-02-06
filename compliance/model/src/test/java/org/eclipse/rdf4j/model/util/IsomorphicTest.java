@@ -189,9 +189,15 @@ public class IsomorphicTest {
 
 	@Test
 	public void bsbmNotIsomorphic() {
-
 		notIsomorphic(bsbm, bsbmChanged);
+	}
 
+	@Test
+	public void testValidationReport() throws IOException {
+		Model m1 = getModel("shaclValidationReport.ttl");
+		Model m2 = getModel("shaclValidationReport.ttl");
+
+		assertThat(Models.isomorphic(m1, m2));
 	}
 
 	@Test(timeout = 2000)
