@@ -170,13 +170,13 @@ public class ValidationTuple {
 		}
 		ValidationTuple that = (ValidationTuple) o;
 		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue &&
-				Objects.equals(new ArrayList<>(chain), new ArrayList<>(that.chain)) &&
+				Objects.equals(chain, that.chain) &&
 				scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(new ArrayList<>(chain), scope, propertyShapeScopeWithValue);
+		return Objects.hash(chain, scope, propertyShapeScopeWithValue);
 	}
 
 	@Override

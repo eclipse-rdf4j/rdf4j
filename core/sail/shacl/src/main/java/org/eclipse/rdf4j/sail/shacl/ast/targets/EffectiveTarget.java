@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;

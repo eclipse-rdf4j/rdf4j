@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 

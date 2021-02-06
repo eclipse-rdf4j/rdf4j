@@ -16,6 +16,7 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,7 +26,7 @@ import org.slf4j.LoggerFactory;
 public class Unique implements PlanNode {
 	private final Logger logger = LoggerFactory.getLogger(Unique.class);
 	private final boolean compress;
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 
 	PlanNode parent;
 	private boolean printed = false;
@@ -60,6 +61,14 @@ public class Unique implements PlanNode {
 
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
+
+					if (!(temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue())) {
+						logger.debug("");
+					}
+
+					if(!(!compress || (temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue()))){
+						System.out.println(temp);
+					}
 
 					if (temp.getFullChainSize(true) > 1) {
 						useMultiCardinalityDedupeSet = true;
