@@ -131,7 +131,7 @@ public class IsomorphicBenchmark {
 
 	// checks performance for a typical SHACL validation report
 	@Benchmark
-	public boolean shaclValidationREport() {
+	public boolean shaclValidationReport() {
 		return isomorphic(shaclValidationReport, shaclValidationReport_2);
 	}
 
