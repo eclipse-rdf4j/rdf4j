@@ -10,14 +10,14 @@ COPY ignore/rdf4j.zip /tmp/rdf4j.zip
 
 WORKDIR /tmp
 
-RUN	unzip -q /tmp/rdf4j.zip
-RUN	rm -rf /usr/local/tomcat/webapps/*
-RUN	cp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps
-RUN	rm -rf /tmp/eclipse
-RUN	rm /tmp/rdf4j.zip
-RUN	mkdir -p /var/rdf4j
-RUN	chown -R tomcat /var/rdf4j /usr/local/tomcat
-RUN	chmod a+x /usr/local/tomcat /usr/local/tomcat/bin /usr/local/tomcat/bin/catalina.sh
+RUN	unzip -q /tmp/rdf4j.zip && \
+	rm -rf /usr/local/tomcat/webapps/* && \
+	cp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps && \
+	rm -rf /tmp/eclipse && \
+	rm /tmp/rdf4j.zip && \
+	mkdir -p /var/rdf4j && \
+	chown -R tomcat /var/rdf4j /usr/local/tomcat && \
+	chmod a+x /usr/local/tomcat /usr/local/tomcat/bin /usr/local/tomcat/bin/catalina.sh
 
 COPY web.xml /usr/local/tomcat/conf/web.xml
 
