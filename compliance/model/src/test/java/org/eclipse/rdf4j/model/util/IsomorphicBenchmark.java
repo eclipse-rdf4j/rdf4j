@@ -65,6 +65,7 @@ public class IsomorphicBenchmark {
 	private Model blankNodes_2 = getModel("blankNodes.ttl");
 	private Model shacl_2 = getModel("shacl.ttl");
 	private Model shaclValidationReport_2 = getModel("shaclValidationReport.ttl");
+	private Model shaclValidationReport_changed = getModel("shaclValidationReport-changed.ttl");
 	private Model longChain_2 = getModel("longChain.ttl");
 	private Model sparqlTestCase_2 = getModel("sparqlTestCase.ttl");
 	private Model spinFullForwardchained_2 = getModel("spin-full-forwardchained.ttl");
@@ -133,6 +134,12 @@ public class IsomorphicBenchmark {
 	@Benchmark
 	public boolean shaclValidationReport() {
 		return isomorphic(shaclValidationReport, shaclValidationReport_2);
+	}
+
+	// checks performance for one-statement change (not involving blank nodes) on SHACL validation report
+	@Benchmark
+	public boolean shaclValidationReport_changed() {
+		return notIsomorphic(shaclValidationReport, shaclValidationReport_changed);
 	}
 
 	// checks performance for a long chaing of rdfs:subClassOf statements

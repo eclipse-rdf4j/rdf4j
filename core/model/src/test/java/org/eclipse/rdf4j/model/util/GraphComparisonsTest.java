@@ -81,14 +81,6 @@ public class GraphComparisonsTest {
 	}
 
 	@Test
-	public void testIsomorphic_NoBlankNodes() {
-		Model example49 = buildExample49Model();
-		Model isomorphic = buildExample49ModelIsomorphic();
-
-		assertThat(GraphComparisons.isomorphic(example49, isomorphic));
-	}
-
-	@Test
 	public void testIsomorphic() {
 		Model example49 = buildExample49Model();
 		Model isomorphic = buildExample49ModelIsomorphic();
@@ -153,7 +145,6 @@ public class GraphComparisonsTest {
 
 	/**
 	 * Graph from example 4.9 in http://aidanhogan.com/docs/rdf-canonicalisation.pdf - differently ordered
-	 * 
 	 */
 	private Model buildExample49ModelIsomorphic() {
 		// @formatter:off
@@ -168,7 +159,6 @@ public class GraphComparisonsTest {
 				.subject(bnode("other-h")).add(q, bnode("other-e"))
 				.build();
 		// @formatter:on
-
 		return example49;
 	}
 }

@@ -9,15 +9,19 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.BeforeClass;
@@ -149,16 +153,12 @@ public class IsomorphicTest {
 
 	@Test
 	public void spinFullForwardchained() {
-
 		isomorphic(spinFullForwardchained, spinFullForwardchained_2);
-
 	}
 
 	@Test
 	public void list() {
-
 		isomorphic(list, list_2);
-
 	}
 
 	@Test
@@ -214,6 +214,14 @@ public class IsomorphicTest {
 		assertThat(Models.isomorphic(m1, m2));
 	}
 
+	@Test
+	public void testValidationReport_Changed() throws IOException {
+		Model m1 = getModel("shaclValidationReport.ttl");
+		Model m2 = getModel("shaclValidationReport-changed.ttl");
+
+		assertThat(Models.isomorphic(m1, m2)).isFalse();
+	}
+
 	private static Model getModel(String name) {
 		try {
 			try (InputStream resourceAsStream = IsomorphicTest.class.getClassLoader()
@@ -226,7 +234,6 @@ public class IsomorphicTest {
 	}
 
 	private boolean isomorphic(Model m1, Model m2) {
-
 		boolean isomorphic = Models.isomorphic(m1, m2);
 		if (!isomorphic) {
 			throw new IllegalStateException("Not isomorphic");

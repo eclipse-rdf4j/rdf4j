@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -150,13 +151,22 @@ class GraphComparisons {
 			return model1.equals(model2);
 		}
 		final Map<BNode, HashCode> mapping2 = getIsoCanonicalMapping(model2);
+
 		if (mappingsIncompatible(mapping1, mapping2)) {
 			return false;
 		}
 
-		final Model c1 = labelModel(model1, mapping1);
-		final Model c2 = labelModel(model2, mapping2);
-		return c1.equals(c2);
+		// Compatible blank node mapping found. We need to check that statements not involving blank nodes are equal in
+		// both models.
+		Optional<Statement> missingInModel2 = model1.stream()
+				.filter(st -> !(st.getSubject().isBNode() || st.getObject().isBNode()
+						|| st.getContext() instanceof BNode))
+				.filter(st -> !model2.contains(st))
+				.findAny();
+
+		// Because we have previously already checked that the models are the same size, we don't have to check both
+		// ways to establish model equality.
+		return !missingInModel2.isPresent();
 	}
 
 	private static boolean mappingsIncompatible(Map<BNode, HashCode> mapping1, Map<BNode, HashCode> mapping2) {
