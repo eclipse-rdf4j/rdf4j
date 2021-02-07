@@ -8,11 +8,13 @@
 package org.eclipse.rdf4j.federated.structures;
 
 import java.math.BigInteger;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -20,6 +22,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +51,8 @@ public class QueryInfo {
 	private final long start;
 	private final boolean includeInferred;
 	private final Dataset dataset;
+
+	private TupleQueryResultHandler resultHandler = null;
 
 	private final FederationContext federationContext;
 
@@ -159,6 +165,27 @@ public class QueryInfo {
 			throw new QueryEvaluationException("Query is aborted or closed, cannot accept new tasks");
 		}
 		scheduledSubtasks.add(task);
+	}
+
+	/**
+	 * Returns a {@link TupleQueryResultHandler} if this query is executed using.
+	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)}.
+	 * 
+	 * @return the {@link TupleQueryResultHandler} that can be used for pass through
+	 * @see PassThroughTupleExpr
+	 */
+	public Optional<TupleQueryResultHandler> getResultHandler() {
+		return Optional.ofNullable(resultHandler);
+	}
+
+	/**
+	 * Set the {@link TupleQueryResultHandler} if the query is executed using
+	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)} allowing for passing through results to the handler.
+	 * 
+	 * @param resultHandler the {@link TupleQueryResultHandler}
+	 */
+	public void setResultHandler(TupleQueryResultHandler resultHandler) {
+		this.resultHandler = resultHandler;
 	}
 
 	/**

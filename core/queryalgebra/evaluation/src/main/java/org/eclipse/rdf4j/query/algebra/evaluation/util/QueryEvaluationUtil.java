@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import java.util.Optional;
+
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -52,12 +54,8 @@ public class QueryEvaluationUtil {
 			if (datatype.equals(XSD.STRING)) {
 				return label.length() > 0;
 			} else if (datatype.equals(XSD.BOOLEAN)) {
-				if ("true".equals(label) || "1".equals(label)) {
-					return true;
-				} else {
-					// also false for illegal values
-					return false;
-				}
+				// also false for illegal values
+				return "true".equals(label) || "1".equals(label);
 			} else if (datatype.equals(XSD.DECIMAL)) {
 				try {
 					String normDec = XMLDatatypeUtil.normalizeDecimal(label);
@@ -154,11 +152,14 @@ public class QueryEvaluationUtil {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
+		XSD.Datatype leftXsdDatatype = Literals.getXsdDatatype(leftLit).orElse(null);
+		XSD.Datatype rightXsdDatatype = Literals.getXsdDatatype(rightLit).orElse(null);
+
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
 
-		// for purposes of query evaluation in SPARQL, simple literals and
-		// string-typed literals with the same lexical value are considered equal.
+		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
+		// value are considered equal.
 		IRI commonDatatype = null;
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
 			commonDatatype = XSD.STRING;
@@ -169,14 +170,33 @@ public class QueryEvaluationUtil {
 		if (QueryEvaluationUtil.isSimpleLiteral(leftLit) && QueryEvaluationUtil.isSimpleLiteral(rightLit)) {
 			compareResult = leftLit.getLabel().compareTo(rightLit.getLabel());
 		} else if ((!leftLangLit && !rightLangLit) || commonDatatype != null) {
-			if (commonDatatype == null) {
+			if (commonDatatype == null && (leftXsdDatatype != null && rightXsdDatatype != null)) {
+				if (leftXsdDatatype == rightXsdDatatype || leftDatatype.equals(rightDatatype)) {
+					commonDatatype = leftDatatype;
+				} else if (leftXsdDatatype.isNumericDatatype() && rightXsdDatatype.isNumericDatatype()) {
+					// left and right arguments have different datatypes, try to find a more general, shared datatype
+					if (leftXsdDatatype == XSD.Datatype.DOUBLE || rightXsdDatatype == XSD.Datatype.DOUBLE) {
+						commonDatatype = XSD.DOUBLE;
+					} else if (leftXsdDatatype == XSD.Datatype.FLOAT || rightXsdDatatype == XSD.Datatype.FLOAT) {
+						commonDatatype = XSD.FLOAT;
+					} else if (leftXsdDatatype == XSD.Datatype.DECIMAL
+							|| rightXsdDatatype == XSD.Datatype.DECIMAL) {
+						commonDatatype = XSD.DECIMAL;
+					} else {
+						commonDatatype = XSD.INTEGER;
+					}
+				} else if (!strict && leftXsdDatatype.isCalendarDatatype() && rightXsdDatatype.isCalendarDatatype()) {
+					// We're not running in strict eval mode so we use extended datatype comparsion.
+					commonDatatype = XSD.DATETIME;
+				} else if (!strict && leftXsdDatatype.isDurationDatatype() && rightXsdDatatype.isDurationDatatype()) {
+					commonDatatype = XSD.DURATION;
+				}
+			} else if (commonDatatype == null && (leftXsdDatatype == null || rightXsdDatatype == null)) {
 				if (leftDatatype.equals(rightDatatype)) {
 					commonDatatype = leftDatatype;
 				} else if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)
 						&& XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
-					// left and right arguments have different datatypes, try to find
-					// a
-					// more general, shared datatype
+					// left and right arguments have different datatypes, try to find a more general, shared datatype
 					if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {
 						commonDatatype = XSD.DOUBLE;
 					} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {
@@ -216,13 +236,15 @@ public class QueryEvaluationUtil {
 
 						compareResult = left.compare(right);
 
-						// Note: XMLGregorianCalendar.compare() returns compatible
-						// values
-						// (-1, 0, 1) but INDETERMINATE needs special treatment
+						// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
+						// needs special treatment
 						if (compareResult == DatatypeConstants.INDETERMINATE) {
 							// If we compare two xsd:dateTime we should use the specific comparison specified in SPARQL
 							// 1.1
-							if (leftDatatype.equals(XSD.DATETIME) && rightDatatype.equals(XSD.DATETIME)) {
+							if ((leftXsdDatatype == XSD.Datatype.DATETIME
+									|| (leftXsdDatatype == null && leftDatatype.equals(XSD.DATETIME)))
+									&& (rightXsdDatatype == XSD.Datatype.DATETIME
+											|| (rightXsdDatatype == null && rightDatatype.equals(XSD.DATETIME)))) {
 								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
 							} else {
 								// We fallback to the regular RDF term compare
@@ -241,8 +263,7 @@ public class QueryEvaluationUtil {
 						compareResult = leftLit.getLabel().compareTo(rightLit.getLabel());
 					}
 				} catch (IllegalArgumentException e) {
-					// One of the basic-type method calls failed, try syntactic match
-					// before throwing an error
+					// One of the basic-type method calls failed, try syntactic match before throwing an error
 					if (leftLit.equals(rightLit)) {
 						switch (operator) {
 						case EQ:
@@ -286,11 +307,9 @@ public class QueryEvaluationUtil {
 			if (!literalsEqual) {
 				if (!leftLangLit && !rightLangLit && isSupportedDatatype(leftDatatype)
 						&& isSupportedDatatype(rightDatatype)) {
-					// left and right arguments have incompatible but supported
-					// datatypes
+					// left and right arguments have incompatible but supported datatypes
 
-					// we need to check that the lexical-to-value mapping for both
-					// datatypes succeeds
+					// we need to check that the lexical-to-value mapping for both datatypes succeeds
 					if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + leftLit);
 					}
@@ -298,12 +317,33 @@ public class QueryEvaluationUtil {
 					if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightDatatype)) {
 						throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
 					}
-					boolean leftString = leftDatatype.equals(XSD.STRING);
-					boolean rightString = rightDatatype.equals(XSD.STRING);
-					boolean leftNumeric = XMLDatatypeUtil.isNumericDatatype(leftDatatype);
-					boolean rightNumeric = XMLDatatypeUtil.isNumericDatatype(rightDatatype);
-					boolean leftDate = XMLDatatypeUtil.isCalendarDatatype(leftDatatype);
-					boolean rightDate = XMLDatatypeUtil.isCalendarDatatype(rightDatatype);
+
+					boolean leftString;
+					boolean rightString;
+					boolean leftNumeric;
+					boolean rightNumeric;
+					boolean leftDate;
+					boolean rightDate;
+
+					if (leftXsdDatatype != null) {
+						leftString = leftXsdDatatype == XSD.Datatype.STRING;
+						leftNumeric = leftXsdDatatype.isNumericDatatype();
+						leftDate = leftXsdDatatype.isCalendarDatatype();
+					} else {
+						leftString = leftDatatype.equals(XSD.STRING);
+						leftNumeric = XMLDatatypeUtil.isNumericDatatype(leftDatatype);
+						leftDate = XMLDatatypeUtil.isCalendarDatatype(leftDatatype);
+					}
+
+					if (rightXsdDatatype != null) {
+						rightString = rightXsdDatatype == XSD.Datatype.STRING;
+						rightNumeric = rightXsdDatatype.isNumericDatatype();
+						rightDate = rightXsdDatatype.isCalendarDatatype();
+					} else {
+						rightString = rightDatatype.equals(XSD.STRING);
+						rightNumeric = XMLDatatypeUtil.isNumericDatatype(rightDatatype);
+						rightDate = XMLDatatypeUtil.isCalendarDatatype(rightDatatype);
+					}
 
 					if (leftString != rightString) {
 						throw new ValueExprEvaluationException("Unable to compare strings with other supported types");
@@ -317,8 +357,7 @@ public class QueryEvaluationUtil {
 								"Unable to compare date types with other supported types");
 					}
 				} else if (!leftLangLit && !rightLangLit) {
-					// For literals with unsupported datatypes we don't know if their
-					// values are equal
+					// For literals with unsupported datatypes we don't know if their values are equal
 					throw new ValueExprEvaluationException("Unable to compare literals with unsupported types");
 				}
 			}
@@ -349,10 +388,17 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isPlainLiteral(Value v) {
 		if (v instanceof Literal) {
-			Literal l = (Literal) v;
-			return (l.getDatatype().equals(XSD.STRING));
+			return isPlainLiteral(((Literal) v));
 		}
 		return false;
+	}
+
+	public static boolean isPlainLiteral(Literal l) {
+		Optional<XSD.Datatype> xsdDatatype = Literals.getXsdDatatype(l);
+		return xsdDatatype
+				.map(datatype -> datatype == XSD.Datatype.STRING)
+				.orElseGet(() -> (l.getDatatype().equals(XSD.STRING)));
+
 	}
 
 	/**

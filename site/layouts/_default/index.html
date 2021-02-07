@@ -1,0 +1,41 @@
+{{ define "jumbotron"}}{{ partial "jumbotron.html" . }}{{end}}
+{{ define "main" }}
+<main>
+  <h3>What's new</h3>
+  <div class="{{ if (and (isset .Page.Params "container") (ne .Page.Params ""))}}{{ .Page.Params.container }}{{else}}container{{end}}">
+  {{ if ne .Page.Params.hide_sidebar "true" }}
+    <div class="row">
+      <div class="col-md-18 padding-bottom-30">
+  {{ end }}
+  {{ range first 1 (.Site.Taxonomies.categories.news) }}
+    <div class="news_item">
+      <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
+      <div class="news_item_title">
+        <h4><a href="{{.Permalink}}">{{ .Title }}</a> </h4>
+      </div>
+      <div class="news_item_description">
+        {{ .Content }}
+        <br clear="all"/>
+      </div>
+    </div>
+  {{ end }}
+  <hr>
+  {{ range first 2 (after 1 (.Site.Taxonomies.categories.news)) }}
+    <div class="news_item">
+      <div class="news_item_date"><strong>{{ .Date.Format "Mon, Jan 2, 2006" }}</strong></div>
+      <div class="news_item_title">
+        <h4><a href="{{.Permalink}}">{{ .Title }}</a></h4>
+      </div>
+      <div class="news_item_description">
+        {{ .Summary }}
+        <br clear="all"/>
+      </div>
+      <div style="text-align: right; font-size: smaller;">
+        <a href="{{.Permalink}}">[read more]</a>
+      </div>
+      <hr>
+    </div>
+  {{ end }}
+<div class="news_view_all"><a href="{{ .Site.BaseURL }}/news">View all news</a></div>
+</main>
+{{ end }}

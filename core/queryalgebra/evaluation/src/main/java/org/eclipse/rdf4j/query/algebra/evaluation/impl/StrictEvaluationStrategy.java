@@ -42,7 +42,9 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
@@ -516,9 +518,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					// Search zero contexts
 					return new EmptyIteration<>();
 				} else if (graphs == null || graphs.isEmpty()) {
-					// store default behaivour
+					// store default behaviour
 					if (contextValue != null) {
-						contexts = new Resource[] { (Resource) contextValue };
+						if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
+							contexts = new Resource[] { (Resource) null };
+						} else {
+							contexts = new Resource[] { (Resource) contextValue };
+						}
 					}
 					/*
 					 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default
@@ -541,7 +547,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					int i = 0;
 					for (IRI graph : graphs) {
 						IRI context = null;
-						if (!SESAME.NIL.equals(graph)) {
+						if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
 							context = graph;
 						}
 						contexts[i++] = context;
@@ -1409,16 +1415,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			String langTag = ((Literal) langTagValue).getLabel();
 			String langRange = ((Literal) langRangeValue).getLabel();
 
-			boolean result = false;
-			if (langRange.equals("*")) {
-				result = langTag.length() > 0;
-			} else if (langTag.length() == langRange.length()) {
-				result = langTag.equalsIgnoreCase(langRange);
-			} else if (langTag.length() > langRange.length()) {
-				// check if the range is a prefix of the tag
-				String prefix = langTag.substring(0, langRange.length());
-				result = prefix.equalsIgnoreCase(langRange) && langTag.charAt(langRange.length()) == '-';
-			}
+			boolean result = Literals.langMatches(langTag, langRange);
 
 			return BooleanLiteral.valueOf(result);
 		}
@@ -1545,7 +1542,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			argValues[i] = evaluate(args.get(i), bindings);
 		}
 
-		return function.evaluate(tripleSource.getValueFactory(), argValues);
+		return function.evaluate(tripleSource, argValues);
 
 	}
 

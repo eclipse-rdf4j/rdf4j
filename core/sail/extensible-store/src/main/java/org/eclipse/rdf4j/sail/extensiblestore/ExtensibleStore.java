@@ -155,5 +155,4 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 	public ExtensibleStatementHelper getExtensibleStatementHelper() {
 		return ExtensibleStatementHelper.getDefaultImpl();
 	}
-
 }

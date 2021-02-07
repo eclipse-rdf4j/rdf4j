@@ -19,11 +19,11 @@ ex:PersonShape
         		        ]
 
         		        [
-        		                sh:path rdfs:label;
+
         		                sh:or (
-        		                        [ sh:hasValue "Peter" ]
-        		                        [ sh:hasValue "Jennifer" ]
-        		                        [ sh:hasValue "Sue" ]
+        		                        [sh:path rdfs:label; sh:hasValue "Peter" ]
+        		                        [sh:path rdfs:label; sh:hasValue "Jennifer" ]
+        		                        [sh:path rdfs:label; sh:hasValue "Sue" ]
         		                )
         		        ]
         		);

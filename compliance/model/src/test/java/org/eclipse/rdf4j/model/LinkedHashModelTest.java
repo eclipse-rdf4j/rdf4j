@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 /**
  * @author Peter Ansell
  */
-public class LinkedHashModelTest extends AbstractModelTest {
+public class LinkedHashModelTest extends ModelTest {
 
 	@Override
 	protected Model getNewModel() {

@@ -15,6 +15,7 @@ import java.net.URL;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -39,10 +40,12 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 
 /**
- * Main interface for updating data in and performing queries on an RDF4J {@link Repository}. By default, a
- * RepositoryConnection is in auto-commit mode, meaning that each operation corresponds to a single transaction on the
- * underlying store. Multiple operations can be bundled in a single transaction by using {@link #begin()} and
- * {@link #commit() commit}/ {@link #rollback() rollback}. Care should be taking to always properly close a
+ * Main interface for updating data in and performing queries on an RDF4J {@link Repository}.
+ * <p>
+ * By default, a RepositoryConnection is in auto-commit mode, meaning that each operation corresponds to a single
+ * transaction on the underlying store. Multiple operations can be bundled in a single transaction by using
+ * {@link #begin()} and {@link #commit() commit}/ {@link #rollback() rollback}, which may improve performance
+ * considerably when dealing with many thousands of statements. Care should be taking to always properly close a
  * RepositoryConnection after one is finished with it, to free up resources and avoid unnecessary locks.
  * <p>
  * RepositoryConnection is not guaranteed to be thread-safe. The recommended access pattern in a multithreaded
@@ -93,35 +96,35 @@ public interface RepositoryConnection extends AutoCloseable {
 	/**
 	 * Returns the Repository object to which this connection belongs.
 	 */
-	public Repository getRepository();
+	Repository getRepository();
 
 	/**
 	 * Set the parser configuration this connection should use for RDFParser-based operations.
 	 *
 	 * @param config a Rio RDF Parser configuration.
 	 */
-	public void setParserConfig(ParserConfig config);
+	void setParserConfig(ParserConfig config);
 
 	/**
 	 * Returns the parser configuration this connection uses for Rio-based operations.
 	 *
 	 * @return a Rio RDF parser configuration.
 	 */
-	public ParserConfig getParserConfig();
+	ParserConfig getParserConfig();
 
 	/**
 	 * Gets a ValueFactory for this RepositoryConnection.
 	 *
 	 * @return A repository-specific ValueFactory.
 	 */
-	public ValueFactory getValueFactory();
+	ValueFactory getValueFactory();
 
 	/**
 	 * Checks whether this connection is open. A connection is open from the moment it is created until it is closed.
 	 *
 	 * @see #close()
 	 */
-	public boolean isOpen() throws RepositoryException;
+	boolean isOpen() throws RepositoryException;
 
 	/**
 	 * Closes the connection, freeing resources. If a {@link #begin() transaction} is {@link #isActive() active} on the
@@ -134,7 +137,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the connection could not be closed.
 	 */
 	@Override
-	public default void close() throws RepositoryException {
+	default void close() throws RepositoryException {
 		if (isOpen() && isActive()) {
 			rollback();
 		}
@@ -154,7 +157,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedOperationException If the <tt>prepareQuery</tt> method is not supported by this repository.
 	 * @see #prepareQuery(QueryLanguage, String)
 	 */
-	public default Query prepareQuery(String query) throws RepositoryException, MalformedQueryException {
+	default Query prepareQuery(String query) throws RepositoryException, MalformedQueryException {
 		return prepareQuery(QueryLanguage.SPARQL, query);
 	}
 
@@ -174,7 +177,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedOperationException     If the <tt>prepareQuery</tt> method is not supported by this
 	 *                                           repository.
 	 */
-	public Query prepareQuery(QueryLanguage ql, String query) throws RepositoryException, MalformedQueryException;
+	Query prepareQuery(QueryLanguage ql, String query) throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares a query for evaluation on this repository (optional operation).
@@ -192,7 +195,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws UnsupportedOperationException     If the <tt>prepareQuery</tt> method is not supported by this
 	 *                                           repository.
 	 */
-	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
+	Query prepareQuery(QueryLanguage ql, String query, String baseURI)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -206,7 +209,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException  If the supplied query is malformed.
 	 * @see #prepareTupleQuery(QueryLanguage, String)
 	 */
-	public default TupleQuery prepareTupleQuery(String query) throws RepositoryException, MalformedQueryException {
+	default TupleQuery prepareTupleQuery(String query) throws RepositoryException, MalformedQueryException {
 		return prepareTupleQuery(QueryLanguage.SPARQL, query);
 	}
 
@@ -222,7 +225,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
+	TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -237,7 +240,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
+	TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -251,7 +254,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException  If the supplied query is malformed.
 	 * @see #prepareGraphQuery(QueryLanguage, String)
 	 */
-	public default GraphQuery prepareGraphQuery(String query) throws RepositoryException, MalformedQueryException {
+	default GraphQuery prepareGraphQuery(String query) throws RepositoryException, MalformedQueryException {
 		return prepareGraphQuery(QueryLanguage.SPARQL, query);
 	}
 
@@ -266,7 +269,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
+	GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -281,7 +284,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
+	GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -295,7 +298,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException  If the supplied SPARQL query is malformed.
 	 * @see #prepareBooleanQuery(QueryLanguage, String)
 	 */
-	public default BooleanQuery prepareBooleanQuery(String query) throws RepositoryException, MalformedQueryException {
+	default BooleanQuery prepareBooleanQuery(String query) throws RepositoryException, MalformedQueryException {
 		return prepareBooleanQuery(QueryLanguage.SPARQL, query);
 	}
 
@@ -311,7 +314,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
+	BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -326,7 +329,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
 	 */
-	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
+	BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -338,7 +341,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws MalformedQueryException If the supplied update operation string is malformed.
 	 * @see #prepareUpdate(QueryLanguage, String)
 	 */
-	public default Update prepareUpdate(String update) throws RepositoryException, MalformedQueryException {
+	default Update prepareUpdate(String update) throws RepositoryException, MalformedQueryException {
 		return prepareUpdate(QueryLanguage.SPARQL, update);
 	}
 
@@ -351,7 +354,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return a {@link Update} ready to be executed on this {@link RepositoryConnection}.
 	 * @throws MalformedQueryException If the supplied update operation string is malformed.
 	 */
-	public Update prepareUpdate(QueryLanguage ql, String update) throws RepositoryException, MalformedQueryException;
+	Update prepareUpdate(QueryLanguage ql, String update) throws RepositoryException, MalformedQueryException;
 
 	/**
 	 * Prepares an Update operation.
@@ -363,7 +366,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return a {@link Update} ready to be executed on this {@link RepositoryConnection}.
 	 * @throws MalformedQueryException If the supplied update operation string is malformed.
 	 */
-	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
+	Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException;
 
 	/**
@@ -372,7 +375,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @return a RepositoryResult object containing Resources that are used as context identifiers.
 	 */
-	public RepositoryResult<Resource> getContextIDs() throws RepositoryException;
+	RepositoryResult<Resource> getContextIDs() throws RepositoryException;
 
 	/**
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
@@ -388,7 +391,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 */
-	public default RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+	default RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws RepositoryException {
 		return getStatements(subj, pred, obj, true, contexts);
 	}
@@ -410,7 +413,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 2.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
-	public default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
+	default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws RepositoryException {
 		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
 	}
@@ -430,7 +433,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
 	 */
-	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+	RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException;
 
 	/**
@@ -446,7 +449,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                        considered if available
 	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
 	 */
-	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+	boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException;
 
 	/**
@@ -464,7 +467,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 2.0. Use {@link #hasStatement(Resource, IRI, Value, boolean, Resource...)} instead.
 	 */
 	@Deprecated
-	public default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
+	default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException {
 		return hasStatement(subj, (IRI) pred, obj, includeInferred, contexts);
 	}
@@ -479,7 +482,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                        considered if available
 	 * @return true If the repository contains the specified statement, false otherwise.
 	 */
-	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts) throws RepositoryException;
+	boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Exports all statements with a specific subject, predicate and/or object from the repository, optionally from the
@@ -496,7 +499,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                        if available
 	 * @throws RDFHandlerException If the handler encounters an unrecoverable error.
 	 */
-	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+	void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
 			Resource... contexts) throws RepositoryException, RDFHandlerException;
 
 	/**
@@ -508,7 +511,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param handler  The handler that will handle the RDF data.
 	 * @throws RDFHandlerException If the handler encounters an unrecoverable error.
 	 */
-	public void export(RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException;
+	void export(RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException;
 
 	/**
 	 * Returns the number of (explicit) statements that are in the specified contexts in this repository.
@@ -517,7 +520,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                 optional. If no contexts are supplied the method operates on the entire repository.
 	 * @return The number of explicit statements from the specified contexts in this repository.
 	 */
-	public long size(Resource... contexts) throws RepositoryException;
+	long size(Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Returns <tt>true</tt> if this repository does not contain any (explicit) statements.
@@ -525,7 +528,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return <tt>true</tt> if this repository is empty, <tt>false</tt> otherwise.
 	 * @throws RepositoryException If the repository could not be checked to be empty.
 	 */
-	public boolean isEmpty() throws RepositoryException;
+	boolean isEmpty() throws RepositoryException;
 
 	/**
 	 * Enables or disables auto-commit mode for the connection. If a connection is in auto-commit mode, then all updates
@@ -542,7 +545,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #commit()
 	 */
 	@Deprecated
-	public void setAutoCommit(boolean autoCommit) throws RepositoryException;
+	void setAutoCommit(boolean autoCommit) throws RepositoryException;
 
 	/**
 	 * Indicates if the connection is in auto-commit mode. The connection is in auto-commit mode when no transaction is
@@ -556,7 +559,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If a repository access error occurs.
 	 */
 	@Deprecated
-	public boolean isAutoCommit() throws RepositoryException;
+	boolean isAutoCommit() throws RepositoryException;
 
 	/**
 	 * Indicates if a transaction is currently active on the connection. A transaction is active if {@link #begin()} has
@@ -567,7 +570,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                                          instance when communication with a repository fails or times out.
 	 * @throws RepositoryException
 	 */
-	public boolean isActive() throws UnknownTransactionStateException, RepositoryException;
+	boolean isActive() throws UnknownTransactionStateException, RepositoryException;
 
 	/**
 	 * Sets the transaction isolation level for the next transaction(s) on this connection. If the level is set to a
@@ -577,14 +580,14 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param level the transaction isolation level to set.
 	 * @throws IllegalStateException if the method is called while a transaction is already active.
 	 */
-	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException;
+	void setIsolationLevel(IsolationLevel level) throws IllegalStateException;
 
 	/**
 	 * Retrieves the current {@link IsolationLevel transaction isolation level} of the connection.
 	 *
 	 * @return the current transaction isolation level.
 	 */
-	public IsolationLevel getIsolationLevel();
+	IsolationLevel getIsolationLevel();
 
 	/**
 	 * Begins a new transaction, requiring {@link #commit()} or {@link #rollback()} to be called to end the transaction.
@@ -599,7 +602,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #rollback()
 	 * @see #setIsolationLevel(IsolationLevel)
 	 */
-	public void begin() throws RepositoryException;
+	void begin() throws RepositoryException;
 
 	/**
 	 * Begins a new transaction with the supplied {@link IsolationLevel}, requiring {@link #commit()} or
@@ -622,7 +625,69 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #rollback()
 	 * @see #setIsolationLevel(IsolationLevel)
 	 */
-	public void begin(IsolationLevel level) throws RepositoryException;
+	void begin(IsolationLevel level) throws RepositoryException;
+
+	/**
+	 * Begins a new transaction with the supplied {@link TransactionSetting}, requiring {@link #commit()} or
+	 * {@link #rollback()} to be called to end the transaction.
+	 *
+	 * @param settings The {@link TransactionSetting} (zero or more) for this transaction. If an isolation level is
+	 *                 provided in the settings this will be used for the transaction. If none is provided then the
+	 *                 default will be used. Behaviour of this method is undefined if more than one isolation level is
+	 *                 provided. Behaviour of this method is undefined if one or more settings is null.
+	 * @throws RepositoryException If the connection could not start the transaction. Possible reasons this may happen
+	 *                             are:
+	 *                             <ul>
+	 *                             <li>a transaction is already {@link #isActive() active} on the current connection.
+	 *                             <li>the specified {@link IsolationLevel} is not supported by the store, and no
+	 *                             compatible level could be found.
+	 *                             </ul>
+	 * @see #begin()
+	 * @see #isActive()
+	 * @see #commit()
+	 * @see #rollback()
+	 * @see #setIsolationLevel(IsolationLevel)
+	 * @since 3.3.0
+	 */
+	default void begin(TransactionSetting... settings) {
+		for (TransactionSetting setting : settings) {
+			if (setting instanceof IsolationLevel) {
+				begin(((IsolationLevel) setting));
+				return;
+			}
+		}
+
+		begin();
+	}
+
+	/**
+	 * Checks for an error state in the active transaction that would force the transaction to be rolled back. This is
+	 * an optional call; calling or not calling this method should have no effect on the outcome of {@link #commit()} or
+	 * {@link #rollback()}. A call to this method must be followed by (in the same thread) with a call to
+	 * {@link #prepare()} , {@link #commit()}, {@link #rollback()}, or {@link #close()} . This method may be called
+	 * multiple times within the same transaction by the same thread. If this method returns normally, the caller can
+	 * reasonably expect that a subsequent call to {@link #commit()} will also return normally. If this method returns
+	 * with an exception the caller should treat the exception as if it came from a call to {@link #commit()}.
+	 *
+	 * @throws UnknownTransactionStateException If the transaction state can not be determined (this can happen for
+	 *                                          instance when communication between client and server fails or
+	 *                                          times-out). It does not indicate a problem with the integrity of the
+	 *                                          store.
+	 * @throws RepositoryException              If there is an active transaction and it cannot be committed.
+	 * @throws IllegalStateException            If the connection has been closed or prepare was already called by
+	 *                                          another thread.
+	 * 
+	 * @implNote this default method throws an {@link UnsupportedOperationException} and is a temporary measure to
+	 *           ensure backward compatibility only. Implementing classes should override.
+	 * 
+	 * @since 3.5.0
+	 * @see #commit()
+	 * @see #begin()
+	 * @see #rollback()
+	 */
+	default void prepare() throws RepositoryException {
+		throw new UnsupportedOperationException();
+	}
 
 	/**
 	 * Commits the active transaction. This operation ends the active transaction.
@@ -634,8 +699,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #isActive()
 	 * @see #begin()
 	 * @see #rollback()
+	 * @see #prepare()
 	 */
-	public void commit() throws RepositoryException;
+	void commit() throws RepositoryException;
 
 	/**
 	 * Rolls back all updates in the active transaction. This operation ends the active transaction.
@@ -648,13 +714,12 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @see #begin()
 	 * @see #commit()
 	 */
-	public void rollback() throws RepositoryException;
+	void rollback() throws RepositoryException;
 
 	/**
 	 * Adds RDF data from an InputStream to the repository, optionally to one or more named contexts.
 	 *
 	 * @param in         An InputStream from which RDF data can be read.
-	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
 	 *                   contextual information in the actual data. If no contexts are supplied the contextual
@@ -665,8 +730,36 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
+	 * @since 3.5.0
 	 */
-	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+	default void add(InputStream in, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(in, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds RDF data from an InputStream to the repository, optionally to one or more named contexts.
+	 *
+	 * @param in         An InputStream from which RDF data can be read.
+	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+	 *                   <code>null</code>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
+	 * @param dataFormat The serialization format of the data.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+	 *                   information in the input stream is used, if no context information is available the data is
+	 *                   added without any context.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 */
+	void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException;
 
 	/**
@@ -676,7 +769,36 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * be preferred.</b>
 	 *
 	 * @param reader     A Reader from which RDF data can be read.
-	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
+	 * @param dataFormat The serialization format of the data.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *                   these contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(reader, null, dataFormat, contexts);
+	}
+
+	/**
+	 * Adds RDF data from a Reader to the repository, optionally to one or more named contexts. <b>Note: using a Reader
+	 * to upload byte-based data means that you have to be careful not to destroy the data's character encoding by
+	 * enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is to
+	 * be preferred.</b>
+	 *
+	 * @param reader     A Reader from which RDF data can be read.
+	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+	 *                   <code>null</code>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
@@ -686,8 +808,54 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
 	 */
-	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+	void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException;
+
+	/**
+	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
+	 * contexts.
+	 *
+	 * @param url      The URL of the RDF data.
+	 * @param contexts The contexts to add the data to. If one or more contexts are specified the data is added to these
+	 *                 contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the URL.
+	 * @throws UnsupportedRDFormatException If the RDF format could not be recognized.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(URL url, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(url, null, null, contexts);
+	}
+
+	/**
+	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
+	 * contexts.
+	 *
+	 * @param url        The URL of the RDF data.
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the content type in the HTTP response header, and failing that, the
+	 *                   file name extension of the supplied URL.
+	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+	 *                   these contexts, ignoring any context information in the data itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the URL.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format
+	 *                                      could not be automatically determined.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(URL url, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(url, null, dataFormat, contexts);
+	}
 
 	/**
 	 * Adds the RDF data that can be found at the specified URL to the repository, optionally to one or more named
@@ -697,6 +865,10 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
 	 *                   <tt>null</tt>.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
 	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
 	 *                   determined by examining the content type in the HTTP response header, and failing that, the
 	 *                   file name extension of the supplied URL.
@@ -709,8 +881,56 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
 	 */
-	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+	void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException;
+
+	/**
+	 * Adds RDF data from the specified file to a specific contexts in the repository.
+	 *
+	 * @param file     A file containing RDF data.
+	 * @param contexts The contexts to add the data to. Note that this parameter is a vararg and as such is optional. If
+	 *                 no contexts are specified, the data is added to any context specified in the actual data file, or
+	 *                 if the data contains no context, it is added without context. If one or more contexts are
+	 *                 specified the data is added to these contexts, ignoring any context information in the data
+	 *                 itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the file.
+	 * @throws UnsupportedRDFormatException If the RDF format of the supplied file could not be recognized.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(File file, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(file, null, null, contexts);
+	}
+
+	/**
+	 * Adds RDF data from the specified file to a specific contexts in the repository.
+	 *
+	 * @param file       A file containing RDF data.
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the file name extension of the supplied File.
+	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
+	 *                   If no contexts are specified, the data is added to any context specified in the actual data
+	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
+	 *                   are specified the data is added to these contexts, ignoring any context information in the data
+	 *                   itself.
+	 * 
+	 * @throws IOException                  If an I/O error occurred while reading from the file.
+	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
+	 *                                      repository is not writable.
+	 * 
+	 * @since 3.5.0
+	 */
+	default void add(File file, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		add(file, null, dataFormat, contexts);
+	}
 
 	/**
 	 * Adds RDF data from the specified file to a specific contexts in the repository.
@@ -718,7 +938,12 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param file       A file containing RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
-	 * @param dataFormat The serialization format of the data.
+	 *                   <p>
+	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
+	 *                   5.1 for details).
+	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
+	 *                   determined by examining the file name extension of the supplied File.
 	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
 	 *                   If no contexts are specified, the data is added to any context specified in the actual data
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
@@ -730,7 +955,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
 	 */
-	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+	void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException;
 
 	/**
@@ -748,7 +973,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the data could not be added to the repository, for example because the repository
 	 *                             is not writable.
 	 */
-	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
+	void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Adds a statement with the specified subject, predicate and object to this repository, optionally to one or more
@@ -767,7 +992,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default void add(Resource subject, URI predicate, Value object, Resource... contexts)
+	default void add(Resource subject, URI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
 		this.add(subject, (IRI) predicate, object, contexts);
 	}
@@ -784,7 +1009,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statement could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void add(Statement st, Resource... contexts) throws RepositoryException;
+	void add(Statement st, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
@@ -798,7 +1023,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException;
+	void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
@@ -814,7 +1039,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
+	<E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
 
 	/**
@@ -846,7 +1071,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statement(s) could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
+	void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Removes the statement(s) with the specified subject, predicate and object from the repository, optionally
@@ -862,7 +1087,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default void remove(Resource subject, URI predicate, Value object, Resource... contexts)
+	default void remove(Resource subject, URI predicate, Value object, Resource... contexts)
 			throws RepositoryException {
 		this.remove(subject, (IRI) predicate, object, contexts);
 	}
@@ -877,7 +1102,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statement could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void remove(Statement st, Resource... contexts) throws RepositoryException;
+	void remove(Statement st, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Removes the supplied statements from the specified contexts in this repository.
@@ -889,7 +1114,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException;
+	void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
@@ -904,7 +1129,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
+	<E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
 
 	/**
@@ -932,7 +1157,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	public void clear(Resource... contexts) throws RepositoryException;
+	void clear(Resource... contexts) throws RepositoryException;
 
 	/**
 	 * Gets all declared namespaces as a RepositoryResult of {@link Namespace} objects. Each Namespace object consists
@@ -942,7 +1167,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *         use.
 	 * @throws RepositoryException If the namespaces could not be read from the repository.
 	 */
-	public RepositoryResult<Namespace> getNamespaces() throws RepositoryException;
+	RepositoryResult<Namespace> getNamespaces() throws RepositoryException;
 
 	/**
 	 * Gets the namespace that is associated with the specified prefix, if any.
@@ -953,7 +1178,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException  If the namespace could not be read from the repository.
 	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
 	 */
-	public String getNamespace(String prefix) throws RepositoryException;
+	String getNamespace(String prefix) throws RepositoryException;
 
 	/**
 	 * Sets the prefix for a namespace.
@@ -964,7 +1189,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                              repository is not writable.
 	 * @throws NullPointerException In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
 	 */
-	public void setNamespace(String prefix, String name) throws RepositoryException;
+	void setNamespace(String prefix, String name) throws RepositoryException;
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
@@ -973,13 +1198,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException  If the namespace prefix could not be removed.
 	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
 	 */
-	public void removeNamespace(String prefix) throws RepositoryException;
+	void removeNamespace(String prefix) throws RepositoryException;
 
 	/**
 	 * Removes all namespace declarations from the repository.
 	 *
 	 * @throws RepositoryException If the namespace declarations could not be removed.
 	 */
-	public void clearNamespaces() throws RepositoryException;
+	void clearNamespaces() throws RepositoryException;
 
 }

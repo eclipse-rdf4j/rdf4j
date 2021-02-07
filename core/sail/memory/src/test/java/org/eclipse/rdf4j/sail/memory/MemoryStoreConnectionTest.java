@@ -22,4 +22,5 @@ public class MemoryStoreConnectionTest extends RepositoryConnectionTest {
 	protected Repository createRepository() {
 		return new SailRepository(new MemoryStore());
 	}
+
 }

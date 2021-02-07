@@ -9,18 +9,17 @@
 ex:IdAndUsernameAreFunctionalPropertiesTogether
 	a sh:NodeShape  ;
 	sh:targetObjectsOf ex:id, ex:username ;
-	sh:property [
-	        sh:or (
-	                [
-	                        sh:path [sh:inversePath ex:id] ;
-                 		sh:maxCount 1 ;
-                 	]
-	                [
-	                        sh:path [sh:inversePath ex:username] ;
-                 		sh:maxCount 1 ;
-                 	]
+	 sh:or (
+	         [
+	                 sh:path [sh:inversePath ex:id] ;
+          		sh:maxCount 1 ;
+          	]
+	         [
+	                 sh:path [sh:inversePath ex:username] ;
+          		sh:maxCount 1 ;
+          	]
 
-	        )
+	 )
 
-	] .
+ .
 

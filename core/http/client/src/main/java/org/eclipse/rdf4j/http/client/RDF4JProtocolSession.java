@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import static org.eclipse.rdf4j.http.protocol.Protocol.TRANSACTION_SETTINGS_PREFIX;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -54,6 +56,7 @@ import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -118,11 +121,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		super(client, executor);
 		this.executor = executor;
 
-		// we want to preserve bnode ids to allow Sesame API methods to match
+		// we want to preserve bnode ids to allow RDF4J API methods to match
 		// blank nodes.
 		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 
-		// Sesame client has preference for binary response formats, as these are
+		// RDF4J Protocol has a preference for binary response formats, as these are
 		// most performant
 		setPreferredTupleQueryResultFormat(TupleQueryResultFormat.BINARY);
 		setPreferredRDFFormat(RDFFormat.BINARY);
@@ -608,6 +611,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	public synchronized void beginTransaction(IsolationLevel isolationLevel)
 			throws RDF4JException, IOException, UnauthorizedException {
+		beginTransaction((TransactionSetting) isolationLevel);
+	}
+
+	public synchronized void beginTransaction(TransactionSetting... transactionSettings)
+			throws RDF4JException, IOException, UnauthorizedException {
 		checkRepositoryURL();
 
 		if (transactionURL != null) {
@@ -620,11 +628,22 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			method.setHeader("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8");
 
 			List<NameValuePair> params = new ArrayList<>();
-			if (isolationLevel != null) {
+
+			for (TransactionSetting transactionSetting : transactionSettings) {
+				if (transactionSetting == null) {
+					continue;
+				}
+				if (transactionSetting instanceof IsolationLevel) {
+					// also send isolation level with dedicated parameter for backward compatibility with older RDF4J
+					// Server
+					IsolationLevel isolationLevel = (IsolationLevel) transactionSetting;
+					params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
+							isolationLevel.getURI().stringValue()));
+				}
 				params.add(
 						new BasicNameValuePair(
-								Protocol.ISOLATION_LEVEL_PARAM_NAME,
-								isolationLevel.getURI().stringValue()
+								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),
+								transactionSetting.getValue()
 						)
 				);
 			}
@@ -649,6 +668,39 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			}
 		} finally {
 			method.reset();
+		}
+	}
+
+	public synchronized void prepareTransaction() throws RDF4JException, IOException, UnauthorizedException {
+		checkRepositoryURL();
+
+		if (transactionURL == null) {
+			throw new IllegalStateException("Transaction URL has not been set");
+		}
+
+		HttpPut method = null;
+		try {
+			URIBuilder url = new URIBuilder(transactionURL);
+			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());
+			method = applyAdditionalHeaders(new HttpPut(url.build()));
+
+			final HttpResponse response = execute(method);
+			try {
+				int code = response.getStatusLine().getStatusCode();
+				if (code == HttpURLConnection.HTTP_OK) {
+				} else {
+					throw new RepositoryException("unable to prepare transaction. HTTP error code " + code);
+				}
+			} finally {
+				EntityUtils.consumeQuietly(response.getEntity());
+			}
+		} catch (URISyntaxException e) {
+			logger.error("could not create URL for transaction prepare", e);
+			throw new RuntimeException(e);
+		} finally {
+			if (method != null) {
+				method.reset();
+			}
 		}
 	}
 
@@ -1154,5 +1206,4 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 		return method;
 	}
-
 }

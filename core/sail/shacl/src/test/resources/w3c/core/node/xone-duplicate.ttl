@@ -13,6 +13,15 @@
       <xone-duplicate>
     ) .
 
+ex:i a ex:C1 .
+ex:j a ex:C1 , ex:C2 .
+
+ex:s1 a sh:NodeShape ;
+  sh:targetClass ex:C1 ;
+  sh:xone ( ex:s2 ex:s2 ) .
+ex:s2 sh:class ex:C2 .
+
+
 <xone-duplicate> a sht:Validate;
   rdfs:label "Test of validation report for shape xone-duplicate by property constraints" ;
   mf:action [ sht:dataGraph <xone-duplicate-data.ttl> ;

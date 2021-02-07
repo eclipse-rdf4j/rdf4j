@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -29,6 +30,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *
  * @author Arjohn Kampman
  * @author Peter Ansell
+ *
+ * @See {@link Values}
  */
 public class Literals {
 
@@ -55,6 +58,22 @@ public class Literals {
 	public static String getLabel(Optional v, String fallback) {
 
 		return v != null ? getLabel((Value) v.orElseGet(null), fallback) : fallback;
+	}
+
+	/**
+	 * Retrieves the {@link XSD.Datatype} value for the supplied Literal, if it has one.
+	 *
+	 * @param a Literal
+	 * @return an Optional {@link XSD.Datatype} enum, if one is available. Note that the absence of this enum does
+	 *         <i>not</i> indicate that the literal has no datatype, merely that it has no cached enum representation of
+	 *         that datatype.
+	 * @since 3.5.0
+	 */
+	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
+		if (l instanceof SimpleLiteral) {
+			return ((SimpleLiteral) l).getXsdDatatype();
+		}
+		return Optional.empty();
 	}
 
 	/**
@@ -364,7 +383,9 @@ public class Literals {
 	 * @param object       an object to be converted to a typed literal.
 	 * @return a typed literal representation of the supplied object.
 	 * @throws NullPointerException If the object was null.
+	 * @deprecated since 3.5.0 - use {@link Values#literal(Object)} instead.
 	 */
+	@Deprecated
 	public static Literal createLiteral(ValueFactory valueFactory, Object object) {
 		try {
 			return createLiteral(valueFactory, object, false);
@@ -385,7 +406,9 @@ public class Literals {
 	 * @return a typed literal representation of the supplied object.
 	 * @throws LiteralUtilException If the literal could not be created.
 	 * @throws NullPointerException If the object was null.
+	 * @deprecated since 3.5.0 - use {@link Values#literal(Object, boolean)} instead.
 	 */
+	@Deprecated
 	public static Literal createLiteralOrFail(ValueFactory valueFactory, Object object) throws LiteralUtilException {
 		return createLiteral(valueFactory, object, true);
 	}
@@ -446,7 +469,9 @@ public class Literals {
 	 * @param object an object to check for the possibility of being converted to a typed literal.
 	 * @return True if a literal could be created from the given object, based solely on its type and the methods
 	 *         available on the {@link ValueFactory} interface and false otherwise. Returns false if the object is null.
+	 * @deprecated since 3.5.0
 	 */
+	@Deprecated
 	public static boolean canCreateLiteral(Object object) {
 		if (object == null) {
 			// Cannot create a literal from a null
@@ -502,6 +527,28 @@ public class Literals {
 		} catch (IllformedLocaleException e) {
 			return false;
 		}
+	}
+
+	/**
+	 * Implements language range filtering for SPARQL langMatches
+	 * (https://www.w3.org/TR/sparql11-query/#func-langMatches).
+	 *
+	 * @param langTag   the tag to filter
+	 * @param langRange the range to filter against
+	 * @return true if langTag matches langRange
+	 */
+	public static boolean langMatches(String langTag, String langRange) {
+		boolean result = false;
+		if (langRange.equals("*")) {
+			result = langTag.length() > 0;
+		} else if (langTag.length() == langRange.length()) {
+			result = langTag.equalsIgnoreCase(langRange);
+		} else if (langTag.length() > langRange.length()) {
+			// check if the range is a prefix of the tag
+			String prefix = langTag.substring(0, langRange.length());
+			result = prefix.equalsIgnoreCase(langRange) && langTag.charAt(langRange.length()) == '-';
+		}
+		return result;
 	}
 
 	protected Literals() {

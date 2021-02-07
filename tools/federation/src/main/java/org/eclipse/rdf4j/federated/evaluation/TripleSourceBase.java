@@ -78,7 +78,13 @@ public abstract class TripleSourceBase implements TripleSource {
 				applyBindings(tQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(tQuery);
 				configureInference(tQuery, queryInfo);
-				resultHolder.set(tQuery.evaluate());
+				if (queryInfo.getResultHandler().isPresent()) {
+					// pass through result to configured handler, and return an empty iteration as marker result
+					tQuery.evaluate(queryInfo.getResultHandler().get());
+					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+				} else {
+					resultHolder.set(tQuery.evaluate());
+				}
 				return;
 			case CONSTRUCT:
 				monitorRemoteRequest();
@@ -237,7 +243,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 			CloseableIteration<T, QueryEvaluationException> res = resultHolder.get();
 
-			// do not wrap Empty Iterations
+			// do not wrap Empty and Pass-through Iterations
 			if (res instanceof EmptyIteration) {
 				conn.close();
 				return res;

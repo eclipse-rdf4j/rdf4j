@@ -1,0 +1,4 @@
+@prefix ex: <http://example.org/>.
+@base <http://example.org/> .
+
+</SomeSubject1>  ex:label "label for subject" .

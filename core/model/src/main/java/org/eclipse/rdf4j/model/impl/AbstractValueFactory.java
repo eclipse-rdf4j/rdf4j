@@ -34,8 +34,14 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra
+ * 
+ * @deprecated since 3.5.0. Use either {@link SimpleValueFactory} directly, or switch to using
+ *             {@link org.eclipse.rdf4j.model.base.AbstractValueFactory}.
  */
-public abstract class AbstractValueFactory implements ValueFactory {
+@Deprecated
+public abstract class AbstractValueFactory extends org.eclipse.rdf4j.model.base.AbstractValueFactory {
+
+	/* Constants */
 
 	/**
 	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of this class)
@@ -56,31 +62,32 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		}
 	}
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	/* variables */
 
 	/**
-	 * The ID for the next bnode that is created.
+	 * @category variables
+	 * 
+	 *           The ID for the next bnode that is created.
 	 */
 	private int nextBNodeID;
 
 	/**
-	 * The prefix for any new bnode IDs.
+	 * @category variables
+	 * 
+	 *           The prefix for any new bnode IDs.
 	 */
 	private String bnodePrefix;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	/* Constructors */
 
+	/**
+	 * @category constructors
+	 */
 	protected AbstractValueFactory() {
 		initBNodeParams();
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	/* Public methods */
 
 	@Override
 	public IRI createIRI(String iri) {
@@ -99,7 +106,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XSD.STRING);
+		return new SimpleLiteral(value, XSD.Datatype.STRING);
 	}
 
 	@Override
@@ -161,7 +168,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XSD.BYTE);
+		return createIntegerLiteral(value, XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -169,7 +176,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XSD.SHORT);
+		return createIntegerLiteral(value, XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -177,7 +184,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XSD.INT);
+		return createIntegerLiteral(value, XSD.Datatype.INT);
 	}
 
 	/**
@@ -185,7 +192,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XSD.LONG);
+		return createIntegerLiteral(value, XSD.Datatype.LONG);
 	}
 
 	/**
@@ -195,12 +202,16 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
+	protected Literal createIntegerLiteral(Number value, XSD.Datatype datatype) {
+		return createNumericLiteral(value, datatype);
+	}
+
 	/**
 	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#FLOAT} as parameters.
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XSD.FLOAT);
+		return createFPLiteral(value, XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -208,7 +219,7 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XSD.DOUBLE);
+		return createFPLiteral(value, XSD.Datatype.DOUBLE);
 	}
 
 	@Override
@@ -228,10 +239,24 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		return createNumericLiteral(value, datatype);
 	}
 
+	protected Literal createFPLiteral(Number value, XSD.Datatype datatype) {
+		return createNumericLiteral(value, datatype);
+	}
+
 	/**
 	 * Creates specific optimized subtypes of SimpleLiteral for numeric datatypes.
 	 */
 	protected Literal createNumericLiteral(Number number, IRI datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
+	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}

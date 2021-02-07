@@ -74,4 +74,5 @@ public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 
 		testCon2.close();
 	}
+
 }

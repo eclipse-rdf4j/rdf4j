@@ -7,27 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVMappingStrategy;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 /**
  * Extends {@link SPARQLResultsTSVMappingStrategy} with support for parsing a {@link org.eclipse.rdf4j.model.Triple}.
  *
  * @author Pavel Mihaylov
+ * @deprecated since 3.4.0 - functionality has been folded into {@link SPARQLResultsTSVMappingStrategy}
  */
+@Deprecated
 public class SPARQLStarResultsTSVMappingStrategy extends SPARQLResultsTSVMappingStrategy {
 	public SPARQLStarResultsTSVMappingStrategy(ValueFactory valueFactory) {
 		super(valueFactory);
-	}
-
-	@Override
-	protected Value parseValue(String valueString) {
-		if (valueString.startsWith("<<")) {
-			return NTriplesUtil.parseTriple(valueString, valueFactory);
-		} else {
-			return super.parseValue(valueString);
-		}
 	}
 }

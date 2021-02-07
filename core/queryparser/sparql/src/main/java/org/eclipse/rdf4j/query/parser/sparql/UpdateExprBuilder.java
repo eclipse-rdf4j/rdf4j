@@ -60,10 +60,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *
  * @author Jeen Broekstra
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
-@Deprecated
 @InternalUseOnly
 public class UpdateExprBuilder extends TupleExprBuilder {
 
@@ -146,6 +145,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 		where = graphPattern.buildTupleExpr();
 		graphPattern = parentGP;
+		Map<String, Object> tripleVars = TripleRefCollector.process(where);
 
 		TupleExpr deleteExpr = where.clone();
 
@@ -154,6 +154,11 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 		VarCollector collector = new VarCollector();
 		deleteExpr.visit(collector);
 		for (Var var : collector.getCollectedVars()) {
+			// skip vars that are provided by ValueExprTripleRef - added as Extentsion
+			if (tripleVars.containsKey(var.getName())) {
+				continue;
+			}
+
 			if (var.isAnonymous() && !var.hasValue()) {
 				throw new VisitorException("DELETE WHERE may not contain blank nodes");
 			}
@@ -397,6 +402,9 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 	@Override
 	public TupleExpr visit(ASTTripleRef node, Object data) throws VisitorException {
+		if (where == null) {
+			return super.visit(node, data);
+		}
 		TripleRef ret = new TripleRef();
 		ret.setSubjectVar(mapValueExprToVar(node.getSubj().jjtAccept(this, ret)));
 		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));

@@ -13,9 +13,9 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 /**
  * @author Håvard Ottestad
@@ -30,11 +30,11 @@ public class MockConsumePlanNode {
 		innerNode.receiveLogger(VALIDATION_EXECUTION_LOGGER);
 	}
 
-	public List<Tuple> asList() {
+	public List<ValidationTuple> asList() {
 
-		try (CloseableIteration<Tuple, SailException> iterator = innerNode.iterator()) {
+		try (CloseableIteration<? extends ValidationTuple, SailException> iterator = innerNode.iterator()) {
 
-			List<Tuple> ret = new ArrayList<>();
+			List<ValidationTuple> ret = new ArrayList<>();
 
 			while (iterator.hasNext()) {
 				ret.add(iterator.next());

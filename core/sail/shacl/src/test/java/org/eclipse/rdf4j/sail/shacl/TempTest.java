@@ -205,6 +205,7 @@ public class TempTest {
 
 	}
 
+	@Ignore
 	@Test(expected = RepositoryException.class)
 	public void testShapeWithoutTargetClassRemove() throws Exception {
 
@@ -225,6 +226,7 @@ public class TempTest {
 
 	}
 
+	@Ignore
 	@Test(expected = RepositoryException.class)
 	public void testShapeWithoutTargetClassAdd() throws Exception {
 
@@ -274,6 +276,7 @@ public class TempTest {
 
 	}
 
+	@Ignore
 	@Test(expected = ShaclSailValidationException.class)
 	public void testUndefinedTargetClassValidatesAllSubjects() throws Throwable {
 
@@ -328,6 +331,7 @@ public class TempTest {
 
 	}
 
+	@Ignore
 	@Test(expected = ShaclSailValidationException.class)
 	public void testUndefinedTargetClassValidatesAllSubjects2() throws Throwable {
 

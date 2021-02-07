@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -86,9 +87,13 @@ import org.junit.rules.Timeout;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RunWith(Parameterized.class)
 public abstract class RepositoryConnectionTest {
+
+	private final Logger logger = LoggerFactory.getLogger(RepositoryConnectionTest.class);
 
 	@BeforeClass
 	public static void setUpClass() throws Exception {
@@ -1784,4 +1789,5 @@ public abstract class RepositoryConnectionTest {
 			iter.close();
 		}
 	}
+
 }

@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -251,7 +252,7 @@ public abstract class ComplexSPARQLQueryTest {
 		StringBuilder query = new StringBuilder();
 		query.append(getNamespaceDeclarations());
 		query.append(" SELECT * ");
-		query.append(" FROM sesame:nil ");
+		query.append(" FROM rdf4j:nil ");
 		query.append(" WHERE { ?s ?p ?o } ");
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
@@ -271,6 +272,36 @@ public abstract class ComplexSPARQLQueryTest {
 				assertFalse(alice.equals(s)); // should not be present in
 				// default
 				// graph
+			}
+		} catch (QueryEvaluationException e) {
+			e.printStackTrace();
+			fail(e.getMessage());
+		}
+	}
+
+	@Test
+	public void testSesameNilAsGraph() throws Exception {
+		loadTestData("/testdata-query/dataset-query.trig");
+		StringBuilder query = new StringBuilder();
+		query.append(getNamespaceDeclarations());
+		query.append(" SELECT * ");
+		query.append(" WHERE { GRAPH rdf4j:nil { ?s ?p ?o } } ");
+//		query.append(" WHERE { ?s ?p ?o } ");
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.toString());
+
+		try {
+			List<BindingSet> result = QueryResults.asList(tq.evaluate());
+
+			// nil graph should not be empty
+			assertThat(result.size()).isGreaterThan(1);
+
+			for (BindingSet bs : result) {
+				Resource s = (Resource) bs.getValue("s");
+
+				assertNotNull(s);
+				assertThat(s).withFailMessage("%s should not be present in nil graph", bob).isNotEqualTo(bob);
+				assertThat(s).withFailMessage("%s should not be present in nil graph", alice).isNotEqualTo(alice);
 			}
 		} catch (QueryEvaluationException e) {
 			e.printStackTrace();
@@ -1991,6 +2022,32 @@ public abstract class ComplexSPARQLQueryTest {
 			fail(e.getMessage());
 		}
 
+	}
+
+	@Test
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/2727
+	 */
+	public void testNestedInversePropertyPathWithZeroLength() throws Exception {
+		String insert = "insert data {\n"
+				+ "    <urn:1> <urn:prop> <urn:object> .\n"
+				+ "    <urn:2> <urn:prop> <urn:mid:1> .\n"
+				+ "    <urn:mid:1> <urn:prop> <urn:object> .\n"
+				+ "    <urn:3> <urn:prop> <urn:mid:2> .\n"
+				+ "    <urn:mid:2> <urn:prop> <urn:mid:3> .\n"
+				+ "    <urn:mid:3> <urn:prop> <urn:object> .\n"
+				+ "}";
+
+		String query = "select * where { \n"
+				+ "    <urn:object> (^<urn:prop>)? ?o .\n"
+				+ "}";
+
+		conn.prepareUpdate(insert).execute();
+
+		TupleQuery tq = conn.prepareTupleQuery(query);
+
+		List<BindingSet> result = QueryResults.asList(tq.evaluate());
+		assertThat(result).hasSize(4);
 	}
 
 	@Test

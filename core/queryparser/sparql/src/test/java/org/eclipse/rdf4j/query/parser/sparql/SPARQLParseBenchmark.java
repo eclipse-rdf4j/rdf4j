@@ -24,6 +24,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
@@ -34,6 +35,15 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Measurement(iterations = 40)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SPARQLParseBenchmark {
+
+	public static void main(String[] args) throws RunnerException {
+		Options opt = new OptionsBuilder()
+				.include("SPARQLParseBenchmark") // adapt to control which benchmark test to run
+				.forks(1)
+				.build();
+
+		new Runner(opt).run();
+	}
 
 	@Setup(Level.Iteration)
 	public void setUp() {
@@ -58,10 +68,21 @@ public class SPARQLParseBenchmark {
 
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		String regexp = SPARQLParseBenchmark.class.getName() + "\\.*";
+	@Benchmark
+	public int complexPathExpressionQuery() {
+		int temp = 0;
+		for (int i = 0; i < 1000; i++) {
+			String sparqlQuery = "select * where { ?a (<foo:comment>/^(<foo:subClassOf>|(<foo:type>/<foo:label>))/<foo:type>)* ?b }";
 
-		new Runner(new OptionsBuilder().include(regexp).build()).run();
+			SPARQLParser parser = new SPARQLParser();
+
+			ParsedQuery q = parser.parseQuery(sparqlQuery, null);
+
+			temp += q.hashCode();
+		}
+
+		return temp;
+
 	}
 
 }

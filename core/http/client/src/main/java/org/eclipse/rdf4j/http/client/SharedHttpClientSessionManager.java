@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,12 +17,16 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.http.HttpConnection;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.HttpRequestRetryHandler;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.protocol.HttpContext;
 import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +62,42 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	private final Map<SPARQLProtocolSession, Boolean> openSessions = new ConcurrentHashMap<>();
 
+	private static final HttpRequestRetryHandler retryHandlerStale = new RetryHandlerStale();
+
+	/**
+	 * Retry handler: closes stale connections and suggests to simply retry the HTTP request once. Just closing the
+	 * stale connection is enough: the connection will be reopened elsewhere. This seems to be necessary for Jetty
+	 * 9.4.24+.
+	 * 
+	 * Other HTTP issues are considered to be more severe, so these requests are not retried.
+	 */
+	private static class RetryHandlerStale implements HttpRequestRetryHandler {
+		private final Logger logger = LoggerFactory.getLogger(RetryHandlerStale.class);
+
+		@Override
+		public boolean retryRequest(IOException ioe, int count, HttpContext context) {
+			// only try this once
+			if (count > 1) {
+				return false;
+			}
+			HttpClientContext clientContext = HttpClientContext.adapt(context);
+			HttpConnection conn = clientContext.getConnection();
+
+			synchronized (this) {
+				if (conn.isStale()) {
+					try {
+						logger.warn("Closing stale connection");
+						conn.close();
+						return true;
+					} catch (IOException e) {
+						logger.error("Error closing stale connection", e);
+					}
+				}
+			}
+			return false;
+		}
+	}
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -66,7 +107,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		final int corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
 		this.executor = Executors.newScheduledThreadPool(corePoolSize, (Runnable runnable) -> {
 			Thread thread = backingThreadFactory.newThread(runnable);
-			thread.setName(String.format("rdf4j-sesameclientimpl-%d", threadCount.getAndIncrement()));
+			thread.setName(String.format("rdf4j-SharedHttpClientSessionManager-%d", threadCount.getAndIncrement()));
 			thread.setDaemon(true);
 			return thread;
 		});
@@ -120,18 +161,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		this.httpClientBuilder = httpClientBuilder;
 	}
 
-	private CloseableHttpClient createHttpClient() {
-		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
-		if (nextHttpClientBuilder != null) {
-			return nextHttpClientBuilder.build();
-		}
-		return HttpClientBuilder.create()
-				.useSystemProperties()
-				.disableAutomaticRetries()
-				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-				.build();
-	}
-
 	@Override
 	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
 		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {
@@ -168,10 +197,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		openSessions.put(session, true);
 		return session;
 	}
-
-	/*-----------------*
-	 * Get/set methods *
-	 *-----------------*/
 
 	@Override
 	public void shutDown() {
@@ -212,4 +237,27 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	public void initialize() {
 	}
 
+	/**
+	 * Get the {@link ScheduledExecutorService} used by this session manager.
+	 *
+	 * @return a {@link ScheduledExecutorService} used by all {@link SPARQLProtocolSession} and
+	 *         {@link RDF4JProtocolSession} instances created by this session manager.
+	 */
+	protected final ScheduledExecutorService getExecutorService() {
+		return this.executor;
+	}
+
+	private CloseableHttpClient createHttpClient() {
+		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;
+		if (nextHttpClientBuilder != null) {
+			return nextHttpClientBuilder.build();
+		}
+
+		return HttpClientBuilder.create()
+				.evictExpiredConnections()
+				.setRetryHandler(retryHandlerStale)
+				.useSystemProperties()
+				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+				.build();
+	}
 }

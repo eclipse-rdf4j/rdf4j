@@ -145,20 +145,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public void begin() throws SailException {
-		begin(null);
+		begin(sailBase.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level) throws SailException {
-		if (level == null) {
-			level = this.sailBase.getDefaultIsolationLevel();
+	public void begin(IsolationLevel isolationLevel) throws SailException {
+		if (isolationLevel == null) {
+			isolationLevel = sailBase.getDefaultIsolationLevel();
 		}
 
-		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,
-				this.sailBase.getSupportedIsolationLevels());
+		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(isolationLevel,
+				sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-					"Isolation level " + level + " not compatible with this Sail");
+					"Isolation level " + isolationLevel + " not compatible with this Sail");
 		}
 		this.transactionIsolationLevel = compatibleLevel;
 
@@ -378,6 +378,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (isActive()) {
 			endUpdate(null);
 		}
+
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
@@ -686,6 +687,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.readLock());
 	}
@@ -693,6 +695,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * @deprecated Use {@link #connectionLock} directly instead.
 	 */
+	@Deprecated
 	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.writeLock());
 	}

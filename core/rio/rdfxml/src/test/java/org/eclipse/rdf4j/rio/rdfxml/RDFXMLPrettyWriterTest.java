@@ -9,7 +9,12 @@ package org.eclipse.rdf4j.rio.rdfxml;
 
 import static org.junit.Assert.assertEquals;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -17,17 +22,25 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.rio.*;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriter;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
 import org.junit.Test;
 
-public class RDFXMLPrettyWriterTest extends RDFWriterTest {
+public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 
 	private static ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -165,4 +178,11 @@ public class RDFXMLPrettyWriterTest extends RDFWriterTest {
 		List<String> rdfLines = rdfOpenTags(writer.toString());
 		assertEquals(Arrays.asList("<rdf:RDF", "<rdf:Bag", "<rdf:_2", "<rdf:li", "<rdf:_3", "<rdf:li"), rdfLines);
 	}
+
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		List<RioSetting<?>> inherited = new ArrayList<>(Arrays.asList(super.getExpectedSupportedSettings()));
+		inherited.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		return inherited.toArray(new RioSetting<?>[] {});
+	}
+
 }

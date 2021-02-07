@@ -679,8 +679,15 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	@Override
-	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, Shape shape,
+	protected Iterable<? extends DocumentResult> geoRelationQuery(String relation, IRI geoProperty, String wkt,
 			Var contextVar) throws MalformedQueryException, IOException {
+
+		Shape shape = null;
+		try {
+			shape = super.parseQueryShape(SearchFields.getPropertyField(geoProperty), wkt);
+		} catch (ParseException e) {
+			logger.error("error while parsing wkt geometry", e);
+		}
 		ShapeRelation spatialOp = toSpatialOp(relation);
 		if (spatialOp == null) {
 			return null;

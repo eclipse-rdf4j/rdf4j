@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -38,10 +39,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
-@Deprecated
 @InternalUseOnly
 public class PrefixDeclProcessor {
 
@@ -74,6 +74,7 @@ public class PrefixDeclProcessor {
 		// insert some default prefixes (if not explicitly defined in the query)
 		final int defaultPrefixesAdded = insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
+				+ insertDefaultPrefix(prefixMap, "rdf4j", RDF4J.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "owl", OWL.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "xsd", XSD.NAMESPACE)

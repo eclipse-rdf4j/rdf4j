@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.io.IOException;
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.junit.Test;

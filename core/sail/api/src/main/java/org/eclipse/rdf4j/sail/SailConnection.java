@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -186,6 +187,22 @@ public interface SailConnection extends AutoCloseable {
 	 *                                              already active on this connection.
 	 */
 	void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
+
+	/**
+	 * Pass any transaction-specific settings to the SailConnection. This method needs to be called before the
+	 * transaction is {@link #begin() started }.
+	 * <p>
+	 * Sail implementations can override this method to receive the transaction settings (to inspect and/or pass them
+	 * along to any wrapped sail objects). Remember to call <code>super.setTransactionSettings(settings)</code> if you
+	 * override this method.
+	 *
+	 * @param settings the transaction settings on which the next transaction operates. It may or may not contain the
+	 *                 isolation level.
+	 * @since 3.3.0
+	 */
+	default void setTransactionSettings(TransactionSetting... settings) {
+
+	}
 
 	/**
 	 * Flushes any pending updates and notify changes to listeners as appropriate. This is an optional call; calling or
@@ -477,4 +494,5 @@ public interface SailConnection extends AutoCloseable {
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
+
 }

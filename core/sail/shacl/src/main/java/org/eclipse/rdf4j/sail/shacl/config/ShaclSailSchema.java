@@ -7,8 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 
 /**
@@ -63,7 +64,7 @@ public class ShaclSailSchema {
 	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create("validationResultsLimitPerConstraint");
 
 	private static IRI create(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
+		return iri(NAMESPACE, localName);
 	}
 
 }

@@ -28,13 +28,13 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLPrettyWriterFactory;
 import org.junit.Test;
 
-public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
+public class RDFXMLPrettyWriterBackgroundTest extends AbstractRDFXMLWriterTest {
 
 	private static ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -140,4 +140,11 @@ public class RDFXMLPrettyWriterBackgroundTest extends RDFWriterTest {
 
 		assertEquals(Arrays.asList("<rdf:RDF", "<rdf:Bag", "<rdf:_2", "<rdf:li", "<rdf:_3", "<rdf:li"), rdfLines);
 	}
+
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		List<RioSetting<?>> inherited = new ArrayList<>(Arrays.asList(super.getExpectedSupportedSettings()));
+		inherited.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		return inherited.toArray(new RioSetting<?>[] {});
+	}
+
 }

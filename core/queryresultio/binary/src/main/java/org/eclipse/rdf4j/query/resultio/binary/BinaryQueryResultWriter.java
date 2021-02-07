@@ -32,11 +32,13 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.io.ByteSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -50,13 +52,14 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * Writer for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
  *
  * @author Arjohn Kampman
  */
-public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
+public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, ByteSink {
 
 	/*-----------*
 	 * Variables *
@@ -85,20 +88,15 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 
 	protected boolean tupleVariablesFound = false;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
 	public BinaryQueryResultWriter(OutputStream out) {
-		super(out);
 		this.out = new DataOutputStream(out);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
+	public OutputStream getOutputStream() {
+		return out;
+	}
+
 	public final TupleQueryResultFormat getTupleQueryResultFormat() {
 		return TupleQueryResultFormat.BINARY;
 	}
@@ -106,6 +104,11 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	@Override
 	public final TupleQueryResultFormat getQueryResultFormat() {
 		return getTupleQueryResultFormat();
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		return Collections.emptyList();
 	}
 
 	@Override

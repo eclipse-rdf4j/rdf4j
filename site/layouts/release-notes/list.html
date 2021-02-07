@@ -1,0 +1,13 @@
+{{ define "main" }}
+  <div>{{ .Content }}</div>
+          {{ range (.Paginate (sort .CurrentSection.Pages "Title" "desc") 3).Pages }}
+          <h3><a href="{{ .Permalink | relURL }}" title="{{ .Title }}">{{ .Title }}</a></h3>
+          {{ .Summary }}
+          <div style="text-align: right; font-size: smaller;">
+              <a href="{{.Permalink}}">[read more]</a>
+          </div>
+          <hr>
+          {{ end }}
+      </ul>
+{{ template "_internal/pagination.html" . }}
+{{ end }}

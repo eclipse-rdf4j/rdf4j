@@ -8,6 +8,8 @@
 package org.eclipse.rdf4j.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.List;
@@ -22,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -147,6 +150,73 @@ public abstract class RDFStarSupportTest {
 		assertThat(bs.getValue("o")).isEqualTo(nameBob);
 		assertThat(bs.getValue("b")).isEqualTo(RDF.TYPE);
 		assertThat(bs.getValue("c")).isEqualTo(RDF.ALT);
+
+	}
+
+	@Test
+	public void testSparqlStarUpdate() {
+		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);
+		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);
+
+		String update = "PREFIX foaf: <" + FOAF.NAMESPACE
+				+ ">\n INSERT { ?s foaf:age 23 } WHERE { <<?s foaf:name ?o>> ?b ?c .}";
+
+		testCon.prepareUpdate(update).execute();
+
+		assertThat(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(23), false));
+	}
+
+	@Test
+	public void testRdfStarAddAndRetrieveSparql() throws InterruptedException {
+
+		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+
+		Literal literal = vf.createLiteral("I am a triple ;-D");
+
+		testCon.begin();
+		testCon.add(insertedTriple, RDF.TYPE, literal);
+
+		TupleQuery query = testCon.prepareTupleQuery(
+				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}");
+
+		assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
+		assertEquals(1, query.evaluate().stream().count());
+		testCon.commit();
+	}
+
+	@Test
+	public void testRdfStarAddAndRetrieveSparqlSeparateTransaction() throws InterruptedException {
+
+		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		Literal literal = vf.createLiteral("I am a triple ;-D");
+		testCon.begin();
+
+		testCon.add(insertedTriple, RDF.TYPE, literal);
+		testCon.commit();
+		testCon.begin();
+		assertTrue(testCon.prepareBooleanQuery("ASK { ?t a 'I am a triple ;-D'}").evaluate());
+		assertEquals(1, testCon.prepareTupleQuery(
+				"SELECT * WHERE { << <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> >> ?a ?b}")
+				.evaluate()
+				.stream()
+				.count());
+		testCon.commit();
+
+	}
+
+	@Test
+	public void testRdfStarAddAndRetrieve() throws InterruptedException {
+
+		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		Triple copyOfInsertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);
+		Literal literal = vf.createLiteral("I am a triple ;-D");
+		testCon.begin();
+
+		testCon.add(insertedTriple, RDF.TYPE, literal);
+
+		assertEquals(1, testCon.getStatements(null, RDF.TYPE, literal, false).stream().count());
+		assertEquals(1, testCon.getStatements(copyOfInsertedTriple, null, null, false).stream().count());
+		testCon.commit();
 
 	}
 

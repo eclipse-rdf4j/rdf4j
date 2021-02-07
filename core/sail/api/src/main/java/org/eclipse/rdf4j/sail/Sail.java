@@ -105,4 +105,5 @@ public interface Sail {
 	 *         returned by {@link #getConnection()}.
 	 */
 	IsolationLevel getDefaultIsolationLevel();
+
 }

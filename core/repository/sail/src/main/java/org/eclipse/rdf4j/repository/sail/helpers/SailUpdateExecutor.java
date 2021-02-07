@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -461,7 +462,8 @@ public class SailUpdateExecutor {
 		if (set.isEmpty()) {
 			return new IRI[0];
 		}
-		if (set.remove(SESAME.NIL)) {
+
+		if (set.remove(SESAME.NIL) | set.remove(RDF4J.NIL)) {
 			set.add(null);
 		}
 
@@ -584,7 +586,7 @@ public class SailUpdateExecutor {
 				}
 
 				if (context != null) {
-					if (SESAME.NIL.equals(context)) {
+					if (RDF4J.NIL.equals(context) || SESAME.NIL.equals(context)) {
 						con.removeStatement(uc, subject, predicate, object, (Resource) null);
 					} else {
 						con.removeStatement(uc, subject, predicate, object, context);

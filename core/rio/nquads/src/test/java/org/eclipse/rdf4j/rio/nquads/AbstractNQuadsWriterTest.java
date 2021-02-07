@@ -20,7 +20,9 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.After;
 import org.junit.Assert;
@@ -146,5 +148,13 @@ public abstract class AbstractNQuadsWriterTest extends RDFWriterTest {
 		Assert.assertEquals("Unexpected number of lines.", 1, lines.length);
 		Assert.assertTrue(lines[0].startsWith(
 				"<http://test.example.org/test/subject/1> <http://other.example.com/test/predicate/1> \"test literal\"^^<http://www.w3.org/2001/XMLSchema#string> _:"));
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting[] {
+				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
+				NTriplesWriterSettings.ESCAPE_UNICODE
+		};
 	}
 }
