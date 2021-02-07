@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Charsets;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Multimaps;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
@@ -177,15 +178,13 @@ class GraphComparisons {
 	}
 
 	protected static Map<BNode, HashCode> getIsoCanonicalMapping(Model m) {
-		Map<BNode, HashCode> blankNodeMapping = hashBNodes(m);
-		Multimap<HashCode, BNode> partition = partitionMapping(blankNodeMapping);
+		Partitioning partitioning = hashBNodes(m);
 
-		if (isFine(partition)) {
-			return blankNodeMapping;
+		if (partitioning.isFine()) {
+			return partitioning.getCurrentNodeMapping();
 		}
 
-		return distinguish(m, blankNodeMapping, partition, null, new ArrayList<>(), new ArrayList<>());
-
+		return distinguish(m, partitioning, null, new ArrayList<>(), new ArrayList<>());
 	}
 
 	protected static Set<BNode> getBlankNodes(Model m) {
@@ -205,45 +204,26 @@ class GraphComparisons {
 		return blankNodes;
 	}
 
-	private static Map<BNode, HashCode> distinguish(Model m, Map<BNode, HashCode> blankNodeMapping,
-			Multimap<HashCode, BNode> partitionMapping,
+	private static Map<BNode, HashCode> distinguish(Model m, Partitioning partitioning,
 			Map<BNode, HashCode> lowestFound, List<BNode> parentFixpoints,
 			List<Map<BNode, HashCode>> finePartitionMappings) {
 
-		final List<Collection<BNode>> sortedPartitions = new ArrayList<>(partitionMapping.asMap().values());
-		Collections.sort(sortedPartitions, new Comparator<Collection<BNode>>() {
-			public int compare(Collection<BNode> a, Collection<BNode> b) {
-				int result = a.size() - b.size();
-				if (result == 0) {
-					// break tie by comparing value hash
-					HashCode hashOfA = blankNodeMapping.get(a.iterator().next());
-					HashCode hashOfB = blankNodeMapping.get(b.iterator().next());
-
-					BigInteger difference = new BigInteger(1, hashOfA.asBytes())
-							.subtract(new BigInteger(1, hashOfB.asBytes()));
-					result = difference.compareTo(BigInteger.ZERO);
-				}
-				return result;
-			}
-		});
-
-		Collection<BNode> lowestNonTrivialPartition = sortedPartitions.stream()
-				.filter(part -> part.size() > 1)
-				.findFirst()
-				.orElseThrow(RuntimeException::new);
-
-		for (BNode node : lowestNonTrivialPartition) {
+		for (BNode node : partitioning.getLowestNonTrivialPartition()) {
 			List<BNode> fixpoints = new ArrayList<>(parentFixpoints);
 			fixpoints.add(node);
-			HashMap<BNode, HashCode> clonedHash = new HashMap<>(blankNodeMapping);
-			clonedHash.put(node, hashTuple(clonedHash.get(node), distinguisher));
-			Map<BNode, HashCode> hashDoublePrime = hashBNodes(m, clonedHash);
 
-			Multimap<HashCode, BNode> partitionPrime = partitionMapping(hashDoublePrime);
-			if (isFine(partitionPrime)) {
-				finePartitionMappings.add(hashDoublePrime);
-				if (lowestFound == null || mappingSize(hashDoublePrime).compareTo(mappingSize(blankNodeMapping)) < 0) {
-					lowestFound = hashDoublePrime;
+			Partitioning clonedPartitioning = new Partitioning(partitioning.getCurrentNodeMapping(),
+					partitioning.getStaticValueMapping());
+
+			clonedPartitioning.setCurrentHashCode(node,
+					hashTuple(clonedPartitioning.getCurrentHashCode(node), distinguisher));
+			clonedPartitioning = hashBNodes(m, clonedPartitioning);
+
+			if (clonedPartitioning.isFine()) {
+				finePartitionMappings.add(clonedPartitioning.getCurrentNodeMapping());
+				if (lowestFound == null
+						|| clonedPartitioning.getMappingSize().compareTo(partitioning.getMappingSize()) < 0) {
+					lowestFound = clonedPartitioning.getCurrentNodeMapping();
 				}
 			} else {
 				Map<BNode, BNode> compatibleAutomorphism = findCompatibleAutomorphism(fixpoints, finePartitionMappings);
@@ -251,8 +231,7 @@ class GraphComparisons {
 					// prune
 					continue;
 				}
-				lowestFound = distinguish(m, hashDoublePrime, partitionPrime, lowestFound, fixpoints,
-						finePartitionMappings);
+				lowestFound = distinguish(m, clonedPartitioning, lowestFound, fixpoints, finePartitionMappings);
 			}
 		}
 
@@ -306,15 +285,8 @@ class GraphComparisons {
 	}
 
 	protected static Multimap<HashCode, BNode> partitionMapping(Map<BNode, HashCode> blankNodeMapping) {
-		return Multimaps.invertFrom(Multimaps.forMap(blankNodeMapping), HashMultimap.create());
-	}
-
-	private static BigInteger mappingSize(Map<BNode, HashCode> mapping) {
-		BigInteger size = mapping.values()
-				.stream()
-				.map(h -> new BigInteger(1, h.asBytes()))
-				.reduce(BigInteger.ZERO, (v1, v2) -> v1.add(v2));
-		return size;
+		return Multimaps.invertFrom(Multimaps.forMap(blankNodeMapping),
+				MultimapBuilder.hashKeys(blankNodeMapping.keySet().size()).arrayListValues().build());
 	}
 
 	private static Model labelModel(Model original, Map<BNode, HashCode> hash) {
@@ -342,48 +314,40 @@ class GraphComparisons {
 		return result;
 	}
 
-	protected static Map<BNode, HashCode> hashBNodes(Model m) {
+	protected static Partitioning hashBNodes(Model m) {
 		return hashBNodes(m, null);
 	}
 
-	private static Map<BNode, HashCode> hashBNodes(Model m, Map<BNode, HashCode> initialBlankNodeMapping) {
-		final Map<Value, HashCode> staticValueMapping = new HashMap<>();
-
-		final Set<BNode> blankNodes = getBlankNodes(m);
-
-		final Map<BNode, HashCode> initialHash = initialBlankNodeMapping == null ? new HashMap<>(blankNodes.size())
-				: initialBlankNodeMapping;
-
-		if (initialHash.isEmpty()) {
-			blankNodes.forEach(node -> initialHash.put(node, initialHashCode));
+	private static Partitioning hashBNodes(Model m, Partitioning partitioning) {
+		if (partitioning == null) {
+			final Set<BNode> blankNodes = getBlankNodes(m);
+			partitioning = new Partitioning(blankNodes);
 		}
 
-		Map<BNode, HashCode> currentHash = null;
-		if (blankNodes.isEmpty()) {
-			currentHash = initialHash;
-		} else {
-			Map<BNode, HashCode> previousHash = initialHash;
+		if (!partitioning.getNodes().isEmpty()) {
 			do {
-				Map<BNode, HashCode> temp = currentHash;
-				currentHash = new HashMap<>(previousHash);
-				previousHash = temp != null ? temp : initialHash;
-
-				for (BNode b : blankNodes) {
+				partitioning.nextIteration();
+				for (BNode b : partitioning.getNodes()) {
 					for (Statement st : m.getStatements(b, null, null)) {
-						HashCode c = hashTuple(hashForValue(st.getObject(), previousHash, staticValueMapping),
-								hashForValue(st.getPredicate(), previousHash, staticValueMapping), outgoing);
-						currentHash.put(b, hashBag(c, currentHash.get(b)));
+						HashCode c = hashTuple(
+								partitioning.getPreviousHashCode(st.getObject()),
+								partitioning.getPreviousHashCode(st.getPredicate()),
+								outgoing);
+						partitioning.setCurrentHashCode(b,
+								hashBag(c, partitioning.getCurrentHashCode(b)));
 					}
 					for (Statement st : m.getStatements(null, null, b)) {
-						HashCode c = hashTuple(hashForValue(st.getSubject(), previousHash, staticValueMapping),
-								hashForValue(st.getPredicate(), previousHash, staticValueMapping),
+						HashCode c = hashTuple(
+								partitioning.getPreviousHashCode(st.getSubject()),
+								partitioning.getPreviousHashCode(st.getPredicate()),
 								incoming);
-						currentHash.put(b, hashBag(c, currentHash.get(b)));
+						partitioning.setCurrentHashCode(b,
+								hashBag(c, partitioning.getCurrentHashCode(b)));
 					}
 				}
-			} while (!fullyDistinguished(currentHash, previousHash));
+			} while (!partitioning.isFullyDistinguished());
 		}
-		return currentHash;
+		return partitioning;
 	}
 
 	protected static HashCode hashTuple(HashCode... hashCodes) {
@@ -394,54 +358,162 @@ class GraphComparisons {
 		return Hashing.combineUnordered(Arrays.asList(hashCodes));
 	}
 
-	private static HashCode hashForValue(Value value, Map<BNode, HashCode> bnodeMapping,
-			Map<Value, HashCode> staticValueMapping) {
-		if (value.isBNode()) {
-			return bnodeMapping.get(value);
-		}
-		return staticValueMapping.computeIfAbsent(value,
-				v -> hashFunction.hashString(v.stringValue(), Charsets.UTF_8));
-	}
-
 	private static BNode createCanonicalBNode(BNode node, Map<BNode, HashCode> mapping) {
 		return bnode("iso-" + mapping.get(node).toString());
 	}
 
-	private static boolean isFine(Multimap<HashCode, BNode> partitionMapping) {
-		return partitionMapping.asMap().values().stream().allMatch(member -> member.size() == 1);
-	}
+	/**
+	 * Encapsulates the current partitioning state of the algorithm, keeping track of previous and current node:hashcode
+	 * mappings as well as static value mappings.
+	 *
+	 */
+	static class Partitioning {
 
-	private static boolean fullyDistinguished(Map<BNode, HashCode> currentHash, Map<BNode, HashCode> previousHash) {
-		if (currentHash == null || previousHash == null) {
-			return false;
+		private final Map<Value, HashCode> staticValueMapping;
+
+		private Map<BNode, HashCode> previousNodeMapping;
+
+		private Map<BNode, HashCode> currentNodeMapping;
+
+		private Multimap<HashCode, BNode> currentHashCodeMapping;
+
+		private final int nodeCount;
+
+		public Partitioning(Set<BNode> blankNodes) {
+			this.staticValueMapping = new HashMap<>();
+			this.nodeCount = blankNodes.size();
+			this.currentNodeMapping = new HashMap<>(nodeCount);
+			blankNodes.forEach(node -> currentNodeMapping.put(node, initialHashCode));
 		}
 
-		final Multimap<HashCode, BNode> currentPartitionMapping = partitionMapping(currentHash);
-		if (isFine(currentPartitionMapping)) { // no two terms share a hash
+		public Partitioning(Map<BNode, HashCode> nodeMapping, Map<Value, HashCode> staticValueMapping) {
+			this.staticValueMapping = staticValueMapping;
+			this.nodeCount = nodeMapping.keySet().size();
+			this.currentNodeMapping = new HashMap<>(nodeMapping);
+		}
+
+		public Map<Value, HashCode> getStaticValueMapping() {
+			return staticValueMapping;
+		}
+
+		public HashCode getCurrentHashCode(Value value) {
+			if (value.isBNode()) {
+				return currentNodeMapping.get((BNode) value);
+			}
+			return staticValueMapping.computeIfAbsent(value,
+					v -> hashFunction.hashString(v.stringValue(), Charsets.UTF_8));
+		}
+
+		public Set<BNode> getNodes() {
+			return currentNodeMapping.keySet();
+		}
+
+		public HashCode getPreviousHashCode(Value value) {
+			if (value.isBNode()) {
+				return previousNodeMapping.get((BNode) value);
+			}
+			return staticValueMapping.computeIfAbsent(value,
+					v -> hashFunction.hashString(v.stringValue(), Charsets.UTF_8));
+		}
+
+		public void setCurrentHashCode(BNode bnode, HashCode hashCode) {
+			currentNodeMapping.put(bnode, hashCode);
+		}
+
+		public Map<BNode, HashCode> getCurrentNodeMapping() {
+			return Collections.unmodifiableMap(currentNodeMapping);
+		}
+
+		public void nextIteration() {
+			previousNodeMapping = currentNodeMapping;
+			currentNodeMapping = new HashMap<>(currentNodeMapping);
+			currentHashCodeMapping = null;
+		}
+
+		/**
+		 * A partitioning is fine if every hashcode maps to exactly one blank node.
+		 * 
+		 * @return true if the partitioning is fine, false otherwise.
+		 */
+		public boolean isFine() {
+			return getCurrentHashCodeMapping().asMap().values().stream().allMatch(member -> member.size() == 1);
+		}
+
+		public boolean isFullyDistinguished() {
+			if (isFine()) { // no two terms share a hash
+				return true;
+			}
+
+			return currentUnchanged();
+		}
+
+		public Collection<BNode> getLowestNonTrivialPartition() {
+			final List<Collection<BNode>> sortedPartitions = new ArrayList<>(
+					getCurrentHashCodeMapping().asMap().values());
+			Collections.sort(sortedPartitions, new Comparator<Collection<BNode>>() {
+				public int compare(Collection<BNode> a, Collection<BNode> b) {
+					int result = a.size() - b.size();
+					if (result == 0) {
+						// break tie by comparing value hash
+						HashCode hashOfA = currentNodeMapping.get(a.iterator().next());
+						HashCode hashOfB = currentNodeMapping.get(b.iterator().next());
+
+						BigInteger difference = new BigInteger(1, hashOfA.asBytes())
+								.subtract(new BigInteger(1, hashOfB.asBytes()));
+						result = difference.compareTo(BigInteger.ZERO);
+					}
+					return result;
+				}
+			});
+
+			Collection<BNode> lowestNonTrivialPartition = sortedPartitions.stream()
+					.filter(part -> part.size() > 1)
+					.findFirst()
+					.orElseThrow(RuntimeException::new);
+
+			return lowestNonTrivialPartition;
+		}
+
+		/**
+		 * Return a mapping size to determine a canonical lowest mapping.
+		 */
+		public BigInteger getMappingSize() {
+			BigInteger size = currentNodeMapping.values()
+					.stream()
+					.map(h -> new BigInteger(1, h.asBytes()))
+					.reduce(BigInteger.ZERO, (v1, v2) -> v1.add(v2));
+			return size;
+		}
+
+		private Multimap<HashCode, BNode> getCurrentHashCodeMapping() {
+			if (currentHashCodeMapping == null) {
+				currentHashCodeMapping = Multimaps.invertFrom(Multimaps.forMap(currentNodeMapping),
+						HashMultimap.create());
+			}
+			return currentHashCodeMapping;
+		}
+
+		/**
+		 * Verify if the current node mapping is unchanged compared to the previous node mapping.
+		 * <p>
+		 * it is unchanged if: all bnodes that have the same hashcode in current also shared the same hashcode in
+		 * previous, and all bnodes that have different ones in current also have different ones in previous.
+		 * 
+		 * @return true if unchanged, false otherwise
+		 */
+		private boolean currentUnchanged() {
+
+			final Multimap<HashCode, BNode> previous = Multimaps.invertFrom(Multimaps.forMap(previousNodeMapping),
+					HashMultimap.create());
+			for (Collection<BNode> currentSharedHashNodes : getCurrentHashCodeMapping().asMap().values()) {
+				// pick a BNode, doesn't matter which: they all share the same hashcode
+				BNode node = currentSharedHashNodes.iterator().next();
+				HashCode previousHashCode = previousNodeMapping.get(node);
+				if (!previous.get(previousHashCode).equals(currentSharedHashNodes)) {
+					return false;
+				}
+			}
 			return true;
 		}
-
-		return currentUnchanged(currentPartitionMapping, previousHash);
-	}
-
-	private static boolean currentUnchanged(Multimap<HashCode, BNode> current, Map<BNode, HashCode> previousHash) {
-		// current is unchanged if: all bnodes that have the same hashcode in current also shared the same hashcode in
-		// previous, and all bnodes that have different ones in current also have different ones in previous.
-
-		final Multimap<HashCode, BNode> previous = partitionMapping(previousHash);
-		for (Collection<BNode> currentSharedHashNodes : current.asMap().values()) {
-			// pick a BNode, doesn't matter which: they all share the same hashcode
-			BNode node = currentSharedHashNodes.iterator().next();
-
-			HashCode previousHashCode = previousHash.get(node);
-			if (!previous.get(previousHashCode).equals(currentSharedHashNodes)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static class Partition {
-
 	}
 }

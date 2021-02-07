@@ -7,6 +7,7 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +16,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.model.util.GraphComparisons.Partitioning;
 import org.junit.Test;
 
 import com.google.common.base.Charsets;
@@ -35,7 +37,7 @@ public class GraphComparisonsTest {
 	public void testCanonicalHashing() {
 		Model example49 = buildExample49Model();
 
-		Map<BNode, HashCode> mapping = GraphComparisons.hashBNodes(example49);
+		Map<BNode, HashCode> mapping = GraphComparisons.hashBNodes(example49).getCurrentNodeMapping();
 
 		assertThat(mapping.get(a))
 				.isEqualTo(mapping.get(c))
@@ -50,16 +52,6 @@ public class GraphComparisonsTest {
 		assertThat(mapping.get(a)).isNotEqualTo(mapping.get(b));
 		assertThat(mapping.get(e)).isNotEqualTo(mapping.get(a))
 				.isNotEqualTo(mapping.get(b));
-	}
-
-	@Test
-	public void testPartition() {
-		Model example49 = buildExample49Model();
-
-		Multimap<HashCode, BNode> partition = GraphComparisons
-				.partitionMapping(GraphComparisons.hashBNodes(example49));
-
-		assertThat(partition.asMap().values()).hasSize(3);
 	}
 
 	@Test
