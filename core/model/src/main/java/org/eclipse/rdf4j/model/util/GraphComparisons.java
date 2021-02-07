@@ -347,11 +347,13 @@ class GraphComparisons {
 	}
 
 	private static Map<BNode, HashCode> hashBNodes(Model m, Map<BNode, HashCode> initialBlankNodeMapping) {
-		final Map<BNode, HashCode> initialHash = initialBlankNodeMapping == null ? new HashMap<>()
-				: new HashMap<>(initialBlankNodeMapping);
 		final Map<Value, HashCode> staticValueMapping = new HashMap<>();
 
 		final Set<BNode> blankNodes = getBlankNodes(m);
+
+		final Map<BNode, HashCode> initialHash = initialBlankNodeMapping == null ? new HashMap<>(blankNodes.size())
+				: initialBlankNodeMapping;
+
 		if (initialHash.isEmpty()) {
 			blankNodes.forEach(node -> initialHash.put(node, initialHashCode));
 		}
@@ -439,4 +441,7 @@ class GraphComparisons {
 		return true;
 	}
 
+	private static class Partition {
+
+	}
 }
