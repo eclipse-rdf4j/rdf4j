@@ -36,9 +36,11 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
@@ -173,10 +175,10 @@ class GraphComparisons {
 		if (mapping1.size() != mapping2.size()) {
 			return true;
 		}
-		Collection<HashCode> values1 = mapping1.values();
-		Collection<HashCode> values2 = mapping2.values();
+		Set<HashCode> values1 = new HashSet<>(mapping1.values());
+		Set<HashCode> values2 = new HashSet<>(mapping2.values());
 
-		if (!(values1.containsAll(values2) && values2.containsAll(values1))) {
+		if (!(values1.equals(values2))) {
 			return true;
 		}
 
