@@ -64,7 +64,7 @@ if  !  mvn -v | grep -q "Java version: 1.8."; then
 fi
 
 
-# check that we are on master
+# check that we are on master or develop
 if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
   if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
     echo""
@@ -185,22 +185,21 @@ git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
 gh pr create -B develop --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}"
 
+echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
+
 git checkout "${ORIGINAL_BRANCH}"
 mvn clean
 
-
 cd scripts
 
-
-
+echo ""
 echo "DONE!"
-
-
 
 echo ""
 echo "You will now want to inform the community about the new milestone build!"
 echo " - Check if all recently completed issues have the correct milestone: https://github.com/eclipse/rdf4j/projects/19"
-echo " - For issues closed in the current milestone, those issues need to be tagged with the RDF4J milestone number"
+echo " - For issues closed in the current milestone, those issues need to be tagged with the RDF4J milestone number (use Github labels M1, M2 or M3)"
+echo "Remember that milestone builds are not releases!"
 
 echo ""
 echo "To generate the news item and release-notes you will want to run the following command:"

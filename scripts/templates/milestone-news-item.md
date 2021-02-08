@@ -12,7 +12,7 @@ This milestone build is not yet feature-complete, but we are putting it out to r
 
 <!--more-->
 
- - [issues fixed in ${MVN_VERSION_RELEASE} Milestone 1](https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+label%3AM${M}+is%3Aclosed+milestone%3A${MVN_VERSION_RELEASE})
+ - [issues fixed in ${MVN_VERSION_RELEASE} Milestone ${M}](https://github.com/eclipse/rdf4j/issues?q=is%3Aissue+label%3AM${M}+is%3Aclosed+milestone%3A${MVN_VERSION_RELEASE})
  - [issues planned for ${MVN_VERSION_RELEASE}](https://github.com/eclipse/rdf4j/milestone/${GITHUB_MILESTONE})
 
 ### Links

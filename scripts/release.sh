@@ -240,11 +240,14 @@ git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
 gh pr create -B develop --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}"
 
+echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
+
 git checkout master
 mvn clean
 
 cd scripts
 
+echo ""
 echo "DONE!"
 
 
