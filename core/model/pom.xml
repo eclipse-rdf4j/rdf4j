@@ -26,6 +26,10 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-model-api</artifactId>
 			<version>${project.version}</version>

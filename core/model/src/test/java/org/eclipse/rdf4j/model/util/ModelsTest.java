@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -118,15 +119,19 @@ public class ModelsTest {
 		model2.add(foo, RDF.TYPE, bar);
 
 		assertTrue(Models.isomorphic(model1, model2));
+	}
+
+	@Test
+	public void testModelsIsomorphic_BlankNodeContext() {
+		model1.add(foo, RDF.TYPE, bar);
+		model2.add(foo, RDF.TYPE, bar);
 
 		model1.add(foo, RDF.TYPE, bar, baz);
-
 		assertFalse(Models.isomorphic(model1, model2));
 
 		model2.add(foo, RDF.TYPE, bar, VF.createBNode());
 
 		assertTrue(Models.isomorphic(model1, model2));
-
 	}
 
 	@Test
