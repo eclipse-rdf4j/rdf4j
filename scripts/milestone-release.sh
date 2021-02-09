@@ -74,18 +74,37 @@ if  ! git status --porcelain --branch | grep -q "## master...origin/master"; the
   fi
 fi
 
+ORIGINAL_BRANCH=""
+if  git status --porcelain --branch | grep -q "## master...origin/master"; then
+  ORIGINAL_BRANCH="master";
+fi
+if  git status --porcelain --branch | grep -q "## develop...origin/develop"; then
+  ORIGINAL_BRANCH="develop";
+fi
+
 echo "Running git pull to make sure we are up to date"
+git checkout develop
 git pull
 
-# check that we are not ahead or behind
-if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
-  if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
-    echo""
-    echo "There is something wrong with your git. It seems you are not up to date with master. Run git status";
-    echo "";
-    exit 1;
-  fi
+if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
+  echo""
+  echo "There is something wrong with your git. It seems you are not up to date with develop. Run git status";
+  echo "";
+  exit 1;
 fi
+
+git checkout master
+git pull
+
+if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
+  echo""
+  echo "There is something wrong with your git. It seems you are not up to date with master. Run git status";
+  echo "";
+  exit 1;
+fi
+
+git checkout "${ORIGINAL_BRANCH}"
+
 
 # check that there are no uncomitted or untracked files
 if  ! [[ $(git status --porcelain) == "" ]]; then
@@ -102,13 +121,6 @@ if ! git push --dry-run > /dev/null 2>&1; then
     exit 1;
 fi
 
-ORIGINAL_BRANCH=""
-if  git status --porcelain --branch | grep -q "## master...origin/master"; then
-  ORIGINAL_BRANCH="master";
-fi
-if  git status --porcelain --branch | grep -q "## develop...origin/develop"; then
-  ORIGINAL_BRANCH="develop";
-fi
 
 echo "Running mvn clean";
 mvn clean;
@@ -118,7 +130,7 @@ MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[lo
 echo "";
 echo "Your current maven snapshot version is: '${MVN_CURRENT_SNAPSHOT_VERSION}'"
 echo ""
-echo "What is the version you would like to release?"
+echo "What is the version you would like to publish?"
 read -rp "Version: " MVN_VERSION_RELEASE
 echo ""
 echo "Your maven release version will be: '${MVN_VERSION_RELEASE}'"
@@ -176,7 +188,6 @@ mvn clean install -DskipTests -Djapicmp.skip
 mvn package -Passembly,!formatting -Djapicmp.skip -DskipTests --batch-mode
 
 git checkout master
-git pull
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
