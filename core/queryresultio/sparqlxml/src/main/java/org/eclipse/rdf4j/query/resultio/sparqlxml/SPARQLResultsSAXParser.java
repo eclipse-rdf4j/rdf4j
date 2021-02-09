@@ -39,6 +39,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -132,12 +134,21 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			if (xmlLang != null) {
 				currentValue = valueFactory.createLiteral(text, xmlLang);
 			} else if (datatype != null) {
+				IRI datatypeIri;
 				try {
-					currentValue = valueFactory.createLiteral(text, valueFactory.createIRI(datatype));
+					datatypeIri = valueFactory.createIRI(datatype);
 				} catch (IllegalArgumentException e) {
 					// Illegal datatype URI
 					throw new SAXException(e.getMessage(), e);
 				}
+
+				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
+				// to using STRING as the datatype
+				if (RDF.LANGSTRING.equals(datatypeIri) && xmlLang == null) {
+					datatypeIri = XSD.STRING;
+				}
+
+				currentValue = valueFactory.createLiteral(text, datatypeIri);
 			} else {
 				currentValue = valueFactory.createLiteral(text);
 			}
