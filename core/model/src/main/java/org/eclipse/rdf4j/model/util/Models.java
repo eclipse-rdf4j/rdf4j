@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -719,15 +720,39 @@ public class Models {
 		Model set2 = toModel(model2);
 
 		return GraphComparisons.isomorphic(set1, set2);
+	}
 
-//		Set<Statement> set1 = toSet(model1);
-//		Model set2 = toModel(model2);
-//		// Compare the number of statements in both sets
-//		if (set1.size() != set2.size()) {
-//			return false;
-//		}
-//
-//		return isSubsetInternal(set1, set2);
+	/**
+	 * Legacy implementation of {@link #isomorphic(Iterable, Iterable) isomorphic comparison}. This method is offered as
+	 * a temporary fallback for corner cases where the newly introduced isomorphism algorithm (in release 3.6.0) has
+	 * worse performance or an unexpected result.
+	 * 
+	 * @apiNote This method is offered as a temporary fallback only, and will likely be removed again quite soon in a
+	 *          future minor or major release.
+	 * @implNote This uses an algorithm that has poor performance in many cases and can potentially get stuck in an
+	 *           endless loop. We <strong>strongly recommend</strong> using the new algorithm available in the
+	 *           {@link #isomorphic(Iterable, Iterable)} implementation.
+	 * 
+	 * @deprecated since 3.6.0 - use {@link #isomorphic(Iterable, Iterable)} instead.
+	 * 
+	 * @since 3.6.0
+	 * @see #isomorphic(Iterable, Iterable)
+	 */
+	@Experimental
+	@Deprecated
+	public static boolean legacyIsomorphic(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
+		if (model1 == model2) {
+			return true;
+		}
+
+		Set<Statement> set1 = toSet(model1);
+		Model set2 = toModel(model2);
+		// Compare the number of statements in both sets
+		if (set1.size() != set2.size()) {
+			return false;
+		}
+
+		return isSubsetInternal(set1, set2);
 	}
 
 	/**

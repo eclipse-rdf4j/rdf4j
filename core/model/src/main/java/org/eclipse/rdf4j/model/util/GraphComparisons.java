@@ -36,11 +36,9 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Multimaps;
-import com.google.common.collect.Sets;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
@@ -81,7 +79,9 @@ class GraphComparisons {
 	 *
 	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract Syntax, section
 	 *      3.6 (Graph Comparison)</a>
-	 * @see http://aidanhogan.com/docs/rdf-canonicalisation.pdf
+	 * @see Hogan, A. (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and
+	 *      labelling blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
+	 *      <a href="http://aidanhogan.com/docs/rdf-canonicalisation.pdf">Technical Paper (PDF )</a>
 	 * 
 	 */
 	public static boolean isomorphic(Model model1, Model model2) {
