@@ -182,6 +182,7 @@ git checkout -b "${RELEASE_NOTES_BRANCH}"
 
 tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" target/site/apidocs
 
+git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
 gh pr create -B master --title "${MVN_VERSION_RELEASE} news item and docs" --body "Javadocs and news item for ${MVN_VERSION_RELEASE}"
