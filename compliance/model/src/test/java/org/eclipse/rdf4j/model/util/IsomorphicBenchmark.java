@@ -46,6 +46,7 @@ public class IsomorphicBenchmark {
 
 	private Model empty = getModel("empty.ttl");
 	private Model blankNodes = getModel("blankNodes.ttl");
+	private Model blankNodesLarge = getModel("blankNodesLarge.ttl");
 	private Model shacl = getModel("shacl.ttl");
 	private Model shaclValidationReport = getModel("shaclValidationReport.ttl");
 	private Model longChain = getModel("longChain.ttl");
@@ -63,6 +64,7 @@ public class IsomorphicBenchmark {
 
 	private Model empty_2 = getModel("empty.ttl");
 	private Model blankNodes_2 = getModel("blankNodes.ttl");
+	private Model blankNodesLarge_2 = getModel("blankNodesLarge.ttl");
 	private Model shacl_2 = getModel("shacl.ttl");
 	private Model shaclValidationReport_2 = getModel("shaclValidationReport.ttl");
 	private Model shaclValidationReport_changed = getModel("shaclValidationReport-changed.ttl");
@@ -119,6 +121,14 @@ public class IsomorphicBenchmark {
 	public boolean blankNodes() {
 
 		return isomorphic(blankNodes, blankNodes_2);
+
+	}
+
+	// checks performance for a model with even more blank nodes
+	@Benchmark
+	public boolean blankNodesLarge() {
+
+		return isomorphic(blankNodesLarge, blankNodesLarge_2);
 
 	}
 
