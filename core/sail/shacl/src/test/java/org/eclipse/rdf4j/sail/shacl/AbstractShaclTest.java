@@ -451,7 +451,7 @@ abstract public class AbstractShaclTest {
 
 			Model validationReportExpected = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
-			if (!isIsomorphic(validationReportActual, validationReportExpected)) {
+			if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
 //				writeActualModelToExpectedModelForDevPurposes(dataPath, validationReportActual);
 
 				String validationReportExpectedString = modelToString(validationReportExpected);
@@ -460,30 +460,6 @@ abstract public class AbstractShaclTest {
 			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
-		}
-	}
-
-	private static boolean isIsomorphic(Model validationReportActual, Model validationReportExpected) {
-		validationReportActual = normalizeModel(validationReportActual);
-		validationReportExpected = normalizeModel(validationReportExpected);
-
-		String actualString = modelToString(validationReportActual);
-		String expectedString = modelToString(validationReportExpected);
-
-		if (actualString.equals(expectedString)) {
-			return true;
-		}
-
-		return Models.isomorphic(validationReportActual, validationReportExpected);
-	}
-
-	private static Model normalizeModel(Model model) {
-		StringWriter sw = new StringWriter();
-		Rio.write(model, sw, RDFFormat.TURTLE);
-		try {
-			return Rio.parse(new StringReader(sw.toString()), "", RDFFormat.TURTLE);
-		} catch (IOException e) {
-			throw new IllegalStateException();
 		}
 	}
 
@@ -528,11 +504,6 @@ abstract public class AbstractShaclTest {
 
 		// we support more variations for RDFS than the reference engine
 		if (shaclPath.contains("subclass")) {
-			return;
-		}
-
-		// too slow
-		if (dataPath.equals("test-cases/uniqueLang/not/invalid/case8")) {
 			return;
 		}
 
@@ -630,7 +601,7 @@ abstract public class AbstractShaclTest {
 						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
 					}
 
-					if (!isIsomorphic(validationReportActual, validationReportExpected)) {
+					if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
 
 						String validationReportExpectedString = modelToString(validationReportExpected);
 						String validationReportActualString = modelToString(validationReportActual);
@@ -705,9 +676,9 @@ abstract public class AbstractShaclTest {
 		ValueComparator valueComparator = new ValueComparator();
 		statements.sort(
 				Comparator
-//						.comparing(Statement::getObject, valueComparator)
-//						.thenComparing(Statement::getSubject, valueComparator)
-						.comparing(Statement::getPredicate, valueComparator)
+						.comparing(Statement::getSubject, valueComparator)
+						.thenComparing(Statement::getObject, valueComparator)
+						.thenComparing(Statement::getPredicate, valueComparator)
 		);
 
 		model = new LinkedHashModel(statements);
@@ -1028,7 +999,7 @@ abstract public class AbstractShaclTest {
 				actual.remove(null, RDF.TYPE, SHACL.SHAPE);
 				actual.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
-				if (!isIsomorphic(parse, actual)) {
+				if (!Models.isomorphic(parse, actual)) {
 					assertEquals(modelToString(parse), modelToString(actual));
 				}
 

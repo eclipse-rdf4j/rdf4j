@@ -66,7 +66,7 @@ public class Unique implements PlanNode {
 						logger.debug("");
 					}
 
-					if(!(!compress || (temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue()))){
+					if (!(!compress || (temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue()))) {
 						System.out.println(temp);
 					}
 
