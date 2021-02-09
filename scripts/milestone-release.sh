@@ -175,7 +175,8 @@ git checkout "${MVN_VERSION_RELEASE}"
 mvn clean install -DskipTests -Djapicmp.skip
 mvn package -Passembly,!formatting -Djapicmp.skip -DskipTests --batch-mode
 
-git checkout "${ORIGINAL_BRANCH}"
+git checkout master
+git pull
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
@@ -183,7 +184,7 @@ tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" target/site/apidocs
 
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
-gh pr create -B develop --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}"
+gh pr create -B master --title "${MVN_VERSION_RELEASE} news item and docs" --body "Javadocs and news item for ${MVN_VERSION_RELEASE}"
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 
