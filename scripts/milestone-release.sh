@@ -162,12 +162,16 @@ git commit -s -a -m "release ${MVN_VERSION_RELEASE}"
 git tag "${MVN_VERSION_RELEASE}"
 
 echo "";
-echo "Pushing release branch to github"
+echo "Pushing release branch and tag to github, then deleting branch."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 # push release branch and tag
 git push -u origin "${BRANCH}"
 git push origin "${MVN_VERSION_RELEASE}"
+
+# deleting the branch (local and remote) since we don't intend to merge the branch and it's enough that we leave the git tag
+git branch -d "${BRANCH}"
+git push origin --delete "${BRANCH}"
 
 echo "";
 echo "You need to tell Jenkins to start the release deployment processes, for SDK and maven artifacts"
