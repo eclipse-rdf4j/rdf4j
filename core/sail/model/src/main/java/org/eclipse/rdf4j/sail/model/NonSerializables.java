@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.model;
 import java.util.Map;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.cache.Cache;
@@ -20,9 +21,10 @@ import com.google.common.cache.CacheBuilder;
  * entries to be garbage-collected when no longer used.
  *
  * @author Mark
- * @deprecated this feature is for internal use only: its existence, signature or behavior may change without warning
- *             from one release to the next.
+ * @apiNote this feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
+@InternalUseOnly
 public class NonSerializables {
 
 	private static final Cache<UUID, Object> registry = CacheBuilder.newBuilder().weakValues().build();
