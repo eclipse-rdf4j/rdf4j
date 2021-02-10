@@ -202,9 +202,13 @@ class GraphComparisons {
 	private static void xorBytesInHashCodes(Collection<HashCode> values1, byte[] initialByte) {
 		for (HashCode hashCode : values1) {
 			byte[] bytes = hashCode.asBytes();
-			for (int i = 0; i < bytes.length; i++) {
-				initialByte[i] = (byte) (initialByte[i] ^ bytes[i]);
-			}
+			extracted(initialByte, bytes);
+		}
+	}
+
+	private static void extracted(byte[] initialByte, byte[] bytes) {
+		for (int i = 0; i < 16; i++) {
+			initialByte[i] = (byte) (initialByte[i] ^ bytes[i]);
 		}
 	}
 
