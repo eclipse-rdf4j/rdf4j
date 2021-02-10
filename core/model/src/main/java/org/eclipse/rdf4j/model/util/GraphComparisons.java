@@ -175,14 +175,37 @@ class GraphComparisons {
 		if (mapping1.size() != mapping2.size()) {
 			return true;
 		}
-		Set<HashCode> values1 = new HashSet<>(mapping1.values());
-		Set<HashCode> values2 = new HashSet<>(mapping2.values());
 
-		if (!(values1.equals(values2))) {
-			return true;
+		Collection<HashCode> values1 = mapping1.values();
+		Collection<HashCode> values2 = mapping2.values();
+
+		boolean equal = fastHashCodeCollectionEquals(values1, values2);
+
+		return !equal;
+	}
+
+	private static boolean fastHashCodeCollectionEquals(Collection<HashCode> values1, Collection<HashCode> values2) {
+		byte[] initialByte = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+		xorBytesInHashCodes(values1, initialByte);
+		xorBytesInHashCodes(values2, initialByte);
+
+		for (byte b : initialByte) {
+			if (b != 0) {
+				return false;
+			}
 		}
 
-		return false;
+		return true;
+	}
+
+	private static void xorBytesInHashCodes(Collection<HashCode> values1, byte[] initialByte) {
+		for (HashCode hashCode : values1) {
+			byte[] bytes = hashCode.asBytes();
+			for (int i = 0; i < bytes.length; i++) {
+				initialByte[i] = (byte) (initialByte[i] ^ bytes[i]);
+			}
+		}
 	}
 
 	protected static Model isoCanonicalize(Model m) {
