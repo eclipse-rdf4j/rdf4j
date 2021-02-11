@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -41,9 +42,10 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Mark
  *
- * @deprecated this feature is for internal use only: its existence, signature or behavior may change without warning
- *             from one release to the next.
+ * @apiNote this feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
+@InternalUseOnly
 public class SailModel extends AbstractModel {
 
 	private static final long serialVersionUID = -2104886971549374410L;

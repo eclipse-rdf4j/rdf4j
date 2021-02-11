@@ -115,6 +115,7 @@ echo "Writing news item to ../site/content/news/${NEWS_FILENAME}"
 echo "${NEWS_ITEM}" > "../site/content/news/${NEWS_FILENAME}"
 
 if ! [[ ${BRANCH} == "" ]]; then
+  git add --all
   git commit -s -a -m "news item and release-notes if relevant for ${MVN_VERSION_RELEASE_RAW}"
   git push
 fi
@@ -123,5 +124,9 @@ echo ""
 echo "DONE!"
 
 echo ""
-echo "You will need to manually edit download.md"
+echo "You will need to:"
+echo " - manually edit site/content/download.md"
+echo " - check site/content/news/${NEWS_FILENAME}"
+echo " - check site/content/release-notes/${RELEASE_NOTES_FILENAME} (if it exists)"
+echo ""
 echo "The current branch can be used for that"
