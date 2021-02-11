@@ -34,6 +34,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -148,9 +149,11 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
 				// to using STRING as the datatype
 				if (RDF.LANGSTRING.equals(datatypeIri) && xmlLang == null) {
+					logger.debug(
+							"rdf:langString typed literal missing language tag: '{}'. Falling back to xsd:string.",
+							StringUtils.abbreviate(text, 10)
+					);
 					datatypeIri = XSD.STRING;
-					logger.debug("Encountered RDF langString without langage - "
-							+ "demoting to simple XSD string");
 				}
 
 				currentValue = valueFactory.createLiteral(text, datatypeIri);
