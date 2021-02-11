@@ -45,9 +45,12 @@ import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
 
 class SPARQLResultsSAXParser extends SimpleSAXAdapter {
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/*-----------*
 	 * Variables *
@@ -146,6 +149,8 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 				// to using STRING as the datatype
 				if (RDF.LANGSTRING.equals(datatypeIri) && xmlLang == null) {
 					datatypeIri = XSD.STRING;
+					logger.debug("Encountered RDF langString without langage - "
+							+ "demoting to simple XSD string");
 				}
 
 				currentValue = valueFactory.createLiteral(text, datatypeIri);

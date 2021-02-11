@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -457,7 +459,18 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			if (language != null) {
 				result = valueFactory.createLiteral(value, language);
 			} else if (datatype != null) {
-				result = valueFactory.createLiteral(value, valueFactory.createIRI(datatype));
+				IRI datatypeIri;
+				datatypeIri = valueFactory.createIRI(datatype);
+
+				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
+				// to using STRING as the datatype
+				if (RDF.LANGSTRING.equals(datatypeIri) && language == null) {
+					datatypeIri = XSD.STRING;
+					logger.debug("Encountered RDF langString without langage - "
+							+ "demoting to simple XSD string");
+				}
+
+				result = valueFactory.createLiteral(value, datatypeIri);
 			} else {
 				result = valueFactory.createLiteral(value);
 			}

@@ -91,7 +91,7 @@ public class SPARQLXMLParserCustomTest {
 	}
 
 	@Test
-	public void testExplicitDataTypeOnStringBinding() throws Exception {
+	public void testLangMissingOnStringLang() throws Exception {
 		ParserConfig config = new ParserConfig();
 		QueryResultCollector handler = new QueryResultCollector();
 		ParseErrorCollector errorCollector = new ParseErrorCollector();
