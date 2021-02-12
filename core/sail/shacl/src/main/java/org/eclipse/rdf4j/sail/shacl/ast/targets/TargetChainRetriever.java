@@ -275,7 +275,7 @@ public class TargetChainRetriever implements PlanNode {
 		return "TargetChainRetriever{" +
 				"statementPatterns=" + statementPatterns +
 				", removedStatementMatchers=" + removedStatementMatchers +
-				", query='" + query + '\'' +
+				", query='" + query.replace("\n", "\t") + '\'' +
 				", scope=" + scope +
 				'}';
 	}

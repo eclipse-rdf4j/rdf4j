@@ -47,7 +47,7 @@ public class Unique implements PlanNode {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
-			Set<ValidationTuple> multiCardinalityDedupeSet;
+			Set<ValidationTupleValueAndActiveTarget> multiCardinalityDedupeSet;
 
 			boolean useMultiCardinalityDedupeSet;
 
@@ -62,15 +62,7 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					if (!(temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue())) {
-						logger.debug("");
-					}
-
-					if (!(!compress || (temp.getScope() == ConstraintComponent.Scope.nodeShape || !temp.hasValue()))) {
-						System.out.println(temp);
-					}
-
-					if (temp.getFullChainSize(true) > 1) {
+					if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
 						useMultiCardinalityDedupeSet = true;
 					}
 
@@ -78,21 +70,20 @@ public class Unique implements PlanNode {
 						next = temp;
 					} else {
 						if (useMultiCardinalityDedupeSet) {
-							if (multiCardinalityDedupeSet == null
-									|| !previous.sameTargetAs(temp)) {
+							if (multiCardinalityDedupeSet == null || !previous.sameTargetAs(temp)) {
 								multiCardinalityDedupeSet = new HashSet<>();
 								if (previous.sameTargetAs(temp)) {
-									multiCardinalityDedupeSet.add(previous);
+									multiCardinalityDedupeSet.add(new ValidationTupleValueAndActiveTarget(previous));
 								}
 							}
 
-							if (!multiCardinalityDedupeSet.contains(temp)) {
+							if (!multiCardinalityDedupeSet.contains(new ValidationTupleValueAndActiveTarget(temp))) {
 								next = temp;
-								multiCardinalityDedupeSet.add(next);
+								multiCardinalityDedupeSet.add(new ValidationTupleValueAndActiveTarget(next));
 							}
 
 						} else {
-							if (!(previous == temp || previous.equals(temp))) {
+							if (!(previous.sameTargetAs(temp))) {
 								next = temp;
 							}
 						}
@@ -104,8 +95,8 @@ public class Unique implements PlanNode {
 					} else {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
-									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique", temp, Unique.this,
-									getId());
+									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique ", temp, Unique.this,
+									getId(), stackTrace[2].toString());
 						}
 					}
 
@@ -201,7 +192,52 @@ public class Unique implements PlanNode {
 	@Override
 	public String toString() {
 		return "Unique{" +
-				"parent=" + parent +
+				"compress=" + compress +
+				", parent=" + parent +
 				'}';
+	}
+
+	static class ValidationTupleValueAndActiveTarget {
+
+		private final ValidationTuple validationTuple;
+
+		public ValidationTupleValueAndActiveTarget(ValidationTuple validationTuple) {
+			this.validationTuple = validationTuple;
+		}
+
+		public ValidationTuple getValidationTuple() {
+			return validationTuple;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			ValidationTupleValueAndActiveTarget validationTupleValueAndActiveTarget = (ValidationTupleValueAndActiveTarget) o;
+
+			if (validationTuple.hasValue() || validationTupleValueAndActiveTarget.validationTuple.hasValue()) {
+				assert validationTuple.hasValue() && validationTupleValueAndActiveTarget.validationTuple.hasValue();
+				return validationTuple.getValue().equals(validationTupleValueAndActiveTarget.validationTuple.getValue())
+						&& validationTuple.getActiveTarget()
+								.equals(validationTupleValueAndActiveTarget.validationTuple.getActiveTarget());
+			}
+
+			return validationTuple.getActiveTarget()
+					.equals(validationTupleValueAndActiveTarget.validationTuple.getActiveTarget());
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(validationTuple.getActiveTarget(), validationTuple.getValue());
+		}
+	}
+
+	public enum On {
+		targetAndValue,
+		target
 	}
 }

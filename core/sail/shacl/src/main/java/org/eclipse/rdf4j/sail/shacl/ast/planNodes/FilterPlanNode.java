@@ -98,7 +98,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
-										FilterPlanNode.this, getId());
+										FilterPlanNode.this, getId(), null);
 							}
 						}
 					} else {
@@ -109,7 +109,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
 										FilterPlanNode.this,
-										getId());
+										getId(), null);
 							}
 						}
 					}

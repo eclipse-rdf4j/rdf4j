@@ -84,7 +84,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
 									parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
-									getId());
+									getId(), null);
 						}
 						return tuple;
 					}

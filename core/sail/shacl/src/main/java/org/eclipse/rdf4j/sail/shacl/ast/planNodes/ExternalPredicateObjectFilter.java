@@ -84,7 +84,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsTypeMismatch",
 										temp, ExternalPredicateObjectFilter.this,
-										getId());
+										getId(), null);
 							}
 						}
 					} else {
@@ -96,7 +96,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsTypeMismatch",
 										temp, ExternalPredicateObjectFilter.this,
-										getId());
+										getId(), null);
 							}
 						}
 					}

@@ -71,7 +71,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 				if (GlobalValidationExecutionLogging.loggingEnabled) {
 					validationExecutionLogger.log(depth(),
 							parent.getClass().getSimpleName() + ":UnBuffered" + name + ".next()", tuple, parent,
-							getId());
+							getId(), null);
 				}
 				next = null;
 

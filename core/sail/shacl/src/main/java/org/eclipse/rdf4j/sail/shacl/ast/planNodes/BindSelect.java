@@ -358,7 +358,7 @@ public class BindSelect implements PlanNode {
 	@Override
 	public String toString() {
 		return "BindSelect{" +
-				"query='" + query + '\'' +
+				"query='" + query.replace("\n", "\t") + '\'' +
 				", vars=" + vars +
 				", bulkSize=" + bulkSize +
 				", source=" + source +

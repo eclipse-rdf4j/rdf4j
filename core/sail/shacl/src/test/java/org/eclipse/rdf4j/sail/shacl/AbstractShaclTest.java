@@ -239,7 +239,7 @@ abstract public class AbstractShaclTest {
 		.collect(Collectors.toList());
 
 	// @formatter:on
-	static boolean fullLogging = false;
+	static boolean fullLogging = true;
 	final String testCasePath;
 	final String path;
 	final ExpectedResult expectedResult;
@@ -867,13 +867,13 @@ abstract public class AbstractShaclTest {
 			}
 
 			if (ran) {
-				testValidationReport(dataPath, validationReportActual);
-
 				if (expectedResult == ExpectedResult.valid) {
 					assertFalse(exception);
 				} else {
 					assertTrue(exception);
 				}
+
+				testValidationReport(dataPath, validationReportActual);
 			}
 		} finally {
 			shaclRepository.shutDown();
@@ -1019,6 +1019,10 @@ abstract public class AbstractShaclTest {
 		System.out.println("\n############################################");
 		System.out.println("\tValidation Report\n");
 		Model validationReport = report.asModel();
+
+		validationReport.setNamespace(SHACL.NS);
+		validationReport.setNamespace(XSD.NS);
+		validationReport.setNamespace(RDF4J.NS);
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);

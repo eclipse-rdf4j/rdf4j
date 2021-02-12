@@ -19,8 +19,8 @@ public class ValidationExecutionLogger {
 
 	private static final boolean groupedLogging = true;
 
-	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id) {
-		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id);
+	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
+		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id, message);
 		if (groupedLogging) {
 			if (list == null) {
 				list = new ArrayList<>();
@@ -63,14 +63,16 @@ class LogStatement {
 	private final ValidationTuple tuple;
 	private final PlanNode planNode;
 	private final String id;
+	private final String message;
 
-	LogStatement(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id) {
+	LogStatement(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
 		this.depth = depth;
 		this.name = name;
 		this.tuple = tuple;
 		assert tuple != null;
 		this.planNode = planNode;
 		this.id = id;
+		this.message = message;
 	}
 
 	public int getDepth() {
@@ -99,7 +101,8 @@ class LogStatement {
 		return StringUtils.leftPad(id, 14) + "\t"
 				+ leadingSpace(depth) + name
 				+ ":  " + tuple.toString()
-				+ " :  " + planNode.toString();
+				+ " :  " + planNode.toString()
+				+ (message != null ? " :  " + message : "");
 
 	}
 

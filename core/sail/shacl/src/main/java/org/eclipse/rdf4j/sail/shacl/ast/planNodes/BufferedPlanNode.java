@@ -69,7 +69,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 				if (GlobalValidationExecutionLogging.loggingEnabled) {
 					validationExecutionLogger.log(depth(),
 							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
-							getId());
+							getId(), null);
 				}
 				return tuple;
 			}

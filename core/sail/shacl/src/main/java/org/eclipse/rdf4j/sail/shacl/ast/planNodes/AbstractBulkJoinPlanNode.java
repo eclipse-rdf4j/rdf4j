@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
@@ -115,7 +114,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					if (!hasStatement && GlobalValidationExecutionLogging.loggingEnabled) {
 						validationExecutionLogger.log(depth(),
 								this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this,
-								getId());
+								getId(), null);
 					}
 					return hasStatement;
 
