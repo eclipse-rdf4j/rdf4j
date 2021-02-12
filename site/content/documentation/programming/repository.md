@@ -327,43 +327,7 @@ The RepositoryProvider creates and keeps a singleton instance of RepositoryManag
 
 ### Creating a Federation
 
-It is possible to create a virtual repository that is a federation of existing repositories. The following code illustrates how to use the RepositoryManagerFederator class to create a federation. It assumes you already have a reference to a RepositoryManager instance, and is a simplified form of what the RDF4J Console runs when its federate command is invoked:
-
-```java
-void federate(RepositoryManager manager, String fedID, String description,
-	Collection<String> memberIDs, boolean readonly, boolean distinct)
-	throws MalformedURLException, RDF4JException {
-    if (manager.hasRepositoryConfig(fedID)) {
-	System.err.println(fedID + " already exists.");
-    }
-    else if (validateMembers(manager, readonly, memberIDs)) {
-	RepositoryManagerFederator rmf =
-	    new RepositoryManagerFederator(manager);
-	rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-	System.out.writeln("Federation created.");
-    }
-}
-boolean validateMembers(RepositoryManager manager, boolean readonly,
-	 Collection<String> memberIDs)
-	 throws RDF4JException {
-    boolean result = true;
-    for (String memberID : memberIDs) {
-	if (manager.hasRepositoryConfig(memberID)) {
-	    if (!readonly) {
-		if (!manager.getRepository(memberID).isWritable()) {
-		    result = false;
-		    System.err.println(memberID + " is read-only.");
-		}
-	    }
-	}
-	else {
-	   result = false;
-	   System.err.println(memberID + " does not exist.");
-	}
-    }
-    return result;
-}
-```
+RDF4J has the option to create a repository that acts as a federation of stores. For more information about this, see the [FedX federation](/documentation/programming/federation) documentation.
 
 ## Using a repository: RepositoryConnections
 
@@ -648,8 +612,6 @@ TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 
 #### Explaining queries
 
-> New in RDF4J 3.2.0 - Experimental feature
-
 SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and
 the results returned. The query explain feature gives a peek into what decisions are being made and how they affect
 the performance of your query.
@@ -659,7 +621,7 @@ Explaining queries currently only works if you are using one of the built in sto
 If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an
 UnsupportedException.
 
-In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
+In RDF4J 3.2.0, queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
 
  ```java
  try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -989,7 +951,7 @@ Projection (resultSizeActual=9, totalTimeActual=0.448ms, selfTimeActual=0.007ms)
 
 Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 0.164ms instead of 1.5s.
 
-Another way to visualize the query plan is to use the Graphiz DOT format with `query.explain(Explanation.Level.Timed).toDot()`. 
+Another way to visualize the query plan is to use the Graphiz DOT format with `query.explain(Explanation.Level.Timed).toDot()`.
 This visualization makes it easier to see which part of the query is slowest by looking at the color coding.
 
 <img src="../images/query-plan-explanation.png" alt="Picture of query explanation visualized with Graphviz." class="img-responsive"/>
