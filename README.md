@@ -1,5 +1,7 @@
 # Welcome to the Eclipse RDF4J repository
 
+![RDF4J](https://github.com/eclipse/rdf4j/blob/master/site/static/images/rdf4j-logo-orange-114.png)
+
 This is the main code repository for the Eclipse RDF4J project. 
 
 [![master status](https://github.com/eclipse/rdf4j/workflows/master%20status/badge.svg)](https://github.com/eclipse/rdf4j/actions?query=workflow%3A%22master+status%22)
@@ -9,9 +11,9 @@ Visit the [project website](https://rdf4j.org/) for news, documentation, and dow
 
 ## Installation and usage
 
-For installation and usage instructions of the RDF4J Workbench and Server applications, see [RDF4J Server, Workbench, and Console](https://rdf4j.org/documentation/#rdf4j-server-workbench-and-console). 
+For installation and usage instructions of the RDF4J Workbench and Server applications, see [RDF4J Server and Workbench](https://rdf4j.org/documentation/tools/server-workbench). 
 
-For installation and usage instructions of the RDF4J Java libaries, see [Programming with RDF4J](https://rdf4j.org/documentation/#programming-with-rdf4j). 
+For installation and usage instructions of the RDF4J Java libaries, see [Programming with RDF4J](https://rdf4j.org/documentation/programming). 
 
 ### Building from source
 
@@ -45,10 +47,9 @@ The short version:
 2. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix - or if you're picking up an existing issue, comment on that issue that you intend to provide a solution for it.
 3. Fork the GitHub repository.
 4. Create a new branch (starting from master) for your changes. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number.
-5. Make your changes on this branch. Apply the [rdf4j code formatting guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
-6. **sign off** every commit (using the `-s` flag).
-7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
-8. Use meaningful commit messages and include the issue number in each commit message.
+5. Make your changes on this branch. Apply the [RDF4J code formatting guidelines](https://github.com/eclipse/rdf4j/blob/master/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
+7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in each commit message (for example "GH-276: added null check"). **IMPORTANT**: *sign off* every commit (using the `-s` flag). 
+8. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
 9. Once your fix is complete, put it up for review by opening a Pull Request against the master branch in the central Github repository. If you have a lot of commits on your PR, make sure to [squash your commits](https://rdf4j.org/documentation/developer/squashing).
 
 These steps are explained in more detail in the [Contributor
