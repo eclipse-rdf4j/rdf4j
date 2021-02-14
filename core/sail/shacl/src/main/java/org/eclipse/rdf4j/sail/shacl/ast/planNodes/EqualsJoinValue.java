@@ -15,6 +15,7 @@ public class EqualsJoinValue implements PlanNode {
 	private final PlanNode left;
 	private final PlanNode right;
 	private final boolean useAsFilter;
+	private final StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -25,6 +26,7 @@ public class EqualsJoinValue implements PlanNode {
 		this.left = left;
 		this.right = right;
 		this.useAsFilter = useAsFilter;
+		this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
 
@@ -127,7 +129,7 @@ public class EqualsJoinValue implements PlanNode {
 
 	@Override
 	public int depth() {
-		return Math.max(left.depth(), right.depth()) - 1;
+		return Math.max(left.depth(), right.depth()) + 1;
 	}
 
 	@Override
@@ -147,7 +149,7 @@ public class EqualsJoinValue implements PlanNode {
 
 	@Override
 	public String getId() {
-		return null;
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override

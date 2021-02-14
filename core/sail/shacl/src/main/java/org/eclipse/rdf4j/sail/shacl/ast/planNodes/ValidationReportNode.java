@@ -61,7 +61,7 @@ public class ValidationReportNode implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth() - 1;
+		return parent.depth() + 1;
 	}
 
 	@Override

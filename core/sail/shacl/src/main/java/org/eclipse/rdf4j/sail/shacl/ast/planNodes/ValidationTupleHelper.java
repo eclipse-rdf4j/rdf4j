@@ -15,7 +15,7 @@ public class ValidationTupleHelper {
 
 	public static ValidationTuple join(ValidationTuple left, ValidationTuple right) {
 		if (right.hasValue()) {
-			return left.setValue(right.getValue());
+			return left.join(right);
 		}
 		return left;
 	}

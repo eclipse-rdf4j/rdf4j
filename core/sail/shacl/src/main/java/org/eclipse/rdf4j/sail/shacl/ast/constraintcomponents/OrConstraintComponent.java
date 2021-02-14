@@ -116,7 +116,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 						scope
 				)
 				)
-				.reduce((a, b) -> new EqualsJoinValue(a, b, true))
+				.reduce((a, b) -> new EqualsJoinValue(a, b, false))
 				.orElse(new EmptyNode());
 
 		PlanNode invalid = new Unique(orPlanNodes, false);

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -196,23 +197,41 @@ public class ValidationTuple {
 				'}';
 	}
 
-	public ValidationTuple shiftToNodeShape() {
+	public List<ValidationTuple> shiftToNodeShape() {
 		assert scope == ConstraintComponent.Scope.propertyShape;
 
-		ArrayList<Value> chain = new ArrayList<>(this.chain);
-		boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
-		ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
+		if (compressedTuples.isEmpty()) {
+			ArrayList<Value> chain = new ArrayList<>(this.chain);
+			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
+			ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
 
-		if (this.propertyShapeScopeWithValue) {
-			propertyShapeScopeWithValue = false;
-			chain.remove(chain.size() - 1);
+			if (this.propertyShapeScopeWithValue) {
+				propertyShapeScopeWithValue = false;
+				chain.remove(chain.size() - 1);
+			}
+
+			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
+					propertyShapeScopeWithValue, Collections.emptySet()));
+
+		} else {
+			return this.compressedTuples.stream()
+					.map(t -> {
+						ArrayList<Value> chain = new ArrayList<>(t.chain);
+						boolean propertyShapeScopeWithValue = t.propertyShapeScopeWithValue;
+						ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
+
+						if (this.propertyShapeScopeWithValue) {
+							propertyShapeScopeWithValue = false;
+							chain.remove(chain.size() - 1);
+						}
+
+						return new ValidationTuple(t.validationResults, chain, scope, propertyShapeScopeWithValue,
+								Collections.emptySet());
+
+					})
+					.collect(Collectors.toList());
+
 		}
-
-		Set<ValidationTuple> compressedTuples = this.compressedTuples.stream()
-				.map(ValidationTuple::shiftToNodeShape)
-				.collect(Collectors.toSet());
-
-		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples);
 
 	}
 
@@ -364,5 +383,15 @@ public class ValidationTuple {
 	@Override
 	public int hashCode() {
 		return Objects.hash(chain, scope, propertyShapeScopeWithValue, validationResults, compressedTuples);
+	}
+
+	public ValidationTuple join(ValidationTuple right) {
+
+		HashSet<ValidationTuple> compressedTuples = new HashSet<>(this.compressedTuples);
+		compressedTuples.addAll(right.getCompressedTuples());
+
+		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples)
+				.setValue(right.getValue());
+
 	}
 }
