@@ -10,8 +10,10 @@ package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -28,7 +30,7 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	private boolean conforms = true;
 	private boolean truncated = false;
 
-	private ValidationResult next = null;
+	private Iterator<ValidationResult> next = Collections.emptyIterator();
 	private CloseableIteration<? extends ValidationTuple, SailException> tupleIterator;
 
 	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator,
@@ -43,27 +45,46 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		if (tupleIterator.hasNext()) {
 			conforms = false;
 		}
-		if (next == null && tupleIterator.hasNext()) {
+		if (next.hasNext()) {
+			return;
+		}
+
+		if (tupleIterator.hasNext()) {
 			if (limit < 0 || counter < limit) {
 				ValidationTuple invalidTuple = tupleIterator.next();
 
-				List<ValidationResult> validationResults = invalidTuple.getValidationResult();
+				Set<ValidationTuple> invalidTuples;
 
-				ValidationResult parent = null;
-
-				// we iterate in reverse order to get the most recent validation result first
-				for (int i = validationResults.size() - 1; i >= 0; i--) {
-					ValidationResult validationResult = validationResults.get(i);
-					if (parent == null) {
-						parent = validationResult;
-						next = parent;
-					} else {
-						parent.setDetail(validationResult);
-						parent = validationResult;
-					}
+				if (!invalidTuple.getCompressedTuples().isEmpty()) {
+					invalidTuples = invalidTuple.getCompressedTuples();
+				} else {
+					invalidTuples = Collections.singleton(invalidTuple);
 				}
 
-				counter++;
+				Set<ValidationResult> validationResultsRet = new HashSet<>();
+
+				for (ValidationTuple tuple : invalidTuples) {
+					List<ValidationResult> validationResults = tuple.getValidationResult();
+
+					ValidationResult parent = null;
+
+					// we iterate in reverse order to get the most recent validation result first
+					for (int i = validationResults.size() - 1; i >= 0; i--) {
+						ValidationResult validationResult = validationResults.get(i);
+						if (parent == null) {
+							parent = validationResult;
+							validationResultsRet.add(parent);
+						} else {
+							parent.setDetail(validationResult);
+							parent = validationResult;
+						}
+					}
+
+					counter++;
+				}
+
+				next = validationResultsRet.iterator();
+
 			}
 
 			if (limit >= 0 && counter >= limit && tupleIterator.hasNext()) {
@@ -97,19 +118,17 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	@Override
 	public boolean hasNext() {
 		calculateNext();
-		return next != null;
+		return next.hasNext();
 	}
 
 	@Override
 	public ValidationResult next() {
 		calculateNext();
-		if (next == null) {
+		if (!next.hasNext()) {
 			throw new IllegalStateException();
 		}
 
-		ValidationResult temp = next;
-		next = null;
-		return temp;
+		return next.next();
 	}
 
 	@Override

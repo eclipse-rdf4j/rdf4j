@@ -144,7 +144,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				});
 			}
 
-			validationPlanNode = new TargetChainPopper(validationPlanNode);
+			validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
 
 			union = new UnionNode(union, validationPlanNode);
 		}
@@ -206,7 +206,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = new TargetChainPopper(validationPlanNode);
+				validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
 			} else {
 				validationPlanNode = new ShiftToNodeShape(validationPlanNode);
 			}
@@ -231,7 +231,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 						.getPlanNode(connectionsGroup, Scope.propertyShape, true));
 
 		if (scope == Scope.propertyShape) {
-			planNode = new TargetChainPopper(planNode);
+			planNode = new Unique(new TargetChainPopper(planNode), true);
 		} else {
 			planNode = new ShiftToNodeShape(planNode);
 		}

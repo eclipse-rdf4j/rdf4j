@@ -8,7 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -61,9 +63,15 @@ public class Unique implements PlanNode {
 					return;
 				}
 
+//				if(parent instanceof Unique)
+
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
+					if (temp.toString()
+							.contains("chain=[http://example.com/ns#validPerson1, http://example.com/ns#p1]")) {
+						System.out.println();
+					}
 					assert !propertyShapeWithValue
 							|| temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue();
 
@@ -71,12 +79,19 @@ public class Unique implements PlanNode {
 						propertyShapeWithValue = true;
 					}
 
-					if (compress && !propertyShapeWithValue) {
-
-						HashSet<ValidationTuple> tuples = new HashSet<>();
+					if (compress) {
+						Set<ValidationTuple> tuples = new HashSet<>();
 						tuples.add(temp);
-						while (parentIterator.hasNext() && parentIterator.peek().sameTargetAs(temp)) {
-							tuples.add(parentIterator.next());
+
+						if (propertyShapeWithValue) {
+							while (parentIterator.hasNext()
+									&& parentIterator.peek().getValue().equals(temp.getValue())) {
+								tuples.add(parentIterator.next());
+							}
+						} else {
+							while (parentIterator.hasNext() && parentIterator.peek().sameTargetAs(temp)) {
+								tuples.add(parentIterator.next());
+							}
 						}
 
 						if (tuples.size() == 1) {

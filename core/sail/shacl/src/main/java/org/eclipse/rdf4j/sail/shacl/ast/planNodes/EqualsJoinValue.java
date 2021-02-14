@@ -127,7 +127,7 @@ public class EqualsJoinValue implements PlanNode {
 
 	@Override
 	public int depth() {
-		return 0;
+		return Math.max(left.depth(), right.depth()) - 1;
 	}
 
 	@Override
