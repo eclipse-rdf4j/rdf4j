@@ -15,7 +15,7 @@ public class EqualsJoinValue implements PlanNode {
 	private final PlanNode left;
 	private final PlanNode right;
 	private final boolean useAsFilter;
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
@@ -26,7 +26,7 @@ public class EqualsJoinValue implements PlanNode {
 		this.left = left;
 		this.right = right;
 		this.useAsFilter = useAsFilter;
-		this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
 

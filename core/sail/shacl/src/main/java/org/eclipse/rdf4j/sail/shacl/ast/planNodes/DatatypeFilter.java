@@ -22,7 +22,7 @@ public class DatatypeFilter extends FilterPlanNode {
 	public DatatypeFilter(PlanNode parent, Resource datatype) {
 		super(parent);
 		this.datatype = datatype;
-		stackTrace = Thread.currentThread().getStackTrace();
+//		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override

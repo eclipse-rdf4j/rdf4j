@@ -42,7 +42,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			List<StatementMatcher> statementPatterns, List<StatementMatcher> removedStatementMatchers, String query,
@@ -57,7 +57,7 @@ public class TargetChainRetriever implements PlanNode {
 				.orElseThrow(IllegalStateException::new);
 
 		this.query = "select " + sparqlProjection + " where {" + query + "}";
-		this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)

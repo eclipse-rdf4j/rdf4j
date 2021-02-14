@@ -53,24 +53,6 @@ public class UniqueTest {
 
 	}
 
-	@Test
-	public void testCompression() {
-
-		MockInputPlanNode input = new MockInputPlanNode(
-				Arrays.asList("a1", "b", "c", "d", "e"),
-				Arrays.asList("a", "b1", "c", "d", "e"),
-				Arrays.asList("a", "b", "c1", "d", "e"),
-				Arrays.asList("a2", "b2", "c2", "d", "e")
-		);
-
-		runTest(input);
-
-		Unique unique = new Unique(input, true);
-
-		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
-
-	}
-
 	private void runTest(MockInputPlanNode input) {
 		Unique unique = new Unique(input, false);
 

@@ -36,7 +36,7 @@ public class Unique implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Unique(PlanNode parent, boolean compress) {
-		this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.parent = parent;
@@ -63,15 +63,9 @@ public class Unique implements PlanNode {
 					return;
 				}
 
-//				if(parent instanceof Unique)
-
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					if (temp.toString()
-							.contains("chain=[http://example.com/ns#validPerson1, http://example.com/ns#p1]")) {
-						System.out.println();
-					}
 					assert !propertyShapeWithValue
 							|| temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue();
 

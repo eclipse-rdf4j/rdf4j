@@ -43,7 +43,6 @@ public class NotValuesIn implements PlanNode {
 					while (iterator.hasNext()) {
 						notInValueSet.add(iterator.next().getValue());
 					}
-					System.out.println();
 				}
 			}
 

@@ -75,7 +75,9 @@ public class W3cComplianceTest {
 
 		Model statements = extractShapesModel(shaclSail);
 
-		System.out.println(AbstractShaclTest.modelToString(statements));
+		sailRepository.shutDown();
+
+//		System.out.println(AbstractShaclTest.modelToString(statements));
 
 		assert !statements.isEmpty();
 
