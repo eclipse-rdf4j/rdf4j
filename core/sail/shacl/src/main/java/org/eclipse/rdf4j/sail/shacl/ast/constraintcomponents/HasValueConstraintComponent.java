@@ -128,7 +128,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan), false);
+			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
 		return new EmptyNode();
 	}

@@ -133,7 +133,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), false);
+			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())

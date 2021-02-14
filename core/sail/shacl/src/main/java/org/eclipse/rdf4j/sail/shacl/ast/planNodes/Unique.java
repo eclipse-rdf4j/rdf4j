@@ -15,6 +15,7 @@ import java.util.Set;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.CloseablePeakableIteration;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.slf4j.Logger;
@@ -45,11 +46,12 @@ public class Unique implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			final CloseablePeakableIteration<? extends ValidationTuple, SailException> parentIterator = new CloseablePeakableIteration<>(
+					parent.iterator());
 
-			Set<ValidationTupleValueAndActiveTarget> multiCardinalityDedupeSet;
+			Set<ValidationTupleValueAndActiveTarget> targetAndValueDedupeSet;
 
-			boolean useMultiCardinalityDedupeSet;
+			boolean propertyShapeWithValue;
 
 			ValidationTuple next;
 			ValidationTuple previous;
@@ -62,24 +64,41 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
+					assert !propertyShapeWithValue
+							|| temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue();
+
 					if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
-						useMultiCardinalityDedupeSet = true;
+						propertyShapeWithValue = true;
 					}
 
-					if (previous == null) {
+					if (compress && !propertyShapeWithValue) {
+
+						HashSet<ValidationTuple> tuples = new HashSet<>();
+						tuples.add(temp);
+						while (parentIterator.hasNext() && parentIterator.peek().sameTargetAs(temp)) {
+							tuples.add(parentIterator.next());
+						}
+
+						if (tuples.size() == 1) {
+							next = temp;
+						} else {
+							next = new ValidationTuple(temp, tuples);
+						}
+
+					} else if (previous == null) {
 						next = temp;
 					} else {
-						if (useMultiCardinalityDedupeSet) {
-							if (multiCardinalityDedupeSet == null || !previous.sameTargetAs(temp)) {
-								multiCardinalityDedupeSet = new HashSet<>();
+						if (propertyShapeWithValue) {
+							if (targetAndValueDedupeSet == null || !previous.sameTargetAs(temp)) {
+								targetAndValueDedupeSet = new HashSet<>();
 								if (previous.sameTargetAs(temp)) {
-									multiCardinalityDedupeSet.add(new ValidationTupleValueAndActiveTarget(previous));
+									targetAndValueDedupeSet.add(new ValidationTupleValueAndActiveTarget(previous));
 								}
 							}
 
-							if (!multiCardinalityDedupeSet.contains(new ValidationTupleValueAndActiveTarget(temp))) {
+							if (!targetAndValueDedupeSet.contains(new ValidationTupleValueAndActiveTarget(temp))) {
 								next = temp;
-								multiCardinalityDedupeSet.add(new ValidationTupleValueAndActiveTarget(next));
+								targetAndValueDedupeSet.add(new ValidationTupleValueAndActiveTarget(next));
 							}
 
 						} else {
@@ -106,7 +125,7 @@ public class Unique implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				multiCardinalityDedupeSet = null;
+				targetAndValueDedupeSet = null;
 				parentIterator.close();
 			}
 
