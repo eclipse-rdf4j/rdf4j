@@ -189,6 +189,11 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 //		}
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
+			if (!getPath().isSupported()) {
+				logger.error("Unsupported path detected. Shape ignored! \n" + this.toString());
+				continue;
+			}
+
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
 							Scope.propertyShape);
@@ -256,13 +261,13 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		return path;
 	}
 
-	@Override
-	public String toString() {
-		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
-		StringWriter stringWriter = new StringWriter();
-		Rio.write(statements, stringWriter, RDFFormat.TURTLE);
-		return stringWriter.toString();
-	}
+//	@Override
+//	public String toString() {
+//		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
+//		StringWriter stringWriter = new StringWriter();
+//		Rio.write(statements, stringWriter, RDFFormat.TURTLE);
+//		return stringWriter.toString();
+//	}
 
 	@Override
 	public ConstraintComponent deepClone() {

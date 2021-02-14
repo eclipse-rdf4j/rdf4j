@@ -542,7 +542,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 		StringWriter stringWriter = new StringWriter();
 		Rio.write(statements, stringWriter, RDFFormat.TURTLE, writerConfig);
-		return stringWriter.toString().replace("@prefix sh: <http://www.w3.org/ns/shacl#> .", "").trim();
+		return stringWriter.toString()
+				.replace("@prefix sh: <http://www.w3.org/ns/shacl#> .", "")
+				.replace("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .", "")
+				.trim();
 	}
 
 }

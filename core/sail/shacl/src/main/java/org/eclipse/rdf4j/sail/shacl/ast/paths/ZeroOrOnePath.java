@@ -42,6 +42,11 @@ public class ZeroOrOnePath extends Path {
 	}
 
 	@Override
+	public boolean isSupported() {
+		return false;
+	}
+
+	@Override
 	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {

@@ -40,6 +40,11 @@ public class SimplePath extends Path {
 	}
 
 	@Override
+	public boolean isSupported() {
+		return true;
+	}
+
+	@Override
 	public String toString() {
 		return "SimplePath{ <" + predicate + "> }";
 	}

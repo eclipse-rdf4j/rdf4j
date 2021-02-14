@@ -231,7 +231,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/simpleNested",
 		"test-cases/class/nestedNode",
 		"test-cases/qualifiedShape/minCountSimple",
-		"test-cases/qualifiedShape/maxCountSimple"
+		"test-cases/qualifiedShape/maxCountSimple",
+		"test-cases/uniqueLang/complex"
 
 	)
 		.distinct()
