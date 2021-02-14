@@ -73,7 +73,6 @@ public class Unique implements PlanNode {
 
 					if (compress) {
 						Set<ValidationTuple> tuples = new HashSet<>();
-						tuples.add(temp);
 
 						if (propertyShapeWithValue) {
 							while (parentIterator.hasNext()
@@ -86,9 +85,10 @@ public class Unique implements PlanNode {
 							}
 						}
 
-						if (tuples.size() == 1) {
+						if (tuples.isEmpty()) {
 							next = temp;
 						} else {
+							tuples.add(temp);
 							next = new ValidationTuple(temp, tuples);
 						}
 
@@ -122,7 +122,7 @@ public class Unique implements PlanNode {
 						if (GlobalValidationExecutionLogging.loggingEnabled) {
 							validationExecutionLogger.log(depth(),
 									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique ", temp, Unique.this,
-									getId(), stackTrace[2].toString());
+									getId(), stackTrace != null ? stackTrace[2].toString() : null);
 						}
 					}
 
@@ -243,17 +243,15 @@ public class Unique implements PlanNode {
 			if (o == null || getClass() != o.getClass()) {
 				return false;
 			}
-			ValidationTupleValueAndActiveTarget validationTupleValueAndActiveTarget = (ValidationTupleValueAndActiveTarget) o;
+			ValidationTupleValueAndActiveTarget oValidationTuple = (ValidationTupleValueAndActiveTarget) o;
 
-			if (validationTuple.hasValue() || validationTupleValueAndActiveTarget.validationTuple.hasValue()) {
-				assert validationTuple.hasValue() && validationTupleValueAndActiveTarget.validationTuple.hasValue();
-				return validationTuple.getValue().equals(validationTupleValueAndActiveTarget.validationTuple.getValue())
-						&& validationTuple.getActiveTarget()
-								.equals(validationTupleValueAndActiveTarget.validationTuple.getActiveTarget());
+			if (validationTuple.hasValue() || oValidationTuple.validationTuple.hasValue()) {
+				assert validationTuple.hasValue() && oValidationTuple.validationTuple.hasValue();
+				return validationTuple.getValue().equals(oValidationTuple.validationTuple.getValue())
+						&& validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());
+			} else {
+				return validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());
 			}
-
-			return validationTuple.getActiveTarget()
-					.equals(validationTupleValueAndActiveTarget.validationTuple.getActiveTarget());
 		}
 
 		@Override
@@ -262,8 +260,4 @@ public class Unique implements PlanNode {
 		}
 	}
 
-	public enum On {
-		targetAndValue,
-		target
-	}
 }
