@@ -282,6 +282,11 @@ public class ValidationTuple {
 	}
 
 	public ValidationTuple setValue(Value value) {
+		if (scope == ConstraintComponent.Scope.propertyShape) {
+			if (propertyShapeScopeWithValue && getValue().equals(value)) {
+				return this;
+			}
+		}
 
 		List<Value> chain = new ArrayList<>(this.chain);
 
