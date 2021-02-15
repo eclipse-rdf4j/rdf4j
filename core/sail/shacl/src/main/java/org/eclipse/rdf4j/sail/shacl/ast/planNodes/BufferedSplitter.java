@@ -56,7 +56,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 	@Override
 	public PlanNode getPlanNode() {
 
-		return new Temp(this);
+		return new BufferedSplitterPlaneNode(this);
 
 	}
 
@@ -77,13 +77,13 @@ public class BufferedSplitter implements PlanNodeProvider {
 		return Objects.hash(parent);
 	}
 
-	class Temp implements PlanNode {
+	class BufferedSplitterPlaneNode implements PlanNode {
 		private final BufferedSplitter bufferedSplitter;
 		private boolean printed = false;
 
 		private ValidationExecutionLogger validationExecutionLogger;
 
-		public Temp(BufferedSplitter bufferedSplitter) {
+		public BufferedSplitterPlaneNode(BufferedSplitter bufferedSplitter) {
 			this.bufferedSplitter = bufferedSplitter;
 		}
 
