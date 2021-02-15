@@ -201,13 +201,13 @@ public class ValidationTuple {
 		assert scope == ConstraintComponent.Scope.propertyShape;
 
 		if (compressedTuples.isEmpty()) {
-			ArrayList<Value> chain = new ArrayList<>(this.chain);
+			List<Value> chain = this.chain;
 			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 			ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
 
 			if (this.propertyShapeScopeWithValue) {
 				propertyShapeScopeWithValue = false;
-				chain.remove(chain.size() - 1);
+				chain = chain.subList(0, chain.size() - 1);
 			}
 
 			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
@@ -216,13 +216,14 @@ public class ValidationTuple {
 		} else {
 			return this.compressedTuples.stream()
 					.map(t -> {
-						ArrayList<Value> chain = new ArrayList<>(t.chain);
+						List<Value> chain = t.chain;
+
 						boolean propertyShapeScopeWithValue = t.propertyShapeScopeWithValue;
 						ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
 
 						if (this.propertyShapeScopeWithValue) {
 							propertyShapeScopeWithValue = false;
-							chain.remove(chain.size() - 1);
+							chain = chain.subList(0, chain.size() - 1);
 						}
 
 						return new ValidationTuple(t.validationResults, chain, scope, propertyShapeScopeWithValue,
@@ -282,10 +283,8 @@ public class ValidationTuple {
 	}
 
 	public ValidationTuple setValue(Value value) {
-		if (scope == ConstraintComponent.Scope.propertyShape) {
-			if (propertyShapeScopeWithValue && getValue().equals(value)) {
-				return this;
-			}
+		if (value.equals(getValue())) {
+			return this;
 		}
 
 		List<Value> chain = new ArrayList<>(this.chain);
@@ -296,8 +295,8 @@ public class ValidationTuple {
 			}
 			chain.add(value);
 		} else {
-			chain.remove(this.chain.size() - 1);
-			chain.add(value);
+			throw new IllegalStateException(
+					"Can't set value on NodeShape scoped ValidationTuple because it will also change the target!");
 
 		}
 
@@ -318,8 +317,8 @@ public class ValidationTuple {
 	public ValidationTuple trimToTarget() {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
-				List<Value> chain = new ArrayList<>(this.chain);
-				chain.remove(this.chain.size() - 1);
+
+				List<Value> chain = this.chain.subList(0, this.chain.size() - 1);
 				boolean propertyShapeScopeWithValue = false;
 				Set<ValidationTuple> compressedTuples = this.compressedTuples.stream()
 						.map(ValidationTuple::trimToTarget)
@@ -335,20 +334,20 @@ public class ValidationTuple {
 	public List<ValidationTuple> pop() {
 
 		if (compressedTuples.isEmpty()) {
-			List<Value> chain = new ArrayList<>(this.chain);
+			List<Value> chain = this.chain;
 			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 			if (getScope() == ConstraintComponent.Scope.propertyShape) {
 				if (hasValue()) {
 					assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
 							+ toString();
-					chain.remove(chain.size() - 1);
+					chain = chain.subList(0, chain.size() - 1);
 				} else {
 					propertyShapeScopeWithValue = true;
 				}
 			} else {
 				assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
 						+ toString();
-				chain.remove(chain.size() - 1);
+				chain = chain.subList(0, chain.size() - 1);
 			}
 
 			return Collections.singletonList(
@@ -395,8 +394,11 @@ public class ValidationTuple {
 		HashSet<ValidationTuple> compressedTuples = new HashSet<>(this.compressedTuples);
 		compressedTuples.addAll(right.getCompressedTuples());
 
-		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples)
-				.setValue(right.getValue());
-
+		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope,
+				propertyShapeScopeWithValue, compressedTuples);
+		if (scope == ConstraintComponent.Scope.propertyShape) {
+			validationTuple = validationTuple.setValue(right.getValue());
+		}
+		return validationTuple;
 	}
 }
