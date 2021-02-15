@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterIsSubject;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterTargetIsSubject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
@@ -70,8 +70,8 @@ public class DashAllSubjects extends Target {
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		return new ExternalFilterIsSubject(connectionsGroup.getBaseConnection(), parent)
-				.getFalseNode(UnBufferedPlanNode.class);
+		return new ExternalFilterTargetIsSubject(connectionsGroup.getBaseConnection(), parent)
+				.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override

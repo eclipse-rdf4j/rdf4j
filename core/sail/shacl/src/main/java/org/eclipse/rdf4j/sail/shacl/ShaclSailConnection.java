@@ -153,7 +153,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		stats.setBaseSailEmpty(isEmpty());
 
 		if (transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
-				transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
+				transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk ||
+				transactionSettings
+						.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.BulkParallelCache) {
 			removeConnectionListener(this);
 		} else if (stats.isBaseSailEmpty()) {
 			removeConnectionListener(this);
@@ -499,7 +501,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private boolean isParallelValidation() {
 		// bulk validation should use little memory so should not run validation in parallel
-		return sail.isParallelValidation() && !isBulkValidation();
+		return transactionSettings
+				.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.BulkParallelCache ||
+				(sail.isParallelValidation() && transactionSettings
+						.getValidationApproach() != ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
@@ -743,7 +748,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean isBulkValidation() {
-		return transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+		return transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk ||
+				transactionSettings
+						.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.BulkParallelCache;
 	}
 
 	private ValidationReport serializableValidation(List<Shape> shapesAfterRefresh) {
@@ -882,7 +889,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		public boolean isCacheSelectNodes() {
-			return cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+			return validationApproach == ShaclSail.TransactionSettings.ValidationApproach.BulkParallelCache ||
+					(cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 		}
 
 	}

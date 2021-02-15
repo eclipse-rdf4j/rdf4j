@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -172,5 +173,35 @@ public class ExternalFilterByPredicate implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		ExternalFilterByPredicate that = (ExternalFilterByPredicate) o;
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return ((MemoryStoreConnection) connection).getSail()
+					.equals(((MemoryStoreConnection) that.connection).getSail())
+					&& filterOnPredicates.equals(that.filterOnPredicates) && parent.equals(that.parent)
+					&& on == that.on;
+
+		}
+
+		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates)
+				&& parent.equals(that.parent) && on == that.on;
+	}
+
+	@Override
+	public int hashCode() {
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnPredicates, parent, on);
+
+		}
+		return Objects.hash(connection, filterOnPredicates, parent, on);
 	}
 }
