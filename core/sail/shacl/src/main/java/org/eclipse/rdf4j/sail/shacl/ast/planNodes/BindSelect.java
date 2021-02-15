@@ -116,6 +116,7 @@ public class BindSelect implements PlanNode {
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
 
 			Integer targetChainSize = null;
+			ParsedQuery parsedQuery = null;
 
 			public void calculateNext() {
 
@@ -156,74 +157,40 @@ public class BindSelect implements PlanNode {
 					this.targetChainSize = targetChainSize;
 				}
 
-				StringBuilder orderBy = new StringBuilder();
+				if (parsedQuery == null) {
+					parsedQuery = getParsedQuery(targetChainSize);
+				}
 
-				StringBuilder values = new StringBuilder("\nVALUES( ");
+				while (bulk.size() < bulkSize && iterator.hasNext()) {
+					bulk.add(iterator.next());
+				}
+
+				List<String> varNames;
+
 				if (direction == EffectiveTarget.Extend.right) {
-
-					for (int i = 0; i < targetChainSize; i++) {
-						values.append("?").append(vars.get(i).getName()).append(" ");
-					}
-				} else if (direction == EffectiveTarget.Extend.left) {
-					for (int i = vars.size() - targetChainSize; i < vars.size(); i++) {
-						values.append("?").append(vars.get(i).getName()).append(" ");
-					}
-
-				} else {
-					throw new IllegalStateException("Unknown direction: " + direction);
-				}
-
-				values.append("){}\n");
-
-				for (StatementMatcher.Variable var : vars) {
-					orderBy.append("?").append(var.getName()).append(" ");
-				}
-
-				String query = BindSelect.this.query;
-
-				query = query.replace("#VALUES_INJECTION_POINT#", values.toString());
-				query = "select * where { " + values.toString() + query + "\n}\nORDER BY " + orderBy;
-
-				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-						.get(QueryLanguage.SPARQL)
-						.get();
-
-				try {
-					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-					for (int i = 1; i < bulkSize && iterator.hasNext(); i++) {
-						bulk.add(iterator.next());
-					}
-
-					List<String> varNames;
-
-					if (direction == EffectiveTarget.Extend.right) {
-						varNames = vars
-								.stream()
-								.limit(targetChainSize)
-								.map(StatementMatcher.Variable::getName)
-								.collect(Collectors.toList());
-					} else {
-						varNames = vars
-								.stream()
-								.skip(vars.size() - targetChainSize)
-								.map(StatementMatcher.Variable::getName)
-								.collect(Collectors.toList());
-					}
-
-					List<BindingSet> bindingSets = bulk
+					varNames = vars
 							.stream()
-							.map(t -> new ListBindingSet(varNames,
-									new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
+							.limit(targetChainSize)
+							.map(StatementMatcher.Variable::getName)
 							.collect(Collectors.toList());
-
-					updateQuery(parsedQuery, bindingSets, targetChainSize);
-
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-							new MapBindingSet(), true);
-				} catch (MalformedQueryException e) {
-					logger.error("Malformed query: \n{}", query);
-					throw e;
+				} else {
+					varNames = vars
+							.stream()
+							.skip(vars.size() - targetChainSize)
+							.map(StatementMatcher.Variable::getName)
+							.collect(Collectors.toList());
 				}
+
+				List<BindingSet> bindingSets = bulk
+						.stream()
+						.map(t -> new ListBindingSet(varNames,
+								new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
+						.collect(Collectors.toList());
+
+				updateQuery(parsedQuery, bindingSets, targetChainSize);
+
+				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+						new MapBindingSet(), true);
 
 			}
 
@@ -255,6 +222,44 @@ public class BindSelect implements PlanNode {
 
 			}
 		};
+	}
+
+	private ParsedQuery getParsedQuery(int targetChainSize) {
+
+		StringBuilder values = new StringBuilder("\nVALUES( ");
+		if (direction == EffectiveTarget.Extend.right) {
+
+			for (int i = 0; i < targetChainSize; i++) {
+				values.append("?").append(vars.get(i).getName()).append(" ");
+			}
+		} else if (direction == EffectiveTarget.Extend.left) {
+			for (int i = vars.size() - targetChainSize; i < vars.size(); i++) {
+				values.append("?").append(vars.get(i).getName()).append(" ");
+			}
+
+		} else {
+			throw new IllegalStateException("Unknown direction: " + direction);
+		}
+
+		values.append("){}\n");
+
+		String query = BindSelect.this.query;
+
+		query = query.replace("#VALUES_INJECTION_POINT#", values.toString());
+		query = "select * where { " + values.toString() + query + "\n}";
+
+		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
+				.get(QueryLanguage.SPARQL)
+				.get();
+		ParsedQuery parsedQuery;
+		try {
+			parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+
+		} catch (MalformedQueryException e) {
+			logger.error("Malformed query: \n{}", query);
+			throw e;
+		}
+		return parsedQuery;
 	}
 
 	@Override
