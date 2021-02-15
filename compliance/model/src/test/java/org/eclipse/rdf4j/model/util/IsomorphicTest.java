@@ -32,6 +32,7 @@ public class IsomorphicTest {
 
 	static private Model empty;
 	static private Model blankNodes;
+	static private Model blankNodesLarge;
 	static private Model shacl;
 	static private Model longChain;
 	static private Model sparqlTestCase;
@@ -47,6 +48,7 @@ public class IsomorphicTest {
 
 	static private Model empty_2;
 	static private Model blankNodes_2;
+	static private Model blankNodesLarge_2;
 	static private Model shacl_2;
 	static private Model longChain_2;
 	static private Model sparqlTestCase_2;
@@ -63,6 +65,7 @@ public class IsomorphicTest {
 	public static void beforeClass() {
 		empty = getModel("empty.ttl");
 		blankNodes = getModel("blankNodes.ttl");
+		blankNodesLarge = getModel("blankNodesLarge.ttl");
 		shacl = getModel("shacl.ttl");
 		longChain = getModel("longChain.ttl");
 		sparqlTestCase = getModel("sparqlTestCase.ttl");
@@ -78,6 +81,7 @@ public class IsomorphicTest {
 
 		empty_2 = getModel("empty.ttl");
 		blankNodes_2 = getModel("blankNodes.ttl");
+		blankNodesLarge_2 = getModel("blankNodesLarge.ttl");
 		shacl_2 = getModel("shacl.ttl");
 		longChain_2 = getModel("longChain.ttl");
 		sparqlTestCase_2 = getModel("sparqlTestCase.ttl");
@@ -103,6 +107,13 @@ public class IsomorphicTest {
 	public void blankNodes() {
 
 		isomorphic(blankNodes, blankNodes_2);
+
+	}
+
+	@Test
+	public void blankNodesLarge() {
+
+		isomorphic(blankNodesLarge, blankNodesLarge_2);
 
 	}
 
@@ -200,7 +211,7 @@ public class IsomorphicTest {
 		assertThat(Models.isomorphic(m1, m2));
 	}
 
-	@Test(timeout = 2000)
+	@Test(timeout = 4000)
 	public void testValidationReport_LexicalOrdering() throws IOException {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport.ttl");

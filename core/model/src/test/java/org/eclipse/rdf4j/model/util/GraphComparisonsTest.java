@@ -64,6 +64,30 @@ public class GraphComparisonsTest {
 	}
 
 	@Test
+	public void testRemoveRedundantBlankNodes() {
+		Model example49 = buildExample49Model();
+		int expectedSize = example49.size();
+
+		BNode foo = bnode("foo"); // redundant copy of _:a
+		example49.add(foo, p, b);
+		example49.add(foo, p, d);
+
+		Model leaned = GraphComparisons.removeRedundantBlankNodes(example49);
+
+		assertThat(leaned.size()).isEqualTo(expectedSize);
+
+		BNode expectedNode = a, unexpectedNode = foo;
+		if (leaned.contains(foo, null, null)) {
+			expectedNode = foo;
+			unexpectedNode = a;
+		}
+		assertThat(leaned.contains(expectedNode, p, b));
+		assertThat(leaned.contains(expectedNode, p, d));
+		assertThat(leaned.contains(unexpectedNode, p, b)).isFalse();
+		assertThat(leaned.contains(unexpectedNode, p, d)).isFalse();
+	}
+
+	@Test
 	public void testIsoCanonicalize_list() {
 		List<String> list = Arrays.asList("b", "a", "c", "d", "e");
 

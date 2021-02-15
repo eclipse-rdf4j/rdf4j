@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,6 +65,85 @@ class GraphComparisons {
 	private static final HashCode incoming = hashFunction.hashString("-", Charsets.UTF_8);
 	private static final HashCode distinguisher = hashFunction.hashString("@", Charsets.UTF_8);
 
+	static class Edge {
+
+		private final boolean outgoing;
+
+		private final Value predicate;
+		private final Value value;;
+
+		public Edge(Value predicate, Value value, boolean outgoing) {
+			this.predicate = predicate;
+			this.value = value;
+			this.outgoing = outgoing;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(predicate, value, outgoing);
+		}
+
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (other instanceof Edge) {
+				Edge that = (Edge) other;
+				return this.outgoing == that.outgoing && this.predicate.equals(that.predicate)
+						&& this.value.equals(that.value);
+			}
+			return false;
+		}
+	}
+
+	public static Model removeRedundantBlankNodes(Model model) {
+		Model leaned = new LinkedHashModel(model);
+
+		int n = 0;
+
+		Set<Value> allTerms = getTerms(leaned);
+
+		Multimap<Value, Edge> edges = MultimapBuilder.hashKeys(allTerms.size()).hashSetValues().build();
+		for (Value term : allTerms) {
+			if (term.isResource()) {
+				edges.putAll(term, leaned.filter((Resource) term, null, null)
+						.stream()
+						.map(st -> new Edge(st.getPredicate(), st.getObject(), true))
+						.collect(Collectors.toSet()));
+			}
+			edges.putAll(term, leaned.filter(null, null, term)
+					.stream()
+					.map(st -> new Edge(st.getPredicate(), st.getSubject(), false))
+					.collect(Collectors.toSet()));
+		}
+
+		while (n != leaned.size()) {
+			List<Value> visited = new ArrayList<>();
+			List<BNode> redundant = new ArrayList<>();
+
+			Set<BNode> blankNodes = getBlankNodes(leaned);
+
+			Set<Value> terms = getTerms(leaned);
+			for (BNode bnode : blankNodes) {
+				Set<Edge> nodeEdges = (Set<Edge>) edges.get(bnode);
+				for (Value term : terms) {
+					Set<Edge> termEdges = (Set<Edge>) edges.get(term);
+					if ((termEdges.containsAll(nodeEdges) && termEdges.size() > nodeEdges.size())
+							|| (termEdges.equals(nodeEdges) && visited.contains(term))) {
+						redundant.add(bnode);
+						break;
+					}
+				}
+				visited.add(bnode);
+			}
+			n = leaned.size();
+			leaned.removeIf(st -> st.getSubject().isBNode() && redundant.contains(st.getSubject())
+					|| st.getObject().isBNode() && redundant.contains((BNode) st.getObject()));
+		}
+		return leaned;
+
+	}
+
 	/**
 	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the isomorphic graph
 	 * identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be mapped
@@ -89,6 +170,8 @@ class GraphComparisons {
 			return true;
 		}
 
+		model1 = removeRedundantBlankNodes(model1);
+		model2 = removeRedundantBlankNodes(model2);
 		if (model1.size() != model2.size()) {
 			return false;
 		}
@@ -158,7 +241,7 @@ class GraphComparisons {
 			return false;
 		}
 
-		// Compatible blank node mapping found. We need to check that statements not involving blank nodes are equal in
+		// Compatible blank node ma)pping found. We need to check that statements not involving blank nodes are equal in
 		// both models.
 		Optional<Statement> missingInModel2 = model1.stream()
 				.filter(st -> !(st.getSubject().isBNode() || st.getObject().isBNode()
@@ -214,6 +297,16 @@ class GraphComparisons {
 			}
 		});
 		return blankNodes;
+	}
+
+	protected static Set<Value> getTerms(Model m) {
+		final Set<Value> terms = new HashSet<>();
+
+		m.forEach(st -> {
+			terms.add(st.getSubject());
+			terms.add(st.getObject());
+		});
+		return terms;
 	}
 
 	private static Map<BNode, HashCode> distinguish(Model m, Partitioning partitioning,
