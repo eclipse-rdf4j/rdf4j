@@ -145,9 +145,8 @@ public class Unique implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
-				if (previous != null && next.compareActiveTarget(previous) < 0) {
-					throw new AssertionError();
-				}
+				assert !(previous != null && next.compareActiveTarget(previous) < 0);
+
 				ValidationTuple temp = next;
 				next = null;
 				return temp;

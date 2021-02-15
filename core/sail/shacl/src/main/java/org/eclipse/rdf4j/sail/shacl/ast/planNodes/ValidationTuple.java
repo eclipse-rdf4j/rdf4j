@@ -178,9 +178,7 @@ public class ValidationTuple {
 			return chain.get(chain.size() - 1);
 		}
 
-		if (chain.size() < 2) {
-			throw new AssertionError(chain.size());
-		}
+		assert chain.size() >= 2;
 
 		return chain.get(chain.size() - 2);
 

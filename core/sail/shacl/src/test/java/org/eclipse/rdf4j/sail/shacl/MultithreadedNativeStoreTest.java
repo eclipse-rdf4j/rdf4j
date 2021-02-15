@@ -29,6 +29,7 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 	@Before
 	public void before() {
 		file = Files.newTemporaryFolder();
+		System.out.println("Max memory: " + Runtime.getRuntime().maxMemory() / 1024 / 1024 + " MB");
 	}
 
 	@Override

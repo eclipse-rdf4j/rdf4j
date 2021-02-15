@@ -105,9 +105,7 @@ public class UnionNode implements PlanNode {
 			ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
-				if (prev != null && next.compareActiveTarget(prev) < 0) {
-					throw new AssertionError();
-				}
+				assert !(prev != null && next.compareActiveTarget(prev) < 0);
 
 				ValidationTuple temp = next;
 				prev = next;
