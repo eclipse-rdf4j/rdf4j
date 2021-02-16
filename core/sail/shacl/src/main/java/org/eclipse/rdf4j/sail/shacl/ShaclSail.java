@@ -971,8 +971,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 			Disabled("Disabled"),
 			Auto("Auto"),
-			Bulk("Bulk"),
-			BulkParallelCache("BulkParallelCache");
+			Bulk("Bulk");
 
 			private final String value;
 
