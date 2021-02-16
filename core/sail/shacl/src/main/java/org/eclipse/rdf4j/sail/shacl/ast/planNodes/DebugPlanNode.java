@@ -67,7 +67,7 @@ public class DebugPlanNode implements PlanNode {
 				}
 
 				if (message != null && GlobalValidationExecutionLogging.loggingEnabled) {
-					validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId());
+					validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId(), null);
 				}
 				return next;
 			}

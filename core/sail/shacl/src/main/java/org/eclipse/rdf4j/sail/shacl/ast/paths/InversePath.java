@@ -55,6 +55,11 @@ public class InversePath extends Path {
 	}
 
 	@Override
+	public boolean isSupported() {
+		return inversePath.isSupported();
+	}
+
+	@Override
 	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {

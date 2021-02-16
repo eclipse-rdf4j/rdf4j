@@ -8,9 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
 import java.util.SortedSet;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -54,8 +55,8 @@ public class ValuesBackedNode implements PlanNode {
 
 			@Override
 			public ValidationTuple loggingNext() throws SailException {
-				Deque<Value> targets = new ArrayDeque<>();
-				targets.addLast(iterator.next());
+				List<Value> targets = new ArrayList<>();
+				targets.add(iterator.next());
 				return new ValidationTuple(targets, scope, false);
 			}
 
@@ -102,14 +103,12 @@ public class ValuesBackedNode implements PlanNode {
 			return false;
 		}
 		ValuesBackedNode that = (ValuesBackedNode) o;
-		return collection.equals(that.collection);
+		return collection.equals(that.collection) && scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-
-		return collection.hashCode();
-
+		return Objects.hash(collection, scope);
 	}
 
 	@Override

@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -39,30 +43,41 @@ public class TargetChainPopper implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final private CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
+			final private CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent
+					.iterator();
+			Iterator<ValidationTuple> iterator = Collections.emptyIterator();
+
+			public void calculateNext() {
+				if (!iterator.hasNext()) {
+					if (parentIterator.hasNext()) {
+						List<ValidationTuple> validationTuples = parentIterator.next().pop();
+						iterator = validationTuples.iterator();
+					}
+				}
+
+			}
 
 			@Override
 			public void close() throws SailException {
-				iterator.close();
+				parentIterator.close();
 			}
 
 			@Override
 			boolean localHasNext() throws SailException {
+				calculateNext();
 				return iterator.hasNext();
 			}
 
 			@Override
 			ValidationTuple loggingNext() throws SailException {
+				calculateNext();
 
-				ValidationTuple next = iterator.next();
-				next = new ValidationTuple(next);
-				next.pop();
-				return next;
+				return iterator.next();
 			}
 
 			@Override
 			public void remove() throws SailException {
-				iterator.remove();
+				parentIterator.remove();
 			}
 		};
 	}

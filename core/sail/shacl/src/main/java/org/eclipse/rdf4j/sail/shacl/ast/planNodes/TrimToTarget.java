@@ -40,12 +40,8 @@ public class TrimToTarget implements PlanNode {
 			@Override
 			ValidationTuple loggingNext() throws SailException {
 
-				ValidationTuple next = parentIterator.next();
-				ValidationTuple validationTuple = new ValidationTuple(next);
+				return parentIterator.next().trimToTarget();
 
-				validationTuple.trimToTarget();
-
-				return validationTuple;
 			}
 
 			@Override

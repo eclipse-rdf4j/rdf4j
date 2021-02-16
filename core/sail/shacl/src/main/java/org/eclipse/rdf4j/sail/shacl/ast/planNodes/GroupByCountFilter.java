@@ -50,7 +50,7 @@ public class GroupByCountFilter implements PlanNode {
 						tempNext = parentIterator.next();
 					}
 
-					this.next = new ValidationTuple(tempNext);
+					this.next = tempNext;
 					long count = 0;
 
 					while (tempNext != null && tempNext.sameTargetAs(this.next)) {

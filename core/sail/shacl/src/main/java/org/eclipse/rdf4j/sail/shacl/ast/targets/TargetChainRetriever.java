@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
-import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -43,7 +42,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
-	private final StackTraceElement[] stackTrace;
+	private StackTraceElement[] stackTrace;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			List<StatementMatcher> statementPatterns, List<StatementMatcher> removedStatementMatchers, String query,
@@ -58,7 +57,7 @@ public class TargetChainRetriever implements PlanNode {
 				.orElseThrow(IllegalStateException::new);
 
 		this.query = "select " + sparqlProjection + " where {" + query + "}";
-		this.stackTrace = Thread.currentThread().getStackTrace();
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
@@ -180,11 +179,11 @@ public class TargetChainRetriever implements PlanNode {
 				if (results.hasNext()) {
 					BindingSet nextBinding = results.next();
 
-					ArrayDeque<Value> collect = nextBinding.getBindingNames()
+					List<Value> collect = nextBinding.getBindingNames()
 							.stream()
 							.sorted()
 							.map(nextBinding::getValue)
-							.collect(Collectors.toCollection(ArrayDeque::new));
+							.collect(Collectors.toList());
 
 					next = new ValidationTuple(collect, scope, false);
 
@@ -276,7 +275,7 @@ public class TargetChainRetriever implements PlanNode {
 		return "TargetChainRetriever{" +
 				"statementPatterns=" + statementPatterns +
 				", removedStatementMatchers=" + removedStatementMatchers +
-				", query='" + query + '\'' +
+				", query='" + query.replace("\n", "\t") + '\'' +
 				", scope=" + scope +
 				'}';
 	}

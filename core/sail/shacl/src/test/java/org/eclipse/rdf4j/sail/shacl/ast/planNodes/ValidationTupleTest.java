@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -23,12 +24,12 @@ public class ValidationTupleTest {
 	public void testEqualsAndHashCode() {
 
 		ValidationTuple abc = new ValidationTuple(
-				new ArrayDeque<>(
+				new ArrayList<>(
 						Arrays.asList(RDF.TYPE, RDF.HTML, SimpleValueFactory.getInstance().createLiteral("abc"))),
 				ConstraintComponent.Scope.nodeShape, false);
 
 		ValidationTuple abc1 = new ValidationTuple(
-				new ArrayDeque<>(
+				new ArrayList<>(
 						Arrays.asList(RDF.TYPE, RDF.HTML, SimpleValueFactory.getInstance().createLiteral("abc"))),
 				ConstraintComponent.Scope.nodeShape, false);
 

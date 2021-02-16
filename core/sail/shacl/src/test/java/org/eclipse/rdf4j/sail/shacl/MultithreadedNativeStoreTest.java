@@ -29,6 +29,7 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 	@Before
 	public void before() {
 		file = Files.newTemporaryFolder();
+		System.out.println("Max memory: " + Runtime.getRuntime().maxMemory() / 1024 / 1024 + " MB");
 	}
 
 	@Override
@@ -42,33 +43,4 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 		return nativeStore;
 	}
 
-	@Override
-	public void testDataAndShapes() {
-		// ignore this test!
-	}
-
-	@Override
-	public void testLotsOfValidationFailuresSnapshot() throws IOException {
-		// ignore this test!
-	}
-
-	@Override
-	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
-		// ignore this test!
-	}
-
-	@Override
-	public void testLotsOfValidationFailuresSerializable() throws IOException {
-		// ignore this test!
-	}
-
-	@Override
-	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
-		// ignore this test!
-	}
-
-	@Override
-	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
-		// ignore this test!
-	}
 }

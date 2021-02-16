@@ -231,7 +231,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/simpleNested",
 		"test-cases/class/nestedNode",
 		"test-cases/qualifiedShape/minCountSimple",
-		"test-cases/qualifiedShape/maxCountSimple"
+		"test-cases/qualifiedShape/maxCountSimple",
+		"test-cases/uniqueLang/complex"
 
 	)
 		.distinct()
@@ -451,7 +452,7 @@ abstract public class AbstractShaclTest {
 
 			Model validationReportExpected = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 
-			if (!isIsomorphic(validationReportActual, validationReportExpected)) {
+			if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
 //				writeActualModelToExpectedModelForDevPurposes(dataPath, validationReportActual);
 
 				String validationReportExpectedString = modelToString(validationReportExpected);
@@ -460,30 +461,6 @@ abstract public class AbstractShaclTest {
 			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
-		}
-	}
-
-	private static boolean isIsomorphic(Model validationReportActual, Model validationReportExpected) {
-		validationReportActual = normalizeModel(validationReportActual);
-		validationReportExpected = normalizeModel(validationReportExpected);
-
-		String actualString = modelToString(validationReportActual);
-		String expectedString = modelToString(validationReportExpected);
-
-		if (actualString.equals(expectedString)) {
-			return true;
-		}
-
-		return Models.isomorphic(validationReportActual, validationReportExpected);
-	}
-
-	private static Model normalizeModel(Model model) {
-		StringWriter sw = new StringWriter();
-		Rio.write(model, sw, RDFFormat.TURTLE);
-		try {
-			return Rio.parse(new StringReader(sw.toString()), "", RDFFormat.TURTLE);
-		} catch (IOException e) {
-			throw new IllegalStateException();
 		}
 	}
 
@@ -531,11 +508,6 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
-		// too slow
-		if (dataPath.equals("test-cases/uniqueLang/not/invalid/case8")) {
-			return;
-		}
-
 		// reference implementation has wrong blank node identifier for path
 		if (dataPath.equals("test-cases/or/class2InversePath/invalid/case2")) {
 			return;
@@ -543,14 +515,6 @@ abstract public class AbstractShaclTest {
 
 		// reference implementation has wrong blank node identifier for path
 		if (dataPath.equals("test-cases/or/class2InversePath/invalid/case3")) {
-			return;
-		}
-
-		// these two are actual bugs in our implementation that we need to fix!
-		if (dataPath.equals("test-cases/class/nestedNode/invalid/case3")) {
-			return;
-		}
-		if (dataPath.equals("test-cases/class/nestedNode/invalid/case4")) {
 			return;
 		}
 
@@ -638,7 +602,7 @@ abstract public class AbstractShaclTest {
 						validationReport.remove(null, SHACL.RESULT_MESSAGE, null);
 					}
 
-					if (!isIsomorphic(validationReportActual, validationReportExpected)) {
+					if (!Models.isomorphic(validationReportActual, validationReportExpected)) {
 
 						String validationReportExpectedString = modelToString(validationReportExpected);
 						String validationReportActualString = modelToString(validationReportActual);
@@ -713,9 +677,9 @@ abstract public class AbstractShaclTest {
 		ValueComparator valueComparator = new ValueComparator();
 		statements.sort(
 				Comparator
-//						.comparing(Statement::getObject, valueComparator)
-//						.thenComparing(Statement::getSubject, valueComparator)
-						.comparing(Statement::getPredicate, valueComparator)
+						.comparing(Statement::getSubject, valueComparator)
+						.thenComparing(Statement::getObject, valueComparator)
+						.thenComparing(Statement::getPredicate, valueComparator)
 		);
 
 		model = new LinkedHashModel(statements);
@@ -904,13 +868,13 @@ abstract public class AbstractShaclTest {
 			}
 
 			if (ran) {
-				testValidationReport(dataPath, validationReportActual);
-
 				if (expectedResult == ExpectedResult.valid) {
 					assertFalse(exception);
 				} else {
 					assertTrue(exception);
 				}
+
+				testValidationReport(dataPath, validationReportActual);
 			}
 		} finally {
 			shaclRepository.shutDown();
@@ -1036,7 +1000,7 @@ abstract public class AbstractShaclTest {
 				actual.remove(null, RDF.TYPE, SHACL.SHAPE);
 				actual.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
-				if (!isIsomorphic(parse, actual)) {
+				if (!Models.isomorphic(parse, actual)) {
 					assertEquals(modelToString(parse), modelToString(actual));
 				}
 
@@ -1056,6 +1020,10 @@ abstract public class AbstractShaclTest {
 		System.out.println("\n############################################");
 		System.out.println("\tValidation Report\n");
 		Model validationReport = report.asModel();
+
+		validationReport.setNamespace(SHACL.NS);
+		validationReport.setNamespace(XSD.NS);
+		validationReport.setNamespace(RDF4J.NS);
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);

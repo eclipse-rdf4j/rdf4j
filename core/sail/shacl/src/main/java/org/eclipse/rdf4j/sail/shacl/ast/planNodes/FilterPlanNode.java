@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -98,7 +100,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
-										FilterPlanNode.this, getId());
+										FilterPlanNode.this, getId(), null);
 							}
 						}
 					} else {
@@ -109,7 +111,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
 										FilterPlanNode.this,
-										getId());
+										getId(), null);
 							}
 						}
 					}
@@ -232,5 +234,22 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		FilterPlanNode that = (FilterPlanNode) o;
+		return parent.equals(that.parent);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent);
 	}
 }

@@ -89,11 +89,12 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 				addedTargets = target.getPlanNode(connectionsGroup, scope, true);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
-				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+				addedByPath = target.getTargetFilter(connectionsGroup,
+						new Unique(new TrimToTarget(addedByPath), false));
 				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
 				addedTargets = new UnionNode(addedByPath, addedTargets);
-				addedTargets = new Unique(addedTargets);
+				addedTargets = new Unique(addedTargets, false);
 			}
 
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
@@ -110,7 +111,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 				return group.stream().map(ValidationTuple::getValue).noneMatch(hasValueIn::contains);
 			});
 
-			return new Unique(new TrimToTarget(invalidTargets));
+			return new Unique(new TrimToTarget(invalidTargets), false);
 
 		} else if (scope == Scope.nodeShape) {
 
@@ -142,7 +143,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
 		return new EmptyNode();
 	}

@@ -55,7 +55,7 @@ public class GroupByFilter implements PlanNode {
 						tempNext = parentIterator.next();
 					}
 
-					this.next = new ValidationTuple(tempNext);
+					this.next = tempNext;
 					group.clear();
 
 					while (tempNext != null && tempNext.sameTargetAs(this.next)) {

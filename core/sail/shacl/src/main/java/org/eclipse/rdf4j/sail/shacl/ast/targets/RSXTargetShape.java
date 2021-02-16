@@ -83,7 +83,7 @@ public class RSXTargetShape extends Target {
 				query,
 				vars,
 				scope
-		));
+		), false);
 
 	}
 

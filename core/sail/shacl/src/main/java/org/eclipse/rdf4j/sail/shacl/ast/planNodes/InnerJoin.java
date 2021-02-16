@@ -152,7 +152,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 							nextRight = null;
 						} else {
 
-							int compareTo = nextLeft.compareTarget(nextRight);
+							int compareTo = nextLeft.compareActiveTarget(nextRight);
 
 							if (compareTo < 0) {
 								if (joinedLeft != nextLeft && discardedLeft != null) {

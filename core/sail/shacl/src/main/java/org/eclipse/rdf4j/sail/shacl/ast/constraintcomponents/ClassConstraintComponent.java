@@ -70,7 +70,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
-				addedByPath = target.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+				addedByPath = target.getTargetFilter(connectionsGroup,
+						new Unique(new TrimToTarget(addedByPath), false));
 
 				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
@@ -94,7 +95,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				}
 
 				addedTargets = new UnionNode(addedByPath, addedTargets);
-				addedTargets = new Unique(addedTargets);
+				addedTargets = new Unique(addedTargets, false);
 			}
 
 			PlanNode joined = new BulkedExternalInnerJoin(
@@ -189,7 +190,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
 			}
 
-			return new Unique(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan)));
+			return new Unique(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan)), false);
 		}
 		PlanNode allTargetsPlan = new EmptyNode();
 
@@ -221,7 +222,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 		}
 
-		return new Unique(allTargetsPlan);
+		return new Unique(allTargetsPlan, false);
 	}
 
 	@Override

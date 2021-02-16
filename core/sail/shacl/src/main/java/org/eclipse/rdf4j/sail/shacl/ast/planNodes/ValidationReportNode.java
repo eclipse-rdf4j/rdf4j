@@ -20,6 +20,7 @@ public class ValidationReportNode implements PlanNode {
 	private final Function<ValidationTuple, ValidationResult> validationResultFunction;
 	PlanNode parent;
 	private boolean printed = false;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ValidationReportNode(PlanNode parent,
 			Function<ValidationTuple, ValidationResult> validationResultFunction) {
@@ -31,7 +32,7 @@ public class ValidationReportNode implements PlanNode {
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			private final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 
@@ -41,15 +42,14 @@ public class ValidationReportNode implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
+			public boolean localHasNext() throws SailException {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public ValidationTuple next() throws SailException {
+			public ValidationTuple loggingNext() throws SailException {
 				ValidationTuple next = iterator.next();
-				next.addValidationResult(validationResultFunction.apply(next));
-				return next;
+				return next.addValidationResult(validationResultFunction);
 			}
 
 			@Override
@@ -61,7 +61,7 @@ public class ValidationReportNode implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth();
+		return parent.depth() + 1;
 	}
 
 	@Override
@@ -89,6 +89,7 @@ public class ValidationReportNode implements PlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+		this.validationExecutionLogger = validationExecutionLogger;
 		parent.receiveLogger(validationExecutionLogger);
 	}
 

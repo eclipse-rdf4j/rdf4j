@@ -99,7 +99,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		return new Unique(planNode);
+		return new Unique(planNode, false);
 
 	}
 
@@ -110,7 +110,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(new EmptyNode());
 
-		planNode = new Unique(planNode);
+		planNode = new Unique(planNode, false);
 
 		return planNode;
 	}
@@ -130,62 +130,6 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
 		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
-
-	/*
-	 * @Override public SparqlFragment buildSparqlValidNodes_rsx_targetShape(Var subject, Var object,
-	 * RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-	 *
-	 * List<? extends Class<? extends Shape>> type = and .stream() .map(s -> { if (s instanceof NodeShape) { return
-	 * NodeShape.class; } if (s instanceof PropertyShape) { return PropertyShape.class; } throw new
-	 * IllegalStateException("Unknown shape type: " + s.getClass()); }) .distinct() .collect(Collectors.toList());
-	 *
-	 * if (type.size() > 1) { throw new UnsupportedOperationException(
-	 * "OrConstraintComponent found both NodeShape and PropertyShape as children"); }
-	 *
-	 * Class<? extends Shape> aClass = type.get(0);
-	 *
-	 * if (scope == Scope.nodeShape) {
-	 *
-	 * if(aClass == PropertyShape.class){ String collect = and .stream() .map(shape ->
-	 * shape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope)) .reduce((a, b) -> a
-	 * + " \n " + b) .orElse(""); return collect;
-	 *
-	 * }else { String collect = and .stream() .map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-	 * rdfsSubClassOfReasoner, scope)) .collect(Collectors.joining(" ) && ( ", "( ", " )")); return collect;
-	 *
-	 * }
-	 *
-	 *
-	 *
-	 *
-	 * } else if (scope == Scope.propertyShape) {
-	 *
-	 * if (aClass == PropertyShape.class) { throw new UnsupportedOperationException(); } else {
-	 *
-	 * Path path = getTargetChain().getPath().get(); String objectVariable = randomVariable();
-	 *
-	 * String collect = and .stream() .map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-	 * rdfsSubClassOfReasoner, scope)) .reduce((a, b) -> a + " && " + b) .orElse("");
-	 *
-	 * String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
-	 *
-	 * String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t") + "\n\tFILTER(!(" +
-	 * collect + "))\n})";
-	 *
-	 * String pathQuery2 = path.getTargetQueryFragment(subject, new Var(UUID.randomUUID().toString().replace("-", "")),
-	 * rdfsSubClassOfReasoner);
-	 *
-	 * query = "{\n" + VALUES_INJECTION_POINT + "\n " + "" + query.replaceAll("(?m)^", "\t") + " \n" + "} UNION {\n" +
-	 * "\t " + VALUES_INJECTION_POINT + "\n" + "\t ?" + subject.getName() + " " + randomVariable() + " " +
-	 * randomVariable() + ".\n" + "\t FILTER(NOT EXISTS {\n " + "" + pathQuery2.replaceAll("(?m)^", "\t") + " \n" +
-	 * "})\n" + "}";
-	 *
-	 * return query; } } else { throw new UnsupportedOperationException("Unknown scope: " + scope); }
-	 *
-	 * throw new UnsupportedOperationException();
-	 *
-	 * }
-	 */
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,

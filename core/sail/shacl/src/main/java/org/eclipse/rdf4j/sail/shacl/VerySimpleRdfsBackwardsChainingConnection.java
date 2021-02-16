@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
  * not support inference for SPARQL queries.
  */
 @Experimental
-@Deprecated
 @InternalUseOnly
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 
@@ -50,7 +49,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
+		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			return hasStatement | rdfsSubClassOfReasoner.backwardsChain((Resource) obj)
 					.stream()
@@ -65,7 +64,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
+		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (!inferredTypes.isEmpty()) {

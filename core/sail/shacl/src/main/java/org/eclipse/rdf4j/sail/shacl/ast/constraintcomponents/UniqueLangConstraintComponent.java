@@ -139,7 +139,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
-			return new Unique(new TrimToTarget(nonUniqueTargetLang));
+			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -150,14 +150,15 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(innerJoin);
-			return new Unique(new TrimToTarget(nonUniqueTargetLang));
+			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
 		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
-		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, new Unique(new TrimToTarget(addedByPath)));
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
+				new Unique(new TrimToTarget(addedByPath), false));
 
 		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
 
@@ -165,7 +166,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		mergeNode = new TrimToTarget(mergeNode);
 
-		PlanNode allRelevantTargets = new Unique(mergeNode);
+		PlanNode allRelevantTargets = new Unique(mergeNode, false);
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
@@ -180,7 +181,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 
-		return new Unique(new TrimToTarget(nonUniqueTargetLang));
+		return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
 
 	}
 
@@ -191,7 +192,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
 		return new EmptyNode();
 	}

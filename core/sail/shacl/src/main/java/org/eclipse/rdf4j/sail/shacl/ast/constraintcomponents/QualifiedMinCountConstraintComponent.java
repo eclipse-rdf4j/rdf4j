@@ -2,8 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
-import java.util.ArrayDeque;
-import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -121,7 +120,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		planNode = new LeftOuterJoin(target, planNode);
 
 		GroupByCountFilter groupByCountFilter = new GroupByCountFilter(planNode, count -> count < qualifiedMinCount);
-		return new Unique(new TrimToTarget(groupByCountFilter));
+		return new Unique(new TrimToTarget(groupByCountFilter), false);
 
 	}
 
@@ -141,7 +140,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 								false);
 			}
 
-			target = new Unique(new TrimToTarget(target));
+			target = new Unique(new TrimToTarget(target), false);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
@@ -157,10 +156,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			);
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
-				Collection<Value> targetChain = t.getTargetChain(true);
-				ValidationTuple validationTuple = new ValidationTuple(new ArrayDeque<>(targetChain),
-						Scope.propertyShape, false);
-				return validationTuple;
+				List<Value> targetChain = t.getTargetChain(true);
+				return new ValidationTuple(targetChain, Scope.propertyShape, false);
 			});
 
 		};
@@ -172,7 +169,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 				scope
 		);
 
-		PlanNode invalid = new Unique(planNode);
+		PlanNode invalid = new Unique(planNode, false);
 
 		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
 
@@ -183,7 +180,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							false);
 		}
 
-		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan));
+		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan), false);
 
 		allTargetsPlan = new BulkedExternalLeftOuterJoin(
 				allTargetsPlan,
@@ -213,7 +210,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 
-		return new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)));
+		return new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)), false);
 
 	}
 

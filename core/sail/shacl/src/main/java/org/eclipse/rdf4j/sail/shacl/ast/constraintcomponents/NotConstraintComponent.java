@@ -92,7 +92,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				scope
 		);
 
-		PlanNode invalid = new Unique(planNode);
+		PlanNode invalid = new Unique(planNode, false);
 
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode != null) {
@@ -101,7 +101,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
 								EffectiveTarget.Extend.right, false);
-				allTargetsPlan = new Unique(new ShiftToPropertyShape(allTargetsPlan));
+				allTargetsPlan = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 			} else {
 				allTargetsPlan = getTargetChain()
 						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -149,7 +149,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
 
-			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan));
+			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -159,7 +159,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, scope);
 
-		return new Unique(new UnionNode(allTargets, notTargets));
+		return new Unique(new UnionNode(allTargets, notTargets), false);
 	}
 
 	@Override

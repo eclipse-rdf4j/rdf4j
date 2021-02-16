@@ -12,6 +12,7 @@ import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertTrue;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -132,7 +133,8 @@ public class EqualsJoinTest {
 
 	}
 
-	public void verify(List<ValidationTuple> actual, List<String>... expect) {
+	@SafeVarargs
+	private final void verify(List<ValidationTuple> actual, List<String>... expect) {
 
 		System.out.println(actual);
 
@@ -143,9 +145,9 @@ public class EqualsJoinTest {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					if (v.size() > 1) {
-						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, true);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, true);
 					} else {
-						return new ValidationTuple(new ArrayDeque<>(v), ConstraintComponent.Scope.propertyShape, false);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, false);
 					}
 				})
 				.collect(Collectors.toSet());

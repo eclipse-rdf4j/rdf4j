@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
@@ -81,9 +82,15 @@ public class EffectiveTarget {
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
+		if (varNames.size() == 1) {
+			return connectionsGroup.getCachedNodeFor(getTargetFilter(connectionsGroup,
+					new Unique(new TupleMapper(source, new ActiveTargetTupleMapper(scope, includePropertyShapeValues)),
+							false)));
+		}
+
 		return connectionsGroup.getCachedNodeFor(
 				new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
-						100, direction, includePropertyShapeValues)));
+						100, direction, includePropertyShapeValues), true));
 	}
 
 	private List<StatementMatcher.Variable> getVars() {
@@ -192,7 +199,7 @@ public class EffectiveTarget {
 				);
 			}
 
-			return connectionsGroup.getCachedNodeFor(targetChainRetriever);
+			return connectionsGroup.getCachedNodeFor(new Unique(targetChainRetriever, true));
 
 		}
 
@@ -279,7 +286,7 @@ public class EffectiveTarget {
 		}
 	}
 
-	class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
+	static class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
 		List<String> varNames;
 		ConstraintComponent.Scope scope;
 		boolean hasValue;
@@ -312,6 +319,38 @@ public class EffectiveTarget {
 		@Override
 		public int hashCode() {
 			return Objects.hash(varNames, scope, hasValue, AllTargetsBindingSetMapper.class);
+		}
+	}
+
+	static class ActiveTargetTupleMapper implements Function<ValidationTuple, ValidationTuple> {
+		ConstraintComponent.Scope scope;
+		boolean includePropertyShapeValues;
+
+		public ActiveTargetTupleMapper(ConstraintComponent.Scope scope, boolean includePropertyShapeValues) {
+			this.scope = scope;
+			this.includePropertyShapeValues = includePropertyShapeValues;
+		}
+
+		@Override
+		public ValidationTuple apply(ValidationTuple validationTuple) {
+			return new ValidationTuple(validationTuple.getActiveTarget(), scope, includePropertyShapeValues);
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			ActiveTargetTupleMapper that = (ActiveTargetTupleMapper) o;
+			return includePropertyShapeValues == that.includePropertyShapeValues && scope == that.scope;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(scope, includePropertyShapeValues);
 		}
 	}
 

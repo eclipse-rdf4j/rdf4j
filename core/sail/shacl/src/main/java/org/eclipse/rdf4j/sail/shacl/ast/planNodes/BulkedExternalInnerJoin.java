@@ -112,7 +112,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 								left.removeLast();
 							}
 						} else {
-							int compare = rightPeek.compareTarget(leftPeek);
+							int compare = rightPeek.compareActiveTarget(leftPeek);
 
 							if (compare < 0) {
 								if (right.isEmpty()) {

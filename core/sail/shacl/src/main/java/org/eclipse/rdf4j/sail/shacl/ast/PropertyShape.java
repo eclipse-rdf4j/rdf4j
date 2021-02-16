@@ -1,6 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.io.StringWriter;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -10,13 +9,9 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.DynamicModel;
-import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -144,7 +139,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				});
 			}
 
-			validationPlanNode = new TargetChainPopper(validationPlanNode);
+			validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
 
 			union = new UnionNode(union, validationPlanNode);
 		}
@@ -189,6 +184,11 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 //		}
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
+			if (!getPath().isSupported()) {
+				logger.error("Unsupported path detected. Shape ignored! \n" + this.toString());
+				continue;
+			}
+
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, overrideTargetNode,
 							Scope.propertyShape);
@@ -201,7 +201,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = new TargetChainPopper(validationPlanNode);
+				validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
 			} else {
 				validationPlanNode = new ShiftToNodeShape(validationPlanNode);
 			}
@@ -226,12 +226,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 						.getPlanNode(connectionsGroup, Scope.propertyShape, true));
 
 		if (scope == Scope.propertyShape) {
-			planNode = new TargetChainPopper(planNode);
+			planNode = new Unique(new TargetChainPopper(planNode), true);
 		} else {
 			planNode = new ShiftToNodeShape(planNode);
 		}
 
-		planNode = new Unique(planNode);
+		planNode = new Unique(planNode, false);
 
 		return planNode;
 	}
@@ -254,14 +254,6 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 
 	public Path getPath() {
 		return path;
-	}
-
-	@Override
-	public String toString() {
-		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
-		StringWriter stringWriter = new StringWriter();
-		Rio.write(statements, stringWriter, RDFFormat.TURTLE);
-		return stringWriter.toString();
 	}
 
 	@Override

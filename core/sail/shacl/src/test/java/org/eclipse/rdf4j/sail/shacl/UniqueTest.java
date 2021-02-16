@@ -54,7 +54,7 @@ public class UniqueTest {
 	}
 
 	private void runTest(MockInputPlanNode input) {
-		Unique unique = new Unique(input);
+		Unique unique = new Unique(input, false);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 
@@ -63,8 +63,8 @@ public class UniqueTest {
 		tuples.sort(ValidationTuple::compareValue);
 		expected.sort(ValidationTuple::compareValue);
 
-		tuples.sort(ValidationTuple::compareTarget);
-		expected.sort(ValidationTuple::compareTarget);
+		tuples.sort(ValidationTuple::compareFullTarget);
+		expected.sort(ValidationTuple::compareFullTarget);
 
 		assertEquals(expected, tuples);
 	}

@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -55,91 +56,116 @@ public class BufferedSplitter implements PlanNodeProvider {
 	@Override
 	public PlanNode getPlanNode() {
 
-		return new PlanNode() {
-			private boolean printed = false;
+		return new BufferedSplitterPlaneNode(this);
 
-			private ValidationExecutionLogger validationExecutionLogger;
+	}
 
-			@Override
-			public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		BufferedSplitter that = (BufferedSplitter) o;
+		return parent.equals(that.parent);
+	}
 
-				init();
-				Iterator<ValidationTuple> iterator = tuplesBuffer.iterator();
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent);
+	}
 
-				return new CloseableIteration<ValidationTuple, SailException>() {
+	class BufferedSplitterPlaneNode implements PlanNode {
+		private final BufferedSplitter bufferedSplitter;
+		private boolean printed = false;
 
-					@Override
-					public void close() throws SailException {
+		private ValidationExecutionLogger validationExecutionLogger;
 
-					}
+		public BufferedSplitterPlaneNode(BufferedSplitter bufferedSplitter) {
+			this.bufferedSplitter = bufferedSplitter;
+		}
 
-					@Override
-					public boolean hasNext() throws SailException {
-						return iterator.hasNext();
-					}
+		@Override
+		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-					@Override
-					public ValidationTuple next() throws SailException {
-						ValidationTuple tuple = new ValidationTuple(iterator.next());
-						if (GlobalValidationExecutionLogging.loggingEnabled) {
-							validationExecutionLogger.log(depth(),
-									parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, parent,
-									getId());
-						}
-						return tuple;
-					}
+			bufferedSplitter.init();
+			Iterator<ValidationTuple> iterator = bufferedSplitter.tuplesBuffer.iterator();
 
-					@Override
-					public void remove() throws SailException {
-						throw new ShaclUnsupportedException();
-					}
-				};
-			}
+			return new CloseableIteration<ValidationTuple, SailException>() {
 
-			@Override
-			public int depth() {
-				return parent.depth() + 1;
-			}
+				@Override
+				public void close() throws SailException {
 
-			@Override
-			public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
-				if (printed) {
-					return;
 				}
-				printed = true;
-				stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-						.append("\n");
-				stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
-				parent.getPlanAsGraphvizDot(stringBuilder);
-			}
 
-			@Override
-			public String getId() {
-				return System.identityHashCode(BufferedSplitter.this) + "";
-			}
+				@Override
+				public boolean hasNext() throws SailException {
+					return iterator.hasNext();
+				}
 
-			@Override
-			public String toString() {
-				return "BufferedSplitter";
-			}
+				@Override
+				public ValidationTuple next() throws SailException {
+					ValidationTuple tuple = iterator.next();
+					if (GlobalValidationExecutionLogging.loggingEnabled) {
+						validationExecutionLogger.log(depth(),
+								bufferedSplitter.parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple,
+								bufferedSplitter.parent,
+								getId(), null);
+					}
+					return tuple;
+				}
 
-			@Override
-			public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
-				this.validationExecutionLogger = validationExecutionLogger;
-				parent.receiveLogger(validationExecutionLogger);
-			}
+				@Override
+				public void remove() throws SailException {
+					throw new ShaclUnsupportedException();
+				}
+			};
+		}
 
-			@Override
-			public boolean producesSorted() {
-				return parent.producesSorted();
-			}
+		@Override
+		public int depth() {
+			return bufferedSplitter.parent.depth() + 1;
+		}
 
-			@Override
-			public boolean requiresSorted() {
-				return parent.requiresSorted();
+		@Override
+		public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+			if (printed) {
+				return;
 			}
+			printed = true;
+			stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+					.append("\n");
+			stringBuilder.append(bufferedSplitter.parent.getId() + " -> " + getId()).append("\n");
+			bufferedSplitter.parent.getPlanAsGraphvizDot(stringBuilder);
+		}
 
-		};
+		@Override
+		public String getId() {
+			return System.identityHashCode(bufferedSplitter) + "";
+		}
+
+		@Override
+		public String toString() {
+			return "BufferedSplitter";
+		}
+
+		@Override
+		public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+			this.validationExecutionLogger = validationExecutionLogger;
+			bufferedSplitter.parent.receiveLogger(validationExecutionLogger);
+		}
+
+		@Override
+		public boolean producesSorted() {
+			return bufferedSplitter.parent.producesSorted();
+		}
+
+		@Override
+		public boolean requiresSorted() {
+			return bufferedSplitter.parent.requiresSorted();
+		}
 
 	}
 

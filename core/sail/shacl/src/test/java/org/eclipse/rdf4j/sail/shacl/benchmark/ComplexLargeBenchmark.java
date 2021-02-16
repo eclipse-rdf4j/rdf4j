@@ -463,6 +463,32 @@ public class ComplexLargeBenchmark {
 
 	}
 
+//	@Benchmark
+//	public void noPreloadingBulkParallelCached() {
+//
+//		try {
+//			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+//
+//			((ShaclSail) repository.getSail()).setParallelValidation(false);
+//			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+//
+//			try (SailRepositoryConnection connection = repository.getConnection()) {
+//				connection.begin(IsolationLevels.NONE,
+//						ShaclSail.TransactionSettings.ValidationApproach.BulkParallelCache);
+//				try (InputStream resourceAsStream = getData()) {
+//					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
+//				}
+//				connection.commit();
+//			}
+//
+//			repository.shutDown();
+//
+//		} catch (IOException e) {
+//			throw new RuntimeException(e);
+//		}
+//
+//	}
+
 	@Benchmark
 	public void noPreloadingRevalidateNativeStore() throws IOException {
 		File file = Files.newTemporaryFolder();

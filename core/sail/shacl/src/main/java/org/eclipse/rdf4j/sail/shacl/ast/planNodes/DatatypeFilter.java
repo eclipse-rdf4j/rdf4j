@@ -17,10 +17,12 @@ import org.eclipse.rdf4j.model.Resource;
 public class DatatypeFilter extends FilterPlanNode {
 
 	private final Resource datatype;
+	private StackTraceElement[] stackTrace;
 
 	public DatatypeFilter(PlanNode parent, Resource datatype) {
 		super(parent);
 		this.datatype = datatype;
+//		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
