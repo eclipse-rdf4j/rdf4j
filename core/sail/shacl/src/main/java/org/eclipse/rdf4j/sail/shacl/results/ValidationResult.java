@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -102,7 +103,7 @@ public class ValidationResult {
 		return asModel(model, new HashSet<>());
 	}
 
-	public Model asModel(Model model, Set<Resource> values) {
+	public Model asModel(Model model, Set<Resource> rdfListDedupe) {
 
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_RESULT);
 
@@ -111,7 +112,7 @@ public class ValidationResult {
 		value.ifPresent(v -> model.add(getId(), SHACL.VALUE, v));
 
 		if (this.path != null) {
-			path.toModel(path.getId(), null, model, new HashSet<>());
+			path.toModel(path.getId(), null, model, new HashSet<>(), rdfListDedupe);
 			model.add(getId(), SHACL.RESULT_PATH, path.getId());
 		}
 
@@ -124,7 +125,7 @@ public class ValidationResult {
 //			detail.asModel(model);
 //		}
 
-		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, values);
+		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>(), rdfListDedupe);
 
 		return model;
 	}

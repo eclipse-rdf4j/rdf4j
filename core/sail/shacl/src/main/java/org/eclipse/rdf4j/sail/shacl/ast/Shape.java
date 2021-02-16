@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -151,12 +152,19 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	protected abstract Shape shallowClone();
 
-	public Model toModel(Model model) {
-		toModel(null, null, model, new HashSet<>());
+	/**
+	 *
+	 * @param model         the model to export the shapes into
+	 * @param rdfListDedupe a set used to dedupe the output
+	 * @return the provided model
+	 */
+	public Model toModel(Model model, Set<Resource> rdfListDedupe) {
+		toModel(null, null, model, new HashSet<>(), rdfListDedupe);
 		return model;
 	}
 
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		ModelBuilder modelBuilder = new ModelBuilder();
 
 		modelBuilder.subject(getId());
@@ -166,7 +174,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		target.forEach(t -> {
-			t.toModel(getId(), null, model, exported);
+			t.toModel(getId(), null, model, cycleDetection, rdfListDedupe);
 		});
 
 		model.addAll(modelBuilder.build());
@@ -533,7 +541,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public String toString() {
-		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
+		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()), new HashSet<>());
 		statements.setNamespace(SHACL.NS);
 		statements.setNamespace(XSD.NS);
 		WriterConfig writerConfig = new WriterConfig();

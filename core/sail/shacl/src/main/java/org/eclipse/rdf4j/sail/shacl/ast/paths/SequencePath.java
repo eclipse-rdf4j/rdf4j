@@ -37,12 +37,17 @@ public class SequencePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		sequence.forEach(p -> p.toModel(p.getId(), null, model, exported));
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 
-		List<Resource> values = sequence.stream().map(Path::getId).collect(Collectors.toList());
+		if (!rdfListDedupe.contains(id)) {
+			rdfListDedupe.add(id);
+			List<Resource> values = sequence.stream().map(Path::getId).collect(Collectors.toList());
+			HelperTool.listToRdf(values, id, model);
+		}
 
-		HelperTool.listToRdf(values, id, model);
+		sequence.forEach(p -> p.toModel(p.getId(), null, model, cycleDetection, rdfListDedupe));
+
 	}
 
 	@Override

@@ -88,9 +88,10 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 
-		super.toModel(subject, predicate, model, exported);
+		super.toModel(subject, predicate, model, cycleDetection, rdfListDedupe);
 		model.add(getId(), RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
 		if (subject != null) {
@@ -102,14 +103,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		}
 
 		model.add(getId(), SHACL.PATH, path.getId());
-		path.toModel(path.getId(), null, model, exported);
+		path.toModel(path.getId(), null, model, cycleDetection, rdfListDedupe);
 
-		if (exported.contains(getId())) {
+		if (cycleDetection.contains(getId())) {
 			return;
 		}
-		exported.add(getId());
+		cycleDetection.add(getId());
 
-		constraintComponents.forEach(c -> c.toModel(getId(), null, model, exported));
+		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection, rdfListDedupe));
 
 	}
 

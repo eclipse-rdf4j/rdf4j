@@ -81,8 +81,9 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		super.toModel(subject, predicate, model, exported);
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
+		super.toModel(subject, predicate, model, cycleDetection, rdfListDedupe);
 		model.add(getId(), RDF.TYPE, SHACL.NODE_SHAPE);
 
 		if (subject != null) {
@@ -94,12 +95,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		}
 
-		if (exported.contains(getId())) {
+		if (cycleDetection.contains(getId())) {
 			return;
 		}
-		exported.add(getId());
+		cycleDetection.add(getId());
 
-		constraintComponents.forEach(c -> c.toModel(getId(), null, model, exported));
+		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection, rdfListDedupe));
 
 	}
 

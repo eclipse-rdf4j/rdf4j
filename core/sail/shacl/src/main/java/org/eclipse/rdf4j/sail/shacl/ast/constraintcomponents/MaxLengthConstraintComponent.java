@@ -24,7 +24,8 @@ public class MaxLengthConstraintComponent extends SimpleAbstractConstraintCompon
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.MAX_LENGTH,
 				literal(maxLength + "", XMLSchema.INTEGER));
 	}

@@ -8,5 +8,6 @@ import org.eclipse.rdf4j.model.Resource;
 
 public interface Exportable {
 
-	void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported);
+	void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe);
 }

@@ -29,7 +29,8 @@ public class PatternConstraintComponent extends SimpleAbstractConstraintComponen
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.PATTERN, literal(pattern));
 		if (flags != null && !flags.isEmpty()) {
 			model.add(subject, SHACL.FLAGS, literal(flags));

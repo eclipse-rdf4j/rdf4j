@@ -31,9 +31,10 @@ public class ZeroOrMorePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.ZERO_OR_MORE_PATH, zeroOrMorePath.getId());
-		zeroOrMorePath.toModel(zeroOrMorePath.getId(), null, model, exported);
+		zeroOrMorePath.toModel(zeroOrMorePath.getId(), null, model, cycleDetection, rdfListDedupe);
 	}
 
 	@Override
