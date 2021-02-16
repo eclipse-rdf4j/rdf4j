@@ -233,7 +233,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/nestedNode",
 		"test-cases/qualifiedShape/minCountSimple",
 		"test-cases/qualifiedShape/maxCountSimple",
-		"test-cases/uniqueLang/complex"
+		"test-cases/uniqueLang/complex",
+		"test-cases/qualifiedShape/complex"
 
 	)
 		.distinct()
@@ -516,6 +517,11 @@ abstract public class AbstractShaclTest {
 
 		// reference implementation has wrong blank node identifier for path
 		if (dataPath.equals("test-cases/or/class2InversePath/invalid/case3")) {
+			return;
+		}
+
+		// uses rsx:nodeShape
+		if (shaclPath.equals("test-cases/qualifiedShape/complex")) {
 			return;
 		}
 

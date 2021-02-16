@@ -114,6 +114,7 @@ public class BindSelect implements PlanNode {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
+			List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
 
 			Integer targetChainSize = null;
 			ParsedQuery parsedQuery = null;
@@ -129,32 +130,27 @@ public class BindSelect implements PlanNode {
 					bindingSet.close();
 				}
 
-				if (!iterator.hasNext()) {
+				if (bulk.isEmpty() && !iterator.hasNext()) {
 					return;
 				}
-
-				List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
-
-				ValidationTuple next = iterator.next();
+				ValidationTuple next;
+				if (bulk.isEmpty()) {
+					next = iterator.next();
+					bulk.add(next);
+				} else {
+					next = bulk.get(0);
+				}
 
 				if (includePropertyShapeValues) {
 					assert next.getScope() == ConstraintComponent.Scope.propertyShape;
 					assert next.hasValue();
 				}
 
-				bulk.add(next);
-
 				int targetChainSize;
 				if (includePropertyShapeValues || next.getScope() != ConstraintComponent.Scope.propertyShape) {
 					targetChainSize = next.getFullChainSize(true);
 				} else {
-					targetChainSize = next.getTargetChain(includePropertyShapeValues).size();
-				}
-
-				if (this.targetChainSize != null) {
-					assert targetChainSize == this.targetChainSize;
-				} else {
-					this.targetChainSize = targetChainSize;
+					targetChainSize = next.getFullChainSize(includePropertyShapeValues);
 				}
 
 				if (parsedQuery == null) {
@@ -183,8 +179,32 @@ public class BindSelect implements PlanNode {
 
 				List<BindingSet> bindingSets = bulk
 						.stream()
+						.filter(t -> {
+							int temp;
+							if (includePropertyShapeValues || t.getScope() != ConstraintComponent.Scope.propertyShape) {
+								temp = t.getFullChainSize(true);
+							} else {
+								temp = t.getFullChainSize(includePropertyShapeValues);
+							}
+
+							return temp == targetChainSize;
+						})
 						.map(t -> new ListBindingSet(varNames,
 								new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
+						.collect(Collectors.toList());
+
+				bulk = bulk
+						.stream()
+						.filter(t -> {
+							int temp;
+							if (includePropertyShapeValues || t.getScope() != ConstraintComponent.Scope.propertyShape) {
+								temp = t.getFullChainSize(true);
+							} else {
+								temp = t.getFullChainSize(includePropertyShapeValues);
+							}
+
+							return temp != targetChainSize;
+						})
 						.collect(Collectors.toList());
 
 				updateQuery(parsedQuery, bindingSets, targetChainSize);
