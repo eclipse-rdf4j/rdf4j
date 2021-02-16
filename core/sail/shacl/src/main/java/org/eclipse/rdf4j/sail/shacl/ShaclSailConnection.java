@@ -500,7 +500,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private boolean isParallelValidation() {
 		// bulk validation should use little memory so should not run validation in parallel
 		return sail.isParallelValidation() &&
-				transactionSettings.getValidationApproach() != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+				transactionSettings.getValidationApproach() != ShaclSail.TransactionSettings.ValidationApproach.Bulk &&
+				getIsolationLevel() != IsolationLevels.SERIALIZABLE;
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
