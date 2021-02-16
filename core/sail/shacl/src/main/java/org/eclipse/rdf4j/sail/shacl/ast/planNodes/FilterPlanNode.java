@@ -151,7 +151,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

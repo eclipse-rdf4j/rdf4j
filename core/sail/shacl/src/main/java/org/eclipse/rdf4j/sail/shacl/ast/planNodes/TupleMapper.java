@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Objects;
 import java.util.function.Function;
 
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -51,7 +50,7 @@ public class TupleMapper implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-				throw new NotImplementedException("Not implemented yet");
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

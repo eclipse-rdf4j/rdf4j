@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -39,9 +40,25 @@ public class Sort implements PlanNode {
 
 			Iterator<ValidationTuple> sortedTuplesIterator;
 
+			boolean closed = false;
+
 			@Override
 			public void close() throws SailException {
-				iterator.close();
+				if (closed) {
+					throw new IllegalStateException("Already closed");
+				}
+				closed = true;
+
+				if (sortedTuples != null && iterator.hasNext()) {
+					throw new AssertionError("All tuples from parent iterator where not retrieved when sorting!");
+				}
+				try {
+					iterator.close();
+				} finally {
+					sortedTuplesIterator = Collections.emptyIterator();
+					sortedTuples = null;
+				}
+
 			}
 
 			@Override
@@ -51,6 +68,10 @@ public class Sort implements PlanNode {
 			}
 
 			private void sortTuples() {
+				if (closed) {
+					throw new IllegalStateException("Tried to iterate on a closed iterator");
+				}
+
 				if (sortedTuples == null) {
 					sortedTuples = new ArrayList<>();
 					boolean alreadySorted = true;
@@ -79,6 +100,8 @@ public class Sort implements PlanNode {
 					sortedTuplesIterator = sortedTuples.iterator();
 
 				}
+
+				assert !iterator.hasNext() : "Iterator: " + iterator.toString();
 			}
 
 			@Override
@@ -90,7 +113,7 @@ public class Sort implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 

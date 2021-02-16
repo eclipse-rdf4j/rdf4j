@@ -10,6 +10,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -76,7 +77,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		}
 
 		if (qualifiedMinCount != null) {
-			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, literal(qualifiedMinCount));
+			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, literal(qualifiedMinCount + "", XMLSchema.INTEGER));
 		}
 
 		qualifiedValueShape.toModel(null, null, model, cycleDetection, rdfListDedupe);

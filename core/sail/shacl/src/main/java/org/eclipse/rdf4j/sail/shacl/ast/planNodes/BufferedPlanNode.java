@@ -54,12 +54,16 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 			}
 
 			private void calculateNext() {
+
 				while (buffer.isEmpty()) {
 					boolean success = parent.incrementIterator();
 					if (!success) {
 						break;
 					}
 				}
+
+				assert !buffer.isEmpty() || !parent.incrementIterator() && buffer.isEmpty();
+
 			}
 
 			@Override
@@ -76,7 +80,12 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 			@Override
 			public void remove() throws SailException {
+				throw new UnsupportedOperationException();
+			}
 
+			@Override
+			public String toString() {
+				return "BufferedPlanNode-Iterator::" + parent.toString();
 			}
 
 		};
@@ -116,7 +125,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 	@Override
 	public String toString() {
-		return "BufferedPlanNode";
+		return "BufferedPlanNode::" + parent.toString();
 	}
 
 	@Override

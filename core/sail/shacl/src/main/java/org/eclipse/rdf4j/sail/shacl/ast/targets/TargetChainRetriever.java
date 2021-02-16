@@ -91,6 +91,7 @@ public class TargetChainRetriever implements PlanNode {
 				if (!statementPatternIterator.hasNext() && !removedStatementIterator.hasNext()) {
 					if (statements != null) {
 						statements.close();
+						statements = null;
 					}
 
 					return;
@@ -99,6 +100,7 @@ public class TargetChainRetriever implements PlanNode {
 				do {
 					if (statements != null) {
 						statements.close();
+						statements = null;
 					}
 
 					if (!statementPatternIterator.hasNext() && !removedStatementIterator.hasNext()) {
@@ -132,6 +134,8 @@ public class TargetChainRetriever implements PlanNode {
 					try {
 						if (results != null) {
 							results.close();
+							results = null;
+
 						}
 
 						MapBindingSet bindings = new MapBindingSet();
@@ -194,6 +198,16 @@ public class TargetChainRetriever implements PlanNode {
 			@Override
 			public void close() throws SailException {
 
+				try {
+					if (statements != null) {
+						statements.close();
+					}
+				} finally {
+					if (results != null) {
+						results.close();
+					}
+				}
+
 			}
 
 			@Override
@@ -215,7 +229,7 @@ public class TargetChainRetriever implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

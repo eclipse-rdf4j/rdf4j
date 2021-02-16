@@ -47,6 +47,7 @@ public class ShiftToNodeShape implements PlanNode {
 						List<ValidationTuple> validationTuples = parentIterator.next().shiftToNodeShape();
 						iterator = validationTuples.iterator();
 					}
+					assert iterator.hasNext() || !parentIterator.hasNext();
 				}
 
 			}
@@ -71,7 +72,7 @@ public class ShiftToNodeShape implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 
