@@ -870,6 +870,9 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 		// give rdf:type preference over other predicates.
 		processPredicate(contextData, subject, RDF.TYPE, processedSubjects, processedPredicates);
 
+		// handle RDF Collection statements separately, to make sure we process them in the correct order
+		processPredicate(contextData, subject, RDF.FIRST, processedSubjects, processedPredicates);
+
 		// retrieve other statement from this context with the same
 		// subject, and output them grouped by predicate
 		for (IRI predicate : contextData.filter(subject, null, null).predicates()) {
