@@ -514,8 +514,14 @@ class GraphComparisons {
 						List<HashCode> hashSequence = new ArrayList<>(3);
 
 						hashSequence.add(hashFunction.hashString(l.getLabel(), Charsets.UTF_8));
+
+						// Per BCP47, language tags are case-insensitive. Use normalized form to ensure consistency if
+						// possible, otherwise just use lower-case.
 						l.getLanguage()
-								.map(lang -> hashFunction.hashString(lang, Charsets.UTF_8))
+								.map(lang -> hashFunction.hashString(
+										Literals.isValidLanguageTag(lang) ? Literals.normalizeLanguageTag(lang)
+												: lang.toLowerCase(),
+										Charsets.UTF_8))
 								.ifPresent(h -> hashSequence.add(h));
 						hashSequence.add(hashFunction.hashString(l.getDatatype().stringValue(), Charsets.UTF_8));
 						return Hashing.combineOrdered(hashSequence);
