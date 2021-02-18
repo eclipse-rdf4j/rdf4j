@@ -54,7 +54,7 @@ public class ValidationReportNode implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-				iterator.remove();
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

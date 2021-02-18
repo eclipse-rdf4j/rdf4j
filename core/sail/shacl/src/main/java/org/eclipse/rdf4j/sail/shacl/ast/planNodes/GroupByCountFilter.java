@@ -99,7 +99,7 @@ public class GroupByCountFilter implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

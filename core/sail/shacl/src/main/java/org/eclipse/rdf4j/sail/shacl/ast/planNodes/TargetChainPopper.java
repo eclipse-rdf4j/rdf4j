@@ -77,7 +77,7 @@ public class TargetChainPopper implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-				parentIterator.remove();
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

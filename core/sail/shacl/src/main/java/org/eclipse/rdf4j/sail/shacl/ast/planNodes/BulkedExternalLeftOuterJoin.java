@@ -136,7 +136,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

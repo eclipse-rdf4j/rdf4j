@@ -62,6 +62,8 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 						break;
 					}
 				}
+
+				assert next != null || (!parent.incrementIterator() && next == null);
 			}
 
 			@Override
@@ -80,7 +82,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 
 		};

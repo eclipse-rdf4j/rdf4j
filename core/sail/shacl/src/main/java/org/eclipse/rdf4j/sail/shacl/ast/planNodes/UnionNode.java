@@ -115,7 +115,7 @@ public class UnionNode implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

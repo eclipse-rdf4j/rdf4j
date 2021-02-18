@@ -11,14 +11,17 @@ package org.eclipse.rdf4j.sail.shacl;
 import static junit.framework.TestCase.assertTrue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 
+import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -113,6 +116,34 @@ public class SerializableTest {
 			assertTrue(revalidate.conforms());
 
 			connection.commit();
+		}
+		repo.shutDown();
+
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void serializableParallelValidation() throws Throwable {
+
+		SailRepository repo = Utils
+				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl", false);
+
+		ShaclSail sail = (ShaclSail) repo.getSail();
+
+		sail.setParallelValidation(true);
+
+		sail.setEclipseRdf4jShaclExtensions(true);
+
+		try (SailRepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.SERIALIZABLE);
+
+			connection.prepareUpdate(IOUtils.toString(
+					SerializableTest.class.getClassLoader()
+							.getResource("test-cases/complex/targetShapeAndQualifiedShape/invalid/case1/query1.rq"),
+					StandardCharsets.UTF_8)).execute();
+
+			connection.commit();
+		} catch (RepositoryException e) {
+			throw e.getCause();
 		}
 		repo.shutDown();
 

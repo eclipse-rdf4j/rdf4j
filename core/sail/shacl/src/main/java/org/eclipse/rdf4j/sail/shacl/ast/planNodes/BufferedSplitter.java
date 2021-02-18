@@ -33,7 +33,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	PlanNode parent;
-	private List<ValidationTuple> tuplesBuffer;
+	private volatile List<ValidationTuple> tuplesBuffer;
 
 	public BufferedSplitter(PlanNode planNode) {
 		parent = planNode;

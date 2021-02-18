@@ -2,6 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Set;
 
@@ -76,7 +77,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 		}
 
 		if (qualifiedMinCount != null) {
-			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, literal(qualifiedMinCount));
+			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, literal(BigInteger.valueOf(qualifiedMinCount)));
 		}
 
 		qualifiedValueShape.toModel(null, null, model, cycleDetection, rdfListDedupe);

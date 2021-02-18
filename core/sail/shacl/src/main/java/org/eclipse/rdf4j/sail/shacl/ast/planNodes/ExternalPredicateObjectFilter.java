@@ -102,6 +102,8 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 					}
 
 				}
+
+				assert next != null || !parentIterator.hasNext() : parentIterator.toString();
 			}
 
 			private Resource isType(Value subject) {
@@ -137,7 +139,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}

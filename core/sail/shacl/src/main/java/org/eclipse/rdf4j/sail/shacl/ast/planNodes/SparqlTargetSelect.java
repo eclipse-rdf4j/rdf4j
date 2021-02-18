@@ -90,7 +90,7 @@ public class SparqlTargetSelect implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}
