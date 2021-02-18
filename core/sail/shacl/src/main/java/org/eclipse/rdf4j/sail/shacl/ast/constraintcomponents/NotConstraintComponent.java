@@ -48,10 +48,11 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.NOT, getId());
 
-		not.toModel(null, null, model, exported);
+		not.toModel(null, null, model, cycleDetection, rdfListDedupe);
 
 	}
 

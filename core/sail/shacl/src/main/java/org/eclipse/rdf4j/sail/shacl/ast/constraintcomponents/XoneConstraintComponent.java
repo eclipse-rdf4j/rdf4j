@@ -46,15 +46,19 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.XONE, getId());
-		HelperTool.listToRdf(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 
-		if (exported.contains(getId())) {
-			return;
+		if (!cycleDetection.contains(getId())) {
+			cycleDetection.add(getId());
+			xone.forEach(o -> o.toModel(null, null, model, cycleDetection, rdfListDedupe));
 		}
-		exported.add(getId());
-		xone.forEach(o -> o.toModel(null, null, model, exported));
+
+		if (!rdfListDedupe.contains(getId())) {
+			rdfListDedupe.add(getId());
+			HelperTool.listToRdf(xone.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		}
 
 	}
 

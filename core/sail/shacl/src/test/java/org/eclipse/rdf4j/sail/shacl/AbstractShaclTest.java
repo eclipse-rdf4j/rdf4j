@@ -42,6 +42,7 @@ import org.apache.commons.io.IOUtils;
 import org.apache.jena.update.UpdateAction;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -974,7 +975,8 @@ abstract public class AbstractShaclTest {
 			List<Shape> shapes = ((ShaclSail) shaclRepository.getSail()).getCurrentShapes();
 
 			DynamicModel actual = new DynamicModelFactory().createEmptyModel();
-			shapes.forEach(shape -> shape.toModel(actual));
+			HashSet<Resource> dedupe = new HashSet<>();
+			shapes.forEach(shape -> shape.toModel(actual, dedupe));
 
 			try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
 					.getResourceAsStream(shaclPath + "shacl.ttl")) {

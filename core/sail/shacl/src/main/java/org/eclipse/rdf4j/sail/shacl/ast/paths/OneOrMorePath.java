@@ -31,9 +31,10 @@ public class OneOrMorePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.ONE_OR_MORE_PATH, oneOrMorePath.getId());
-		oneOrMorePath.toModel(oneOrMorePath.getId(), null, model, exported);
+		oneOrMorePath.toModel(oneOrMorePath.getId(), null, model, cycleDetection, rdfListDedupe);
 	}
 
 	@Override

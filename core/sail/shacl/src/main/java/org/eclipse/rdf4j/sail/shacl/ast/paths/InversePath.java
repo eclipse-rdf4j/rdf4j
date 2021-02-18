@@ -33,9 +33,10 @@ public class InversePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.INVERSE_PATH, inversePath.getId());
-		inversePath.toModel(inversePath.getId(), null, model, exported);
+		inversePath.toModel(inversePath.getId(), null, model, cycleDetection, rdfListDedupe);
 	}
 
 	@Override

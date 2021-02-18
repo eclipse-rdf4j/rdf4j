@@ -90,7 +90,8 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		targetClass.forEach(t -> {
 			model.add(subject, getPredicate(), t);
 		});

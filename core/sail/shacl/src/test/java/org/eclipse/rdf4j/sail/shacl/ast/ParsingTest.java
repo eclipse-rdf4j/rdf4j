@@ -28,7 +28,7 @@ public class ParsingTest {
 
 		DynamicModel emptyModel = new DynamicModelFactory().createEmptyModel();
 
-		shapes.forEach(s -> s.toModel(null, null, emptyModel, new HashSet<>()));
+		shapes.forEach(s -> s.toModel(null, null, emptyModel, new HashSet<>(), new HashSet<>()));
 
 		emptyModel.setNamespace(SHACL.NS);
 		emptyModel.setNamespace(RDF.NS);

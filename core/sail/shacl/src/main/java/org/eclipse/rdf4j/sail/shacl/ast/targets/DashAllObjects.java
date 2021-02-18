@@ -35,7 +35,8 @@ public class DashAllObjects extends Target {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 
 		model.add(subject, SHACL.TARGET_PROP, id);
 		model.add(id, RDF.TYPE, getPredicate());

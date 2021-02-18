@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -17,13 +18,17 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -77,7 +82,12 @@ public class W3cComplianceTest {
 
 		sailRepository.shutDown();
 
-//		System.out.println(AbstractShaclTest.modelToString(statements));
+		statements.filter(null, RDF.REST, null).subjects().stream().forEach(s -> {
+			int size = statements.filter(s, RDF.REST, null).objects().size();
+			assertEquals(s + " has more than one rdf:rest", size, 1);
+		});
+
+		System.out.println(AbstractShaclTest.modelToString(statements));
 
 		assert !statements.isEmpty();
 
@@ -86,13 +96,12 @@ public class W3cComplianceTest {
 	private Model extractShapesModel(ShaclSail shaclSail) {
 		List<Shape> shapes = shaclSail.getCurrentShapes();
 
-		return shapes.stream()
-				.map(shape -> shape.toModel(new DynamicModelFactory().createEmptyModel()))
-				.reduce((a, b) -> {
-					a.addAll(b);
-					return a;
-				})
-				.orElse(new LinkedHashModel());
+		HashSet<Resource> dedupe = new HashSet<>();
+		DynamicModel model = new DynamicModelFactory().createEmptyModel();
+
+		shapes.forEach(shape -> shape.toModel(model, dedupe));
+
+		return model;
 	}
 
 	private static Set<URL> getTestFiles() {

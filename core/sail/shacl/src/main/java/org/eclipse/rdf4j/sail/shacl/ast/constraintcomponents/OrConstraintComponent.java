@@ -59,16 +59,18 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> exported) {
-		if (exported.contains(getId())) {
-			return;
-		}
-		exported.add(getId());
-
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
+			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.OR, getId());
-		HelperTool.listToRdf(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		if (!cycleDetection.contains(getId())) {
+			cycleDetection.add(getId());
+			or.forEach(o -> o.toModel(null, null, model, cycleDetection, rdfListDedupe));
+		}
 
-		or.forEach(o -> o.toModel(null, null, model, exported));
+		if (!rdfListDedupe.contains(getId())) {
+			rdfListDedupe.add(getId());
+			HelperTool.listToRdf(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		}
 
 	}
 
