@@ -49,9 +49,9 @@ public class Sort implements PlanNode {
 				}
 				closed = true;
 
-				if (sortedTuples != null && iterator.hasNext()) {
-					throw new AssertionError("All tuples from parent iterator where not retrieved when sorting!");
-				}
+				assert sortedTuples == null
+						|| !iterator.hasNext() : "All tuples from parent iterator where not retrieved when sorting!";
+
 				try {
 					iterator.close();
 				} finally {
