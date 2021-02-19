@@ -109,6 +109,7 @@ As of writing this documentation the following features are supported.
 - `sh:path`
 - `sh:inversePath`
 - `sh:property`
+- `sh:node`
 - `sh:or`
 - `sh:and`
 - `sh:not`
@@ -129,9 +130,13 @@ As of writing this documentation the following features are supported.
 - `sh:in`
 - `sh:deactivated`
 - `sh:hasValue`
+- `sh:qualifiedMaxCount`
+- `sh:qualifiedMinCount`
+- `sh:qualifiedValueShape`
 - `dash:hasValueIn`
 - `sh:target` for use with DASH targets
 - `rsx:targetShape`
+
 
 DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and
 `setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information
@@ -153,10 +158,9 @@ try {
     connection.commit();
 } catch (RepositoryException exception) {
     Throwable cause = exception.getCause();
-    if (cause instanceof ShaclSailValidationException) {
-        ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-        // use validationReport or validationReportModel to understand validation violations
+    if (cause instanceof ValidationException) {
+        Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
+        // use validationReportModel to understand validation violations
 
         Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
     }
@@ -211,8 +215,8 @@ try {
     connection.commit();
 } catch (RepositoryException exception) {
     Throwable cause = exception.getCause();
-    if (cause instanceof ShaclSailValidationException) {
-        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+    if (cause instanceof ValidationException) {
+        Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
 
         validationReportModel
             .filter(null, SHACL.SOURCE_SHAPE, null);
@@ -417,7 +421,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+import org.eclipse.rdf4j.sail.shacl.ValidationException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.LoggerFactory;
 
@@ -484,10 +488,8 @@ public class ShaclSampleCode {
                 connection.commit();
             } catch (RepositoryException exception) {
                 Throwable cause = exception.getCause();
-                if (cause instanceof ShaclSailValidationException) {
-                    ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-                    Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-                    // use validationReport or validationReportModel to understand validation violations
+                if (cause instanceof ValidationException) {
+                    Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
 
                     Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
                 }
