@@ -4,20 +4,21 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
 
 [] a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:qualifiedValueShape [ a sh:NodeShape;
-              sh:datatype xsd:string
-            ];
-          sh:path <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
-          sh:qualifiedMaxCount "1"^^xsd:long
-        ];
       sh:focusNode [];
       sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
-      sh:resultSeverity sh:Violation
-    ];
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false .
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:path <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+          sh:qualifiedMaxCount 1;
+          sh:qualifiedValueShape [ a sh:NodeShape;
+              sh:datatype xsd:string
+            ]
+        ]
+    ] .

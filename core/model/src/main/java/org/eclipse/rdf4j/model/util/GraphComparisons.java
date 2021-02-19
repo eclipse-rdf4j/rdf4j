@@ -26,9 +26,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.slf4j.Logger;
@@ -412,6 +414,9 @@ class GraphComparisons {
 			if (value.isBNode()) {
 				return currentNodeMapping.get((BNode) value);
 			}
+			if (value.isLiteral()) {
+				return getStaticLiteralHashCode((Literal) value);
+			}
 			return staticValueMapping.computeIfAbsent(value,
 					v -> hashFunction.hashString(v.stringValue(), Charsets.UTF_8));
 		}
@@ -424,8 +429,12 @@ class GraphComparisons {
 			if (value.isBNode()) {
 				return previousNodeMapping.get((BNode) value);
 			}
+			if (value.isLiteral()) {
+				return getStaticLiteralHashCode((Literal) value);
+			}
 			return staticValueMapping.computeIfAbsent(value,
 					v -> hashFunction.hashString(v.stringValue(), Charsets.UTF_8));
+
 		}
 
 		public void setCurrentHashCode(BNode bnode, HashCode hashCode) {
@@ -495,6 +504,29 @@ class GraphComparisons {
 					.map(h -> new BigInteger(1, h.asBytes()))
 					.reduce(BigInteger.ZERO, (v1, v2) -> v1.add(v2));
 			return size;
+		}
+
+		private HashCode getStaticLiteralHashCode(Literal value) {
+			// GH-2834: we need to include language and datatype when computing a unique hash code for literals
+			return staticValueMapping.computeIfAbsent(value,
+					v -> {
+						Literal l = (Literal) v;
+						List<HashCode> hashSequence = new ArrayList<>(3);
+
+						hashSequence.add(hashFunction.hashString(l.getLabel(), Charsets.UTF_8));
+
+						// Per BCP47, language tags are case-insensitive. Use normalized form to ensure consistency if
+						// possible, otherwise just use lower-case.
+						l.getLanguage()
+								.map(lang -> hashFunction.hashString(
+										Literals.isValidLanguageTag(lang) ? Literals.normalizeLanguageTag(lang)
+												: lang.toLowerCase(),
+										Charsets.UTF_8))
+								.ifPresent(h -> hashSequence.add(h));
+						hashSequence.add(hashFunction.hashString(l.getDatatype().stringValue(), Charsets.UTF_8));
+						return Hashing.combineOrdered(hashSequence);
+					}
+			);
 		}
 
 		private Multimap<HashCode, BNode> getCurrentHashCodeMapping() {

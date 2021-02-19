@@ -9,23 +9,19 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.TreeModel;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class IsomorphicTest {
@@ -218,6 +214,47 @@ public class IsomorphicTest {
 	public void testValidationReport_Changed() throws IOException {
 		Model m1 = getModel("shaclValidationReport.ttl");
 		Model m2 = getModel("shaclValidationReport-changed.ttl");
+
+		assertThat(Models.isomorphic(m1, m2)).isFalse();
+	}
+
+	@Test
+	public void testIsomorphicDatatype() throws Exception {
+		String d1 = "@prefix ex: <http://example.com/ns#> .\n"
+				+ "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n"
+				+ "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+				+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+				+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n"
+				+ "\n"
+				+ "ex:PersonShape sh:not [\n"
+				+ "      sh:not [\n"
+				+ "          sh:maxCount 3;\n"
+				+ "          sh:path ex:ssn\n"
+				+ "        ]\n"
+				+ "    ];\n"
+				+ "  sh:targetClass ex:Person .";
+
+		Model m1 = Rio.parse(new StringReader(d1), RDFFormat.TURTLE);
+
+		String d2 = "@prefix ex: <http://example.com/ns#> .\n"
+				+ "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n"
+				+ "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+				+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+				+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n"
+				+ "\n"
+				+ "ex:PersonShape sh:not [\n"
+				+ "      sh:not [\n"
+				+ "          sh:maxCount \"3\"^^xsd:long;\n"
+				+ "          sh:path ex:ssn\n"
+				+ "        ]\n"
+				+ "    ];\n"
+				+ "  sh:targetClass ex:Person .";
+
+		Model m2 = Rio.parse(new StringReader(d2), RDFFormat.TURTLE);
 
 		assertThat(Models.isomorphic(m1, m2)).isFalse();
 	}
