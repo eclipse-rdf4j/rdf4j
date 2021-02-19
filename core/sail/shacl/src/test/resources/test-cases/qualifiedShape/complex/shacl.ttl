@@ -34,5 +34,5 @@
       sh:qualifiedValueShape [ a sh:NodeShape;
           sh:datatype <http://www.w3.org/2001/XMLSchema#string>
         ];
-      sh:qualifiedMaxCount "1"^^<http://www.w3.org/2001/XMLSchema#long>
+      sh:qualifiedMaxCount 1
     ] .
