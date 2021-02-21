@@ -967,10 +967,62 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public static class TransactionSettings {
 
+		@Experimental
+		public enum PerformanceHint implements TransactionSetting {
+
+			/**
+			 * Run validation is parallel (multithreaded).
+			 */
+			ParallelValidation("ParallelValidation"),
+			/**
+			 * Run validation serially (single threaded)
+			 */
+			SerialValidation("SerialValidation"),
+			/**
+			 * Cache intermediate results. Uses more memory but can reduce validation time.
+			 */
+			CacheEnabled("CacheEnabled"),
+			/**
+			 * Do not cache intermediate results.
+			 */
+			CacheDisabled("CacheDisabled");
+
+			private final String value;
+
+			PerformanceHint(String value) {
+				this.value = value;
+			}
+
+			@Override
+			public String getName() {
+				return ValidationApproach.class.getCanonicalName();
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
 		public enum ValidationApproach implements TransactionSetting {
 
+			/**
+			 * Do not run any validation. This could potentially lead to your database becoming invalid.
+			 */
 			Disabled("Disabled"),
+
+			/**
+			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
+			 * transactional validation except when changing the SHACL Shape.
+			 */
 			Auto("Auto"),
+
+			/**
+			 * Use a validation approach that is optimized for bulk operations such as adding or removing large amounts
+			 * of data. This will automatically disable parallel validation and turn off caching. Add performance hints
+			 * to enable parallel validation or caching if you have enough resources (RAM).
+			 */
 			Bulk("Bulk");
 
 			private final String value;
