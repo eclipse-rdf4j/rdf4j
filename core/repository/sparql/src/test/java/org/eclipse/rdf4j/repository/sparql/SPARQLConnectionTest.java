@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.repository.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -151,9 +152,9 @@ public class SPARQLConnectionTest {
 	}
 
 	@Test
-	public void testSilentModeSparqlConnection() throws Exception {
-		subject.enableSilentMode(true);
-		assertThat(subject.isSilentMode() == true);
+	public void testSilentClear() throws Exception {
+		subject.setSilentClear(true);
+		assertThat(subject.isSilentClear());
 
 		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
 		subject.begin();
@@ -164,5 +165,21 @@ public class SPARQLConnectionTest {
 
 		String sparqlUpdate = sparqlUpdateCaptor.getValue();
 		assertThat(sparqlUpdate).containsOnlyOnce("CLEAR SILENT");
+	}
+
+	@Test
+	public void testSilentClear_NamedGraph() throws Exception {
+		subject.setSilentClear(true);
+		assertThat(subject.isSilentClear());
+
+		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
+		subject.begin();
+		subject.clear(iri("http://example.org/"));
+		subject.commit();
+
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+
+		String sparqlUpdate = sparqlUpdateCaptor.getValue();
+		assertThat(sparqlUpdate).containsOnlyOnce("CLEAR SILENT GRAPH <http://example.org/>");
 	}
 }

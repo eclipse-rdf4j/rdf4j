@@ -54,8 +54,8 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  */
 public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
-	// The schema, or null
-	Repository schema;
+	// An optional predifinedSchema that the user has provided
+	Repository predefinedSchema;
 
 	// exclusive lock for modifying the schema cache.
 	private final ReentrantLock exclusiveWriteLock = new ReentrantLock(true);
@@ -100,7 +100,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 */
 	public SchemaCachingRDFSInferencer() {
 		super();
-		schema = null;
+		predefinedSchema = null;
 	}
 
 	/**
@@ -110,7 +110,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data) {
 		super(data);
-		schema = null;
+		predefinedSchema = null;
 
 	}
 
@@ -119,13 +119,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
 	 * significantly improves performance.
 	 *
-	 * @param data   Base sail for storing data.
-	 * @param schema Repository containing the schema.
+	 * @param data             Base sail for storing data.
+	 * @param predefinedSchema Repository containing the schema.
 	 */
-	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository schema) {
+	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository predefinedSchema) {
 		super(data);
 
-		this.schema = schema;
+		this.predefinedSchema = predefinedSchema;
 
 	}
 
@@ -137,7 +137,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 */
 	public SchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
 		super(data);
-		schema = null;
+		predefinedSchema = null;
 
 		this.useAllRdfsRules = useAllRdfsRules;
 
@@ -148,15 +148,15 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
 	 * significantly improves performance.
 	 *
-	 * @param data            Base sail for storing data.
-	 * @param schema          Repository containing the schema.
-	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+	 * @param data             Base sail for storing data.
+	 * @param predefinedSchema Repository containing the schema.
+	 * @param useAllRdfsRules  Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
 	 */
-	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository schema,
+	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository predefinedSchema,
 			boolean useAllRdfsRules) {
 		super(data);
 
-		this.schema = schema;
+		this.predefinedSchema = predefinedSchema;
 		this.useAllRdfsRules = useAllRdfsRules;
 
 	}
@@ -219,9 +219,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 			List<Statement> tboxStatments = new ArrayList<>();
 
-			if (schema != null) {
+			if (predefinedSchema != null) {
 
-				try (RepositoryConnection schemaConnection = schema.getConnection()) {
+				try (RepositoryConnection schemaConnection = predefinedSchema.getConnection()) {
 					schemaConnection.begin();
 					try (Stream<Statement> stream = schemaConnection.getStatements(null, null, null).stream()) {
 						tboxStatments = stream
@@ -234,7 +234,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 			calculateInferenceMaps(conn, true);
 
-			if (schema != null) {
+			if (predefinedSchema != null) {
 				tboxStatments.forEach(statement -> conn.addStatement(statement.getSubject(),
 						statement.getPredicate(), statement.getObject(), statement.getContext()));
 			}
@@ -287,7 +287,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		sailToInstantiateFrom.getConnection().close();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,
-				sailToInstantiateFrom.schema, useAllRdfsRules);
+				sailToInstantiateFrom.predefinedSchema, useAllRdfsRules);
 
 		ret.sharedSchema = true;
 
@@ -635,5 +635,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	 */
 	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
 		this.addInferredStatementsToDefaultContext = addInferredStatementsToDefaultContext;
+	}
+
+	boolean usesPredefinedSchema() {
+		return predefinedSchema != null || sharedSchema;
 	}
 }

@@ -14,7 +14,11 @@ ex:PersonShape
 
 ex:personShapeOr
                 sh:path ex:knows;
-                sh:not [sh:and (
-                    [sh:not [sh:class ex:Person]]
-                     [sh:not [sh:class ex:Animal]]
-                  ) ]. # reduces to sh:or by demorgan
+
+                # reduces to sh:or by De Morgan's laws
+                sh:not [
+                        sh:and (
+                                [sh:not [sh:class ex:Person]]
+                                [sh:not [sh:class ex:Animal]]
+                        )
+               ].

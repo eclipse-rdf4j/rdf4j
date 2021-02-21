@@ -9,7 +9,8 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:property [
+	sh:property
+	[
 		sh:path ex:date ;
 		sh:minExclusive "2018-01-01"^^xsd:date ;
 	],

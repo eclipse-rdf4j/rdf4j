@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -20,7 +22,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -31,7 +32,6 @@ import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
  * not support inference for SPARQL queries.
  */
 @Experimental
-@Deprecated
 @InternalUseOnly
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 
@@ -49,7 +49,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
+		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			return hasStatement | rdfsSubClassOfReasoner.backwardsChain((Resource) obj)
 					.stream()
@@ -64,7 +64,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj instanceof Resource
+		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (!inferredTypes.isEmpty()) {
@@ -75,10 +75,10 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 				return new LookAheadIteration<Statement, SailException>() {
 
-					UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
+					final UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
 							statementsMatchingInferredTypes);
 
-					HashSet<Statement> dedupe = new HashSet<>();
+					final HashSet<Statement> dedupe = new HashSet<>();
 
 					@Override
 					protected Statement getNextElement() throws SailException {
@@ -86,8 +86,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 						while (next == null && unionIteration.hasNext()) {
 							Statement temp = unionIteration.next();
-							temp = SimpleValueFactory.getInstance()
-									.createStatement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
+							temp = statement(temp.getSubject(), temp.getPredicate(), obj, temp.getContext());
 
 							if (!dedupe.isEmpty()) {
 								boolean contains = dedupe.contains(temp);

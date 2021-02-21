@@ -8,8 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
@@ -24,32 +28,42 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.AST.NodeShape;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -162,12 +176,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
 
-	private List<NodeShape> nodeShapes = Collections.emptyList();
+	private List<Shape> shapes = Collections.emptyList();
 
-	private static final String IMPLICIT_TARGET_CLASS_NODE_SHAPE;
-	private static final String IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE;
-	private static final String PROPERTY_SHAPE_WITH_TARGET;
-	private static final String DASH_CONSTANTS;
+	private static final Model DASH_CONSTANTS;
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
@@ -197,20 +208,34 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private long validationResultsLimitTotal = -1;
 	private long validationResultsLimitPerConstraint = -1;
 
+	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
+	private final static SchemaCachingRDFSInferencer shaclVocabulary;
+	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, "shaclVocabularyGraph");
+
 	static {
 		try {
-			IMPLICIT_TARGET_CLASS_NODE_SHAPE = resourceAsString(
-					"shacl-sparql-inference/implicitTargetClassNodeShape.rq");
-			IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE = resourceAsString(
-					"shacl-sparql-inference/implicitTargetClassPropertyShape.rq");
-			PROPERTY_SHAPE_WITH_TARGET = resourceAsString(
-					"shacl-sparql-inference/propertyShapeWithTarget.rq");
-			DASH_CONSTANTS = resourceAsString(
-					"shacl-sparql-inference/dashConstants.rq");
+			DASH_CONSTANTS = resourceAsModel("shacl-sparql-inference/dashConstants.ttl");
+			shaclVocabulary = createShaclVocbulary();
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
 		}
 
+	}
+
+	private static SchemaCachingRDFSInferencer createShaclVocbulary() throws IOException {
+		try (BufferedInputStream in = new BufferedInputStream(
+				ShaclSail.class.getClassLoader().getResourceAsStream("shacl-sparql-inference/shaclVocabulary.ttl"))) {
+			SchemaCachingRDFSInferencer schemaCachingRDFSInferencer = new SchemaCachingRDFSInferencer(
+					new MemoryStore());
+			try (SchemaCachingRDFSInferencerConnection connection = schemaCachingRDFSInferencer.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				Model model = Rio.parse(in, "", RDFFormat.TURTLE);
+				model.forEach(s -> connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),
+						shaclVocabularyGraph));
+				connection.commit();
+			}
+			return schemaCachingRDFSInferencer;
+		}
 	}
 
 	private final ExecutorService[] executorService = new ExecutorService[1];
@@ -283,8 +308,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 				SHACL.HAS_VALUE,
 				SHACL.TARGET_PROP,
 				SHACL.INVERSE_PATH,
+				SHACL.NODE,
+				SHACL.QUALIFIED_MAX_COUNT,
+				SHACL.QUALIFIED_MIN_COUNT,
+				SHACL.QUALIFIED_VALUE_SHAPE,
 				DASH.hasValueIn,
-				RSX.targetShape);
+				RSX.targetShape
+		);
 	}
 
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -321,7 +351,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.NONE);
-			nodeShapes = refreshShapes(shapesRepoConnection);
+			shapes = refreshShapes(shapesRepoConnection);
 			shapesRepoConnection.commit();
 		}
 
@@ -329,22 +359,24 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	List<NodeShape> refreshShapes(SailRepositoryConnection shapesRepoConnection) throws SailException {
+	@Experimental
+	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 
-		SailRepository shapesRepoCache = new SailRepository(new MemoryStore());
+		SailRepository shapesRepoCache = new SailRepository(
+				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
+
 		shapesRepoCache.init();
-		List<NodeShape> shapes;
+		List<Shape> shapes;
 
 		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
 			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
-			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
+			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
+					false)) {
 				shapesRepoCacheConnection.add(statements);
 			}
-
-			runInferencingSparqlQueriesToFixPoint(shapesRepoCacheConnection);
+			enrichShapes(shapesRepoCacheConnection);
 			shapesRepoCacheConnection.commit();
-
-			shapes = NodeShape.Factory.getShapes(shapesRepoCacheConnection, this);
+			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
 		}
 
 		shapesRepoCache.shutDown();
@@ -358,7 +390,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 			if (shapesRepo != null) {
 				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 					shapesRepoConnection.begin(IsolationLevels.NONE);
-					nodeShapes = refreshShapes(shapesRepoConnection);
+					shapes = refreshShapes(shapesRepoConnection);
 					shapesRepoConnection.commit();
 				}
 			}
@@ -393,7 +425,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		initialized.set(false);
 		executorService[0] = null;
-		nodeShapes = Collections.emptyList();
+		shapes = Collections.emptyList();
 		super.shutDown();
 	}
 
@@ -432,29 +464,35 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return shaclSailConnection;
 	}
 
-	List<NodeShape> getNodeShapes() {
-		return nodeShapes;
+	List<Shape> getShapes() {
+		return shapes;
 	}
 
-	private void runInferencingSparqlQueriesToFixPoint(SailRepositoryConnection shaclSailConnection) {
+	private void enrichShapes(SailRepositoryConnection shaclSailConnection) {
 
 		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
 		if (shaclSailConnection.isEmpty()) {
 			return;
 		}
 
-		shaclSailConnection.prepareUpdate(DASH_CONSTANTS).execute();
+		shaclSailConnection.add(DASH_CONSTANTS);
+		implicitTargetClass(shaclSailConnection);
 
-		long prevSize;
-		long currentSize = shaclSailConnection.size();
-		do {
-			prevSize = currentSize;
-			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_PROPERTY_SHAPE).execute();
-			shaclSailConnection.prepareUpdate(IMPLICIT_TARGET_CLASS_NODE_SHAPE).execute();
-			shaclSailConnection.prepareUpdate(PROPERTY_SHAPE_WITH_TARGET).execute();
-			currentSize = shaclSailConnection.size();
-		} while (prevSize != currentSize);
+	}
 
+	private void implicitTargetClass(SailRepositoryConnection shaclSailConnection) {
+		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
+			stream
+					.map(Statement::getSubject)
+					.filter(s ->
+
+					shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.NODE_SHAPE, true)
+							|| shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.PROPERTY_SHAPE, true)
+					)
+					.forEach(s -> {
+						shaclSailConnection.add(s, SHACL.TARGET_CLASS, s);
+					});
+		}
 	}
 
 	/**
@@ -522,27 +560,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return null;
 	}
 
-//	Lock convertToReadLock(Lock writeLockStamp) {
-//		assert writeLockStamp != null;
-//
-//		writeLockStamp.release();
-//
-//		Lock readLock = null;
-//		while (readLock == null) {
-//			try {
-//				readLock = lockManager.getReadLock();
-//			} catch (InterruptedException e) {
-//				e.printStackTrace();
-//			}
-//		}
-//
-//		return readLock;
-//
-//
-//	}
-
-	void setNodeShapes(List<NodeShape> nodeShapes) {
-		this.nodeShapes = nodeShapes;
+	void setShapes(List<Shape> shapes) {
+		this.shapes = shapes;
 	}
 
 	/**
@@ -586,11 +605,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * If no target is defined for a NodeShape, that NodeShape will be ignored. Calling this method with "true" will
-	 * make such NodeShapes wildcard shapes and validate all subjects. Equivalent to setting sh:targetClass to owl:Thing
-	 * or rdfs:Resource in an environment with a reasoner.
-	 *
-	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 * This function does nothing. Use dash:AllSubjectsTarget.
 	 *
 	 * @param undefinedTargetValidatesAllSubjects default false
 	 */
@@ -600,9 +615,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Check if {@link NodeShape}s without a defined target are considered wildcards.
-	 *
-	 * Deprecated in favour of: dash:AllSubjectsTarget
+	 * This function does nothing. Use dash:AllSubjectsTarget.
 	 *
 	 * @return <code>true</code> if enabled, <code>false</code> otherwise
 	 * @see #setUndefinedTargetValidatesAllSubjects(boolean)
@@ -777,8 +790,16 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private static String resourceAsString(String s) throws IOException {
-		return IOUtils.toString(Objects.requireNonNull(ShaclSail.class.getClassLoader().getResourceAsStream(s)),
-				StandardCharsets.UTF_8);
+		try (InputStream resourceAsStream = ShaclSail.class.getClassLoader().getResourceAsStream(s)) {
+			return IOUtils.toString(Objects.requireNonNull(resourceAsStream), StandardCharsets.UTF_8);
+		}
+
+	}
+
+	private static Model resourceAsModel(String s) throws IOException {
+		try (InputStream resourceAsStream = ShaclSail.class.getClassLoader().getResourceAsStream(s)) {
+			return Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
+		}
 	}
 
 	private void startMonitoring(ReferenceQueue<ShaclSail> referenceQueue, Reference<ShaclSail> ref,
@@ -817,6 +838,11 @@ public class ShaclSail extends NotifyingSailWrapper {
 		});
 		// this is a soft operation, the thread pool will actually wait until the task above has completed
 		ex.shutdown();
+	}
+
+	@InternalUseOnly
+	public List<Shape> getCurrentShapes() {
+		return shapes;
 	}
 
 	/**
@@ -941,10 +967,62 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	public static class TransactionSettings {
 
+		@Experimental
+		public enum PerformanceHint implements TransactionSetting {
+
+			/**
+			 * Run validation is parallel (multithreaded).
+			 */
+			ParallelValidation("ParallelValidation"),
+			/**
+			 * Run validation serially (single threaded)
+			 */
+			SerialValidation("SerialValidation"),
+			/**
+			 * Cache intermediate results. Uses more memory but can reduce validation time.
+			 */
+			CacheEnabled("CacheEnabled"),
+			/**
+			 * Do not cache intermediate results.
+			 */
+			CacheDisabled("CacheDisabled");
+
+			private final String value;
+
+			PerformanceHint(String value) {
+				this.value = value;
+			}
+
+			@Override
+			public String getName() {
+				return ValidationApproach.class.getCanonicalName();
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
 		public enum ValidationApproach implements TransactionSetting {
 
+			/**
+			 * Do not run any validation. This could potentially lead to your database becoming invalid.
+			 */
 			Disabled("Disabled"),
+
+			/**
+			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
+			 * transactional validation except when changing the SHACL Shape.
+			 */
 			Auto("Auto"),
+
+			/**
+			 * Use a validation approach that is optimized for bulk operations such as adding or removing large amounts
+			 * of data. This will automatically disable parallel validation and turn off caching. Add performance hints
+			 * to enable parallel validation or caching if you have enough resources (RAM).
+			 */
 			Bulk("Bulk");
 
 			private final String value;

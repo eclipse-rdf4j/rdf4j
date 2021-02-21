@@ -9,14 +9,11 @@
 ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass ex:Person ;
-	sh:property  ex:personShapeOr.
-
-
-ex:personShapeOr
-                sh:or (
+        sh:or (
                     [sh:and( [ sh:or (ex:personShapeAgeInteger)] )]
                     [sh:and( [sh:and (ex:personShapeAgeLong [ sh:path ex:age; sh:or([sh:datatype xsd:long])])] )]
-                  ) .
+                  ).
+
 
 ex:personShapeAgeInteger
                 sh:path ex:age ;

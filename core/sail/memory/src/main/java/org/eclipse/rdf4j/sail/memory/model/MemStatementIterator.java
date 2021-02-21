@@ -60,7 +60,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	/**
 	 * The index of the last statement that has been returned.
 	 */
-	private volatile int statementIdx;
+	private int statementIdx;
 
 	/*--------------*
 	 * Constructors *
@@ -125,7 +125,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 					}
 				}
 
-				if (explicit != null && explicit.booleanValue() != st.isExplicit()) {
+				if (explicit != null && explicit != st.isExplicit()) {
 					// Explicit flag does not match
 					continue;
 				}

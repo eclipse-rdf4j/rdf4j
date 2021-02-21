@@ -289,7 +289,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertEquals(13, createRDFParser().getSupportedSettings().size());
+		assertEquals(14, createRDFParser().getSupportedSettings().size());
 	}
 
 	@Test

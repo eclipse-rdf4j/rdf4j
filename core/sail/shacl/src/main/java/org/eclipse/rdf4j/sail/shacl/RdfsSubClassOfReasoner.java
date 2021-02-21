@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -21,7 +23,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -33,7 +34,6 @@ import org.slf4j.LoggerFactory;
  * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
  *             warning from one release to the next.
  */
-@Deprecated
 @InternalUseOnly
 public class RdfsSubClassOfReasoner {
 
@@ -50,12 +50,11 @@ public class RdfsSubClassOfReasoner {
 			return Stream.of(statement);
 		}
 
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		if (statement.getPredicate().equals(RDF.TYPE)
-				&& forwardChainCache.containsKey(((Resource) statement.getObject()))) {
+				&& forwardChainCache.containsKey(statement.getObject())) {
 			return forwardChainCache.get(statement.getObject())
 					.stream()
-					.map(r -> vf.createStatement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
+					.map(r -> statement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
 		}
 		return Stream.of(statement);
 	}
@@ -107,7 +106,7 @@ public class RdfsSubClassOfReasoner {
 			}
 
 			forwardChainCache.get(subClass).add((Resource) s.getObject());
-			backwardsChainCache.get(supClass).add((Resource) s.getSubject());
+			backwardsChainCache.get(supClass).add(s.getSubject());
 
 		});
 

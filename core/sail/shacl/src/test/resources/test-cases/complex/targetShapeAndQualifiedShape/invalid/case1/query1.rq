@@ -1,0 +1,451 @@
+PREFIX : <http://example.com/data/>
+PREFIX affected: <http://www.ontotext.com/semantic-object/affected>
+PREFIX dash: <http://datashapes.org/dash#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX fn: <http://www.w3.org/2005/xpath-functions#>
+PREFIX gn: <http://www.geonames.org/ontology#>
+PREFIX ont: <http://example.com/ontology#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX puml: <http://plantuml.com/ontology#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX res: <http://www.ontotext.com/semantic-object/result/>
+PREFIX sesame: <http://www.openrdf.org/schema/sesame#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX so: <http://www.ontotext.com/semantic-object/>
+PREFIX vocsh: <http://example.org/shape/>
+PREFIX void: <http://rdfs.org/ns/void#>
+PREFIX wgs: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {
+
+<http://example-scalar.com/xxxx/4> a ont:MinMaxScalars;
+  ont:min0max1int "3"^^xsd:int;
+  ont:min0max2integer 1, 2;
+  ont:min1max1string "whatever";
+  ont:min1max2long "232323243"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg, "de value"@de, "de-CH value"@de-CH .
+
+<http://example-scalar.com/xxxx/1> a ont:MinMaxScalars;
+  ont:min1max1string "whatever";
+  ont:min1max2long "32323243"^^xsd:long, "333233"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg, "de value"@de, "de-CH value"@de-CH,
+    "gbvalue"@en .
+
+<http://example-scalar.com/xxxx/5> a ont:MinMaxScalars;
+  ont:min0max1int "3"^^xsd:int;
+  ont:min0max2integer 1, 2;
+  ont:min1max1string "whatever";
+  ont:min1max2long "232323243"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg, "de value"@de, "de-CH value"@de-CH .
+
+<http://example-scalar.com/xxxx/6> a ont:MinMaxScalars;
+  ont:min1max1string "whatever";
+  ont:min1max2long "32323243"^^xsd:long, "333233"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg, "de value"@de, "de-CH value"@de-CH,
+    "gbvalue"@en .
+
+<http://example-obj.com/xxxx/5> a ont:MinMaxObjects .
+
+<http://example-scalar.com/xxxx/55> a ont:MinMaxScalars;
+  ont:min0max1int "3"^^xsd:int;
+  ont:min0max2integer 1, 2;
+  ont:min1max1string "whatever";
+  ont:min1max2long "232323243"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg, "de value"@de, "de-CH value"@de-CH .
+
+<http://example-scalar.com/xxxx/66> a ont:MinMaxScalars;
+  ont:min1max1string "whatever6";
+  ont:min1max2long "32323243"^^xsd:long, "333233"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value6"@bg, "de value6"@de, "de-CH value6"@de-CH,
+    "gbvalue6"@en .
+
+<http://example-scalar.com/xxxx/662> a ont:MinMaxScalars;
+  ont:min1max1string "whatever62";
+  ont:min1max2long "3232324362"^^xsd:long, "33323362"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value62"@bg, "de value62"@de, "de-CH value62"@de-CH,
+    "gbvalue62"@en .
+
+<http://example-scalar.com/xxxx/77> a ont:MinMaxScalars;
+  ont:min1max1string "whatever7";
+  ont:min1max2long "323232437"^^xsd:long, "3332337"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value7"@bg, "de value7"@de, "de-CH value7"@de-CH,
+    "gbvalue7"@en .
+
+<http://example-scalar.com/xxxx/772> a ont:MinMaxScalars;
+  ont:min1max1string "whatever72";
+  ont:min1max2long "3232324372"^^xsd:long, "33323372"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value72"@bg, "de value72"@de, "de-CH value72"@de-CH,
+    "gbvalue72"@en .
+
+<http://example-scalar.com/xxxx/88> a ont:MinMaxScalars;
+  ont:min1max1string "whatever8";
+  ont:min1max2long "323232438"^^xsd:long, "3332338"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value8"@bg, "de valu8"@de, "de-CH value8"@de-CH,
+    "gbvalue8"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/882> a ont:MinMaxScalars;
+  ont:min1max1string "whatever82";
+  ont:min1max2long "3232324382"^^xsd:long, "33323382"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value82"@bg, "de value82"@de, "de-CH value82"@de-CH,
+    "gbvalue82"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/99> a ont:MinMaxScalars;
+  ont:min1max1string "whatever9";
+  ont:min1max2long "323232439"^^xsd:long, "3332339"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value9"@bg, "de valu9"@de, "de-CH value9"@de-CH,
+    "gbvalue9"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-obj.com/xxxx/6> a ont:MinMaxObjects .
+
+<http://example-scalar.com/xxxx/555> a ont:MinMaxScalars;
+  ont:min0max1int "3"^^xsd:int;
+  ont:min0max2integer 1, 2;
+  ont:min1max1string "whatever";
+  ont:min1max2long "23232"^^xsd:long, "232323243"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value"@bg;
+  ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:min3max4stringOrLangString "de value"@de, "de-CH value"@de-CH, "gb value"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/666> a ont:MinMaxScalars;
+  ont:min1MaxInfLangString "de-CH value6"@de-CH;
+  ont:min1max1string "whatever6";
+  ont:min1max2long "32323243"^^xsd:long, "333233"^^xsd:long;
+  ont:min3max4stringOrLangString "bgvalue6"@bg, "de-CH value6"@de-CH, "gbvalue6"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/6662> a ont:MinMaxScalars;
+  ont:min1MaxInfLangString "de-CH value6"@de-CH;
+  ont:min1max1string "whatever6";
+  ont:min1max2long "32323243"^^xsd:long, "333233"^^xsd:long;
+  ont:min3max4stringOrLangString "bgvalue6"@bg, "de-CH value6"@de-CH, "gbvalue6"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/777> a ont:MinMaxScalars;
+  ont:min1MaxInfLangString "de-CH value7"@de-CH;
+  ont:min1max1string "whatever7";
+  ont:min1max2long "323232437"^^xsd:long, "3332337"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value7"@bg, "de value7"@de, "de-CH value7"@de-CH,
+    "gbvalue7"@en;
+  ont:id <http://example-scalar.com/xxxx/777>;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/7772> a ont:MinMaxScalars;
+  ont:id <http://example-scalar.com/xxxx/7772>;
+  ont:min1MaxInfLangString "de-CH value7"@de-CH;
+  ont:min1max1string "whatever72";
+  ont:min1max2long "3232324372"^^xsd:long, "33323372"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value72"@bg, "de value72"@de, "de-CH value72"@de-CH,
+    "gbvalue72"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/888> a ont:MinMaxScalars;
+  ont:id <http://example-scalar.com/xxxx/888>;
+  ont:min1MaxInfLangString "de-CH value8"@de-CH;
+  ont:min1max1string "whatever8";
+  ont:min1max2long "323232438"^^xsd:long, "3332338"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value8"@bg, "de valu8"@de, "de-CH value8"@de-CH,
+    "gbvalue8"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/8882> a ont:MinMaxScalars;
+  ont:id <http://example-scalar.com/xxxx/8882>;
+  ont:min1MaxInfLangString "de-CH value8"@de-CH;
+  ont:min1max1string "whatever82";
+  ont:min1max2long "3232324382"^^xsd:long, "33323382"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value82"@bg, "de value82"@de, "de-CH value82"@de-CH,
+    "gbvalue82"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/999> a ont:MinMaxScalars;
+  ont:id <http://example-scalar.com/xxxx/999>;
+  ont:min1MaxInfLangString "de-CH value9"@de-CH;
+  ont:min1max1string "whatever9";
+  ont:min1max2long "323232439"^^xsd:long, "3332339"^^xsd:long;
+  ont:min3max4stringOrLangString "bg value9"@bg, "de valu9"@de, "de-CH value9"@de-CH,
+    "gbvalue9"@en;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/4> ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:noMinMax2boolean true .
+
+<http://example-scalar.com/xxxx/1> ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/5> ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:noMinMax2boolean true .
+
+<http://example-scalar.com/xxxx/6> ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/55> ont:id <http://example-scalar.com/xxxx/55>;
+  ont:min1MaxInfLangString "de-CH value"@de-CH;
+  ont:noMinMax2boolean true .
+
+<http://example-scalar.com/xxxx/66> ont:id <http://example-scalar.com/xxxx/66>;
+  ont:min1MaxInfLangString "de-CH value6"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/662> ont:id <http://example-scalar.com/xxxx/662>;
+  ont:min1MaxInfLangString "de-CH value62"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/77> ont:id <http://example-scalar.com/xxxx/77>;
+  ont:min1MaxInfLangString "de-CH value7"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/772> ont:id <http://example-scalar.com/xxxx/772>;
+  ont:min1MaxInfLangString "de-CH value7"@de-CH;
+  ont:noMinMax2boolean false, true .
+
+<http://example-scalar.com/xxxx/88> ont:id <http://example-scalar.com/xxxx/88>;
+  ont:min1MaxInfLangString "de-CH value8"@de-CH .
+
+<http://example-scalar.com/xxxx/882> ont:id <http://example-scalar.com/xxxx/882>;
+  ont:min1MaxInfLangString "de-CH value8"@de-CH .
+
+<http://example-scalar.com/xxxx/99> ont:id <http://example-scalar.com/xxxx/99>;
+  ont:min1MaxInfLangString "de-CH value9"@de-CH .
+
+<http://example-obj.com/xxxx/5> ont:min0max1 <http://example-scalar.com/xxxx/55>;
+  ont:min0max2 <http://example-scalar.com/xxxx/77>, <http://example-scalar.com/xxxx/772>;
+  ont:min1NoMax <http://example-scalar.com/xxxx/99>;
+  ont:min2max3 <http://example-scalar.com/xxxx/66>, <http://example-scalar.com/xxxx/662>;
+  ont:noMinMax2 <http://example-scalar.com/xxxx/88>, <http://example-scalar.com/xxxx/882> .
+
+<http://example-obj.com/xxxx/6> ont:min0max1 <http://example-scalar.com/xxxx/555>;
+  ont:min0max2 <http://example-scalar.com/xxxx/777>, <http://example-scalar.com/xxxx/7772>;
+  ont:min1NoMax <http://example-scalar.com/xxxx/999>;
+  ont:min2max3 <http://example-scalar.com/xxxx/666>, <http://example-scalar.com/xxxx/6662>;
+  ont:noMinMax2 <http://example-scalar.com/xxxx/888>, <http://example-scalar.com/xxxx/8882> .
+
+<http://example-scalar.com/xxxx/555> ont:id <http://example-scalar.com/xxxx/555> .
+
+<http://example-scalar.com/xxxx/666> ont:id <http://example-scalar.com/xxxx/666> .
+
+<http://example-scalar.com/xxxx/6662> ont:id <http://example-scalar.com/xxxx/6662> .
+
+
+<http://types.com/2> a ont:TypeConstraintObjMin2Max3;
+  ont:boolean false, true;
+  ont:byte "1"^^xsd:byte, "2"^^xsd:byte;
+  ont:date "-0012-01-01"^^xsd:date, "2019-01-01"^^xsd:date;
+  ont:dateTime "2014-06-23T09:07:21Z"^^xsd:dateTime, "2016-06-23T09:07:21Z"^^xsd:dateTime;
+  ont:double 1.2E0, 2.1E0;
+  ont:int "1"^^xsd:int, "2"^^xsd:int;
+  ont:integer 4, 5;
+  ont:iri <http://iri.com/1>, <http://iri.com/2>;
+  ont:langString "Inserted EN value"@en, "български"@bg-BG;
+  ont:long "111"^^xsd:long, "222"^^xsd:long;
+  ont:negativeInteger "-4"^^xsd:negativeInteger, "-5"^^xsd:negativeInteger;
+  ont:nonNegativeInteger "13"^^xsd:nonNegativeInteger, "14"^^xsd:nonNegativeInteger;
+  ont:nonPositiveInteger "-1"^^xsd:nonPositiveInteger, "-2"^^xsd:nonPositiveInteger;
+  ont:positiveInteger "10"^^xsd:positiveInteger, "11"^^xsd:positiveInteger;
+  ont:short "1"^^xsd:short, "2"^^xsd:short;
+  ont:string "whatever", "whatever2", "whatever3";
+  ont:stringOrLangString "en-US"@en-US, "string with null";
+  ont:time "11:21:23"^^xsd:time, "12:12:12"^^xsd:time;
+  ont:unsignedByte "2"^^xsd:unsignedByte, "3"^^xsd:unsignedByte;
+  ont:unsignedInt "7"^^xsd:unsignedInt, "8"^^xsd:unsignedInt;
+  ont:unsignedLong "444"^^xsd:unsignedLong, "555"^^xsd:unsignedLong;
+  ont:unsignedShort "4"^^xsd:unsignedShort, "5"^^xsd:unsignedShort;
+  ont:year "1991"^^xsd:gYear, "1992"^^xsd:gYear;
+  ont:yearMonth "2011-01"^^xsd:gYearMonth, "2011-03"^^xsd:gYearMonth .
+
+<http://types.com/1> a ont:TypeConstraintObjMin2Max3;
+  ont:boolean false, true;
+  ont:byte "0"^^xsd:byte, "1"^^xsd:byte;
+  ont:date "-0012-01-02"^^xsd:date, "2019-01-02"^^xsd:date;
+  ont:dateTime "2014-06-22T09:07:21Z"^^xsd:dateTime, "2016-06-23T08:07:21Z"^^xsd:dateTime;
+  ont:double 1.3E0, 2.2E0;
+  ont:int "4"^^xsd:int, "5"^^xsd:int;
+  ont:integer 6, 7;
+  ont:iri <http://iri.com/3>, <http://iri.com/4>;
+  ont:langString "Inserted EN value2"@en, "български2"@bg-BG;
+  ont:long "112"^^xsd:long, "223"^^xsd:long;
+  ont:negativeInteger "-6"^^xsd:negativeInteger, "-7"^^xsd:negativeInteger;
+  ont:nonNegativeInteger "14"^^xsd:nonNegativeInteger, "15"^^xsd:nonNegativeInteger;
+  ont:nonPositiveInteger "-3"^^xsd:nonPositiveInteger, "-4"^^xsd:nonPositiveInteger;
+  ont:positiveInteger "12"^^xsd:positiveInteger, "13"^^xsd:positiveInteger;
+  ont:short "3"^^xsd:short, "4"^^xsd:short;
+  ont:string "whatever4", "whatever5", "whatever6";
+  ont:stringOrLangString "en-US2"@en-US, "string with null2";
+  ont:time "11:21:21"^^xsd:time, "12:12:11"^^xsd:time;
+  ont:unsignedByte "0"^^xsd:unsignedByte, "1"^^xsd:unsignedByte;
+  ont:unsignedInt "10"^^xsd:unsignedInt, "9"^^xsd:unsignedInt;
+  ont:unsignedLong "445"^^xsd:unsignedLong, "556"^^xsd:unsignedLong;
+  ont:unsignedShort "5"^^xsd:unsignedShort, "6"^^xsd:unsignedShort;
+  ont:year "1993"^^xsd:gYear, "1994"^^xsd:gYear;
+  ont:yearMonth "2011-02"^^xsd:gYearMonth, "2011-04"^^xsd:gYearMonth .
+
+<http://types.com/3> a ont:NumberConstrainsObject;
+  ont:boolean false .
+
+<http://types.com/4> a ont:NumberConstrainsObjectExclusive;
+  ont:boolean false .
+
+<http://types.com/5> a ont:NumberConstrainsObjectMixed;
+  ont:int "-2146"^^xsd:int .
+
+  <http://example-string.com/11> a ont:StringConstraints;
+    ont:hugeMaxLength "xxx";
+    ont:maxLength16NoMin "1234567812345678";
+    ont:min6AndMax16Length "1234567812345678";
+    ont:minLength8NoMax "12345678";
+    ont:patternTest "stringy123";
+    ont:sameMin6AndMax6Length "123456" .
+
+  <http://example-string.com/12> a ont:StringConstraints;
+    ont:maxLength16NoMin "";
+    ont:min6AndMax16Length "123456";
+    ont:patternTest "stringy";
+    ont:sameMin6AndMax6Length "123456" .
+
+<http://example-langstr.com/1> a ont:LangStringUniq;
+  ont:uniqEnDeAllDialects "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqMultipleDialects "en-ca value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqMultipleLangsAndDialects "de-DE value"@de-DE, "de-Latn-DE value"@de-Latn-DE,
+    "en-CA value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqNoLang "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqSingleDialect "en value"@en-GB;
+  ont:uniqSingleLang "en value"@en;
+  ont:uniqStrOrLangstrEnDeAllDialects "en val"@en, "wjatever", "wuuuut" .
+
+<http://example-langstr.com/2> a ont:LangStringUniq;
+  ont:uniqEnDeAllDialects "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqMultipleDialects "en-ca value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqMultipleLangsAndDialects "de-DE value"@de-DE, "de-Latn-DE value"@de-Latn-DE,
+    "en-CA value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqNoLang "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqSingleDialect "en value"@en-GB;
+  ont:uniqSingleLang "en value"@en;
+  ont:uniqStrOrLangstrEnDeAllDialects "en val"@en, "wjatever", "wuuuut" .
+
+<http://example-langstr.com/3> a ont:LangStringUniq;
+  ont:uniqEnDeAllDialects "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqMultipleDialects "en-ca value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqMultipleLangsAndDialects "de-DE value"@de-DE, "de-Latn-DE value"@de-Latn-DE,
+    "en-CA value"@en-CA, "en-gb value"@en-GB;
+  ont:uniqNoLang "de-DE value"@de-DE, "en value"@en, "en-CA value"@en-CA;
+  ont:uniqSingleDialect "en value"@en-GB;
+  ont:uniqSingleLang "en value"@en;
+  ont:uniqStrOrLangstrEnDeAllDialects "en val"@en, "wjatever", "wuuuut" .
+
+<http://example-langstr.com/4> a ont:LangStringUniq;
+  ont:uniqRandomCapitalization "DE value"@DE,
+                          "en value"@en,
+                          "de-LATN-de value"@de-LATN-de,
+                          "Fr-cA value"@Fr-cA
+ .
+
+<http://example-langstr.com/5> a ont:LangStringUniq;
+  ont:uniqRandomCapitalization2 "en-Latn-GB-boont-r-extended-sequence-x-private text"@en-Latn-GB-boont-r-extended-sequence-x-private,
+                       "ru-Cyrl-petr1708 text"@ru-Cyrl-petr1708,
+                       "de-Latn-DE text"@De-lAtn-de,
+                       "de-CH-1996 text"@de-CH-1996,
+                       "sr-Latn-RS text"@sr-Latn-RS,
+                       "es-419 text"@es-419,
+                       "sl-nedis text"@sl-nedis,
+                       "sl-IT-nedis text"@sl-IT-nedis,
+                       "sl-rozaj-biske-1994 text"@sl-rozaj-biske-1994,
+                       "be-Latn-BY text"@be-Latn-BY,
+                       # TODO: PLATFORM-2709
+                       # "i-enochian text"@i-enochian,
+                       "cmn-Hans-CN text"@cmn-Hans-CN,
+                       # TODO: PLATFORM-2709
+                       #"zh-cmn-Hans-CN text"@zh-cmn-Hans-CN,
+                       #"zh-yue-HK text"@zh-yue-HK,
+                       "zh-Hans-CN text"@zh-Hans-CN,
+                       "zh-Latn-wadegile text"@zh-LatN-WAdegile,
+                       "yue-HK text"@yue-HK,
+                       "hy-Latn-IT-arevela text"@hy-Latn-IT-arevela .
+
+# TODO: PLATFORM-2709
+#<http://example-langstr.com/6> a ont:LangStringUniq;
+#  ont:uniqRandomCapitalization3 "zh-cmn-Hans-CN text"@zh-cmn-Hans-CN,
+#                       "zh-yue-HK text"@zh-yue-HK
+#                     .
+
+<http://example.com/valuesinconstraint/11> a ont:ValuesInConstraints;
+  ont:int "-2147483648"^^xsd:int, "-2"^^xsd:int, "2147483647"^^xsd:int;
+  ont:integer -2, 2147483647, 1, 2, -5;
+  ont:unsignedInt "0"^^xsd:unsignedInt, "5"^^xsd:unsignedInt, "4294967295"^^xsd:unsignedInt;
+  ont:unsignedLong "0"^^xsd:unsignedLong, "5"^^xsd:unsignedLong;
+  ont:unsignedShort "0"^^xsd:unsignedShort, "5"^^xsd:unsignedShort, "65535"^^xsd:unsignedShort;
+  ont:unsignedByte "0"^^xsd:unsignedByte, "2"^^xsd:unsignedByte, "255"^^xsd:unsignedByte;
+  ont:positiveInteger "1"^^xsd:positiveInteger, "2"^^xsd:positiveInteger, "3"^^xsd:positiveInteger;
+  ont:nonPositiveInteger "-5"^^xsd:nonPositiveInteger, "0"^^xsd:nonPositiveInteger;
+  ont:long "-9223372036854775808"^^xsd:long, "2"^^xsd:long, "-5"^^xsd:long, "9223372036854775807"^^xsd:long;
+  ont:short "-32768"^^xsd:short, "-5"^^xsd:short, "32767"^^xsd:short;
+  ont:byte "-128"^^xsd:byte, "105"^^xsd:byte, "127"^^xsd:byte;
+  ont:year "-0002"^^xsd:gYear, "2001+02:00"^^xsd:gYear, "2001Z"^^xsd:gYear;
+  ont:date "2001-10-26"^^xsd:date, "-2001-10-26"^^xsd:date, "-20000-04-01"^^xsd:date;
+  ont:time "21:32:52"^^xsd:time, "21:32:52+02:00"^^xsd:time, "19:32:52Z"^^xsd:time;
+  ont:dateTime "2001-10-26T21:32:52"^^xsd:dateTime, "2001-10-26T21:32:52+02:00"^^xsd:dateTime,
+    "2001-10-26T19:32:52Z"^^xsd:dateTime, "-2001-10-26T21:32:52"^^xsd:dateTime;
+  ont:yearMonth "2001-10"^^xsd:gYearMonth, "2001-10+02:00"^^xsd:gYearMonth, "2001-10Z"^^xsd:gYearMonth,
+    "-2001-10"^^xsd:gYearMonth, "-20000-04"^^xsd:gYearMonth;
+  ont:valInExclusive "blue", "gre en", "pink";
+  ont:valInInclusive "blue", "green", "pswaswsink";
+  ont:valIn "blue", "pink", "green" .
+
+<http://example.com/valuesinconstraint/12> a ont:ValuesInConstraints;
+  ont:int "-2147483648"^^xsd:int, "-2"^^xsd:int, "2147483647"^^xsd:int;
+  ont:integer -2, 2147483647, 1, 2, -5;
+  ont:unsignedInt "0"^^xsd:unsignedInt, "5"^^xsd:unsignedInt, "4294967295"^^xsd:unsignedInt;
+  ont:unsignedLong "0"^^xsd:unsignedLong, "5"^^xsd:unsignedLong;
+  ont:unsignedShort "0"^^xsd:unsignedShort, "5"^^xsd:unsignedShort, "65535"^^xsd:unsignedShort;
+  ont:unsignedByte "0"^^xsd:unsignedByte, "2"^^xsd:unsignedByte, "255"^^xsd:unsignedByte;
+  ont:positiveInteger "1"^^xsd:positiveInteger, "2"^^xsd:positiveInteger, "3"^^xsd:positiveInteger;
+  ont:nonPositiveInteger "-5"^^xsd:nonPositiveInteger, "0"^^xsd:nonPositiveInteger;
+  ont:long "-9223372036854775808"^^xsd:long, "2"^^xsd:long, "-5"^^xsd:long, "9223372036854775807"^^xsd:long;
+  ont:short "-32768"^^xsd:short, "-5"^^xsd:short, "32767"^^xsd:short;
+  ont:byte "-128"^^xsd:byte, "105"^^xsd:byte, "127"^^xsd:byte;
+  ont:year "-0002"^^xsd:gYear, "2001+02:00"^^xsd:gYear, "2001Z"^^xsd:gYear;
+  ont:date "2001-10-26"^^xsd:date, "-2001-10-26"^^xsd:date, "-20000-04-01"^^xsd:date;
+  ont:time "21:32:52"^^xsd:time, "21:32:52+02:00"^^xsd:time, "19:32:52Z"^^xsd:time;
+  ont:dateTime "2001-10-26T21:32:52"^^xsd:dateTime, "2001-10-26T21:32:52+02:00"^^xsd:dateTime,
+    "2001-10-26T19:32:52Z"^^xsd:dateTime, "-2001-10-26T21:32:52"^^xsd:dateTime;
+  ont:yearMonth "2001-10"^^xsd:gYearMonth, "2001-10+02:00"^^xsd:gYearMonth, "2001-10Z"^^xsd:gYearMonth,
+    "-2001-10"^^xsd:gYearMonth, "-20000-04"^^xsd:gYearMonth;
+  ont:valInExclusive "blue", "gre en", "pink";
+  ont:valInInclusive "blue", "green", "pswaswsink";
+  ont:valIn "blue", "pink", "green" .
+
+<http://example.com/valuesinconstraint/13> a ont:ValuesInConstraints;
+  ont:int "-2147483648"^^xsd:int, "-2"^^xsd:int, "2147483647"^^xsd:int;
+  ont:integer -2, 2147483647, 1, 2, -5;
+  ont:unsignedInt "0"^^xsd:unsignedInt, "5"^^xsd:unsignedInt, "4294967295"^^xsd:unsignedInt;
+  ont:unsignedLong "0"^^xsd:unsignedLong, "5"^^xsd:unsignedLong;
+  ont:unsignedShort "0"^^xsd:unsignedShort, "5"^^xsd:unsignedShort, "65535"^^xsd:unsignedShort;
+  ont:unsignedByte "0"^^xsd:unsignedByte, "2"^^xsd:unsignedByte, "255"^^xsd:unsignedByte;
+  ont:positiveInteger "1"^^xsd:positiveInteger, "2"^^xsd:positiveInteger, "3"^^xsd:positiveInteger;
+  ont:nonPositiveInteger "-5"^^xsd:nonPositiveInteger, "0"^^xsd:nonPositiveInteger;
+  ont:long "-9223372036854775808"^^xsd:long, "2"^^xsd:long, "-5"^^xsd:long, "9223372036854775807"^^xsd:long;
+  ont:short "-32768"^^xsd:short, "-5"^^xsd:short, "32767"^^xsd:short;
+  ont:byte "-128"^^xsd:byte, "105"^^xsd:byte, "127"^^xsd:byte;
+  ont:year "-0002"^^xsd:gYear, "2001+02:00"^^xsd:gYear, "2001Z"^^xsd:gYear;
+  ont:date "2001-10-26"^^xsd:date, "-2001-10-26"^^xsd:date, "-20000-04-01"^^xsd:date;
+  ont:time "21:32:52"^^xsd:time, "21:32:52+02:00"^^xsd:time, "19:32:52Z"^^xsd:time;
+  ont:dateTime "2001-10-26T21:32:52"^^xsd:dateTime, "2001-10-26T21:32:52+02:00"^^xsd:dateTime,
+    "2001-10-26T19:32:52Z"^^xsd:dateTime, "-2001-10-26T21:32:52"^^xsd:dateTime;
+  ont:yearMonth "2001-10"^^xsd:gYearMonth, "2001-10+02:00"^^xsd:gYearMonth, "2001-10Z"^^xsd:gYearMonth,
+    "-2001-10"^^xsd:gYearMonth, "-20000-04"^^xsd:gYearMonth;
+  ont:valInExclusive "blue", "gre en", "pink";
+  ont:valInInclusive "blue", "green", "pswaswsink";
+  ont:valIn "blue", "pink", "green" .
+
+<http://example.com/str2> a ont:ValuesInConstraints;
+  ont:valInExclusive "pink";
+  ont:valInInclusive "green", "yolo";
+  ont:valIn "pink" .
+
+
+
+}

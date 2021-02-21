@@ -1,0 +1,37 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+
+[] a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode <http://example-langstr.com/2>;
+      sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
+      sh:sourceShape _:node1eusclgncx281
+    ], [ a sh:ValidationResult;
+      sh:focusNode <http://example-langstr.com/3>;
+      sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
+      sh:sourceShape _:node1eusclgncx281
+    ], [ a sh:ValidationResult;
+      sh:focusNode <http://example-langstr.com/1>;
+      sh:resultPath <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:QualifiedMaxCountConstraintComponent;
+      sh:sourceShape _:node1eusclgncx281
+    ] .
+
+_:node1eusclgncx281 a sh:PropertyShape;
+  sh:path <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects>;
+  sh:qualifiedMaxCount 1;
+  sh:qualifiedValueShape [ a sh:NodeShape;
+      sh:datatype xsd:string
+    ] .

@@ -11,6 +11,6 @@ ex:PersonShape
 	sh:targetClass ex:Company ;
 	sh:not [
 		sh:path rdfs:label ;
-		 sh:uniqueLang true ;
+		sh:uniqueLang true ;
 	] .
 

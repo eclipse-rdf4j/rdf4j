@@ -51,7 +51,7 @@ import ch.qos.logback.classic.Logger;
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms45M", "-Xmx45M", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = { "-Xms45M", "-Xmx45M", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = { "-Xms45M", "-Xmx45M", "-XX:+UseSerialGC", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NativeStoreBenchmark {
@@ -82,43 +82,7 @@ public class NativeStoreBenchmark {
 		// this can be disabled to reduce memory load further
 		shaclSail.setParallelValidation(false);
 
-		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
-		shaclSail.disableValidation();
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
-				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			}
-			connection.commit();
-
-			connection.begin(IsolationLevels.NONE);
-
-			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
-				connection.add(inputStream, "", RDFFormat.TURTLE);
-			}
-			connection.commit();
-
-		}
-		shaclSail.enableValidation();
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-			connection.begin(IsolationLevels.NONE);
-			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			connection.commit();
-
-			if (!revalidate.conforms()) {
-				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
-			}
-
-		}
-
-		sailRepository.shutDown();
-
-		FileUtils.deleteDirectory(file);
+		runBenchmark(file, shaclSail);
 
 	}
 
@@ -136,6 +100,47 @@ public class NativeStoreBenchmark {
 		// this can be disabled to reduce memory load further
 		shaclSail.setParallelValidation(true);
 
+		runBenchmark(file, shaclSail);
+
+	}
+
+	@Benchmark
+	public void shaclCacheNativeStore() throws IOException {
+
+		File file = Files.newTemporaryFolder();
+
+		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+
+		// significantly reduce required memory
+		shaclSail.setCacheSelectNodes(true);
+
+		// run validation in parallel as much as possible,
+		// this can be disabled to reduce memory load further
+		shaclSail.setParallelValidation(false);
+
+		runBenchmark(file, shaclSail);
+
+	}
+
+	@Benchmark
+	public void shaclCacheParallelNativeStore() throws IOException {
+
+		File file = Files.newTemporaryFolder();
+
+		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+
+		// significantly reduce required memory
+		shaclSail.setCacheSelectNodes(true);
+
+		// run validation in parallel as much as possible,
+		// this can be disabled to reduce memory load further
+		shaclSail.setParallelValidation(true);
+
+		runBenchmark(file, shaclSail);
+
+	}
+
+	private void runBenchmark(File file, ShaclSail shaclSail) throws IOException {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 		shaclSail.disableValidation();
@@ -173,7 +178,6 @@ public class NativeStoreBenchmark {
 		sailRepository.shutDown();
 
 		FileUtils.deleteDirectory(file);
-
 	}
 
 	@Benchmark
@@ -210,7 +214,7 @@ public class NativeStoreBenchmark {
 
 	}
 
-	// @Benchmark this should always run out of memory, as proof that we need the native store
+	@Benchmark // this should always run out of memory, as proof that we need the native store
 	public void memoryStore() throws IOException {
 
 		NotifyingSail shaclSail = new MemoryStore();

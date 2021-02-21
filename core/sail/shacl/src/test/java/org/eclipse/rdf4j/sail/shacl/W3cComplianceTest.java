@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -17,16 +18,25 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -35,7 +45,7 @@ import org.junit.runners.Parameterized;
 @RunWith(Parameterized.class)
 public class W3cComplianceTest {
 
-	private URL testCasePath;
+	private final URL testCasePath;
 
 	public W3cComplianceTest(URL testCasePath) {
 		this.testCasePath = testCasePath;
@@ -53,6 +63,45 @@ public class W3cComplianceTest {
 	@Test
 	public void test() throws IOException {
 		runTest(testCasePath);
+	}
+
+	@Test
+	public void parsingTest() throws IOException {
+		runParsingTest(testCasePath);
+	}
+
+	private void runParsingTest(URL resourceName) throws IOException {
+		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository sailRepository = new SailRepository(shaclSail);
+
+		Utils.loadShapeData(sailRepository, resourceName);
+
+		Model statements = extractShapesModel(shaclSail);
+
+		sailRepository.shutDown();
+
+		statements.filter(null, RDF.REST, null).subjects().stream().forEach(s -> {
+			int size = statements.filter(s, RDF.REST, null).objects().size();
+			assertEquals(s + " has more than one rdf:rest", size, 1);
+		});
+
+		System.out.println(AbstractShaclTest.modelToString(statements));
+
+		assert !statements.isEmpty();
+
+	}
+
+	private Model extractShapesModel(ShaclSail shaclSail) {
+		List<Shape> shapes = shaclSail.getCurrentShapes();
+
+		HashSet<Resource> dedupe = new HashSet<>();
+		DynamicModel model = new DynamicModelFactory().createEmptyModel();
+
+		shapes.forEach(shape -> shape.toModel(model, dedupe));
+
+		return model;
 	}
 
 	private static Set<URL> getTestFiles() {
@@ -123,32 +172,46 @@ public class W3cComplianceTest {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setParallelValidation(false);
 		SailRepository sailRepository = new SailRepository(shaclSail);
 
 		Utils.loadShapeData(sailRepository, resourceName);
 
-		boolean actualConforms = false;
+		Model statements = extractShapesModel(shaclSail);
+
+		System.out.println(AbstractShaclTest.modelToString(statements));
+
+		boolean actualConforms = true;
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			shaclSail.disableValidation();
 			connection.begin();
 			connection.add(resourceName, "http://example.org/", RDFFormat.TURTLE);
 			connection.commit();
-			shaclSail.enableValidation();
 
 			connection.begin();
-			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			actualConforms = revalidate.conforms();
+//			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+//			actualConforms = revalidate.conforms();
 			connection.commit();
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (RepositoryException e) {
-			actualConforms = !e.toString().contains("Failed SHACL validation");
+			if (e.getCause() instanceof ShaclSailValidationException) {
+				Model statements1 = ((ShaclSailValidationException) e.getCause()).validationReportAsModel();
+				actualConforms = statements1.contains(null, SHACL.CONFORMS,
+						SimpleValueFactory.getInstance().createLiteral(true));
+
+				System.out.println("\n######### Report ######### \n");
+				Rio.write(statements1, System.out, RDFFormat.TURTLE);
+				System.out.println("\n##################### \n");
+			} else {
+				actualConforms = true;
+			}
+
 		}
 
 		assertEquals(expected.conforms, actualConforms);
 	}
 
-	class W3C_shaclTestValidate {
+	static class W3C_shaclTestValidate {
 
 		W3C_shaclTestValidate(URL filename) {
 			this.filename = filename.getPath();

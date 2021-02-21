@@ -11,9 +11,14 @@ ex:PersonShape
 	sh:targetClass ex:Person ;
 	sh:property [
 		sh:path ex:test ;
-		sh:flags "i", "ms";
-		sh:pattern ".*?(Q)", "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" ;
-	]
+		sh:flags "ims";
+		sh:pattern ".*?(Q)" ;
+	],
+	[
+                sh:path ex:test ;
+                sh:flags "ims";
+                sh:pattern  "((?:[a-z][a-z]+))(\\s+)((?:[a-z][a-z]+))(\\s+).*?((?:[a-z][a-z]+))(\\s+)(Q)" ;
+        ]
 
 	 .
 
