@@ -10,8 +10,24 @@ ex:PersonShape
 	a sh:NodeShape  ;
 	sh:targetClass rdfs:Resource ;
 	sh:property [
-		sh:path rdfs:label ;
+		sh:path foaf:knows ;
 		sh:maxCount 2 ;
 
+
+                sh:property [
+		        sh:path rdfs:label ;
+		        sh:maxCount 2 ;
+
+	        ]
 	] .
 
+
+ex:person1 a rdfs:Resource;
+        rdfs:label "abc".
+
+
+ex:person1 -> ex:person2 -> ex:person3 -> "abc"
+(
+        ex:person1 -> ex:person2 -> ex:person3 -> "abc"
+        ex:person1 -> ex:person4 -> ex:person3 -> "abc"
+)
