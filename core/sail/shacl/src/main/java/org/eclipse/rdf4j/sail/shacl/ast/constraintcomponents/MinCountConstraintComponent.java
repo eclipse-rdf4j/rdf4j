@@ -2,13 +2,13 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
+import java.math.BigInteger;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -34,7 +34,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
 			Set<Resource> rdfListDedupe) {
 		model.add(subject, SHACL.MIN_COUNT,
-				literal(minCount + "", XMLSchema.INTEGER));
+				literal(BigInteger.valueOf(minCount)));
 	}
 
 	@Override

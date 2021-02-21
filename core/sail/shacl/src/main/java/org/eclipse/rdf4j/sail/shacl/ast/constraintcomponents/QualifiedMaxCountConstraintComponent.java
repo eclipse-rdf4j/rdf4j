@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Set;
 
@@ -83,7 +84,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		}
 
 		if (qualifiedMaxCount != null) {
-			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, literal(qualifiedMaxCount));
+			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, literal(BigInteger.valueOf(qualifiedMaxCount)));
 		}
 
 		qualifiedValueShape.toModel(null, null, model, cycleDetection, rdfListDedupe);

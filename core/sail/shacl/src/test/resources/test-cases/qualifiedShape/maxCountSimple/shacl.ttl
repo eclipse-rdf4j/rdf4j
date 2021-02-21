@@ -15,5 +15,5 @@ ex:PersonShape
 			sh:path ex:sex ;
 			sh:hasValue ex:female ;
 		] ;
-		sh:qualifiedMaxCount "1"^^xsd:long ;
+		sh:qualifiedMaxCount 1 ;
 	] .

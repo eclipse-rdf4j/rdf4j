@@ -15,7 +15,7 @@ ex:PersonShape
 			sh:path ex:sex ;
 			sh:hasValue ex:female ;
 		] ;
-		sh:qualifiedMinCount "1"^^xsd:long ;
+		sh:qualifiedMinCount 1 ;
 	]
 	.
 
@@ -30,6 +30,6 @@ ex:PersonShape2
         		sh:path ex:val ;
         		sh:datatype xsd:string ;
         	] ;
-        	sh:qualifiedMinCount "2"^^xsd:long ;
+        	sh:qualifiedMinCount 2 ;
         ]
 	.

@@ -163,7 +163,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 
 	@Override
 	public void remove() throws SailException {
-
+		throw new UnsupportedOperationException();
 	}
 
 }

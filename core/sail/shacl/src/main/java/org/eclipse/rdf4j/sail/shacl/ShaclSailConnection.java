@@ -107,7 +107,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private Settings getDefaultSettings(ShaclSail sail) {
-		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled());
+		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled(), sail.isParallelValidation());
 	}
 
 	@Override
@@ -126,14 +126,38 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		currentIsolationLevel = level;
 
-		transactionSettings = getDefaultSettings(sail);
+		Settings localTransactionSettings = new Settings();
+
 		Arrays.stream(transactionSettingsRaw)
 				.filter(Objects::nonNull)
 				.forEach(setting -> {
 					if (setting instanceof ShaclSail.TransactionSettings.ValidationApproach) {
-						transactionSettings.validationApproach = (ShaclSail.TransactionSettings.ValidationApproach) setting;
+						localTransactionSettings.validationApproach = (ShaclSail.TransactionSettings.ValidationApproach) setting;
+					}
+					if (setting instanceof ShaclSail.TransactionSettings.PerformanceHint) {
+						switch (((ShaclSail.TransactionSettings.PerformanceHint) setting)) {
+						case ParallelValidation:
+							localTransactionSettings.parallelValidation = true;
+							break;
+						case SerialValidation:
+							localTransactionSettings.parallelValidation = false;
+							break;
+						case CacheDisabled:
+							localTransactionSettings.cacheSelectedNodes = false;
+							break;
+						case CacheEnabled:
+							localTransactionSettings.cacheSelectedNodes = true;
+							break;
+						}
 					}
 				});
+
+		transactionSettings = getDefaultSettings(sail);
+		transactionSettings.applyTransactionSettings(localTransactionSettings);
+
+		assert transactionSettings.parallelValidation != null;
+		assert transactionSettings.cacheSelectedNodes != null;
+		assert transactionSettings.validationApproach != null;
 
 		assert addedStatements == null;
 		assert removedStatements == null;
@@ -152,8 +176,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		stats.setBaseSailEmpty(isEmpty());
 
-		if (transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
-				transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
+		if (this.transactionSettings
+				.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
+				this.transactionSettings
+						.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
 			removeConnectionListener(this);
 		} else if (stats.isBaseSailEmpty()) {
 			removeConnectionListener(this);
@@ -498,9 +524,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean isParallelValidation() {
-		// bulk validation should use little memory so should not run validation in parallel
-		return sail.isParallelValidation() &&
-				transactionSettings.getValidationApproach() != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+		return transactionSettings.isParallelValidation();
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
@@ -866,16 +890,27 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return new ShaclSailValidationException(validate).getValidationReport();
 	}
 
+	Settings getTransactionSettings() {
+		return transactionSettings;
+	}
+
 	public static class Settings {
 
-		private ShaclSail.TransactionSettings.ValidationApproach validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Auto;
-		private boolean cacheSelectedNodes = false;
+		private ShaclSail.TransactionSettings.ValidationApproach validationApproach;
+		private Boolean cacheSelectedNodes;
+		private Boolean parallelValidation;
 
-		public Settings(boolean cacheSelectNodes, boolean validationEnabled) {
+		public Settings() {
+		}
+
+		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation) {
 			this.cacheSelectedNodes = cacheSelectNodes;
 			if (!validationEnabled) {
 				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+			} else {
+				this.validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Auto;
 			}
+			this.parallelValidation = parallelValidation;
 		}
 
 		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {
@@ -883,9 +918,35 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		public boolean isCacheSelectNodes() {
-			return cacheSelectedNodes && validationApproach != ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+			return cacheSelectedNodes;
 		}
 
+		public boolean isParallelValidation() {
+			return parallelValidation;
+		}
+
+		void applyTransactionSettings(Settings transactionSettingsLocal) {
+			// apply restrictions first
+			if (transactionSettingsLocal.validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
+				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+				cacheSelectedNodes = false;
+				parallelValidation = false;
+			}
+
+			// override settings
+			if (transactionSettingsLocal.parallelValidation != null) {
+				parallelValidation = transactionSettingsLocal.parallelValidation;
+			}
+
+			if (transactionSettingsLocal.cacheSelectedNodes != null) {
+				cacheSelectedNodes = transactionSettingsLocal.cacheSelectedNodes;
+			}
+
+			if (transactionSettingsLocal.validationApproach != null) {
+				validationApproach = transactionSettingsLocal.validationApproach;
+			}
+
+		}
 	}
 
 	static class ShapePlanNodeTuple {

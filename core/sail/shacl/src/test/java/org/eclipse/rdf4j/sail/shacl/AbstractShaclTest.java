@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -115,6 +116,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/validateTargetNot",
 		"test-cases/complex/dcat",
 		"test-cases/complex/foaf",
+		"test-cases/complex/targetShapeAndQualifiedShape",
 //		"test-cases/complex/sparqlTarget",
 		"test-cases/datatype/allObjects",
 		"test-cases/datatype/not",
@@ -233,7 +235,8 @@ abstract public class AbstractShaclTest {
 		"test-cases/class/nestedNode",
 		"test-cases/qualifiedShape/minCountSimple",
 		"test-cases/qualifiedShape/maxCountSimple",
-		"test-cases/uniqueLang/complex"
+		"test-cases/uniqueLang/complex",
+		"test-cases/qualifiedShape/complex"
 
 	)
 		.distinct()
@@ -519,6 +522,16 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
+		// uses rsx:nodeShape
+		if (shaclPath.equals("test-cases/qualifiedShape/complex")) {
+			return;
+		}
+
+		// uses rsx:nodeShape
+		if (shaclPath.equals("test-cases/complex/targetShapeAndQualifiedShape")) {
+			return;
+		}
+
 		if (fullLogging) {
 			logger.error(shaclPath);
 			logger.error(dataPath);
@@ -678,9 +691,9 @@ abstract public class AbstractShaclTest {
 		ValueComparator valueComparator = new ValueComparator();
 		statements.sort(
 				Comparator
-						.comparing(Statement::getSubject, valueComparator)
+						.comparing(Statement::getPredicate, valueComparator)
+						.thenComparing(Statement::getSubject, valueComparator)
 						.thenComparing(Statement::getObject, valueComparator)
-						.thenComparing(Statement::getPredicate, valueComparator)
 		);
 
 		model = new LinkedHashModel(statements);
@@ -693,6 +706,7 @@ abstract public class AbstractShaclTest {
 		model.setNamespace(SHACL.NS);
 		model.setNamespace(RDF.NS);
 		model.setNamespace(RDFS.NS);
+		model.setNamespace(RSX.NS);
 
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);

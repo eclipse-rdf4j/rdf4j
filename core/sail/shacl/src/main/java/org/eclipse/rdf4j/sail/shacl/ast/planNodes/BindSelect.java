@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import static java.util.stream.Collectors.toCollection;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -114,89 +116,109 @@ public class BindSelect implements PlanNode {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet;
 
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
+			List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
 
-			Integer targetChainSize = null;
 			ParsedQuery parsedQuery = null;
 
 			public void calculateNext() {
 
-				// already results available
-				if (bindingSet != null && bindingSet.hasNext()) {
-					return;
-				}
+				while (bindingSet == null || !bindingSet.hasNext()) {
 
-				if (bindingSet != null) {
-					bindingSet.close();
-				}
+					if (bindingSet != null) {
+						bindingSet.close();
+					}
 
-				if (!iterator.hasNext()) {
-					return;
-				}
+					if (bulk.isEmpty() && !iterator.hasNext()) {
+						return;
+					}
 
-				List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
+					ValidationTuple next;
+					if (bulk.isEmpty()) {
+						next = iterator.next();
+						bulk.add(next);
+					} else {
+						next = bulk.get(0);
+					}
 
-				ValidationTuple next = iterator.next();
+					if (includePropertyShapeValues) {
+						assert next.getScope() == ConstraintComponent.Scope.propertyShape;
+						assert next.hasValue();
+					}
 
-				if (includePropertyShapeValues) {
-					assert next.getScope() == ConstraintComponent.Scope.propertyShape;
-					assert next.hasValue();
-				}
+					int targetChainSize;
+					if (includePropertyShapeValues || next.getScope() != ConstraintComponent.Scope.propertyShape) {
+						targetChainSize = next.getFullChainSize(true);
+					} else {
+						targetChainSize = next.getFullChainSize(includePropertyShapeValues);
+					}
 
-				bulk.add(next);
+					if (parsedQuery == null) {
+						parsedQuery = getParsedQuery(targetChainSize);
+					}
 
-				int targetChainSize;
-				if (includePropertyShapeValues || next.getScope() != ConstraintComponent.Scope.propertyShape) {
-					targetChainSize = next.getFullChainSize(true);
-				} else {
-					targetChainSize = next.getTargetChain(includePropertyShapeValues).size();
-				}
+					while (bulk.size() < bulkSize && iterator.hasNext()) {
+						bulk.add(iterator.next());
+					}
 
-				if (this.targetChainSize != null) {
-					assert targetChainSize == this.targetChainSize;
-				} else {
-					this.targetChainSize = targetChainSize;
-				}
+					List<String> varNames;
 
-				if (parsedQuery == null) {
-					parsedQuery = getParsedQuery(targetChainSize);
-				}
+					if (direction == EffectiveTarget.Extend.right) {
+						varNames = vars
+								.stream()
+								.limit(targetChainSize)
+								.map(StatementMatcher.Variable::getName)
+								.collect(Collectors.toList());
+					} else {
+						varNames = vars
+								.stream()
+								.skip(vars.size() - targetChainSize)
+								.map(StatementMatcher.Variable::getName)
+								.collect(Collectors.toList());
+					}
 
-				while (bulk.size() < bulkSize && iterator.hasNext()) {
-					bulk.add(iterator.next());
-				}
-
-				List<String> varNames;
-
-				if (direction == EffectiveTarget.Extend.right) {
-					varNames = vars
+					List<BindingSet> bindingSets = bulk
 							.stream()
-							.limit(targetChainSize)
-							.map(StatementMatcher.Variable::getName)
+							.filter(t -> {
+								int temp;
+								if (includePropertyShapeValues
+										|| t.getScope() != ConstraintComponent.Scope.propertyShape) {
+									temp = t.getFullChainSize(true);
+								} else {
+									temp = t.getFullChainSize(includePropertyShapeValues);
+								}
+
+								return temp == targetChainSize;
+							})
+							.map(t -> new ListBindingSet(varNames,
+									new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
 							.collect(Collectors.toList());
-				} else {
-					varNames = vars
+
+					bulk = bulk
 							.stream()
-							.skip(vars.size() - targetChainSize)
-							.map(StatementMatcher.Variable::getName)
-							.collect(Collectors.toList());
+							.filter(t -> {
+								int temp;
+								if (includePropertyShapeValues
+										|| t.getScope() != ConstraintComponent.Scope.propertyShape) {
+									temp = t.getFullChainSize(true);
+								} else {
+									temp = t.getFullChainSize(includePropertyShapeValues);
+								}
+
+								return temp != targetChainSize;
+							})
+							.collect(toCollection(ArrayList::new));
+
+					updateQuery(parsedQuery, bindingSets, targetChainSize);
+
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+							new MapBindingSet(), true);
 				}
-
-				List<BindingSet> bindingSets = bulk
-						.stream()
-						.map(t -> new ListBindingSet(varNames,
-								new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
-						.collect(Collectors.toList());
-
-				updateQuery(parsedQuery, bindingSets, targetChainSize);
-
-				bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-						new MapBindingSet(), true);
-
 			}
 
 			@Override
 			public void close() throws SailException {
 				try {
+					assert !iterator.hasNext();
 					iterator.close();
 				} finally {
 					if (bindingSet != null) {
@@ -219,7 +241,7 @@ public class BindSelect implements PlanNode {
 
 			@Override
 			public void remove() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 		};
 	}
