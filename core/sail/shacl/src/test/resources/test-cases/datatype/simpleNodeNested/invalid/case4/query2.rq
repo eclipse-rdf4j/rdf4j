@@ -1,0 +1,43 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {
+
+ex:validPerson1 ex:knows ex:a.
+
+ex:a ex:age "1", "8".
+
+
+ex:validPerson2 ex:knows ex:b.
+
+ex:b ex:age "1", "9","8".
+
+ex:validPerson3 ex:knows ex:c.
+
+ex:c ex:age "8", "9","1".
+
+
+ex:validPerson4 ex:knows ex:1.
+
+ex:validPerson5 ex:knows ex:d.
+
+ex:d ex:age "x".
+
+ex:validPerson6 ex:knows ex:e.
+
+ex:e ex:age "x".
+
+
+ex:validPerson7 ex:knows ex:f.
+
+ex:f ex:age "z".
+
+ex:validPerson7 ex:knows ex:g.
+
+ex:g ex:age "z".
+
+}

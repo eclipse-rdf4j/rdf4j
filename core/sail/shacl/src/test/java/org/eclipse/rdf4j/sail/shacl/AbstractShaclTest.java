@@ -129,6 +129,7 @@ abstract public class AbstractShaclTest {
 		"test-cases/datatype/notTargetShape",
 		"test-cases/datatype/simple",
 		"test-cases/datatype/simpleNested",
+		"test-cases/datatype/simpleNested2",
 		"test-cases/datatype/simpleNode",
 		"test-cases/datatype/simpleNodeNested",
 //		"test-cases/datatype/sparqlTarget",
