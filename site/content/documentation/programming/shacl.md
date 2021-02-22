@@ -109,6 +109,7 @@ As of writing this documentation the following features are supported.
 - `sh:path`
 - `sh:inversePath`
 - `sh:property`
+- `sh:node`
 - `sh:or`
 - `sh:and`
 - `sh:not`
@@ -129,9 +130,13 @@ As of writing this documentation the following features are supported.
 - `sh:in`
 - `sh:deactivated`
 - `sh:hasValue`
+- `sh:qualifiedMaxCount`
+- `sh:qualifiedMinCount`
+- `sh:qualifiedValueShape`
 - `dash:hasValueIn`
 - `sh:target` for use with DASH targets
 - `rsx:targetShape`
+
 
 DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and
 `setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information
@@ -153,10 +158,9 @@ try {
     connection.commit();
 } catch (RepositoryException exception) {
     Throwable cause = exception.getCause();
-    if (cause instanceof ShaclSailValidationException) {
-        ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-        // use validationReport or validationReportModel to understand validation violations
+    if (cause instanceof ValidationException) {
+        Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
+        // use validationReportModel to understand validation violations
 
         Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
     }
@@ -211,8 +215,8 @@ try {
     connection.commit();
 } catch (RepositoryException exception) {
     Throwable cause = exception.getCause();
-    if (cause instanceof ShaclSailValidationException) {
-        Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
+    if (cause instanceof ValidationException) {
+        Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
 
         validationReportModel
             .filter(null, SHACL.SOURCE_SHAPE, null);
@@ -275,7 +279,7 @@ It is possible to disable this type of validation with `setSerializableValidatio
 The ShaclSail is built for performance. Each transaction is analyzed so that only the minimal set of shapes need to be
 validated, and for each of those shapes only the least amount of data is retrieved in order to perform the validation.
 
-Parallel validation further increases performance. This can be disabled with `setParallelValidation(false)`.
+Parallel validation further increases performance and is enabled by default. This can be disabled with `setParallelValidation(false)`.
 
 The initial commit to an empty ShaclSail is further optimized if the underlying sail is a MemoryStore.
 
@@ -289,6 +293,13 @@ NativeStore and using the new transaction settings introduced in 3.3.0.
 Disabling validation for a transaction may leave your data in an invalid state. Running a transaction with bulk validation will force a full validation.
 This is a useful approach if you need to use multiple transactions to bulk load your data.
 
+As of 3.6.0 there are also a set of experimental transaction settings for hinting about performance aspects of the validation.
+- `ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled`: Enable the cache that stores intermediate results so these only need to be computed once.
+- `ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled`: Disable the cache.
+- `ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation`: Run validation in parallel (multithreaded).
+- `ShaclSail.TransactionSettings.PerformanceHint.SerialValidation`:  Run validation in serial (singlethreaded).
+
+
 ```java
 ShaclSail shaclSail = new ShaclSail(new NativeStore(new File(...), "spoc,ospc,psoc"));
 SailRepository sailRepository = new SailRepository(shaclSail);
@@ -297,6 +308,14 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 	connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 
+//	You can enable parallel validation and the intermediate cache for better performance if you have sufficient memory 
+//	connection.begin(
+//		IsolationLevels.NONE, 
+//		ShaclSail.TransactionSettings.ValidationApproach.Bulk, 
+//		ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled, 
+//		ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation
+//	);	
+	
 	// load shapes
 	try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
 		connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -417,7 +436,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+import org.eclipse.rdf4j.sail.shacl.ValidationException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.LoggerFactory;
 
@@ -484,10 +503,8 @@ public class ShaclSampleCode {
                 connection.commit();
             } catch (RepositoryException exception) {
                 Throwable cause = exception.getCause();
-                if (cause instanceof ShaclSailValidationException) {
-                    ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
-                    Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
-                    // use validationReport or validationReportModel to understand validation violations
+                if (cause instanceof ValidationException) {
+                    Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
 
                     Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
                 }
