@@ -76,11 +76,11 @@ if  !  mvn -v | grep -q "Java version: 1.8."; then
 fi
 
 
-# check that we are on master
-if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
+# check that we are on main
+if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   echo""
-  echo "You need to be on master!";
-  echo "git checkout master";
+  echo "You need to be on main!";
+  echo "git checkout main";
   echo "";
   exit 1;
 fi
@@ -89,9 +89,9 @@ echo "Running git pull to make sure we are up to date"
 git pull
 
 # check that we are not ahead or behind
-if  ! [[ $(git status --porcelain -u no  --branch) == "## master...origin/master" ]]; then
+if  ! [[ $(git status --porcelain -u no  --branch) == "## main...origin/main" ]]; then
     echo "";
-    echo "There is something wrong with your git. It seems you are not up to date with master. Run git status";
+    echo "There is something wrong with your git. It seems you are not up to date with main. Run git status";
     exit 1;
 fi
 
@@ -194,7 +194,7 @@ echo "About to create PR"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 echo "";
 
-echo "Creating pull request to merge release branch back into master"
+echo "Creating pull request to merge release branch back into main"
 gh pr create --title "next development iteration: ${MVN_NEXT_SNAPSHOT_VERSION}" --body "Merge using merge commit rather than rebase"
 
 echo "";
@@ -209,19 +209,19 @@ MVN_VERSION_DEVELOP=$(xmllint --xpath "//*[local-name()='project']/*[local-name(
 
 git checkout "${BRANCH}"
 
-git checkout -b "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
+git checkout -b "merge_main_into_develop_after_release_${MVN_VERSION_RELEASE}"
 mvn versions:set -DnewVersion="${MVN_VERSION_DEVELOP}"
 mvn versions:commit
 mvn -P compliance versions:commit
 git commit -s -a -m "set correct version"
-git push --set-upstream origin "merge_master_into_develop_after_release_${MVN_VERSION_RELEASE}"
+git push --set-upstream origin "merge_main_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
 echo "Creating pull request to merge the merge-branch into develop"
 gh pr create -B develop --title "sync develop branch after release ${MVN_VERSION_RELEASE}" --body "Merge using merge commit rather than rebase"
 echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-git checkout master
+git checkout main
 mvn clean
 
 echo "Build javadocs"
@@ -231,7 +231,7 @@ git checkout "${MVN_VERSION_RELEASE}"
 mvn clean install -DskipTests -Djapicmp.skip
 mvn package -Passembly,!formatting -Djapicmp.skip -DskipTests --batch-mode
 
-git checkout master
+git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
@@ -243,7 +243,7 @@ gh pr create -B develop --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, rele
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 
-git checkout master
+git checkout main
 mvn clean
 
 cd scripts

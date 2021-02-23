@@ -29,5 +29,5 @@ jobs:
       run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
     - name: Print test failures
       if: failure()
-      run: ./printTestResults.sh
+      run: ./scripts/printTestResults.sh
     
