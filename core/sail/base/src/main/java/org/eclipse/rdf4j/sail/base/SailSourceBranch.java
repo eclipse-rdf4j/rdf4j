@@ -25,8 +25,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -421,18 +419,20 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void prepare(Changeset change, SailSink sink) throws SailException {
-		Set<StatementPattern> observations = change.getObservations();
+		Set<Changeset.SimpleStatementPattern> observations = change.getObserved();
 		if (observations != null) {
-			for (StatementPattern p : observations) {
-				Resource subj = (Resource) p.getSubjectVar().getValue();
-				IRI pred = (IRI) p.getPredicateVar().getValue();
-				Value obj = p.getObjectVar().getValue();
-				Var ctxVar = p.getContextVar();
-				if (ctxVar == null) {
+			for (Changeset.SimpleStatementPattern p : observations) {
+
+				Resource subj = p.getSubject();
+				IRI pred = p.getPredicate();
+				Value obj = p.getObject();
+				Resource context = p.getContext();
+				if (p.isAllContexts()) {
 					sink.observe(subj, pred, obj);
 				} else {
-					sink.observe(subj, pred, obj, (Resource) ctxVar.getValue());
+					sink.observe(subj, pred, obj, context);
 				}
+
 			}
 		}
 	}
