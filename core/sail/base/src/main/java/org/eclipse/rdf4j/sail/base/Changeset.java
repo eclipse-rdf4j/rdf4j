@@ -349,9 +349,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<SimpleStatementPattern> getObserved() {
-
-		return cloneSet(observed);
-
+		return observed == null ? null : Collections.unmodifiableSet(observed);
 	}
 
 	/**
@@ -360,6 +358,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 */
 	@Deprecated
 	public synchronized Set<StatementPattern> getObservations() {
+
+		if (observed == null)
+			return null;
 
 		return observed.stream()
 				.map(simpleStatementPattern -> new StatementPattern(
@@ -370,7 +371,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 								: new Var("c", simpleStatementPattern.getContext())
 				)
 				)
-				.collect(Collectors.toSet());
+				.collect(Collectors.toCollection(HashSet::new));
 	}
 
 	public synchronized Set<Resource> getApprovedContexts() {
@@ -501,11 +502,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	private <T> Set<T> cloneSet(Set<T> deprecatedContexts) {
-		if (deprecatedContexts == null) {
+	private <T> Set<T> cloneSet(Set<T> set) {
+		if (set == null) {
 			return null;
 		}
-		return new HashSet<>(deprecatedContexts);
+		return new HashSet<>(set);
 	}
 
 	public static class SimpleStatementPattern {
