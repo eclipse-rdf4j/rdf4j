@@ -1,9 +1,9 @@
-name: master status
+name: main status
 
 on:
   push:
     branches: 
-      - master
+      - main
 
 jobs:
   build:

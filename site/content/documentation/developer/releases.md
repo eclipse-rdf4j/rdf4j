@@ -9,42 +9,42 @@ This document outlines how to create a new release of RDF4J.
 
 ## The simple way: using the release script
 
-In the project root, the script `release.sh` is a shell-script that (almost) fully automates the handling of releases. It creates branches, sets correct version numbers, builds and uploads artifacts, etc. It gives you several prompts along the way to guide you through the process.
+The script `scripts/release.sh` is a shell-script that (almost) fully automates the handling of releases. It creates branches, sets correct version numbers, builds and uploads artifacts, etc. It gives you several prompts along the way to guide you through the process.
 
-The release script should always be run from the `master` branch.
+The release script should always be run from the `main` branch.
 
 If for whatever reason, you wish to manually create a release instead, the following sections detail the manual process.
 
 ## Patch releases
 
-Patch releases are created by branching the `master` branch into a release branch, and
+Patch releases are created by branching the `main` branch into a release branch, and
 when complete, tagging this release branch with the version number before
 release deployment. Once release deployment is complete, the release branch
 is deleted.
 
-IMPORTANT: the `master` branch is always in a release ready state (build
+IMPORTANT: the `main` branch is always in a release ready state (build
 passes, no new features, docs are up to date), so a patch release from the
-`master` branch can be done in an ad-hoc fashion, without the need for a formal
+`main` branch can be done in an ad-hoc fashion, without the need for a formal
 review.
 
 Plans to do a patch release are announced by the project lead on the
 [rdf4j-dev@eclipse.org mailinglist](https://dev.eclipse.org/mailman/listinfo/rdf4j-dev),
 usually about a week in advance, with an open invitation for contributors to
 propose additional fixes to include, which are done as Pull Requests to the
-`master` branch.
+`main` branch.
 
 ### Creating a patch release branch
 
-Any fixes to be included in a patch release must be merged into the `master`
-branch first.  A patch release branch should differ from the `master` branch,
+Any fixes to be included in a patch release must be merged into the `main`
+branch first.  A patch release branch should differ from the `main` branch,
 at the time of release, only by the version number - a patch release branch has
-a patch number version, while the `master` branch has a SNAPSHOT version.  To
+a patch number version, while the `main` branch has a SNAPSHOT version.  To
 create a patch release branch, follow these steps:
 
-1. Check out the `master` branch.
-   E.g. if we're preparing a release 2.2.1, the `master` branch will have the version 2.2.1-SNAPSHOT:
+1. Check out the `main` branch.
+   E.g. if we're preparing a release 2.2.1, the `main` branch will have the version 2.2.1-SNAPSHOT:
 
-    `git checkout master`
+    `git checkout main`
 
 2. Create a new release branch, named `releases/<version>`:
 
@@ -77,7 +77,7 @@ create a patch release branch, follow these steps:
    `git commit -s -a -m "next development iteration"`
    `git push`
 
-6. Finally, create a pull request to merge the release branch back into master. Like branch sync PRs, this PR will be merged by means of a merge-commit, rather than the default 'squash and merge', so as not to lose the version-tagged commit.
+6. Finally, create a pull request to merge the release branch back into main. Like branch sync PRs, this PR will be merged by means of a merge-commit, rather than the default 'squash and merge', so as not to lose the version-tagged commit.
 
 ## Hotfix releases
 
@@ -85,7 +85,7 @@ Hotfix release are patch releases that target a prior minor version (not the
 latest stable release). These are needed when a critical bug was found in a
 production deployment using an earlier version.
 
-A hotfix release use a preceding release as its basis. This means we need to create a release branch not by simply branching from the current `master` branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
+A hotfix release use a preceding release as its basis. This means we need to create a release branch not by simply branching from the current `main` branch, but by branching from a specific release tag. To create a patch release branch, follow these steps:
 
 1. Check out the tag of the previous release. E.g. if we're preparing a release 2.1.6, the preceding release is 2.1.5, so we do:
 
@@ -111,7 +111,7 @@ A hotfix release use a preceding release as its basis. This means we need to cre
 
     `git push origin releases/2.1.6`
 
-Bug fixes are typically added to a hotfix release branch by [cherry-picking](https://git-scm.com/docs/git-cherry-pick) the relevant commits from the `master` branch.
+Bug fixes are typically added to a hotfix release branch by [cherry-picking](https://git-scm.com/docs/git-cherry-pick) the relevant commits from the `main` branch.
 
 This works as follows:
 
@@ -211,9 +211,9 @@ For more detailed information about the release review process, see the [Eclipse
 
 ### Branching minor releases
 
-Prior to a minor release, the `develop` branch is merged into the `master` branch
+Prior to a minor release, the `develop` branch is merged into the `main` branch
 (along with the `develop` branch's version) to facilitate release review.
-This will increment the `master` version to the latest major/minor SNAPSHOT version.
+This will increment the `main` version to the latest major/minor SNAPSHOT version.
 After the review is complete the steps to create a minor release are the same as the patch release steps.
 
 IMPORTANT: It is important that only features and fixes that have already been scheduled

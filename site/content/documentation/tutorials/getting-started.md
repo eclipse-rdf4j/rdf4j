@@ -10,7 +10,7 @@ In this tutorial, we go through the basics of what RDF is, and we show how you c
 
 We assume that you know a little about programming in Java, but no prior knowledge on RDF is assumed.
 
-TIP: The code examples in this tutorial are available for download from the [examples directory in the rdf4j-doc GitHub repository](https://github.com/eclipse/rdf4j-doc/tree/master/examples). We encourage you to download these examples and play around with them. The easiest way to do this is to download the GitHub repository in your favorite Java IDE as an Apache Maven project.
+TIP: The code examples in this tutorial are available for download from the [examples directory in the RDF4J GitHub repository](https://github.com/eclipse/rdf4j/tree/main/examples). We encourage you to download these examples and play around with them. The easiest way to do this is to download the GitHub repository in your favorite Java IDE as an Apache Maven project.
 
 ## Introducing RDF
 
