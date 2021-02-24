@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
@@ -47,7 +47,7 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 	private String testHeader = "X-testing-header";
 	private String testValue = "foobar";
 
-	private String serverURL = "http://localhost:" + wireMockRule.port() + "/rdf4j-server";
+	private String serverURL = "http://localhost:" + wireMockServer.port() + "/rdf4j-server";
 	private String repositoryID = "test";
 
 	RDF4JProtocolSession getRDF4JSession() {

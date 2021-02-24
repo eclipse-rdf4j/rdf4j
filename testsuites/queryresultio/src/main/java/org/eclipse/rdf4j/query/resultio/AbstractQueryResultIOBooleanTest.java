@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.resultio;
 
 import java.util.Arrays;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Abstract test for QueryResultIO.

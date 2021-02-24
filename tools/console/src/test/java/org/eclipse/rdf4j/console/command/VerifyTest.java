@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -24,8 +24,8 @@ import java.nio.file.Files;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test verify command
@@ -36,12 +36,12 @@ public class VerifyTest extends AbstractCommandTest {
 	private Verify cmd;
 	private ConsoleIO io;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws IOException, RDF4JException {
 		InputStream input = mock(InputStream.class);
 		OutputStream out = mock(OutputStream.class);
 		ConsoleState info = mock(ConsoleState.class);
-		when(info.getDataDirectory()).thenReturn(LOCATION.getRoot());
+		when(info.getDataDirectory()).thenReturn(locationFile);
 
 		io = new ConsoleIO(input, out, info);
 
@@ -56,7 +56,7 @@ public class VerifyTest extends AbstractCommandTest {
 	 * @throws IOException
 	 */
 	private String copyFromRes(String str) throws IOException {
-		File f = LOCATION.newFile(str);
+		File f = new File(locationFile, str);
 		copyFromResource("verify/" + str, f);
 		return f.getAbsolutePath();
 	}
@@ -109,7 +109,7 @@ public class VerifyTest extends AbstractCommandTest {
 
 	@Test
 	public final void testShaclInvalid() throws IOException {
-		File report = LOCATION.newFile();
+		File report = new File(locationFile, "testShaclInvalid");
 		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_invalid.ttl"), report.toString());
 		assertTrue(io.wasErrorWritten());
 		assertTrue(Files.size(report.toPath()) > 0);
@@ -117,7 +117,8 @@ public class VerifyTest extends AbstractCommandTest {
 
 	@Test
 	public final void testShaclValid() throws IOException {
-		File report = LOCATION.newFile();
+		File report = new File(locationFile, "testShaclValid");
+		assertTrue(report.createNewFile());
 		cmd.execute("verify", copyFromRes("ok.ttl"), copyFromRes("shacl_valid.ttl"), report.toString());
 
 		verify(mockConsoleIO, never()).writeError(anyString());
@@ -132,7 +133,8 @@ public class VerifyTest extends AbstractCommandTest {
 		copyFromRes("ok.ttl");
 		copyFromRes("shacl_valid.ttl");
 
-		File report = LOCATION.newFile();
+		File report = new File(locationFile, "testShaclValidWorkDir");
+		assertTrue(report.createNewFile());
 		cmd.execute("verify", "ok.ttl", "shacl_valid.ttl", report.getName());
 
 		verify(mockConsoleIO, never()).writeError(anyString());

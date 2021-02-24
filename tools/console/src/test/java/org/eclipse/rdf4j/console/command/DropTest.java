@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser
@@ -38,9 +38,9 @@ public class DropTest extends AbstractCommandTest {
 
 	private Drop drop;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws UnsupportedEncodingException, IOException, RDF4JException {
-		manager = new LocalRepositoryManager(LOCATION.getRoot());
+		manager = new LocalRepositoryManager(locationFile);
 
 		addRepositories("drop", MEMORY_MEMBER_ID1);
 		manager.addRepositoryConfig(new RepositoryConfig(PROXY_ID, new ProxyRepositoryConfig(MEMORY_MEMBER_ID1)));

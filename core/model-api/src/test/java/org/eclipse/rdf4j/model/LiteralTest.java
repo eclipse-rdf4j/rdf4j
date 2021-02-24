@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -320,7 +321,7 @@ public abstract class LiteralTest {
 
 		assertThat(literal("INF", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.POSITIVE_INFINITY);
 		assertThat(literal("-INF", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.NEGATIVE_INFINITY);
-		assertThat(literal("NaN", datatype).floatValue()).isInstanceOf(type).isEqualTo(Float.NaN);
+		assertTrue(Float.isNaN(literal("NaN", datatype).floatValue()));
 
 		// assertThatIllegalArgumentException().as("not normalized")
 		// .isThrownBy(() -> literal("\t100", datatype).floatValue());
@@ -344,7 +345,7 @@ public abstract class LiteralTest {
 
 		assertThat(literal("INF", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.POSITIVE_INFINITY);
 		assertThat(literal("-INF", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.NEGATIVE_INFINITY);
-		assertThat(literal("NaN", datatype).doubleValue()).isInstanceOf(type).isEqualTo(Double.NaN);
+		assertTrue(Double.isNaN(literal("NaN", datatype).doubleValue()));
 
 		// assertThatIllegalArgumentException().as("not normalized")
 		// .isThrownBy(() -> literal("\t100", datatype).doubleValue());

@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
 
@@ -20,9 +20,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.SKOS;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * An abstract test class to test the handling of namespaces by {@link Model} implementations.
@@ -45,7 +45,7 @@ public abstract class ModelNamespacesTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		testModel = getModelImplementation();
 	}
@@ -53,7 +53,7 @@ public abstract class ModelNamespacesTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		testModel = null;
 	}
@@ -65,8 +65,8 @@ public abstract class ModelNamespacesTest {
 	public final void testGetNamespacesEmpty() {
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
-		assertTrue("Namespaces must initially be empty", namespaces.isEmpty());
+		assertNotNull(namespaces, "Namespaces set must not be null");
+		assertTrue(namespaces.isEmpty(), "Namespaces must initially be empty");
 	}
 
 	/**
@@ -78,12 +78,13 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(1, namespaces.size());
 
-		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(RDF.PREFIX, RDF.NAMESPACE)));
+		assertTrue(
+				namespaces.contains(new SimpleNamespace(RDF.PREFIX, RDF.NAMESPACE)),
+				"Did not find the expected namespace in the set");
 	}
 
 	/**
@@ -99,7 +100,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(5, namespaces.size());
 
@@ -117,8 +118,8 @@ public abstract class ModelNamespacesTest {
 	public final void testGetNamespaceEmpty() {
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
-		assertTrue("Namespaces must initially be empty", namespaces.isEmpty());
+		assertNotNull(namespaces, "Namespaces set must not be null");
+		assertTrue(namespaces.isEmpty(), "Namespaces must initially be empty");
 
 		assertFalse(testModel.getNamespace(RDF.PREFIX).isPresent());
 		assertFalse(testModel.getNamespace(RDFS.PREFIX).isPresent());
@@ -136,12 +137,12 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(1, namespaces.size());
 
-		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE)));
+		assertTrue(namespaces.contains(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE)),
+				"Did not find the expected namespace in the set");
 
 		assertFalse(testModel.getNamespace(RDF.PREFIX).isPresent());
 		assertEquals(new SimpleNamespace(RDFS.PREFIX, RDFS.NAMESPACE), testModel.getNamespace(RDFS.PREFIX).get());
@@ -163,7 +164,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(5, namespaces.size());
 
@@ -184,7 +185,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertEquals(1, namespaces.size());
 
 		assertEquals(new SimpleNamespace("r", RDFS.NAMESPACE), testModel.getNamespace("r").orElse(null));
@@ -203,7 +204,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(5, namespaces.size());
 
@@ -224,7 +225,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertEquals(1, namespaces.size());
 
 		assertEquals(new SimpleNamespace("r", RDFS.NAMESPACE), testModel.getNamespace("r").orElse(null));
@@ -237,8 +238,7 @@ public abstract class ModelNamespacesTest {
 	public final void testRemoveNamespaceEmpty() {
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
-		assertTrue("Namespaces must initially be empty", namespaces.isEmpty());
+		assertNotNull(namespaces, "Namespaces set must not be null");
 
 		assertFalse(testModel.removeNamespace(RDF.NAMESPACE).isPresent());
 		assertFalse(testModel.removeNamespace(RDFS.NAMESPACE).isPresent());
@@ -256,12 +256,14 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces,
+				"Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(1, namespaces.size());
 
-		assertTrue("Did not find the expected namespace in the set",
-				namespaces.contains(new SimpleNamespace(DC.PREFIX, DC.NAMESPACE)));
+		assertTrue(
+				namespaces.contains(new SimpleNamespace(DC.PREFIX, DC.NAMESPACE)),
+				"Did not find the expected namespace in the set");
 
 		assertFalse(testModel.removeNamespace(RDF.NAMESPACE).isPresent());
 		assertFalse(testModel.removeNamespace(RDFS.NAMESPACE).isPresent());
@@ -271,8 +273,8 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespacesAfter = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespacesAfter);
-		assertTrue("Namespaces must now be empty", namespacesAfter.isEmpty());
+		assertNotNull(namespacesAfter, "Namespaces set must not be null");
+		assertTrue(namespacesAfter.isEmpty(), "Namespaces must now be empty");
 	}
 
 	/**
@@ -288,7 +290,7 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespaces = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespaces);
+		assertNotNull(namespaces, "Namespaces set must not be null");
 		assertFalse(namespaces.isEmpty());
 		assertEquals(5, namespaces.size());
 
@@ -301,8 +303,8 @@ public abstract class ModelNamespacesTest {
 
 		Set<Namespace> namespacesAfter = testModel.getNamespaces();
 
-		assertNotNull("Namespaces set must not be null", namespacesAfter);
-		assertTrue("Namespaces must now be empty", namespacesAfter.isEmpty());
+		assertNotNull(namespacesAfter, "Could not find parser for this format.");
+		assertTrue(namespacesAfter.isEmpty(), "Namespaces must now be empty");
 	}
 
 }

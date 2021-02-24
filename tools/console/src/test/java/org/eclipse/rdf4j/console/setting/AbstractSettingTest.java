@@ -13,7 +13,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.command.SetParameters;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -32,7 +32,7 @@ public abstract class AbstractSettingTest {
 	SetParameters setParameters;
 	Map<String, ConsoleSetting> settings = new HashMap<>();
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		MockitoAnnotations.initMocks(this);
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);

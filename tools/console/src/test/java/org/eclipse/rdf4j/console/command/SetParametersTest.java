@@ -14,8 +14,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.console.setting.ConsoleSetting;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test setting parameters
@@ -25,7 +25,7 @@ import org.junit.Test;
 public class SetParametersTest extends AbstractCommandTest {
 	SetParameters setParameters;
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		Map<String, ConsoleSetting> settings = new HashMap<>();
 		setParameters = new SetParameters(mockConsoleIO, mockConsoleState, settings);
