@@ -244,8 +244,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 						maxBlockSize = blockSize;
 					}
 					// Sync if either the estimated size of the next block is larger than remaining memory, or
-					// if less than 10% of the heap is still free (this last condition to avoid GC overhead limit)
-					if (freeToAllocateMemory < Math.min(0.1 * maxMemory, maxBlockSize)) {
+					// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
+					if (freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
 						logger.debug("syncing at {} triples. max block size: {}", size, maxBlockSize);
 						overflowToDisk();
 					}
