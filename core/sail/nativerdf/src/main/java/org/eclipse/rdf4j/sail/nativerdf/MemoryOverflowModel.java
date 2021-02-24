@@ -62,7 +62,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private long maxBlockSize = 0;
 
 	public MemoryOverflowModel() {
-		memory = new LinkedHashModel();
+		memory = new LinkedHashModel(LARGE_BLOCK);
 	}
 
 	public MemoryOverflowModel(Model model) {
@@ -76,7 +76,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	public MemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new LinkedHashModel(namespaces);
+		memory = new LinkedHashModel(namespaces, LARGE_BLOCK);
 	}
 
 	@Override
@@ -282,7 +282,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				}
 			};
 			disk.addAll(memory);
-			memory = new LinkedHashModel(memory.getNamespaces());
+			memory = new LinkedHashModel(memory.getNamespaces(), LARGE_BLOCK);
 			logger.debug("overflow synced to disk");
 		} catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
