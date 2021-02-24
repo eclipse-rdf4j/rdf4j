@@ -64,19 +64,19 @@ if  !  mvn -v | grep -q "Java version: 1.8."; then
 fi
 
 
-# check that we are on master or develop
-if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
+# check that we are on main or develop
+if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
     echo""
-    echo "You need to be on master or develop!";
+    echo "You need to be on main or develop!";
     echo "";
     exit 1;
   fi
 fi
 
 ORIGINAL_BRANCH=""
-if  git status --porcelain --branch | grep -q "## master...origin/master"; then
-  ORIGINAL_BRANCH="master";
+if  git status --porcelain --branch | grep -q "## main...origin/main"; then
+  ORIGINAL_BRANCH="main";
 fi
 if  git status --porcelain --branch | grep -q "## develop...origin/develop"; then
   ORIGINAL_BRANCH="develop";
@@ -93,12 +93,12 @@ if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; t
   exit 1;
 fi
 
-git checkout master
+git checkout main
 git pull
 
-if  ! git status --porcelain --branch | grep -q "## master...origin/master"; then
+if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   echo""
-  echo "There is something wrong with your git. It seems you are not up to date with master. Run git status";
+  echo "There is something wrong with your git. It seems you are not up to date with main. Run git status";
   echo "";
   exit 1;
 fi
@@ -191,7 +191,7 @@ git checkout "${MVN_VERSION_RELEASE}"
 mvn clean install -DskipTests -Djapicmp.skip
 mvn package -Passembly,!formatting -Djapicmp.skip -DskipTests --batch-mode
 
-git checkout master
+git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
@@ -200,7 +200,7 @@ tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" target/site/apidocs
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
-gh pr create -B master --title "${MVN_VERSION_RELEASE} news item and docs" --body "Javadocs and news item for ${MVN_VERSION_RELEASE}"
+gh pr create -B main --title "${MVN_VERSION_RELEASE} news item and docs" --body "Javadocs and news item for ${MVN_VERSION_RELEASE}"
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 
