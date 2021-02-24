@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -56,7 +57,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 * When in {@link IsolationLevels#SERIALIZABLE} this contains all the observed {@link StatementPattern}s that were
 	 * observed by {@link ObservingSailDataset}.
 	 */
-	private Set<StatementPattern> observations;
+	private Set<SimpleStatementPattern> observed;
 
 	/**
 	 * Statements that have been added as part of a transaction, but has not yet been committed.
@@ -109,17 +110,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void prepare() throws SailException {
-		if (prepend != null && observations != null) {
-			for (StatementPattern p : observations) {
-				Resource subj = (Resource) p.getSubjectVar().getValue();
-				IRI pred = (IRI) p.getPredicateVar().getValue();
-				Value obj = p.getObjectVar().getValue();
-				Var ctxVar = p.getContextVar();
+		if (prepend != null && observed != null) {
+			for (SimpleStatementPattern p : observed) {
+				Resource subj = p.getSubject();
+				IRI pred = p.getPredicate();
+				Value obj = p.getObject();
+				Resource context = p.getContext();
 				Resource[] contexts;
-				if (ctxVar == null) {
+				if (p.isAllContexts()) {
 					contexts = new Resource[0];
 				} else {
-					contexts = new Resource[] { (Resource) ctxVar.getValue() };
+					contexts = new Resource[] { context };
 				}
 				for (Changeset changeset : prepend) {
 					if (changeset.hasApproved(subj, pred, obj, contexts)
@@ -208,18 +209,16 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailConflictException {
-		if (observations == null) {
-			observations = new HashSet<>();
+		if (observed == null) {
+			observed = new HashSet<>();
 		}
 		if (contexts == null) {
-			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-					new Var("g", null)));
+			observed.add(new SimpleStatementPattern(subj, pred, obj, null, false));
 		} else if (contexts.length == 0) {
-			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj)));
+			observed.add(new SimpleStatementPattern(subj, pred, obj, null, true));
 		} else {
 			for (Resource ctx : contexts) {
-				observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
-						new Var("g", ctx)));
+				observed.add(new SimpleStatementPattern(subj, pred, obj, ctx, false));
 			}
 		}
 	}
@@ -300,8 +299,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
-		if (observations != null) {
-			sb.append(observations.size());
+		if (observed != null) {
+			sb.append(observed.size());
 			sb.append(" observations, ");
 		}
 		if (namespaceCleared) {
@@ -338,7 +337,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	protected void setChangeset(Changeset from) {
-		this.observations = from.observations;
+		this.observed = from.observed;
 		this.approved = from.approved;
 		this.deprecated = from.deprecated;
 		this.approvedContexts = from.approvedContexts;
@@ -349,10 +348,30 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
+	public synchronized Set<SimpleStatementPattern> getObserved() {
+		return observed == null ? null : Collections.unmodifiableSet(observed);
+	}
+
+	/**
+	 * @deprecated Use getObserved() instead!
+	 * @return
+	 */
+	@Deprecated
 	public synchronized Set<StatementPattern> getObservations() {
 
-		return cloneSet(observations);
+		if (observed == null)
+			return null;
 
+		return observed.stream()
+				.map(simpleStatementPattern -> new StatementPattern(
+						new Var("s", simpleStatementPattern.getSubject()),
+						new Var("p", simpleStatementPattern.getPredicate()),
+						new Var("o", simpleStatementPattern.getObject()),
+						simpleStatementPattern.isAllContexts() ? null
+								: new Var("c", simpleStatementPattern.getContext())
+				)
+				)
+				.collect(Collectors.toCollection(HashSet::new));
 	}
 
 	public synchronized Set<Resource> getApprovedContexts() {
@@ -387,7 +406,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		return approved != null || deprecated != null || approvedContexts != null
 				|| deprecatedContexts != null || addedNamespaces != null
 				|| removedPrefixes != null || statementCleared || namespaceCleared
-				|| observations != null;
+				|| observed != null;
 	}
 
 	synchronized List<Statement> getDeprecatedStatements() {
@@ -483,10 +502,68 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	private <T> Set<T> cloneSet(Set<T> deprecatedContexts) {
-		if (deprecatedContexts == null) {
+	private <T> Set<T> cloneSet(Set<T> set) {
+		if (set == null) {
 			return null;
 		}
-		return new HashSet<>(deprecatedContexts);
+		return new HashSet<>(set);
+	}
+
+	public static class SimpleStatementPattern {
+		final private Resource subject;
+		final private IRI predicate;
+		final private Value object;
+		final private Resource context;
+
+		// true if the context is the union of all contexts
+		final private boolean allContexts;
+
+		public SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
+				boolean allContexts) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+			this.allContexts = allContexts;
+		}
+
+		public Resource getSubject() {
+			return subject;
+		}
+
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		public Value getObject() {
+			return object;
+		}
+
+		public Resource getContext() {
+			return context;
+		}
+
+		public boolean isAllContexts() {
+			return allContexts;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			SimpleStatementPattern that = (SimpleStatementPattern) o;
+			return allContexts == that.allContexts && Objects.equals(subject, that.subject)
+					&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
+					&& Objects.equals(context, that.context);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(subject, predicate, object, context, allContexts);
+		}
 	}
 }
