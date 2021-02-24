@@ -224,6 +224,17 @@ public class RDFFormat extends FileFormat {
 			SUPPORTS_CONTEXTS, NO_RDF_STAR);
 
 	/**
+	 * The NDJSON-LD is a Newline Delimited JSON-LD format.
+	 * <p>
+	 * The file extension <code>.ndjsonld</code> is recommended for NDJSON-LD documents. The media type is
+	 * <code>application/x-ld+ndjson</code> and the encoding is UTF-8.
+	 * </p>
+	 */
+	public static final RDFFormat NDJSONLD = new RDFFormat("NDJSON-LD", Arrays.asList("application/x-ld+ndjson"),
+			StandardCharsets.UTF_8, Arrays.asList("ndjsonld", "jsonl", "ndjson"), null, SUPPORTS_NAMESPACES,
+			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+
+	/**
 	 * The <a href="http://www.w3.org/TR/rdf-json/" >RDF/JSON</a> file format, an RDF serialization format that supports
 	 * recording of named graphs.
 	 * <p>

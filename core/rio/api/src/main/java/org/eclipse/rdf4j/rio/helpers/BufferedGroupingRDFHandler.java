@@ -61,6 +61,10 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 		this.contexts = new HashSet<>();
 	}
 
+	protected Model getBufferedStatements() {
+		return bufferedStatements;
+	}
+
 	@Override
 	public void handleStatement(Statement st) throws RDFHandlerException {
 		synchronized (bufferLock) {
@@ -76,7 +80,7 @@ public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
 	/*
 	 * not synchronized, assumes calling method has obtained a lock on bufferLock
 	 */
-	private void processBuffer() throws RDFHandlerException {
+	protected void processBuffer() throws RDFHandlerException {
 		// primary grouping per context.
 		for (Resource context : contexts) {
 			Model contextData = bufferedStatements.filter(null, null, null, context);
