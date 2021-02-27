@@ -42,7 +42,6 @@ public class Example13AddRDFToDatabase {
 		// See http://docs.rdf4j.org/programming/#_the_repository_api for more extensive examples on
 		// how to create and maintain different types of databases.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
@@ -50,9 +49,8 @@ public class Example13AddRDFToDatabase {
 			conn.add(model);
 
 			// let's check that our data is actually in the database
-			try (RepositoryResult<Statement> result = conn.getStatements(null, null, null);) {
-				while (result.hasNext()) {
-					Statement st = result.next();
+			try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
+				for (Statement st : result) {
 					System.out.println("db contains: " + st);
 				}
 			}

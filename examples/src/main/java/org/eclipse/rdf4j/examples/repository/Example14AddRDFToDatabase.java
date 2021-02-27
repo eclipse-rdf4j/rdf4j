@@ -10,14 +10,12 @@ package org.eclipse.rdf4j.examples.repository;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
@@ -31,7 +29,6 @@ public class Example14AddRDFToDatabase {
 			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
@@ -42,9 +39,8 @@ public class Example14AddRDFToDatabase {
 			}
 
 			// let's check that our data is actually in the database
-			try (RepositoryResult<Statement> result = conn.getStatements(null, null, null);) {
-				while (result.hasNext()) {
-					Statement st = result.next();
+			try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
+				for (Statement st : result) {
 					System.out.println("db contains: " + st);
 				}
 			}
