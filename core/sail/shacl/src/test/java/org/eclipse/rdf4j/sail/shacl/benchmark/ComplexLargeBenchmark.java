@@ -9,22 +9,18 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import java.io.BufferedInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -60,29 +56,29 @@ public class ComplexLargeBenchmark {
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
-	private static String transaction1;
-	private static String transaction2;
-	private static String transaction3;
-	private static String transaction4;
+	private static final String transaction1;
+	private static final String transaction2;
+	private static final String transaction3;
+	private static final String transaction4;
 
 	static {
 		try {
 			transaction1 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction1.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction2 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction2.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction3 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction3.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction4 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction4.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException();
@@ -92,14 +88,16 @@ public class ComplexLargeBenchmark {
 	private SailRepository repository;
 
 	@Setup(Level.Invocation)
-	public void setUp() throws InterruptedException {
+	public void setUp() throws InterruptedException, IOException {
 
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
-		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).disableValidation();
 
@@ -112,8 +110,6 @@ public class ComplexLargeBenchmark {
 			}
 
 			((ShaclSail) repository.getSail()).enableValidation();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 		System.gc();
@@ -223,10 +219,11 @@ public class ComplexLargeBenchmark {
 	}
 
 	@Benchmark
-	public void noPreloading() {
+	public void noPreloading() throws IOException {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -242,17 +239,16 @@ public class ComplexLargeBenchmark {
 
 			repository.shutDown();
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noPreloadingParallel() {
+	public void noPreloadingParallel() throws IOException {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -268,17 +264,16 @@ public class ComplexLargeBenchmark {
 
 			repository.shutDown();
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noPreloadingParallelNoCache() {
+	public void noPreloadingParallelNoCache() throws IOException {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -294,17 +289,16 @@ public class ComplexLargeBenchmark {
 
 			repository.shutDown();
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
-
 	}
 
 	@Benchmark
-	public void noPreloadingNonEmpty() {
+	public void noPreloadingNonEmpty() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 			((ShaclSail) repository.getSail()).disableValidation();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -327,18 +321,17 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noPreloadingNonEmptyParallel() {
+	public void noPreloadingNonEmptyParallel() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 			((ShaclSail) repository.getSail()).disableValidation();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -362,17 +355,16 @@ public class ComplexLargeBenchmark {
 
 			repository.shutDown();
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
-
 	}
 
 	@Benchmark
-	public void noPreloadingRevalidate() {
+	public void noPreloadingRevalidate() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -396,18 +388,17 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noPreloadingRevalidateLowMem() {
+	public void noPreloadingRevalidateLowMem() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -431,18 +422,16 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noPreloadingBulk() {
+	public void noPreloadingBulk() throws IOException {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -457,17 +446,16 @@ public class ComplexLargeBenchmark {
 
 			repository.shutDown();
 
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
-
 	}
 
 	@Benchmark
-	public void noPreloadingBulkParallelCached() {
+	public void noPreloadingBulkParallelCached() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -484,51 +472,6 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-
-	}
-
-	@Benchmark
-	public void noPreloadingRevalidateNativeStore() throws IOException {
-		File file = Files.newTemporaryFolder();
-
-		try {
-
-			SailRepository repository = new SailRepository(
-					Utils.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"),
-							"complexBenchmark/shacl.ttl"));
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-
-			((ShaclSail) repository.getSail()).disableValidation();
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				try (InputStream resourceAsStream = getData()) {
-					connection.add(resourceAsStream, "", RDFFormat.TURTLE);
-				}
-				connection.commit();
-			}
-
-			((ShaclSail) repository.getSail()).enableValidation();
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				((ShaclSailConnection) connection.getSailConnection()).revalidate();
-				connection.commit();
-			}
-
-			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		} finally {
-			FileUtils.deleteDirectory(file);
-
 		}
 
 	}
@@ -598,10 +541,11 @@ public class ComplexLargeBenchmark {
 	}
 
 	@Benchmark
-	public void disabledValidationSail() {
+	public void disabledValidationSail() throws IOException {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 			((ShaclSail) repository.getSail()).disableValidation();
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -615,18 +559,17 @@ public class ComplexLargeBenchmark {
 			((ShaclSail) repository.getSail()).enableValidation();
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void disabledValidationTransaction() {
+	public void disabledValidationTransaction() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
@@ -637,18 +580,16 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}
 
 	@Benchmark
-	public void noShacl() {
+	public void noShacl() throws IOException {
 
-		try {
-			SailRepository repository = new SailRepository(new MemoryStore());
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(Utils.getTestNotifyingSailNativeStore(temporaryFolder));
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -659,9 +600,6 @@ public class ComplexLargeBenchmark {
 			}
 
 			repository.shutDown();
-
-		} catch (IOException e) {
-			throw new RuntimeException(e);
 		}
 
 	}

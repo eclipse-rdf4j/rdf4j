@@ -128,6 +128,7 @@ public class ComplexTargetBenchmark {
 
 		System.gc();
 		Thread.sleep(100);
+
 	}
 
 	@Benchmark

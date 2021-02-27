@@ -47,6 +47,8 @@ public class DeadlockTest {
 						.execute();
 				connection.commit();
 			}
+
+			shaclRepository.shutDown();
 		}
 	}
 

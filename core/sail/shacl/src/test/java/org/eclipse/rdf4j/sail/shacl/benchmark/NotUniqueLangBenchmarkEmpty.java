@@ -78,19 +78,21 @@ public class NotUniqueLangBenchmarkEmpty {
 
 	@Benchmark
 	public void shacl() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotUniqueLang.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shaclNotUniqueLang.ttl"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.add(statements);
+					connection.commit();
+				}
 			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
-
 	}
 
 }

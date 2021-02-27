@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -20,12 +21,10 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
-import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -47,7 +46,7 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xmx64M", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xmx128M", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -78,121 +77,135 @@ public class MinCountBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shacl.ttl"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(statements);
 				connection.commit();
 			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin();
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+			repository.shutDown();
 		}
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclClear() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shacl.ttl"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(statements);
 				connection.commit();
 			}
 
-			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
-			connection.clear();
-			System.out.println();
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin();
+					connection.add(statements);
+					connection.commit();
+				}
 
+				((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				connection.clear();
+				System.out.println();
+				((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+			}
+			repository.shutDown();
 		}
-		repository.shutDown();
-
 	}
 
 	@Benchmark
-	public void noShacl() {
+	public void noShacl() throws IOException {
 
-		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		repository.init();
+			SailRepository repository = new SailRepository(
+					Utils.getTestNotifyingSailNativeStore(temporaryFolder));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			repository.init();
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(statements);
 				connection.commit();
 			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin();
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+			repository.shutDown();
 		}
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void sparqlInsteadOfShacl() {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(new MemoryStore());
+			SailRepository repository = new SailRepository(
+					Utils.getTestNotifyingSailNativeStore(temporaryFolder));
 
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(statements);
-				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <"
-								+ RDFS.LABEL + "> ?c})}")
-						.evaluate()
-						.stream()) {
-					stream.forEach(System.out::println);
-				}
 				connection.commit();
 			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin();
+					connection.add(statements);
+					try (Stream<BindingSet> stream = connection
+							.prepareTupleQuery("select * where {?a a <" + RDFS.RESOURCE + ">. FILTER(! EXISTS {?a <"
+									+ RDFS.LABEL + "> ?c})}")
+							.evaluate()
+							.stream()) {
+						stream.forEach(System.out::println);
+					}
+					connection.commit();
+				}
+			}
+			repository.shutDown();
 		}
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclMinCountZero() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMinCountZero.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shaclMinCountZero.ttl"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(statements);
 				connection.commit();
 			}
-		}
-		repository.shutDown();
 
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin();
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+			repository.shutDown();
+		}
 	}
 
 }

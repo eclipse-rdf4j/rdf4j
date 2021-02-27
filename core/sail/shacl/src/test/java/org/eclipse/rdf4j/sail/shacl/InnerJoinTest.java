@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertTrue;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;

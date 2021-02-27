@@ -46,6 +46,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
+		if (minCount <= 0) {
+			return new EmptyNode();
+		}
+
 		PlanNode target = getTargetChain()
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);

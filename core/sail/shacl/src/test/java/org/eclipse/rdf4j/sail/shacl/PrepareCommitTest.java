@@ -212,7 +212,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testAutomaticRollbackRepository() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		boolean exception = false;
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();

@@ -11016,6 +11016,11 @@ public class SyntaxTreeBuilder
 	}
 
 	static private final class LookaheadSuccess extends java.lang.Error {
+
+		@Override
+		public synchronized Throwable fillInStackTrace() {
+			return null;
+		}
 	}
 
 	final private LookaheadSuccess jj_ls = new LookaheadSuccess();

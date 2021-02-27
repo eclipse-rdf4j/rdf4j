@@ -8,11 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.UUID;
 
+import org.apache.commons.io.FileUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,6 +34,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 
 /**
  * @author Håvard Ottestad
@@ -76,10 +82,8 @@ public class Utils {
 		}
 	}
 
-	public static SailRepository getInitializedShaclRepository(String shapeData,
-			boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
+	public static SailRepository getInitializedShaclRepository(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
-		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
 		SailRepository repo = new SailRepository(sail);
 		Utils.loadShapeData(repo, shapeData);
 		return repo;
@@ -89,6 +93,30 @@ public class Utils {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		Utils.loadShapeData(sail, shapeData);
 		return sail;
+	}
+
+	public static ShaclSail getInitializedShaclSailNativeStore(TemporaryFolder file, String shapeData)
+			throws IOException {
+		NativeStore baseSail = getNativeStore(file);
+
+		ShaclSail sail = new ShaclSail(baseSail);
+		Utils.loadShapeData(sail, shapeData);
+		return sail;
+	}
+
+	public static Sail getTestNotifyingSailNativeStore(TemporaryFolder file) {
+		NativeStore baseSail = getNativeStore(file);
+
+		return new TestNotifyingSail(baseSail);
+	}
+
+	private static NativeStore getNativeStore(TemporaryFolder file) {
+		NativeStore baseSail = new NativeStore(file.getFile());
+		baseSail.setValueCacheSize(100);
+		baseSail.setNamespaceCacheSize(100);
+		baseSail.setValueIDCacheSize(100);
+		baseSail.setNamespaceIDCacheSize(100);
+		return baseSail;
 	}
 
 	public static Sail getInitializedShaclSail(NotifyingSail baseSail, String shaclFileName) throws IOException {
@@ -136,6 +164,10 @@ public class Utils {
 
 	}
 
+	public static TemporaryFolder newTemporaryFolder() {
+		return new TemporaryFolder();
+	}
+
 	static class Ex {
 
 		public final static String ns = "http://example.com/ns#";
@@ -154,4 +186,29 @@ public class Utils {
 			return SimpleValueFactory.getInstance().createIRI(ns + UUID.randomUUID().toString());
 		}
 	}
+
+	public static class TemporaryFolder implements Closeable {
+
+		File file;
+
+		public TemporaryFolder() {
+			this.file = Files.newTemporaryFolder();
+		}
+
+		@Override
+		public void close() {
+			try {
+				if (file != null) {
+					FileUtils.deleteDirectory(file);
+				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		}
+
+		public File getFile() {
+			return file;
+		}
+	}
+
 }

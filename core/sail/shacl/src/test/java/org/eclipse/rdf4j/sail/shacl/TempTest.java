@@ -43,7 +43,7 @@ public class TempTest {
 	@Test
 	public void a() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -81,7 +81,7 @@ public class TempTest {
 
 	@Test
 	public void b() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -110,7 +110,7 @@ public class TempTest {
 
 	@Test(expected = RepositoryException.class)
 	public void maxCount() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -145,7 +145,7 @@ public class TempTest {
 	@Test
 	public void minCount() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -172,7 +172,7 @@ public class TempTest {
 	@Test
 	public void leftOuterJoin() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -209,7 +209,7 @@ public class TempTest {
 	@Test(expected = RepositoryException.class)
 	public void testShapeWithoutTargetClassRemove() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -230,7 +230,7 @@ public class TempTest {
 	@Test(expected = RepositoryException.class)
 	public void testShapeWithoutTargetClassAdd() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -250,7 +250,7 @@ public class TempTest {
 	@Test
 	public void testShapeWithoutTargetClassValid() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		((ShaclSail) shaclRepository.getSail()).setUndefinedTargetValidatesAllSubjects(true);
 
@@ -280,7 +280,7 @@ public class TempTest {
 	@Test(expected = ShaclSailValidationException.class)
 	public void testUndefinedTargetClassValidatesAllSubjects() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -335,7 +335,7 @@ public class TempTest {
 	@Test(expected = ShaclSailValidationException.class)
 	public void testUndefinedTargetClassValidatesAllSubjects2() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -386,7 +386,7 @@ public class TempTest {
 	@Test
 	public void testUndefinedTargetClassValidatesAllSubjects3() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 

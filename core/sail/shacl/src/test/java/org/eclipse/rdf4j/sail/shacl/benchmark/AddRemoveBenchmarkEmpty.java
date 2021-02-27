@@ -83,18 +83,43 @@ public class AddRemoveBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.remove((Resource) null, null, null);
-				connection.add(statements);
-				connection.commit();
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shaclDatatype.ttl"));
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.remove((Resource) null, null, null);
+					connection.add(statements);
+					connection.commit();
+				}
 			}
+
+			repository.shutDown();
 		}
 
-		repository.shutDown();
+	}
+
+	@Benchmark
+	public void noShacl() throws Exception {
+
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
+
+			SailRepository repository = new SailRepository(Utils.getTestNotifyingSailNativeStore(temporaryFolder));
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.remove((Resource) null, null, null);
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+
+			repository.shutDown();
+		}
 
 	}
 

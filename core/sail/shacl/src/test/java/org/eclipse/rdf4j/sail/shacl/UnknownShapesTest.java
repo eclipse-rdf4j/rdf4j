@@ -38,7 +38,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -69,7 +69,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

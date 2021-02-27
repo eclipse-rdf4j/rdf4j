@@ -21,11 +21,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
-import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -84,47 +82,51 @@ public class LanguageInBenchmarkEmpty {
 
 	@Benchmark
 	public void shacl() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclLanguageIn.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "shaclLanguageIn.ttl"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
 				connection.commit();
 			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
-
 	}
 
 	@Benchmark
 	public void noShacl() {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
+			SailRepository repository = new SailRepository(
+					Utils.getTestNotifyingSailNativeStore(temporaryFolder));
 
-		repository.init();
+			repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
 				connection.commit();
 			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				for (List<Statement> statements : allStatements) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					connection.add(statements);
+					connection.commit();
+				}
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
-
 	}
 
 }

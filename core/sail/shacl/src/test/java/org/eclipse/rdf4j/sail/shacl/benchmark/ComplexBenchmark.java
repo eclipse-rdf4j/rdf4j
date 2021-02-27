@@ -86,33 +86,39 @@ public class ComplexBenchmark {
 
 	@Benchmark
 	public void shaclParallelCache() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction1).execute();
+				connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction2).execute();
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclNoTransactions() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
-		repository.shutDown();
+			repository.shutDown();
+		}
 
 	}
 
@@ -151,129 +157,147 @@ public class ComplexBenchmark {
 
 	@Benchmark
 	public void shaclEmptyTransactions() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclNothingToValidateTransactions() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
-					connection.getValueFactory().createLiteral(""));
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
+						connection.getValueFactory().createLiteral(""));
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclParallelCacheSingleTransactionNoIsolation() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(transaction1).execute();
+				connection.begin(IsolationLevels.NONE);
+				connection.prepareUpdate(transaction1).execute();
 
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
+				connection.prepareUpdate(transaction2).execute();
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclParallel() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction1).execute();
+				connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction2).execute();
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shaclCache() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction1).execute();
+				connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction2).execute();
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
 	@Benchmark
 	public void shacl() throws Exception {
+		try (Utils.TemporaryFolder temporaryFolder = Utils.newTemporaryFolder()) {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSailNativeStore(temporaryFolder, "complexBenchmark/shacl.ttl"));
 
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+			((ShaclSail) repository.getSail()).setParallelValidation(false);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction1).execute();
+				connection.commit();
 
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.prepareUpdate(transaction2).execute();
+				connection.commit();
 
+			}
+
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 
 	}
 
