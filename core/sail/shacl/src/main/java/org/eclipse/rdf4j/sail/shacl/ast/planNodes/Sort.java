@@ -79,6 +79,14 @@ public class Sort implements PlanNode {
 					while (iterator.hasNext()) {
 						ValidationTuple next = iterator.next();
 						sortedTuples.add(next);
+
+						// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort it
+						// then
+						if (sortedTuples.size() == 1 && !iterator.hasNext()) {
+							sortedTuplesIterator = sortedTuples.iterator();
+							return;
+						}
+
 						if (prev != null
 								&& prev.compareActiveTarget(next) > 0) {
 							alreadySorted = false;
@@ -89,12 +97,10 @@ public class Sort implements PlanNode {
 					if (!alreadySorted && sortedTuples.size() > 1) {
 						if (sortedTuples.size() > 8192) { // MIN_ARRAY_SORT_GRAN in Arrays.parallelSort(...)
 							ValidationTuple[] objects = sortedTuples.toArray(new ValidationTuple[0]);
-							Arrays.parallelSort(objects,
-									ValidationTuple::compareActiveTarget);
+							Arrays.parallelSort(objects, ValidationTuple::compareActiveTarget);
 							sortedTuples = Arrays.asList(objects);
 						} else {
-							sortedTuples
-									.sort(ValidationTuple::compareActiveTarget);
+							sortedTuples.sort(ValidationTuple::compareActiveTarget);
 						}
 					}
 					sortedTuplesIterator = sortedTuples.iterator();
