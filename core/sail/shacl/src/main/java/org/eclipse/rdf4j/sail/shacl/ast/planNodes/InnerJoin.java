@@ -249,6 +249,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 			public void remove() throws SailException {
 				throw new UnsupportedOperationException();
 			}
+
 		};
 	}
 

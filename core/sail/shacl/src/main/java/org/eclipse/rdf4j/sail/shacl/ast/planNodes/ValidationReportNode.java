@@ -52,10 +52,6 @@ public class ValidationReportNode implements PlanNode {
 				return next.addValidationResult(validationResultFunction);
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 

@@ -62,7 +62,7 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				sortTuples();
 				return sortedTuplesIterator.hasNext();
 			}
@@ -111,16 +111,12 @@ public class Sort implements PlanNode {
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				sortTuples();
 
 				return sortedTuplesIterator.next();
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 
 	}
