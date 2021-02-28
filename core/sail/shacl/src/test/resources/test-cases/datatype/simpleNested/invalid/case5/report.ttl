@@ -22,41 +22,17 @@
       sh:sourceShape ex:PersonShape;
       sh:value ex:validPerson5
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
+      sh:focusNode ex:validPerson2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson1
+      sh:value ex:validPerson2
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson3;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:sourceShape ex:PersonShape;
       sh:value ex:validPerson3
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson1
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson7;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson7
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson2
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson2
     ], [ a sh:ValidationResult;
       sh:focusNode ex:validPerson6;
       sh:resultSeverity sh:Violation;
@@ -64,23 +40,11 @@
       sh:sourceShape ex:PersonShape;
       sh:value ex:validPerson6
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson3;
+      sh:focusNode ex:validPerson1;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
       sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson3
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson2
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson3;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape ex:PersonShape;
-      sh:value ex:validPerson3
+      sh:value ex:validPerson1
     ] .
 
 ex:PersonShape a sh:NodeShape;
