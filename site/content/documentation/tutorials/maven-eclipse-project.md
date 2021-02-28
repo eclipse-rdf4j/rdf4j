@@ -15,7 +15,7 @@ In this tutorial, we assume that you have a basic understanding of programming i
 
 ## Setting up your environment
 
-Before we kick off, you will need to install the [Eclipse IDE](http://eclipse.org/). In this tutorial, we will use Eclipse for Java Developer version 4.18.0 (2020-12), but it shouldn’t matter too much which exact version you have installed. Select either the "Eclipse for Java developers" or "Eclipse for Java EE developers" installation option.
+Before we kick off, you will need to install the [Eclipse IDE](http://eclipse.org/). In this tutorial, we will use Eclipse for Java Developers version 4.18.0 (2020-12), but it shouldn’t matter too much which exact version you have installed. Select either the "Eclipse for Java developers" or "Eclipse for Java EE developers" installation option.
 
 Eclipse IDE comes with a Maven plugin (called m2e) already installed. We will use this plugin to work with Maven. You are of course free to also install the Maven command line tools, but we won’t be using those directly in this tutorial.
 

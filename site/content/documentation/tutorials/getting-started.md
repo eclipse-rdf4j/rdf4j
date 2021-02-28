@@ -90,16 +90,12 @@ Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, stor
 {{< example "Example 01" "model/Example01BuildModel.java" >}} shows how we can create the RDF model we introduced above using RDF4J:
 
 ```java {linenos=inline}
-// We use some static factory methods to easily create IRIs and Literals
-import static org.eclipse.rdf4j.model.util.Values.iri;
-import static org.eclipse.rdf4j.model.util.Values.literal;
-
 // We want to reuse this namespace when creating several building blocks.
 String ex = "http://example.org/";
 
 // Create IRIs for the resources we want to add.
-IRI picasso = iri(ex, "Picasso");
-IRI artist = iri(ex, "Artist");
+IRI picasso = Values.iri(ex, "Picasso");
+IRI artist = Values.iri(ex, "Artist");
 
 // Create a new, empty Model object.
 Model model = new TreeModel();
@@ -108,14 +104,14 @@ Model model = new TreeModel();
 model.add(picasso, RDF.TYPE, artist);
 
 // second statement: Picasso's first name is "Pablo".
-model.add(picasso, FOAF.FIRST_NAME, literal("Pablo"));
+model.add(picasso, FOAF.FIRST_NAME, Values.literal("Pablo"));
 ```
 
-Let's take a closer look at this. Lines 1-10 are necessary preparation: we use {{< javadoc "Values" "model/util/Values.html" >}} factory methods to create resources , which we will later use to add facts to our model.
+Let's take a closer look at this. Lines 1-6 are necessary preparation: we use {{< javadoc "Values" "model/util/Values.html" >}} factory methods to create resources, which we will later use to add facts to our model.
 
-On line 13, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models, and in the ordering with which statements are returned. For our purposes however, it doesn't really matter which implementation you use.
+On line 9, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models, and in the ordering with which statements are returned. For our purposes however, it doesn't really matter which implementation you use.
 
-On lines 16 and 19, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo".
+On lines 12 and 15, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo".
 
 In RDF4J, a {{< javadoc "Model" "model/Model.html" >}} is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the model to do things with its contents. As an example, let's iterate over all statements in our Model using a `for-each` loop, and print them to the screen:
 
@@ -188,7 +184,7 @@ for (Statement st : model) {
   // we want to see the object values of each property
   IRI property = st.getPredicate();
   Value value = st.getObject();
-  if (value instanceof Literal) {
+  if (value.isLiteral()) {
     Literal literal = (Literal) value;
     System.out.println("datatype: " + literal.getDatatype());
 
@@ -217,16 +213,16 @@ Model model = builder
     .setNamespace("ex", "http://example.org/")
     .subject("ex:PotatoEaters")
     // In English, this painting is called "The Potato Eaters"
-    .add(DC.TITLE, literal("The Potato Eaters", "en"))
+    .add(DC.TITLE, Values.literal("The Potato Eaters", "en"))
     // In Dutch, it's called "De Aardappeleters"
-    .add(DC.TITLE, literal("De Aardappeleters", "nl"))
+    .add(DC.TITLE, Values.literal("De Aardappeleters", "nl"))
     .build();
 
 // To see what's in our model, let's just print it to the screen
 for (Statement st : model) {
   // we want to see the object values of each statement
   Value value = st.getObject();
-  if (value instanceof Literal) {
+  if (value.isLiteral()) {
     Literal title = (Literal) value;
     System.out.println("language: " + title.getLanguage().orElse("unknown"));
     System.out.println(" title: " + title.getLabel());
@@ -264,7 +260,7 @@ Blank nodes can be useful, but they can also complicate things. They can not be 
 
 ```java {linenos=inline}
 // Create a bnode for the address
-BNode address = bnode();
+BNode address = Values.bnode();
 
 // First we do the same thing we did in example 02: create a new ModelBuilder, and add
 // two statements about Picasso.
@@ -400,7 +396,7 @@ We have more sophisticated options at our disposal, however.
 
 ```java {linenos=inline}
 // We want to find all information about the artist `ex:VanGogh`.
-IRI vanGogh = iri("http://example.org/VanGogh");
+IRI vanGogh = Values.iri("http://example.org/VanGogh");
 
 // By filtering on a specific subject we zoom in on the data that is about that subject.
 // The filter method takes a subject, predicate, object (and optionally a named graph/context)
@@ -698,8 +694,8 @@ try (RepositoryConnection conn = db.getConnection()) {
     String filename = "example-data-artists.ttl";
     try (InputStream input =
       Example14SPARQLConstructQuery.class.getResourceAsStream("/" + filename)) {
-  // add the RDF data from the inputstream directly to our database
-  conn.add(input, "", RDFFormat.TURTLE );
+      // add the RDF data from the inputstream directly to our database
+      conn.add(input, "", RDFFormat.TURTLE );
     }
 
     // We do a simple SPARQL CONSTRUCT-query that retrieves all statements
