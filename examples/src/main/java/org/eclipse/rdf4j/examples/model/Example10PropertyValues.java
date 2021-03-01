@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Set;
@@ -34,10 +36,8 @@ public class Example10PropertyValues {
 		InputStream input = Example10PropertyValues.class.getResourceAsStream("/" + filename);
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
-		ValueFactory vf = SimpleValueFactory.getInstance();
-
 		// We want to find all information about the artist `ex:VanGogh`.
-		IRI vanGogh = vf.createIRI(EX.NAMESPACE, "VanGogh");
+		IRI vanGogh = iri(EX.NAMESPACE, "VanGogh");
 
 		// Retrieve all values of the `ex:creatorOf` property for Van Gogh. These will be
 		// resources that identify paintings by Van Gogh.

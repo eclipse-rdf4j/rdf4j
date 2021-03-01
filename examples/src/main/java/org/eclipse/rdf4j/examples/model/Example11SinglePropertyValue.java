@@ -9,12 +9,10 @@ package org.eclipse.rdf4j.examples.model;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Optional;
-import java.util.Set;
 
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
-import org.eclipse.rdf4j.model.*;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;

@@ -33,7 +33,6 @@ public class Example16SPARQLConstructQuery {
 			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {

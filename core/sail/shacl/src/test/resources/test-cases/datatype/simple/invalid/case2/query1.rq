@@ -10,4 +10,8 @@ INSERT DATA {
 ex:validPerson1 a ex:Person ;
 	ex:age 123.
 
+ex:validPerson2 a ex:Person ;
+	ex:age 123.
+
+
 }

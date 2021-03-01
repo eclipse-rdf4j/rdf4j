@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -29,11 +31,9 @@ public class Example06WriteRdfXml {
 
 	public static void main(String[] args) {
 
-		// To create a blank node for the address, we need a ValueFactory
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		BNode address = vf.createBNode();
+		BNode address = bnode();
 
-		// Identically to example 03, we create a model with some data
+		// Identically to example 05, we create a model with some data
 		ModelBuilder builder = new ModelBuilder();
 		builder
 				.setNamespace("ex", "http://example.org/")

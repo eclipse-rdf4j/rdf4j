@@ -61,7 +61,7 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 				ValidationTuple temp = next;
 				next = null;
@@ -69,7 +69,7 @@ public class NotValuesIn implements PlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				calculateNext();
 
 				return next != null;
@@ -81,10 +81,6 @@ public class NotValuesIn implements PlanNode {
 				parentIterator.close();
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 

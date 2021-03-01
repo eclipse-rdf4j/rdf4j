@@ -8,12 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.CloseablePeakableIteration;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
@@ -46,8 +50,16 @@ public class Unique implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseablePeakableIteration<? extends ValidationTuple, SailException> parentIterator = new CloseablePeakableIteration<>(
-					parent.iterator());
+			final CloseablePeakableIteration<? extends ValidationTuple, SailException> parentIterator;
+
+			{
+				if (compress) {
+					parentIterator = new CloseablePeakableIteration<>(
+							new TargetAndValueSortIterator(new CloseablePeakableIteration<>(parent.iterator())));
+				} else {
+					parentIterator = new CloseablePeakableIteration<>(parent.iterator());
+				}
+			}
 
 			Set<ValidationTupleValueAndActiveTarget> targetAndValueDedupeSet;
 
@@ -75,8 +87,10 @@ public class Unique implements PlanNode {
 						Set<ValidationTuple> tuples = new HashSet<>();
 
 						if (propertyShapeWithValue) {
+
 							while (parentIterator.hasNext()
-									&& parentIterator.peek().getValue().equals(temp.getValue())) {
+									&& parentIterator.peek().getValue().equals(temp.getValue())
+									&& parentIterator.peek().sameTargetAs(temp)) {
 								tuples.add(parentIterator.next());
 							}
 						} else {
@@ -137,13 +151,13 @@ public class Unique implements PlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 				assert !(previous != null && next.compareActiveTarget(previous) < 0);
 
@@ -152,10 +166,6 @@ public class Unique implements PlanNode {
 				return temp;
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 
@@ -257,6 +267,74 @@ public class Unique implements PlanNode {
 		public int hashCode() {
 			return Objects.hash(validationTuple.getActiveTarget(), validationTuple.getValue());
 		}
+	}
+
+	static class TargetAndValueSortIterator implements CloseableIteration<ValidationTuple, SailException> {
+
+		private final CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator;
+
+		public TargetAndValueSortIterator(
+				CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator) {
+			this.iterator = iterator;
+		}
+
+		private Iterator<ValidationTuple> next = Collections.emptyIterator();
+
+		private void calculateNext() {
+			if (next.hasNext()) {
+				return;
+			}
+
+			if (!iterator.hasNext()) {
+				return;
+			}
+
+			ArrayList<ValidationTuple> validationTuples = new ArrayList<>();
+			ValidationTuple temp = iterator.next();
+			if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
+				while (iterator.hasNext()
+						&& temp.sameTargetAs(iterator.peek())
+						&& iterator.peek().getScope() == ConstraintComponent.Scope.propertyShape
+						&& iterator.peek().hasValue()) {
+					validationTuples.add(iterator.next());
+				}
+			}
+
+			if (validationTuples.isEmpty()) {
+				next = Collections.singletonList(temp).iterator();
+			} else {
+				validationTuples.add(temp);
+
+				ValueComparator valueComparator = new ValueComparator();
+				validationTuples.sort((a, b) -> valueComparator.compare(a.getValue(), b.getValue()));
+				next = validationTuples.iterator();
+
+			}
+
+		}
+
+		@Override
+		public void close() throws SailException {
+			iterator.close();
+		}
+
+		@Override
+		public boolean hasNext() throws SailException {
+			calculateNext();
+			return next.hasNext();
+		}
+
+		@Override
+		public ValidationTuple next() throws SailException {
+			calculateNext();
+			return next.next();
+		}
+
+		@Override
+		public void remove() throws SailException {
+			throw new UnsupportedOperationException();
+		}
+
 	}
 
 }

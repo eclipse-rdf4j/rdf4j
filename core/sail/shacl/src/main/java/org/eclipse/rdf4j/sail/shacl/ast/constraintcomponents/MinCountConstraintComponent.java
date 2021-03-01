@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
@@ -54,12 +55,17 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
 							false);
+		} else {
+			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
+			// we go to the base sail
+
+			PlanNode addedByPath = getTargetChain().getPath().get().getAdded(connectionsGroup, null);
+			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
+			target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
 		}
 
-		target = new Unique(new TrimToTarget(target), false);
-
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-				target,
+				new Unique(new TrimToTarget(target), false),
 				connectionsGroup.getBaseConnection(),
 				getTargetChain().getPath()
 						.get()

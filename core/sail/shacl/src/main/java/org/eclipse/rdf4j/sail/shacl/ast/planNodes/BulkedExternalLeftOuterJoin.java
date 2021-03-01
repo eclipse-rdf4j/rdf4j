@@ -87,13 +87,13 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				calculateNext();
 				return !left.isEmpty();
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
 				if (!left.isEmpty()) {
@@ -134,10 +134,6 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 				return null;
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 
