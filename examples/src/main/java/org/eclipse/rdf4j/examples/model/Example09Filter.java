@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -35,10 +37,8 @@ public class Example09Filter {
 		// Rio also accepts a java.io.Reader as input for the parser.
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
-		ValueFactory vf = SimpleValueFactory.getInstance();
-
 		// We want to find all information about the artist `ex:VanGogh`.
-		IRI vanGogh = vf.createIRI("http://example.org/VanGogh");
+		IRI vanGogh = iri("http://example.org/VanGogh");
 
 		// By filtering on a specific subject we zoom in on the data that is about that subject.
 		// The filter method takes a subject, predicate, object (and optionally a named graph/context)
@@ -52,22 +52,22 @@ public class Example09Filter {
 			// the property predicate can be anything, but it's always an IRI
 			IRI predicate = st.getPredicate();
 
-			// the property value could be an IRI, a BNode, or a Literal. In RDF4J, Value is
+			// the property value could be an IRI, a BNode, a Literal, or an RDF-star Triple. In RDF4J, Value is
 			// is the supertype of all possible kinds of RDF values.
 			Value object = st.getObject();
 
 			// let's print out the statement in a nice way. We ignore the namespaces and only print the
 			// local name of each IRI
 			System.out.print(subject.getLocalName() + " " + predicate.getLocalName() + " ");
-			if (object instanceof Literal) {
+			if (object.isLiteral()) {
 				// it's a literal value. Let's print it out nicely, in quotes, and without any ugly
 				// datatype stuff
 				System.out.println("\"" + ((Literal) object).getLabel() + "\"");
-			} else if (object instanceof IRI) {
+			} else if (object.isIRI()) {
 				// it's an IRI. Just print out the local part (without the namespace)
 				System.out.println(((IRI) object).getLocalName());
 			} else {
-				// it's a blank node. Just print it out as-is.
+				// it's a blank node or an RDF-star Triple. Just print it out as-is.
 				System.out.println(object);
 			}
 		}

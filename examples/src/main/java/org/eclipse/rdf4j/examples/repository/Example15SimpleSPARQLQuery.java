@@ -10,17 +10,12 @@ package org.eclipse.rdf4j.examples.repository;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.TupleQueryResultHandler;
-import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVWriter;
-import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVWriter;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -36,7 +31,6 @@ public class Example15SimpleSPARQLQuery {
 			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
@@ -61,8 +55,7 @@ public class Example15SimpleSPARQLQuery {
 			// A QueryResult is also an AutoCloseable resource, so make sure it gets closed when done.
 			try (TupleQueryResult result = query.evaluate()) {
 				// we just iterate over all solutions in the result...
-				while (result.hasNext()) {
-					BindingSet solution = result.next();
+				for (BindingSet solution : result) {
 					// ... and print out the value of the variable binding for ?s and ?n
 					System.out.println("?s = " + solution.getValue("s"));
 					System.out.println("?n = " + solution.getValue("n"));

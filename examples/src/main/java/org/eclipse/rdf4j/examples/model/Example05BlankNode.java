@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -27,9 +27,8 @@ public class Example05BlankNode {
 
 	public static void main(String[] args) {
 
-		// To create a blank node for the address, we need a ValueFactory
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		BNode address = vf.createBNode();
+		// Create a bnode for the address
+		BNode address = bnode();
 
 		// First we do the same thing we did in example 02: create a new ModelBuilder, and add
 		// two statements about Picasso.

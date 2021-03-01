@@ -24,8 +24,7 @@ public class Example02BuildModel {
 
 		// Create a new RDF model containing two statements by using a ModelBuilder
 		ModelBuilder builder = new ModelBuilder();
-		Model model = builder
-				.setNamespace("ex", "http://example.org/")
+		Model model = builder.setNamespace("ex", "http://example.org/")
 				.subject("ex:Picasso")
 				.add(RDF.TYPE, "ex:Artist") // Picasso is an Artist
 				.add(FOAF.FIRST_NAME, "Pablo") // his first name is "Pablo"
