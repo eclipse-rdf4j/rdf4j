@@ -29,7 +29,7 @@ public class UniqueTest {
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b"), Arrays.asList("b"),
 				Arrays.asList("c"));
 
-		runTest(input);
+		runTest(input, false);
 
 	}
 
@@ -39,7 +39,7 @@ public class UniqueTest {
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a"), Arrays.asList("b", "2"), Arrays.asList("b"),
 				Arrays.asList("b", "3"), Arrays.asList("b", "2"), Arrays.asList("c", "1"));
 
-		runTest(input);
+		runTest(input, false);
 
 	}
 
@@ -49,12 +49,46 @@ public class UniqueTest {
 		MockInputPlanNode input = new MockInputPlanNode(Arrays.asList("a", "1"), Arrays.asList("a", "1"),
 				Arrays.asList("a", "1"), Arrays.asList("a", "1"));
 
-		runTest(input);
+		runTest(input, false);
 
 	}
 
-	private void runTest(MockInputPlanNode input) {
-		Unique unique = new Unique(input, false);
+	@Test
+	public void compressPropertyShape() {
+
+		MockInputPlanNode input = new MockInputPlanNode(
+				Arrays.asList("a", "1"),
+				Arrays.asList("b", "1"),
+				Arrays.asList("c", "1"),
+				Arrays.asList("d", "1"),
+				Arrays.asList("a", "2")
+		);
+
+		runTest(input, true);
+
+	}
+
+	@Test
+	public void compressPropertyShape2() {
+
+		MockInputPlanNode input = new MockInputPlanNode(
+				Arrays.asList("a", "a", "1"),
+				Arrays.asList("b", "a", "1"),
+				Arrays.asList("c", "a", "1"),
+				Arrays.asList("d", "a", "1"),
+				Arrays.asList("a", "a", "2")
+		);
+
+		Unique unique = new Unique(input, true);
+
+		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
+
+		assertEquals(2, tuples.size());
+
+	}
+
+	private void runTest(MockInputPlanNode input, boolean compress) {
+		Unique unique = new Unique(input, compress);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 

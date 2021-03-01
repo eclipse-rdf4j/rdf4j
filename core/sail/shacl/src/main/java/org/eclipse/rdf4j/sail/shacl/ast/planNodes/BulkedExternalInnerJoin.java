@@ -143,22 +143,18 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				calculateNext();
 				return !joined.isEmpty();
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 				return joined.removeFirst();
 
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 

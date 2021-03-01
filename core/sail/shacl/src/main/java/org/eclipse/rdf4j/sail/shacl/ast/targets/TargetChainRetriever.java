@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
@@ -43,6 +44,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
 	private StackTraceElement[] stackTrace;
+	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			List<StatementMatcher> statementPatterns, List<StatementMatcher> removedStatementMatchers, String query,
@@ -70,7 +72,8 @@ public class TargetChainRetriever implements PlanNode {
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
-		return new CloseableIteration<ValidationTuple, SailException>() {
+
+		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final Iterator<StatementMatcher> statementPatternIterator = statementPatterns.iterator();
 			final Iterator<StatementMatcher> removedStatementIterator = removedStatementMatchers.iterator();
@@ -211,14 +214,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			public boolean hasNext() throws SailException {
-				calculateNextResult();
-
-				return next != null;
-			}
-
-			@Override
-			public ValidationTuple next() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNextResult();
 
 				ValidationTuple temp = next;
@@ -228,9 +224,12 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
+			protected boolean localHasNext() throws SailException {
+				calculateNextResult();
+
+				return next != null;
 			}
+
 		};
 	}
 
@@ -251,7 +250,7 @@ public class TargetChainRetriever implements PlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
-
+		this.validationExecutionLogger = validationExecutionLogger;
 	}
 
 	@Override

@@ -60,10 +60,6 @@ public class ValuesBackedNode implements PlanNode {
 				return new ValidationTuple(targets, scope, false);
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 

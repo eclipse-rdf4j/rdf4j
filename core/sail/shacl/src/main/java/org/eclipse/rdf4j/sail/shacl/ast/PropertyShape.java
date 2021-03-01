@@ -204,7 +204,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			if (scope == Scope.propertyShape) {
 				validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
 			} else {
-				validationPlanNode = new ShiftToNodeShape(validationPlanNode);
+				validationPlanNode = new Unique(new ShiftToNodeShape(validationPlanNode), true);
 			}
 
 			union = new UnionNode(union, validationPlanNode);

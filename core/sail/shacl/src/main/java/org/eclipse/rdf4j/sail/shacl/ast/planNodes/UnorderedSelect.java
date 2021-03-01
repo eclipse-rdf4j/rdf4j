@@ -63,20 +63,16 @@ public class UnorderedSelect implements PlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				return statements.hasNext();
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 
 				return mapper.apply(statements.next());
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 

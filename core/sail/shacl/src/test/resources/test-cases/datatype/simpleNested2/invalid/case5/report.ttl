@@ -1,0 +1,100 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+
+[] a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:c;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "8"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:g;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "z"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:d;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "x"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:a;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "8"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:b;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "9"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:e;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "x"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:a;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:b;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:c;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "9"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:c;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:f;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "z"
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:b;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:value "8"
+    ] .
+
+_:node1ev4ek0h0x2 a sh:PropertyShape;
+  sh:datatype xsd:integer;
+  sh:path ex:age .

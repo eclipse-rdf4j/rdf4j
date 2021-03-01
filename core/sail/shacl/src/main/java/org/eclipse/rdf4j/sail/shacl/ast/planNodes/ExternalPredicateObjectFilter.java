@@ -122,13 +122,13 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			}
 
 			@Override
-			boolean localHasNext() throws SailException {
+			protected boolean localHasNext() throws SailException {
 				calculateNext();
 				return next != null;
 			}
 
 			@Override
-			ValidationTuple loggingNext() throws SailException {
+			protected ValidationTuple loggingNext() throws SailException {
 				calculateNext();
 
 				ValidationTuple temp = next;
@@ -137,10 +137,6 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				return temp;
 			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
 		};
 	}
 
