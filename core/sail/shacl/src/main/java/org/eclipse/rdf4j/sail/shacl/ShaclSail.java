@@ -176,8 +176,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
 
-	private List<Shape> shapes = Collections.emptyList();
-
 	private static final Model DASH_CONSTANTS;
 
 	/**
@@ -351,7 +349,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
 			shapesRepoConnection.begin(IsolationLevels.NONE);
-			shapes = refreshShapes(shapesRepoConnection);
 			shapesRepoConnection.commit();
 		}
 
@@ -359,9 +356,8 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	}
 
-	@Experimental
-	public List<Shape> refreshShapes(RepositoryConnection shapesRepoConnection) throws SailException {
-
+	@InternalUseOnly
+	public List<Shape> getShapes(RepositoryConnection shapesRepoConnection) throws SailException {
 		SailRepository shapesRepoCache = new SailRepository(
 				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
@@ -384,19 +380,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private void forceRefreshShapes() {
-		Lock writeLock = null;
-		try {
-			writeLock = acquireExclusiveWriteLock(null);
-			if (shapesRepo != null) {
-				try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-					shapesRepoConnection.begin(IsolationLevels.NONE);
-					shapes = refreshShapes(shapesRepoConnection);
-					shapesRepoConnection.commit();
-				}
-			}
-		} finally {
-			if (writeLock != null) {
-				releaseExclusiveWriteLock(writeLock);
+		if (shapesRepo != null) {
+			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+				shapesRepoConnection.begin(IsolationLevels.NONE, TransactionSettings.ValidationApproach.Bulk);
+				shapesRepoConnection.commit();
 			}
 		}
 	}
@@ -425,7 +412,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 		initialized.set(false);
 		executorService[0] = null;
-		shapes = Collections.emptyList();
 		super.shutDown();
 	}
 
@@ -462,10 +448,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		}
 
 		return shaclSailConnection;
-	}
-
-	List<Shape> getShapes() {
-		return shapes;
 	}
 
 	private void enrichShapes(SailRepositoryConnection shaclSailConnection) {
@@ -558,10 +540,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 		lock.release();
 
 		return null;
-	}
-
-	void setShapes(List<Shape> shapes) {
-		this.shapes = shapes;
 	}
 
 	/**
@@ -768,6 +746,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	 * @return <code>true</code> if serializable validation is enabled, <code>false</code> otherwise.
 	 */
 	public boolean isSerializableValidation() {
+		if (getBaseSail() instanceof SchemaCachingRDFSInferencer) {
+			if (serializableValidation) {
+				logger.error("SchemaCachingRDFSInferencer is not supported when using serializable validation!");
+			}
+			return false;
+		}
 		return serializableValidation;
 	}
 
@@ -842,7 +826,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@InternalUseOnly
 	public List<Shape> getCurrentShapes() {
-		return shapes;
+		try (SailRepositoryConnection connection = shapesRepo.getConnection()) {
+			return getShapes(connection);
+		}
 	}
 
 	/**
