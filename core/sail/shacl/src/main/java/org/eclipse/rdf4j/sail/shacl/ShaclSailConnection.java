@@ -666,7 +666,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				shapesModifiedInCurrentTransaction = true;
 				shapesAfterRefresh = sail.getShapes(shapesRepoConnection);
 			} else {
-				shapesAfterRefresh = null;
+				shapesAfterRefresh = shapesBeforeRefresh;
 			}
 
 			stats.setEmpty(isEmpty());
