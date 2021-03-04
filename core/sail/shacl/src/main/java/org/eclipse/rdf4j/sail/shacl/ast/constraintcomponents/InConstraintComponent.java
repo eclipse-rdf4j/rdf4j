@@ -33,14 +33,12 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.IN, getId());
-		if (!rdfListDedupe.contains(getId())) {
-			rdfListDedupe.add(getId());
+
+		if (!model.contains(getId(), null, null)) {
 			HelperTool.listToRdf(in, getId(), model);
 		}
-
 	}
 
 	@Override

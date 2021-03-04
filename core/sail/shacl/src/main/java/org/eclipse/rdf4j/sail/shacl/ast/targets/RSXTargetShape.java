@@ -56,9 +56,8 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
-		targetShape.toModel(subject, getPredicate(), model, cycleDetection, rdfListDedupe);
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
+		targetShape.toModel(subject, getPredicate(), model, cycleDetection);
 	}
 
 	@Override

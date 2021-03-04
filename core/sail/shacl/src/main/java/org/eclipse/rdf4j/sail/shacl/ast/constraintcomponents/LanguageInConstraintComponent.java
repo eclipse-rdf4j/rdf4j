@@ -52,17 +52,14 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.LANGUAGE_IN, getId());
-		if (!rdfListDedupe.contains(getId())) {
-			rdfListDedupe.add(getId());
 
+		if (!model.contains(getId(), null, null)) {
 			HelperTool.listToRdf(languageIn.stream()
 					.map(Values::literal)
 					.collect(Collectors.toList()), getId(), model);
 		}
-
 	}
 
 	@Override

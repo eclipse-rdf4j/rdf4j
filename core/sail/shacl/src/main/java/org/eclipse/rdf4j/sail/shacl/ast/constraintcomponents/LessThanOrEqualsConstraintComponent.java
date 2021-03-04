@@ -17,8 +17,7 @@ public class LessThanOrEqualsConstraintComponent extends AbstractConstraintCompo
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.LESS_THAN_OR_EQUALS, this.predicate);
 	}
 

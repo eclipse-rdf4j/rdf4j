@@ -75,8 +75,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.QUALIFIED_VALUE_SHAPE, getId());
 
 		if (qualifiedValueShapesDisjoint != null) {
@@ -87,7 +86,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 			model.add(subject, SHACL.QUALIFIED_MAX_COUNT, literal(BigInteger.valueOf(qualifiedMaxCount)));
 		}
 
-		qualifiedValueShape.toModel(null, null, model, cycleDetection, rdfListDedupe);
+		qualifiedValueShape.toModel(null, null, model, cycleDetection);
 
 	}
 

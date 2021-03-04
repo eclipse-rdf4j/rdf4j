@@ -49,14 +49,12 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, DASH.hasValueIn, getId());
-		if (!rdfListDedupe.contains(getId())) {
-			rdfListDedupe.add(getId());
+
+		if (!model.contains(getId(), null, null)) {
 			HelperTool.listToRdf(hasValueIn, getId(), model);
 		}
-
 	}
 
 	@Override

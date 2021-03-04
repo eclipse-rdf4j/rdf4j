@@ -23,8 +23,7 @@ public class MinInclusiveConstraintComponent extends SimpleAbstractConstraintCom
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.MIN_INCLUSIVE, minInclusive);
 	}
 
