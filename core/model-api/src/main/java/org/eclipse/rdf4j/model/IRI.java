@@ -31,7 +31,7 @@ package org.eclipse.rdf4j.model;
  *           specs.
  */
 @SuppressWarnings("deprecation")
-public interface IRI extends URI, Resource {
+public interface IRI extends URI, Resource, Step, Path.Hop {
 
 	@Override
 	default boolean isIRI() {
@@ -57,6 +57,59 @@ public interface IRI extends URI, Resource {
 	 */
 	@Override
 	String getLocalName();
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return {@code false}
+	 */
+	@Override
+	default boolean isInverse() {
+		return false;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return {@code false}
+	 */
+	@Override
+	default boolean isOptional() {
+		return false;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return {@code false}
+	 */
+	@Override
+	default boolean isRepeatable() {
+		return false;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return this IRI
+	 */
+	@Override
+	default IRI getIRI() {
+		return this;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	default <V> V accept(Visitor<V> visitor) {
+
+		if (visitor == null) {
+			throw new NullPointerException("null visitor");
+		}
+
+		return visitor.visit(this);
+	}
 
 	/**
 	 * Compares this IRI to another object.
