@@ -742,6 +742,23 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// Apply result ordering
 		tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, null);
 
+		// process limit and offset clauses
+		ASTLimit limitNode = node.getLimit();
+		long limit = -1L;
+		if (limitNode != null) {
+			limit = (Long) limitNode.jjtAccept(this, null);
+		}
+
+		ASTOffset offsetNode = node.getOffset();
+		long offset = -1;
+		if (offsetNode != null) {
+			offset = (Long) offsetNode.jjtAccept(this, null);
+		}
+
+		if (offset >= 1 || limit >= 0) {
+			tupleExpr = new Slice(tupleExpr, offset, limit);
+		}
+
 		// Process construct clause
 		ASTConstruct constructNode = node.getConstruct();
 		if (!constructNode.isWildcard()) {
@@ -758,23 +775,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			} catch (MalformedQueryException e) {
 				throw new VisitorException(e.getMessage());
 			}
-		}
-
-		// process limit and offset clauses
-		ASTLimit limitNode = node.getLimit();
-		long limit = -1L;
-		if (limitNode != null) {
-			limit = (Long) limitNode.jjtAccept(this, null);
-		}
-
-		ASTOffset offsetNode = node.getOffset();
-		long offset = -1;
-		if (offsetNode != null) {
-			offset = (Long) offsetNode.jjtAccept(this, null);
-		}
-
-		if (offset >= 1 || limit >= 0) {
-			tupleExpr = new Slice(tupleExpr, offset, limit);
 		}
 
 		return tupleExpr;
