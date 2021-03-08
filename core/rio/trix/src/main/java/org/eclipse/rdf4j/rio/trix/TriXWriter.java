@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.common.xml.XMLWriter;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,22 +43,14 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  *
  * @author Arjohn Kampman
  */
-public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
+public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
-	private XMLWriter xmlWriter;
+	private final XMLWriter xmlWriter;
 
 	private boolean inActiveContext = false;
 
 	private boolean convertRDFStar;
 	private Resource currentContext = null;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new TriXWriter that will write to the supplied OutputStream.
@@ -65,7 +58,6 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 	 * @param out The OutputStream to write the RDF/XML document to.
 	 */
 	public TriXWriter(OutputStream out) {
-		super(out);
 		this.xmlWriter = new XMLWriter(out);
 		this.xmlWriter.setPrettyPrint(true);
 	}
@@ -84,9 +76,10 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter {
 		this.xmlWriter.setPrettyPrint(true);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	public Writer getWriter() {
+		return xmlWriter.getWriter();
+	}
 
 	@Override
 	public RDFFormat getRDFFormat() {

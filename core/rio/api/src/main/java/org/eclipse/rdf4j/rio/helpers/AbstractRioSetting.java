@@ -83,4 +83,9 @@ public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 		return getKey().hashCode();
 	}
 
+	@Override
+	public String toString() {
+		return getKey();
+	}
+
 }

@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
@@ -89,9 +91,17 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		super.setTransactionSettings(settings);
+		this.getWriteStrategyInternal().setTransactionSettings(settings);
+	}
+
+	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
 			TupleExpr query, Dataset dataset, BindingSet bindings,
 			boolean includeInferred) throws SailException {
+
+		final TupleExpr _orgQuery = query;
 
 		FederationEvalStrategy strategy = federationContext.getStrategy();
 
@@ -104,6 +114,13 @@ public class FedXConnection extends AbstractSailConnection {
 			}
 			queryInfo = new QueryInfo(queryString, getOriginalBaseURI(bindings), getOriginalQueryType(bindings),
 					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext, dataset);
+
+			// check if we have pass-through result handler information for single source queries
+			if (query instanceof PassThroughTupleExpr) {
+				PassThroughTupleExpr node = ((PassThroughTupleExpr) query);
+				queryInfo.setResultHandler(node.getResultHandler());
+				query = node.getExpr();
+			}
 
 			if (log.isDebugEnabled()) {
 				log.debug("Optimization start (Query: " + queryInfo.getQueryID() + ")");
@@ -150,6 +167,13 @@ public class FedXConnection extends AbstractSailConnection {
 			}
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> res = strategy.evaluate(query,
 					queryBindings);
+
+			// mark the query as PassedThrough, such that outer result handlers are aware of this
+			// Note: for SingleSourceQuery (i.e. where we use pass through) res is explicitly
+			// EmptyIteration. Thus we can use it as indicator
+			if (_orgQuery instanceof PassThroughTupleExpr && res instanceof EmptyIteration) {
+				((PassThroughTupleExpr) _orgQuery).setPassedThrough(true);
+			}
 			res = new StopRemainingExecutionsOnCloseIteration(res, queryInfo);
 			return res;
 		} catch (QueryEvaluationException e) {

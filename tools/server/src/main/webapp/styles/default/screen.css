@@ -7,7 +7,7 @@ html,body {
 	color: #000;
 	line-height: 100%;
 	font-size: 100%;
-	font-family: Georgia, Times New Roman, Times Roman, Times, serif;
+	font-family: Roboto,Libre Franklin,Helvetica Neue,Helvetica,Arial,sans-serif;
 }
 
 html {
@@ -32,7 +32,7 @@ a:active {
 
 h1,h2,h3,h4 {
 	color: #000;
-	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
+	font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica,Arial, sans-serif;
 	font-weight: bold;
 }
 
@@ -133,9 +133,9 @@ hr {
 	width: 190px;
 	background: url(images/hr_menu.png);
 	background-repeat: no-repeat;
-	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
+	font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica,Arial, sans-serif;
 	font-weight: bold;
-	font-size: 83%;;
+	font-size: 100%;
 	margin: 10px 0 0 5px;
 }
 
@@ -211,8 +211,8 @@ hr {
 	height: 55px;
 	color: #FFF;
 	font-weight: bold;
-	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
-	font-size: 67%;
+	font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica,Arial, sans-seriff;
+	font-size: 100%;
 }
 
 #contentheader h3,#contentheader p,#contentheader table,#contentheader ul {
@@ -277,7 +277,7 @@ hr {
 
 #content h1 {
 	margin: 0 0 4px 0;
-	padding: 0 0 10px 0;
+	padding: 0 0 16px 0;
 	border-bottom: 1px solid #666;
 	font-size: 250%;
 }
@@ -336,7 +336,7 @@ hr {
 	margin-left: 200px;
 	padding: 0 20px 15px 15px;
 	color: #333;
-	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
+	font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica,Arial, sans-serif;
 	font-size: 67%;
 }
 
@@ -398,7 +398,7 @@ table.screenshots {
 }
 
 .data th,.dataentry th {
-	font-family: Trebuchet MS, Arial, Helvetica, sans-serif;
+	font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica,Arial, sans-serif;
 	font-weight: bold;
 }
 

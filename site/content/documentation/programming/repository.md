@@ -88,7 +88,9 @@ Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
 
 ### Elasticserch RDF Repository
 
-> Experimental! New in RDF4J 3.1
+{{< tag " New in RDF4J 3.1" >}}
+
+{{< tag " Experimental " >}}
 
 The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with the ElasticsearchSail which uses Elasticsearch for enhanced search.
 
@@ -132,7 +134,7 @@ Repository repo = new SailRepository(
 
 Each layer in the Sail stack is created by a constructor that takes the underlying Sail as a parameter. Finally, we create the SailRepository object as a functional wrapper around the Sail stack.
 
-The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
+The {{< javadoc "SchemaCachingRDFSInferencer" "sail/inferencer/fc/SchemaCachingRDFSInferencer.html" >}} that is used in this example is a generic RDF Schema inferencer; it can be used on top of any Sail that supports the methods it requires. Both MemoryStore and NativeStore support these methods. However, a word of warning: the RDF4J inferencers add a significant performance overhead when adding and removing data to a repository, an overhead that gets progressively worse as the total size of the repository increases. For small to medium-sized datasets it peforms fine, but for larger datasets you are advised not to use it and to switch to alternatives.
 
 ### Custom Inferencing
 
@@ -325,43 +327,7 @@ The RepositoryProvider creates and keeps a singleton instance of RepositoryManag
 
 ### Creating a Federation
 
-It is possible to create a virtual repository that is a federation of existing repositories. The following code illustrates how to use the RepositoryManagerFederator class to create a federation. It assumes you already have a reference to a RepositoryManager instance, and is a simplified form of what the RDF4J Console runs when its federate command is invoked:
-
-```java
-void federate(RepositoryManager manager, String fedID, String description,
-	Collection<String> memberIDs, boolean readonly, boolean distinct)
-	throws MalformedURLException, RDF4JException {
-    if (manager.hasRepositoryConfig(fedID)) {
-	System.err.println(fedID + " already exists.");
-    }
-    else if (validateMembers(manager, readonly, memberIDs)) {
-	RepositoryManagerFederator rmf =
-	    new RepositoryManagerFederator(manager);
-	rmf.addFed(fedID, description, memberIDs, readonly, distinct);
-	System.out.writeln("Federation created.");
-    }
-}
-boolean validateMembers(RepositoryManager manager, boolean readonly,
-	 Collection<String> memberIDs)
-	 throws RDF4JException {
-    boolean result = true;
-    for (String memberID : memberIDs) {
-	if (manager.hasRepositoryConfig(memberID)) {
-	    if (!readonly) {
-		if (!manager.getRepository(memberID).isWritable()) {
-		    result = false;
-		    System.err.println(memberID + " is read-only.");
-		}
-	    }
-	}
-	else {
-	   result = false;
-	   System.err.println(memberID + " does not exist.");
-	}
-    }
-    return result;
-}
-```
+RDF4J has the option to create a repository that acts as a federation of stores. For more information about this, see the [FedX federation](/documentation/programming/federation) documentation.
 
 ## Using a repository: RepositoryConnections
 
@@ -619,10 +585,10 @@ try (RepositoryConnection con = repo.getConnection()){
 }
 ```
 
-The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). Using a ValueFactory you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
+The values with which you perform the `setBinding` operation of course do not necessarily have to come from a previous query result (as they do in the above example). As also shown in [The RDF Model API documentation](/documentation/programming/model/#creating-new-building-blocks-the-values-and-statements-factory-methods), you can create your own value objects. You can use this functionality to, for example, query for a particular keyword that is given by user input:
 
 ```java
-ValueFactory factory = myRepository.getValueFactory();
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 // In this example, we specify the keyword string. Of course, this
 // could just as easily be obtained by user input, or by reading from
@@ -638,15 +604,13 @@ TupleQuery keywordQuery = con.prepareTupleQuery("SELECT ?document WHERE { ?docum
 // Evaluation of the query object will now effectively be the same as
 // if we had specified the query as follows:
 //   SELECT ?document WHERE { ?document ex:keyword "foobar". }
-keywordQuery.setBinding("keyword", factory.createLiteral(keyword));
+keywordQuery.setBinding("keyword", literal(keyword));
 
 // We then evaluate the prepared query and can process the result:
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
 #### Explaining queries
-
-> New in RDF4J 3.2.0 - Experimental feature
 
 SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and
 the results returned. The query explain feature gives a peek into what decisions are being made and how they affect
@@ -657,7 +621,7 @@ Explaining queries currently only works if you are using one of the built in sto
 If you are connecting to a remote RDF4J Server, using the Workbench or connecting to a third party database then you will get an
 UnsupportedException.
 
-In 3.2.0 queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
+In RDF4J 3.2.0, queries have a new method `explain(...)` that returns an `Explanation` explaining how the query will be, or has been, evaluated.
 
  ```java
  try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -987,6 +951,13 @@ Projection (resultSizeActual=9, totalTimeActual=0.448ms, selfTimeActual=0.007ms)
 
 Notice that `ArbitraryLengthPath` produces 5 results and that the entire query runs in 0.164ms instead of 1.5s.
 
+Another way to visualize the query plan is to use the Graphiz DOT format with `query.explain(Explanation.Level.Timed).toDot()`.
+This visualization makes it easier to see which part of the query is slowest by looking at the color coding.
+
+<img src="../images/query-plan-explanation.png" alt="Picture of query explanation visualized with Graphviz." class="img-responsive"/>
+
+[Image produced by Dreampuf GraphvizOnline](https://dreampuf.github.io/GraphvizOnline/#digraph%20Explanation%20%7B%0A%20%20%20UUID_beb1d25d33bd4dcc9e6b42e6fd85fa2b%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FF0000%22%3E%3CU%3EProjection%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3EResult%20size%20actual%3C%2Ftd%3E%3Ctd%3E9%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3ETotal%20time%20actual%3C%2Ftd%3E%3Ctd%20BGCOLOR%3D%22%23FF0000%22%3E1.47ms%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3ESelf%20time%20actual%3C%2Ftd%3E%3Ctd%20BGCOLOR%3D%22%23FFE9E9%22%3E0.038ms%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20UUID_beb1d25d33bd4dcc9e6b42e6fd85fa2b%20-%3E%20UUID_277b9dba1bb44f4b87f15fdfa32de472%20%5Blabel%3D%22left%22%5D%20%3B%0A%20%20%20UUID_beb1d25d33bd4dcc9e6b42e6fd85fa2b%20-%3E%20UUID_e3dd648f8f684d4fbfd4b7f7a6960947%20%5Blabel%3D%22right%22%5D%20%3B%0A%20%20%20UUID_277b9dba1bb44f4b87f15fdfa32de472%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FFFFFF%22%3E%3CU%3EProjectionElemList%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20UUID_277b9dba1bb44f4b87f15fdfa32de472%20-%3E%20UUID_3c67ab803c074c60bd1a0c8a0a070a67%20%5Blabel%3D%22index%200%22%5D%20%3B%0A%20%20%20UUID_277b9dba1bb44f4b87f15fdfa32de472%20-%3E%20UUID_c55be31929a046e1acaeee2cd0aebf7b%20%5Blabel%3D%22index%201%22%5D%20%3B%0A%20%20%20UUID_277b9dba1bb44f4b87f15fdfa32de472%20-%3E%20UUID_fb810ed934504076840e795c5fd49493%20%5Blabel%3D%22index%202%22%5D%20%3B%0A%20%20%20UUID_3c67ab803c074c60bd1a0c8a0a070a67%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FFFFFF%22%3E%3CU%3EProjectionElem%20%26quot%3Bperson%26quot%3B%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20UUID_c55be31929a046e1acaeee2cd0aebf7b%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FFFFFF%22%3E%3CU%3EProjectionElem%20%26quot%3Bfriend%26quot%3B%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20UUID_fb810ed934504076840e795c5fd49493%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FFFFFF%22%3E%3CU%3EProjectionElem%20%26quot%3Bage%26quot%3B%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20subgraph%20cluster_UUID_e3dd648f8f684d4fbfd4b7f7a6960947%20%7B%0A%20%20%20color%3Dgrey%0AUUID_e3dd648f8f684d4fbfd4b7f7a6960947%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCOLOR%3D%22%23FF0606%22%3E%3CU%3EUnion%3C%2FU%3E%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%3E%3CB%3ENew%20scope%3C%2FB%3E%3C%2Ftd%3E%3Ctd%3E%3CB%3Etrue%3C%2FB%3E%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3EResult%20size%20actual%3C%2Ftd%3E%3Ctd%3E9%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3ETotal%20time%20actual%3C%2Ftd%3E%3Ctd%20BGCOLOR%3D%22%23FF0606%22%3E1.44ms%3C%2Ftd%3E%3C%2Ftr%3E%20%3Ctr%3E%3Ctd%20%3ESelf%20time%20actual%3C%2Ftd%3E%3Ctd%20BGCOLOR%3D%22%23FFAEAE%22%3E0.14ms%3C%2Ftd%3E%3C%2Ftr%3E%3C%2Ftable%3E%3E%20shape%3Dplaintext%5D%3B%0A%20%20%20UUID_e3dd648f8f684d4fbfd4b7f7a6960947%20-%3E%20UUID_460b578e6230407f986cd444b91ab796%20%5Blabel%3D%22left%22%5D%20%3B%0A%20%20%20UUID_e3dd648f8f684d4fbfd4b7f7a6960947%20-%3E%20UUID_b603ce18210d4c059f2aa6302341fb39%20%5Blabel%3D%22right%22%5D%20%3B%0A%20%20%20UUID_460b578e6230407f986cd444b91ab796%20%5Blabel%3D%3C%3Ctable%20BORDER%3D%220%22%20CELLBORDER%3D%221%22%20CELLSPACING%3D%220%22%20CELLPADDING%3D%223%22%20%3E%3Ctr%3E%3Ctd%20COLSPAN%3D%222%22%20BGCO)
+
 If you want to practice with these examples, the code below produces these three plans.
 
 ```java
@@ -1105,6 +1076,7 @@ public class QueryExplainExample {
 
 			Explanation explain = query.explain(Explanation.Level.Timed);
 			System.out.println(explain);
+			System.out.println(explain.toDot());
 
 		}
 
@@ -1120,22 +1092,20 @@ public class QueryExplainExample {
 
 The RepositoryConnection can also be used for adding, retrieving, removing or otherwise manipulating individual statements, or sets of statements.
 
-To be able to add new statements, we can use a ValueFactory to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
+To be able to add new statements, we can use either the {{ < javadoc "Values" "model/util/Values.html" > }} factory methods or a `ValueFactory` to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
 
 ```java
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 ...
 
-ValueFactory f = myRepository.getValueFactory();
-
 // create some resources and literals to make statements out of
-IRI alice = f.createIRI("http://example.org/people/alice");
-IRI bob = f.createIRI("http://example.org/people/bob");
-IRI name = f.createIRI("http://example.org/ontology/name");
-IRI person = f.createIRI("http://example.org/ontology/Person");
-Literal bobsName = f.createLiteral("Bob");
-Literal alicesName = f.createLiteral("Alice");
+IRI alice = Values.iri("http://example.org/people/alice");
+IRI bob = Values.iri("http://example.org/people/bob");
+IRI name = Values.iri("http://example.org/ontology/name");
+IRI person = Values.iri("http://example.org/ontology/Person");
+Literal bobsName = Values.literal("Bob");
+Literal alicesName = Values.literal("Alice");
 
 try (RepositoryConnection con = myRepository.getConnection()) {
   // alice is a person
@@ -1149,7 +1119,7 @@ try (RepositoryConnection con = myRepository.getConnection()) {
 }
 ```
 
-Of course, it will not always be necessary to use a ValueFactory to create IRIs. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
+Of course, it will not always be necessary to create IRI objects. In practice, you will find that you quite often retrieve existing IRIs from the repository (for example, by evaluating a query) and then use those values to add new statements. Also, for several well-knowns vocabularies we can simply reuse the predefined constants found in the org.eclipse.rdf4j.model.vocabulary package, and using the ModelBuilder utility you can very quickly create collections of statements without ever touching a ValueFactory.
 
 Retrieving statements works in a very similar way. One way of retrieving statements we have already seen actually: we can get a GraphQueryResult containing statements by evaluating a graph query. However, we can also use direct method calls to retrieve (sets of) statements. For example, to retrieve all statements about Alice, we could do:
 
@@ -1453,13 +1423,15 @@ Although transactions are a convenient mechanism, having to always call `begin()
 As an example, consider this bit of transactional code. It opens a connection, starts a transaction, adds two RDF statements, and then commits. It also makes sure that it rolls back the transaction if something went wrong, and it ensures that once we’re done, the connection is closed.
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 RepositoryConnection conn = myRepository.getConnection();
 try {
    conn.begin();
    conn.add(bob, RDF.TYPE, FOAF.PERSON);
-   conn.add(bob, FOAF.NAME, f.createLiteral("Bob"));
+   conn.add(bob, FOAF.NAME, literal("Bob"));
    conn.commit();
 }
 catch (RepositoryException e) {
@@ -1473,11 +1445,13 @@ finally {
 That's an awful lot of code for just inserting two triples. The same thing can be achieved with far less boilerplate code, as follows:
 
 ```java
-ValueFactory f = myRepository.getValueFactory();
-IRI bob = f.createIRI("urn:bob");
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+IRI bob = iri("urn:bob");
 Repositories.consume(myRepository, conn -> {
   conn.add(bob, RDF.TYPE, FOAF.PERSON);
-  conn.add(bob, RDFS.LABEL, f.createLiteral("Bob"));
+  conn.add(bob, RDFS.LABEL, literal("Bob"));
 });
 ```
 
@@ -1491,4 +1465,6 @@ The Repository API supports multithreaded access to a store: multiple concurrent
 
 The Repository object is thread-safe, and can be safely shared and reused across multiple threads (a good way to do this is via a RepositoryProvider).
 
-NOTE: RepositoryConnection is not thread-safe. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads.
+{{< warning >}}
+<strong>RepositoryConnection is not thread-safe</strong>. This means that you should not try to share a single RepositoryConnection over multiple threads. Instead, ensure that each thread obtains its own RepositoryConnection from a shared Repository object. You can use transaction isolation levels to control visibility of concurrent updates between threads.
+{{</ warning >}}

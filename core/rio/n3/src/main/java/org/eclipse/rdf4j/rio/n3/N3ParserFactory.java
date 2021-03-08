@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.rio.n3;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
-import org.eclipse.rdf4j.rio.n3.N3Parser;
 
 /**
  * An {@link RDFParserFactory} for N3 parsers.

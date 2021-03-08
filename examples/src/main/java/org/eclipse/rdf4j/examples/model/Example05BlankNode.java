@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -19,8 +19,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 /**
  * RDF Tutorial example 05: Adding blank nodes to an RDF Model.
  *
- * In this example, we show how you can use a blank node for representing composite
- * objects - in this case, an address.
+ * In this example, we show how you can use a blank node for representing composite objects - in this case, an address.
  *
  * @author Jeen Broekstra
  */
@@ -28,9 +27,8 @@ public class Example05BlankNode {
 
 	public static void main(String[] args) {
 
-		// To create a blank node for the address, we need a ValueFactory
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		BNode address = vf.createBNode();
+		// Create a bnode for the address
+		BNode address = bnode();
 
 		// First we do the same thing we did in example 02: create a new ModelBuilder, and add
 		// two statements about Picasso.
@@ -38,20 +36,20 @@ public class Example05BlankNode {
 		builder
 				.setNamespace("ex", "http://example.org/")
 				.subject("ex:Picasso")
-					.add(RDF.TYPE, "ex:Artist")
-					.add(FOAF.FIRST_NAME, "Pablo")
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "Pablo")
 				// this is where it becomes new: we add the address by linking the blank node
 				// to picasso via the `ex:homeAddress` property, and then adding facts _about_ the address
-					.add("ex:homeAddress", address) // link the blank node
-				.subject(address)			// switch the subject
-					.add("ex:street", "31 Art Gallery")
-					.add("ex:city", "Madrid")
-					.add("ex:country", "Spain");
+				.add("ex:homeAddress", address) // link the blank node
+				.subject(address) // switch the subject
+				.add("ex:street", "31 Art Gallery")
+				.add("ex:city", "Madrid")
+				.add("ex:country", "Spain");
 
 		Model model = builder.build();
 
 		// To see what's in our model, let's just print it to the screen
-		for(Statement st: model) {
+		for (Statement st : model) {
 			System.out.println(st);
 		}
 	}

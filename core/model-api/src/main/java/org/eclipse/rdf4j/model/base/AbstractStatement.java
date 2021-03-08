@@ -10,7 +10,10 @@ package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link Statement}, offering common functionality.
@@ -30,14 +33,14 @@ public abstract class AbstractStatement implements Statement {
 		// so these are checked last.
 
 		return this == o || o instanceof Statement
-				&& Objects.equals(getObject(), ((Statement) o).getObject())
-				&& Objects.equals(getSubject(), ((Statement) o).getSubject())
-				&& Objects.equals(getPredicate(), ((Statement) o).getPredicate())
+				&& getObject().equals(((Statement) o).getObject())
+				&& getSubject().equals(((Statement) o).getSubject())
+				&& getPredicate().equals(((Statement) o).getPredicate())
 				&& Objects.equals(getContext(), ((Statement) o).getContext());
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
 		return Objects.hash(getSubject(), getPredicate(), getObject(), getContext());
 	}
 
@@ -49,6 +52,44 @@ public abstract class AbstractStatement implements Statement {
 				+ ", " + getObject()
 				+ (getContext() == null ? "" : ", " + getContext())
 				+ ")";
+	}
+
+	static class GenericStatement extends AbstractStatement {
+
+		private static final long serialVersionUID = -4116676621136121342L;
+
+		private Resource subject;
+		private IRI predicate;
+		private Value object;
+		private Resource context;
+
+		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object;
+		}
+
+		@Override
+		public Resource getContext() {
+			return context;
+		}
+
 	}
 
 }

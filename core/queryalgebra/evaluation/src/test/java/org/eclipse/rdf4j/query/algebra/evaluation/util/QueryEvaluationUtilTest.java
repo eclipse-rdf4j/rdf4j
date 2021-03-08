@@ -10,14 +10,23 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.EQ;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.LT;
 import static org.eclipse.rdf4j.query.algebra.Compare.CompareOp.NE;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Optional;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.Before;
@@ -28,7 +37,7 @@ import org.junit.Test;
  */
 public class QueryEvaluationUtilTest {
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	private Literal arg1simple;
 
@@ -451,4 +460,177 @@ public class QueryEvaluationUtilTest {
 				QueryEvaluationUtil.compareLiterals(lit1, lit2, op, strict));
 	}
 
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithCustomLiterals() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral(5);
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			QueryEvaluationUtil.compareLiterals(right, left, op, true);
+		}
+
+	}
+
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithCustomLiteralsIncompatible() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral("abc");
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare strings with other supported types", e.getMessage());
+			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare strings with other supported types", e.getMessage());
+			}
+		}
+	}
+
+	@Test
+	public void testCompareWithCustomLiteralsInditerminate() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral("2000-01-01T12:00:00", XSD.DATETIME);
+
+		Literal right = getCustomLiteral(vf.createLiteral("1999-12-31T23:00:00Z", XSD.DATETIME));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Indeterminate result for date/time comparison", e.getMessage());
+			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Indeterminate result for date/time comparison", e.getMessage());
+			}
+		}
+	}
+
+	@Test
+	public void testCompareCustomDatatypes() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = vf.createLiteral(1);
+
+		Literal right = vf.createLiteral("I", vf.createIRI("http://example.org/romanNumeral"));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			try {
+				QueryEvaluationUtil.compareLiterals(left, right, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare literals with unsupported types", e.getMessage());
+			}
+			try {
+				QueryEvaluationUtil.compareLiterals(right, left, op, true);
+			} catch (ValueExprEvaluationException e) {
+				assertEquals("Unable to compare literals with unsupported types", e.getMessage());
+			}
+		}
+	}
+
+	/**
+	 * Reporoduces GH-2760: an NPE has been thrown when comparing custom literal implementations
+	 */
+	@Test
+	public void testCompareWithOnlyCustomLiterals() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal left = getCustomLiteral(vf.createLiteral(1));
+
+		Literal right = getCustomLiteral(vf.createLiteral(6));
+		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
+		for (CompareOp op : Compare.CompareOp.values()) {
+			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+		}
+	}
+
+	private Literal getCustomLiteral(Literal nested) {
+		Literal right = new Literal() {
+
+			@Override
+			public String stringValue() {
+				return nested.stringValue();
+			}
+
+			@Override
+			public short shortValue() {
+				return nested.shortValue();
+			}
+
+			@Override
+			public long longValue() {
+				return nested.longValue();
+			}
+
+			@Override
+			public BigInteger integerValue() {
+				return nested.integerValue();
+			}
+
+			@Override
+			public int intValue() {
+				return nested.intValue();
+			}
+
+			@Override
+			public Optional<String> getLanguage() {
+				return nested.getLanguage();
+			}
+
+			@Override
+			public String getLabel() {
+				return nested.getLabel();
+			}
+
+			@Override
+			public IRI getDatatype() {
+				return nested.getDatatype();
+			}
+
+			@Override
+			public float floatValue() {
+				return nested.floatValue();
+			}
+
+			@Override
+			public double doubleValue() {
+				return nested.doubleValue();
+			}
+
+			@Override
+			public BigDecimal decimalValue() {
+				return nested.decimalValue();
+			}
+
+			@Override
+			public XMLGregorianCalendar calendarValue() {
+				return nested.calendarValue();
+			}
+
+			@Override
+			public byte byteValue() {
+				return nested.byteValue();
+			}
+
+			@Override
+			public boolean booleanValue() {
+				return nested.booleanValue();
+			}
+		};
+		return right;
+	}
 }

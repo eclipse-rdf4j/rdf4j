@@ -1,0 +1,333 @@
+@base <http://example.com/ns> .
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+
+_:0 foaf:knows _:1.
+_:1 foaf:knows _:2.
+_:2 foaf:knows _:3.
+_:3 foaf:knows _:4.
+_:4 foaf:knows _:5.
+_:5 foaf:knows _:6.
+_:6 foaf:knows _:7.
+_:7 foaf:knows _:8.
+_:8 foaf:knows _:9.
+_:9 foaf:knows _:0.
+
+
+
+_:01 foaf:knows _:1.
+_:11 foaf:knows _:2.
+_:21 foaf:knows _:3.
+_:31 foaf:knows _:4.
+_:41 foaf:knows _:5.
+_:51 foaf:knows _:6.
+_:61 foaf:knows _:7.
+_:71 foaf:knows _:8.
+_:81 foaf:knows _:9.
+_:91 foaf:knows _:0.
+
+_:02 foaf:knows _:1.
+_:12 foaf:knows _:2.
+_:22 foaf:knows _:3.
+_:32 foaf:knows _:4.
+_:42 foaf:knows _:5.
+_:52 foaf:knows _:6.
+_:62 foaf:knows _:7.
+_:72 foaf:knows _:8.
+_:82 foaf:knows _:9.
+_:92 foaf:knows _:0.
+
+
+_:03 foaf:knows _:1.
+_:13 foaf:knows _:2.
+_:23 foaf:knows _:3.
+_:33 foaf:knows _:4.
+_:43 foaf:knows _:5.
+_:53 foaf:knows _:6.
+_:63 foaf:knows _:7.
+_:73 foaf:knows _:8.
+_:83 foaf:knows _:9.
+_:93 foaf:knows _:0.
+
+
+_:04 foaf:knows _:1.
+_:14 foaf:knows _:2.
+_:24 foaf:knows _:3.
+_:34 foaf:knows _:4.
+_:44 foaf:knows _:5.
+_:54 foaf:knows _:6.
+_:64 foaf:knows _:7.
+_:74 foaf:knows _:8.
+_:84 foaf:knows _:9.
+_:94 foaf:knows _:0.
+
+
+
+_:05 foaf:knows _:1.
+_:15 foaf:knows _:2.
+_:25 foaf:knows _:3.
+_:35 foaf:knows _:4.
+_:45 foaf:knows _:5.
+_:55 foaf:knows _:6.
+_:65 foaf:knows _:7.
+_:75 foaf:knows _:8.
+_:85 foaf:knows _:9.
+_:95 foaf:knows _:0.
+
+
+
+_:06 foaf:knows _:1.
+_:16 foaf:knows _:2.
+_:26 foaf:knows _:3.
+_:36 foaf:knows _:4.
+_:46 foaf:knows _:5.
+_:56 foaf:knows _:6.
+_:66 foaf:knows _:7.
+_:76 foaf:knows _:8.
+_:86 foaf:knows _:9.
+_:96 foaf:knows _:0.
+
+_:07 foaf:knows _:1.
+_:17 foaf:knows _:2.
+_:27 foaf:knows _:3.
+_:37 foaf:knows _:4.
+_:47 foaf:knows _:5.
+_:57 foaf:knows _:6.
+_:67 foaf:knows _:7.
+_:77 foaf:knows _:8.
+_:87 foaf:knows _:9.
+_:97 foaf:knows _:0.
+
+
+_:08 foaf:knows _:1.
+_:18 foaf:knows _:2.
+_:28 foaf:knows _:3.
+_:38 foaf:knows _:4.
+_:48 foaf:knows _:5.
+_:58 foaf:knows _:6.
+_:68 foaf:knows _:7.
+_:78 foaf:knows _:8.
+_:88 foaf:knows _:9.
+_:98 foaf:knows _:0.
+
+
+_:09 foaf:knows _:1.
+_:19 foaf:knows _:2.
+_:29 foaf:knows _:3.
+_:39 foaf:knows _:4.
+_:49 foaf:knows _:5.
+_:59 foaf:knows _:6.
+_:69 foaf:knows _:7.
+_:79 foaf:knows _:8.
+_:89 foaf:knows _:9.
+_:99 foaf:knows _:0.
+
+
+_:0a foaf:knows _:1.
+_:1a foaf:knows _:2.
+_:2a foaf:knows _:3.
+_:3a foaf:knows _:4.
+_:4a foaf:knows _:5.
+_:5a foaf:knows _:6.
+_:6a foaf:knows _:7.
+_:7a foaf:knows _:8.
+_:8a foaf:knows _:9.
+_:9a foaf:knows _:0.
+
+
+
+_:0b foaf:knows _:1.
+_:1b foaf:knows _:2.
+_:2b foaf:knows _:3.
+_:3b foaf:knows _:4.
+_:4b foaf:knows _:5.
+_:5b foaf:knows _:6.
+_:6b foaf:knows _:7.
+_:7b foaf:knows _:8.
+_:8b foaf:knows _:9.
+_:9b foaf:knows _:0.
+
+_:0c foaf:knows _:1.
+_:1c foaf:knows _:2.
+_:2c foaf:knows _:3.
+_:3c foaf:knows _:4.
+_:4c foaf:knows _:5.
+_:5c foaf:knows _:6.
+_:6c foaf:knows _:7.
+_:7c foaf:knows _:8.
+_:8c foaf:knows _:9.
+_:9c foaf:knows _:0.
+
+
+_:0d foaf:knows _:1.
+_:1d foaf:knows _:2.
+_:2d foaf:knows _:3.
+_:3d foaf:knows _:4.
+_:4d foaf:knows _:5.
+_:5d foaf:knows _:6.
+_:6d foaf:knows _:7.
+_:7d foaf:knows _:8.
+_:8d foaf:knows _:9.
+_:9d foaf:knows _:0.
+
+
+
+_:z01 foaf:knows _:1.
+_:z11 foaf:knows _:2.
+_:z21 foaf:knows _:3.
+_:z31 foaf:knows _:4.
+_:z41 foaf:knows _:5.
+_:z51 foaf:knows _:6.
+_:z61 foaf:knows _:7.
+_:z71 foaf:knows _:8.
+_:z81 foaf:knows _:9.
+_:z91 foaf:knows _:0.
+
+_:z02 foaf:knows _:1.
+_:z12 foaf:knows _:2.
+_:z22 foaf:knows _:3.
+_:z32 foaf:knows _:4.
+_:z42 foaf:knows _:5.
+_:z52 foaf:knows _:6.
+_:z62 foaf:knows _:7.
+_:z72 foaf:knows _:8.
+_:z82 foaf:knows _:9.
+_:z92 foaf:knows _:0.
+
+
+_:z03 foaf:knows _:1.
+_:z13 foaf:knows _:2.
+_:z23 foaf:knows _:3.
+_:z33 foaf:knows _:4.
+_:z43 foaf:knows _:5.
+_:z53 foaf:knows _:6.
+_:z63 foaf:knows _:7.
+_:z73 foaf:knows _:8.
+_:z83 foaf:knows _:9.
+_:z93 foaf:knows _:0.
+
+
+_:z04 foaf:knows _:1.
+_:z14 foaf:knows _:2.
+_:z24 foaf:knows _:3.
+_:z34 foaf:knows _:4.
+_:z44 foaf:knows _:5.
+_:z54 foaf:knows _:6.
+_:z64 foaf:knows _:7.
+_:z74 foaf:knows _:8.
+_:z84 foaf:knows _:9.
+_:z94 foaf:knows _:0.
+
+
+
+_:z05 foaf:knows _:1.
+_:z15 foaf:knows _:2.
+_:z25 foaf:knows _:3.
+_:z35 foaf:knows _:4.
+_:z45 foaf:knows _:5.
+_:z55 foaf:knows _:6.
+_:z65 foaf:knows _:7.
+_:z75 foaf:knows _:8.
+_:z85 foaf:knows _:9.
+_:z95 foaf:knows _:0.
+
+
+
+_:z06 foaf:knows _:1.
+_:z16 foaf:knows _:2.
+_:z26 foaf:knows _:3.
+_:z36 foaf:knows _:4.
+_:z46 foaf:knows _:5.
+_:z56 foaf:knows _:6.
+_:z66 foaf:knows _:7.
+_:z76 foaf:knows _:8.
+_:z86 foaf:knows _:9.
+_:z96 foaf:knows _:0.
+
+_:z07 foaf:knows _:1.
+_:z17 foaf:knows _:2.
+_:z27 foaf:knows _:3.
+_:z37 foaf:knows _:4.
+_:z47 foaf:knows _:5.
+_:z57 foaf:knows _:6.
+_:z67 foaf:knows _:7.
+_:z77 foaf:knows _:8.
+_:z87 foaf:knows _:9.
+_:z97 foaf:knows _:0.
+
+
+_:z08 foaf:knows _:1.
+_:z18 foaf:knows _:2.
+_:z28 foaf:knows _:3.
+_:z38 foaf:knows _:4.
+_:z48 foaf:knows _:5.
+_:z58 foaf:knows _:6.
+_:z68 foaf:knows _:7.
+_:z78 foaf:knows _:8.
+_:z88 foaf:knows _:9.
+_:z98 foaf:knows _:0.
+
+
+_:z09 foaf:knows _:1.
+_:z19 foaf:knows _:2.
+_:z29 foaf:knows _:3.
+_:z39 foaf:knows _:4.
+_:z49 foaf:knows _:5.
+_:z59 foaf:knows _:6.
+_:z69 foaf:knows _:7.
+_:z79 foaf:knows _:8.
+_:z89 foaf:knows _:9.
+_:z99 foaf:knows _:0.
+
+
+_:z0a foaf:knows _:1.
+_:z1a foaf:knows _:2.
+_:z2a foaf:knows _:3.
+_:z3a foaf:knows _:4.
+_:z4a foaf:knows _:5.
+_:z5a foaf:knows _:6.
+_:z6a foaf:knows _:7.
+_:z7a foaf:knows _:8.
+_:z8a foaf:knows _:9.
+_:z9a foaf:knows _:0.
+
+
+
+_:z0b foaf:knows _:1.
+_:z1b foaf:knows _:2.
+_:z2b foaf:knows _:3.
+_:z3b foaf:knows _:4.
+_:z4b foaf:knows _:5.
+_:z5b foaf:knows _:6.
+_:z6b foaf:knows _:7.
+_:z7b foaf:knows _:8.
+_:z8b foaf:knows _:9.
+_:z9b foaf:knows _:0.
+
+_:z0c foaf:knows _:1.
+_:z1c foaf:knows _:2.
+_:z2c foaf:knows _:3.
+_:z3c foaf:knows _:4.
+_:z4c foaf:knows _:5.
+_:z5c foaf:knows _:6.
+_:z6c foaf:knows _:7.
+_:z7c foaf:knows _:8.
+_:z8c foaf:knows _:9.
+_:z9c foaf:knows _:0.
+
+
+_:z0d foaf:knows _:1.
+_:z1d foaf:knows _:2.
+_:z2d foaf:knows _:3.
+_:z3d foaf:knows _:4.
+_:z4d foaf:knows _:5.
+_:z5d foaf:knows _:6.
+_:z6d foaf:knows _:7.
+_:z7d foaf:knows _:8.
+_:z8d foaf:knows _:9.
+_:z9d foaf:knows _:0.

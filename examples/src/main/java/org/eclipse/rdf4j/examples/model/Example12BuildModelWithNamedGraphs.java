@@ -7,37 +7,29 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
-import org.eclipse.rdf4j.model.*;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
-import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
-import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.Optional;
 
 /**
  * RDF Tutorial example 12: Building a Model with named graphs
  *
- * In this example, we show how you can use the context mechanism to add statements separate named
- * graphs within the same Model.
+ * In this example, we show how you can use the context mechanism to add statements separate named graphs within the
+ * same Model.
  *
  * @author Jeen Broekstra
  */
 public class Example12BuildModelWithNamedGraphs {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 		// We'll use a ModelBuilder to create two named graphs, one containing data about
 		// picasso, the other about Van Gogh.
 		ModelBuilder builder = new ModelBuilder();
@@ -46,24 +38,23 @@ public class Example12BuildModelWithNamedGraphs {
 		// in named graph 1, we add info about Picasso
 		builder.namedGraph("ex:namedGraph1")
 				.subject("ex:Picasso")
-					.add(RDF.TYPE, EX.ARTIST)
-					.add(FOAF.FIRST_NAME, "Pablo");
+				.add(RDF.TYPE, EX.ARTIST)
+				.add(FOAF.FIRST_NAME, "Pablo");
 
 		// in named graph2, we add info about Van Gogh.
 		builder.namedGraph("ex:namedGraph2")
-			.subject("ex:VanGogh")
+				.subject("ex:VanGogh")
 				.add(RDF.TYPE, EX.ARTIST)
 				.add(FOAF.FIRST_NAME, "Vincent");
-
 
 		// We're done building, create our Model
 		Model model = builder.build();
 
 		// each named graph is stored as a separate context in our Model
-		for (Resource context: model.contexts()) {
+		for (Resource context : model.contexts()) {
 			System.out.println("Named graph " + context + " contains: ");
 
-			// write _only_ the statemements in the current named graph to the console, in N-Triples format
+			// write _only_ the statements in the current named graph to the console, in N-Triples format
 			Rio.write(model.filter(null, null, null, context), System.out, RDFFormat.NTRIPLES);
 			System.out.println();
 		}

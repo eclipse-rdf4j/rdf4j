@@ -10,7 +10,10 @@ package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link Triple}, offering common functionality.
@@ -31,23 +34,54 @@ public abstract class AbstractTriple implements Triple {
 	public boolean equals(Object o) {
 
 		// We check object equality first since it's most likely to be different. In general the number of different
-		// predicates and contexts in sets of statements are the smallest (and therefore most likely to be identical),
-		// so these are checked last.
+		// predicates in sets of statements are the smallest (and therefore most likely to be identical), so these are
+		// checked last.
 
 		return this == o || o instanceof Triple
-				&& Objects.equals(getObject(), ((Triple) o).getObject())
-				&& Objects.equals(getSubject(), ((Triple) o).getSubject())
-				&& Objects.equals(getPredicate(), ((Triple) o).getPredicate());
+				&& getObject().equals(((Triple) o).getObject())
+				&& getSubject().equals(((Triple) o).getSubject())
+				&& getPredicate().equals(((Triple) o).getPredicate());
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
 		return Objects.hash(getSubject(), getPredicate(), getObject());
 	}
 
 	@Override
 	public String toString() {
 		return stringValue();
+	}
+
+	static class GenericTriple extends AbstractTriple {
+
+		private static final long serialVersionUID = 7822116805598041700L;
+
+		private Resource subject;
+		private IRI predicate;
+		private Value object;
+
+		GenericTriple(Resource subject, IRI predicate, Value object) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object;
+		}
+
 	}
 
 }

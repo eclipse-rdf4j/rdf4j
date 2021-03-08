@@ -199,6 +199,16 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	}
 
 	@Override
+	public void prepare() throws RepositoryException {
+		try {
+			sailConnection.flush();
+			sailConnection.prepare();
+		} catch (SailException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Override
 	public void commit() throws RepositoryException {
 		try {
 			sailConnection.flush();

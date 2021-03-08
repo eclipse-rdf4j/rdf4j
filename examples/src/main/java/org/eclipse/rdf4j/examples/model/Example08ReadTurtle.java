@@ -7,13 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-
 import java.io.IOException;
 import java.io.InputStream;
+
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 08: Reading a Turtle syntax file to create a Model
@@ -36,8 +35,6 @@ public class Example08ReadTurtle {
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
 		// To check that we have correctly read the file, let's print out the model to the screen again
-		for (Statement statement: model) {
-			System.out.println(statement);
-		}
+		model.forEach(System.out::println);
 	}
 }

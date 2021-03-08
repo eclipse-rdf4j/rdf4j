@@ -7,15 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Set;
+
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
 import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Set;
 
 /**
  * RDF Tutorial example 10: Getting all values of a property for a particular subject.
@@ -34,19 +36,17 @@ public class Example10PropertyValues {
 		InputStream input = Example10PropertyValues.class.getResourceAsStream("/" + filename);
 		Model model = Rio.parse(input, "", RDFFormat.TURTLE);
 
-		ValueFactory vf = SimpleValueFactory.getInstance();
-
 		// We want to find all information about the artist `ex:VanGogh`.
-		IRI vanGogh = vf.createIRI(EX.NAMESPACE, "VanGogh");
+		IRI vanGogh = iri(EX.NAMESPACE, "VanGogh");
 
 		// Retrieve all values of the `ex:creatorOf` property for Van Gogh. These will be
 		// resources that identify paintings by Van Gogh.
 		Set<Value> paintings = model.filter(vanGogh, EX.CREATOR_OF, null).objects();
 
-		for (Value painting: paintings) {
+		for (Value painting : paintings) {
 			if (painting instanceof Resource) {
 				// our value is either an IRI or a blank node. Retrieve its properties and print.
-				Model paintingProperties = model.filter((Resource)painting, null, null);
+				Model paintingProperties = model.filter((Resource) painting, null, null);
 
 				// write the info about this painting to the console in Turtle format
 				System.out.println("--- information about painting: " + painting);

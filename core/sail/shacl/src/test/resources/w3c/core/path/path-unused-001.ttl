@@ -13,6 +13,25 @@
       <path-unused-001>
     ) .
 
+ex:i a ex:C .
+
+ex:j a ex:D .
+
+ex:s1 a sh:NodeShape ;
+ sh:targetNode ex:j, ex:i ;
+ sh:class ex:C .
+
+_:p1 sh:inversePath _:p2 .
+
+_:p2 sh:zeroOrMorePath ( _:p2 ) .
+
+_:p2 sh:zeroOrOnePath [ rdf:rest rdf:nil ] .
+
+_:p3 sh:alternativePath ( ex:p ) ;
+  rdfs:comment "invalid path" .
+
+
+
 <path-unused-001> a sht:Validate ;
   rdfs:label "Test with unused ill-formed path" ;
   mf:action [

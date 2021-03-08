@@ -8,23 +8,20 @@
 
 package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.IteratorCloseableIteration;
-import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.AST.PropertyShape;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
-@Deprecated
 @InternalUseOnly
 public class ValidationResultIterator implements Iterator<ValidationResult> {
 
@@ -33,10 +30,11 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	private boolean conforms = true;
 	private boolean truncated = false;
 
-	private ValidationResult next = null;
-	private CloseableIteration<Tuple, SailException> tupleIterator;
+	private Iterator<ValidationResult> next = Collections.emptyIterator();
+	private CloseableIteration<? extends ValidationTuple, SailException> tupleIterator;
 
-	public ValidationResultIterator(CloseableIteration<Tuple, SailException> tupleIterator, long limit) {
+	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator,
+			long limit) {
 		this.limit = limit;
 		this.tupleIterator = tupleIterator;
 		getTuples();
@@ -47,29 +45,49 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		if (tupleIterator.hasNext()) {
 			conforms = false;
 		}
-		if (next == null && tupleIterator.hasNext()) {
+		if (next.hasNext()) {
+			return;
+		}
+
+		if (tupleIterator.hasNext()) {
 			if (limit < 0 || counter < limit) {
-				Tuple invalidTuple = tupleIterator.next();
+				ValidationTuple invalidTuple = tupleIterator.next();
 
-				ValidationResult parent = null;
-				ArrayDeque<PropertyShape> propertyShapes = new ArrayDeque<>(invalidTuple.getCausedByPropertyShapes());
+				Set<ValidationTuple> invalidTuples;
 
-				while (!propertyShapes.isEmpty()) {
-
-					ValidationResult validationResult = new ValidationResult(
-							propertyShapes.pop(),
-							invalidTuple.getLine().get(0),
-							invalidTuple.getLine().get(invalidTuple.getLine().size() - 1)
-					);
-
-					if (parent == null) {
-						next = validationResult;
-					} else {
-						parent.setDetail(validationResult);
-					}
-					parent = validationResult;
+				if (!invalidTuple.getCompressedTuples().isEmpty()) {
+					invalidTuples = invalidTuple.getCompressedTuples();
+				} else {
+					invalidTuples = Collections.singleton(invalidTuple);
 				}
-				counter++;
+
+				Set<ValidationResult> validationResultsRet = new HashSet<>();
+
+				for (ValidationTuple tuple : invalidTuples) {
+					List<ValidationResult> validationResults = tuple.getValidationResult();
+
+					ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);
+					validationResultsRet.add(validationResult1);
+
+//					ValidationResult parent = null;
+//
+//					// we iterate in reverse order to get the most recent validation result first
+//					for (int i = validationResults.size() - 1; i >= 0; i--) {
+//						ValidationResult validationResult = validationResults.get(i);
+//						if (parent == null) {
+//							parent = validationResult;
+//							validationResultsRet.add(parent);
+//						} else {
+//							parent.setDetail(validationResult);
+//							parent = validationResult;
+//						}
+//					}
+
+					counter++;
+				}
+
+				next = validationResultsRet.iterator();
+
 			}
 
 			if (limit >= 0 && counter >= limit && tupleIterator.hasNext()) {
@@ -79,8 +97,8 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		}
 	}
 
-	public List<Tuple> getTuples() {
-		List<Tuple> actualList = new ArrayList<>();
+	public List<ValidationTuple> getTuples() {
+		List<ValidationTuple> actualList = new ArrayList<>();
 		long localCounter = 0;
 		while (tupleIterator.hasNext() && (limit < 0 || localCounter++ < limit + 1)) {
 			actualList.add(tupleIterator.next());
@@ -103,19 +121,17 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	@Override
 	public boolean hasNext() {
 		calculateNext();
-		return next != null;
+		return next.hasNext();
 	}
 
 	@Override
 	public ValidationResult next() {
 		calculateNext();
-		if (next == null) {
+		if (!next.hasNext()) {
 			throw new IllegalStateException();
 		}
 
-		ValidationResult temp = next;
-		next = null;
-		return temp;
+		return next.next();
 	}
 
 	@Override

@@ -7,16 +7,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml.util;
 
-import java.io.*;
+import java.io.Closeable;
+import java.io.Flushable;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Writer;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Stack;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
 
@@ -193,6 +205,13 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 			writer.flush();
 		}
+	}
+
+	@Override
+	public Collection<RioSetting<?>> getSupportedSettings() {
+		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
+		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		return settings;
 	}
 
 	@Override
@@ -380,8 +399,9 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			writeAttribute(RDF.NAMESPACE, "about", uri.toString());
 		} else {
 			BNode bNode = (BNode) value;
-			if (!inlineBlankNodes)
+			if (!inlineBlankNodes) {
 				writeAttribute(RDF.NAMESPACE, "nodeID", getValidNodeId(bNode));
+			}
 		}
 	}
 

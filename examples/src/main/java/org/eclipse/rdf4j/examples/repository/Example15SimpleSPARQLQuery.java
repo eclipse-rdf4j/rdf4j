@@ -7,23 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.repository;
 
-import org.eclipse.rdf4j.model.Statement;
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.TupleQueryResultHandler;
-import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVWriter;
-import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVWriter;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-
-import java.io.IOException;
-import java.io.InputStream;
 
 /**
  * RDF Tutorial example 15: executing a simple SPARQL query on the database
@@ -33,19 +28,16 @@ import java.io.InputStream;
 public class Example15SimpleSPARQLQuery {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
 			String filename = "example-data-artists.ttl";
-			try (InputStream input =
-					Example15SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
+			try (InputStream input = Example15SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
 				// add the RDF data from the inputstream directly to our database
-				conn.add(input, "", RDFFormat.TURTLE );
+				conn.add(input, "", RDFFormat.TURTLE);
 			}
 
 			// We do a simple SPARQL SELECT-query that retrieves all resources of type `ex:Artist`,
@@ -63,15 +55,13 @@ public class Example15SimpleSPARQLQuery {
 			// A QueryResult is also an AutoCloseable resource, so make sure it gets closed when done.
 			try (TupleQueryResult result = query.evaluate()) {
 				// we just iterate over all solutions in the result...
-				while (result.hasNext()) {
-					BindingSet solution = result.next();
+				for (BindingSet solution : result) {
 					// ... and print out the value of the variable binding for ?s and ?n
 					System.out.println("?s = " + solution.getValue("s"));
 					System.out.println("?n = " + solution.getValue("n"));
 				}
 			}
-		}
-		finally {
+		} finally {
 			// Before our program exits, make sure the database is properly shut down.
 			db.shutDown();
 		}

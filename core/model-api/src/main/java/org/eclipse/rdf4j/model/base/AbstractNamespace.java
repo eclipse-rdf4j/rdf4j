@@ -37,14 +37,14 @@ public abstract class AbstractNamespace implements Namespace {
 	}
 
 	@Override
-	public boolean equals(final Object object) {
+	public boolean equals(Object object) {
 		return this == object || object instanceof Namespace
-				&& Objects.equals(getPrefix(), ((Namespace) object).getPrefix())
-				&& Objects.equals(getName(), ((Namespace) object).getName());
+				&& getPrefix().equals(((Namespace) object).getPrefix())
+				&& getName().equals(((Namespace) object).getName());
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
 		return Objects.hash(getPrefix(), getName());
 	}
 

@@ -7,13 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model.vocabulary;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * Vocabulary constants for the 'http://example.org/' namespace.
- * It's a good idea to always create a vocabulary class such as this one when you program with RDF4J. It makes
- * it far easier to reuse certain resources and properties in various places in your code.
+ * Vocabulary constants for the 'http://example.org/' namespace. It's a good idea to always create a vocabulary class
+ * such as this one when you program with RDF4J. It makes it far easier to reuse certain resources and properties in
+ * various places in your code.
  */
 public class EX {
 
@@ -30,21 +31,11 @@ public class EX {
 	/**
 	 * The <code>ex:creatorOf</code> property.
 	 */
-	public static final IRI CREATOR_OF = getIRI("creatorOf");
+	public static final IRI CREATOR_OF = iri(NAMESPACE, "creatorOf");
 
 	/**
 	 * The <code>ex:Artist</code> class.
 	 */
-	public static final IRI ARTIST = getIRI("Artist");
-
-	/**
-	 * Creates a new {@link IRI} with this vocabulary's namespace for the given local name.
-	 *
-	 * @param localName a local name of an IRI, e.g. 'creatorOf', 'name', 'Artist', etc.
-	 * @return an IRI using the http://example.org/ namespace and the given local name.
-	 */
-	private static IRI getIRI(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(NAMESPACE, localName);
-	}
+	public static final IRI ARTIST = iri(NAMESPACE, "Artist");
 
 }

@@ -1,0 +1,60 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+
+[] a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson7;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson7
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson5;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson5
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson2
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson3;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson3
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson6;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson6
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:validPerson1;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson1
+    ] .
+
+ex:PersonShape a sh:NodeShape;
+  sh:node [ a sh:NodeShape;
+      sh:property [ a sh:PropertyShape;
+          sh:path ex:knows;
+          sh:property [ a sh:PropertyShape;
+              sh:datatype xsd:integer;
+              sh:path ex:age
+            ]
+        ]
+    ];
+  sh:targetClass ex:Person .

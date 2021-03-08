@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import org.junit.Test;
@@ -24,6 +25,15 @@ public abstract class IRITest {
 	/**
 	 * Creates a test IRI instance.
 	 *
+	 * @param iri the string value of the IRI
+	 *
+	 * @return a new instance of the concrete IRI class under test
+	 */
+	protected abstract IRI iri(String iri);
+
+	/**
+	 * Creates a test IRI instance.
+	 *
 	 * @param namespace the namespace of the IRI
 	 * @param localname the localname of the IRI
 	 *
@@ -32,19 +42,47 @@ public abstract class IRITest {
 	protected abstract IRI iri(String namespace, String localname);
 
 	@Test
-	public final void testConstructor() {
+	public final void testUnaryConstructor() {
+
+		final String hash = "http://example.org#base#iri";
+		final String slash = "http://example.org/base/iri";
+		final String colon = "urn:base:iri";
+
+		assertThat(iri(hash).stringValue()).isEqualTo(hash);
+		assertThat(iri(slash).stringValue()).isEqualTo(slash);
+		assertThat(iri(colon).stringValue()).isEqualTo(colon);
+
+		assertThat(iri(hash).getNamespace()).isEqualTo("http://example.org#");
+		assertThat(iri(hash).getLocalName()).isEqualTo("base#iri");
+
+		assertThat(iri(slash).getNamespace()).isEqualTo("http://example.org/base/");
+		assertThat(iri(slash).getLocalName()).isEqualTo("iri");
+
+		assertThat(iri(colon).getNamespace()).isEqualTo("urn:base:");
+		assertThat(iri(colon).getLocalName()).isEqualTo("iri");
+
+		assertThatNullPointerException().isThrownBy(() -> iri(null));
+
+		assertThatIllegalArgumentException().isThrownBy(() -> iri("malformed"));
+
+	}
+
+	@Test
+	public final void testBinaryConstructor() {
 
 		final String namespace = "http://example.org/";
 		final String localname = "iri";
 
-		final IRI iri = iri(namespace, localname);
-
-		assertThat(iri.getNamespace()).isEqualTo(namespace);
-		assertThat(iri.getLocalName()).isEqualTo(localname);
+		assertThat(iri(namespace, localname).stringValue()).isEqualTo(namespace + localname);
+		assertThat(iri(namespace, localname).getNamespace()).isEqualTo(namespace);
+		assertThat(iri(namespace, localname).getLocalName()).isEqualTo(localname);
 
 		assertThatNullPointerException().isThrownBy(() -> iri(null, null));
 		assertThatNullPointerException().isThrownBy(() -> iri(null, localname));
 		assertThatNullPointerException().isThrownBy(() -> iri(namespace, null));
+
+		assertThatIllegalArgumentException().isThrownBy(() -> iri("malformed", "name"));
+
 	}
 
 	@Test

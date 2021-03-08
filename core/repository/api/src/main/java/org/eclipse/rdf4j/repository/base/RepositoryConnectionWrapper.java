@@ -230,6 +230,11 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
+	public void prepare() throws RepositoryException {
+		getDelegate().prepare();
+	}
+
+	@Override
 	public void commit() throws RepositoryException {
 		getDelegate().commit();
 	}

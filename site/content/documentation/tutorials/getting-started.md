@@ -10,7 +10,9 @@ In this tutorial, we go through the basics of what RDF is, and we show how you c
 
 We assume that you know a little about programming in Java, but no prior knowledge on RDF is assumed.
 
-TIP: The code examples in this tutorial are available for download from the [examples directory in the rdf4j-doc GitHub repository](https://github.com/eclipse/rdf4j-doc/tree/master/examples). We encourage you to download these examples and play around with them. The easiest way to do this is to download the GitHub repository in your favorite Java IDE as an Apache Maven project.
+{{< info >}}
+ The code examples in this tutorial are available for download from the <a href="https://github.com/eclipse/rdf4j/tree/main/examples">examples directory in the RDF4J GitHub repository</a>. We encourage you to download these examples and play around with them. The easiest way to do this is to download the GitHub repository in your favorite Java IDE as an Apache Maven project.
+ {{</ info >}}
 
 ## Introducing RDF
 
@@ -88,16 +90,12 @@ Eclipse RDF4J is a Java API for RDF: it allows you to create, parse, write, stor
 {{< example "Example 01" "model/Example01BuildModel.java" >}} shows how we can create the RDF model we introduced above using RDF4J:
 
 ```java {linenos=inline}
-// We use a ValueFactory to create the building blocks of our RDF statements:
-// IRIs, blank nodes and literals.
-ValueFactory vf = SimpleValueFactory.getInstance();
-
 // We want to reuse this namespace when creating several building blocks.
 String ex = "http://example.org/";
 
 // Create IRIs for the resources we want to add.
-IRI picasso = vf.createIRI(ex, "Picasso");
-IRI artist = vf.createIRI(ex, "Artist");
+IRI picasso = Values.iri(ex, "Picasso");
+IRI artist = Values.iri(ex, "Artist");
 
 // Create a new, empty Model object.
 Model model = new TreeModel();
@@ -106,14 +104,14 @@ Model model = new TreeModel();
 model.add(picasso, RDF.TYPE, artist);
 
 // second statement: Picasso's first name is "Pablo".
-model.add(picasso, FOAF.FIRST_NAME, vf.createLiteral("Pablo"));
+model.add(picasso, FOAF.FIRST_NAME, Values.literal("Pablo"));
 ```
 
-Let's take a closer look at this. Lines 1-10 are necessary preparation: we use a {{< javadoc "ValueFactory" "model/ValueFactory.html" >}} to create resources , which we will later use to add facts to our model.
+Let's take a closer look at this. Lines 1-6 are necessary preparation: we use {{< javadoc "Values" "model/util/Values.html" >}} factory methods to create resources, which we will later use to add facts to our model.
 
-On line 13, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models. For our purposes however, it doesn't really matter which implementation you use.
+On line 9, we create a new, empty model. RDF4J comes with several {{< javadoc "Model" "model/Model.html" >}} implementations, the ones you will most commonly encounter are {{< javadoc "DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "TreeModel" "model/impl/TreeModel.html" >}} and {{< javadoc "LinkedHashModel" "model/impl/LinkedHashModel.html" >}}. The difference is in how they index data internally - which has a performance impact when working with very large models, and in the ordering with which statements are returned. For our purposes however, it doesn't really matter which implementation you use.
 
-On lines 16 and 19, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo".
+On lines 12 and 15, we add our two facts that we know about Picasso: that's he's an artist, and that his first name is "Pablo".
 
 In RDF4J, a {{< javadoc "Model" "model/Model.html" >}} is simply an in-memory collection of RDF statements. We can add statements to an existing model, remove statements from it, and of course iterate over the model to do things with its contents. As an example, let's iterate over all statements in our Model using a `for-each` loop, and print them to the screen:
 
@@ -138,18 +136,17 @@ Not very pretty perhaps, but at least you should be able to recognize the RDF st
 
 ### Example 02: using the ModelBuilder
 
-The previous code example shows that you need to do a bit of preparation before actually adding anything to your model: defining common namespaces, creating a ValueFactory, creating IRIs, etc. As a convenience, RDF4J provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} that simplifies things.
+The previous code example shows that you need to do a bit of preparation before actually adding anything to your model: defining common namespaces, creating IRIs, etc. As a convenience, RDF4J provides a {{< javadoc "ModelBuilder" "model/util/ModelBuilder.html" >}} that simplifies things.
 
 {{< example "Example 02" "model/Example02BuildModel.java" >}} shows how we can create the exact same model using a ModelBuilder:
 
 ```java {linenos=inline}
 ModelBuilder builder = new ModelBuilder();
-Model model = builder
-                  .setNamespace("ex", "http://example.org/")
-		  .subject("ex:Picasso")
-		       .add(RDF.TYPE, "ex:Artist")
-		       .add(FOAF.FIRST_NAME, "Pablo")
-		  .build();
+Model model = builder.setNamespace("ex", "http://example.org/")
+      .subject("ex:Picasso")
+      .add(RDF.TYPE, "ex:Artist")
+      .add(FOAF.FIRST_NAME, "Pablo")
+      .build();
 ```
 
 The above bit of code creates the exact same model that we saw in the previous example, but with far less prep code. ModelBuilder accepts IRIs and prefixed names supplied as simple Java strings. On line 3 we define a namespace prefix we want to use, and then on lines 4-6 we use simple prefixed name strings, which the ModelBuilder internally maps to full IRIs.
@@ -166,42 +163,44 @@ We will demonstrate the use of language tags and data types by adding some addit
 
 ### Example 03: adding a date and a number
 
-{{< example "Example 03" "model/Example03LiteralDatatypes.java" >}} shows how we can add the creation date (as an `xsd:dateTime`) and the number of people depicted in the painting (as an `xsd:integer`):
+{{< example "Example 03" "model/Example03LiteralDatatypes.java" >}} shows how we can add the creation date (as an `xsd:date`) and the number of people depicted in the painting (as an `xsd:integer`):
 
 ```java {linenos=inline}
-  Model model = builder.setNamespace("ex", "http://example.org/")
-      .subject("ex:PotatoEaters")
-          // this painting was created in April 1885
-          .add("ex:creationDate", new GregorianCalendar(1885, Calendar.APRIL, 1).getTime())
-          // it depicts 5 people
-          .add("ex:peopleDepicted", 5)
-      .build();
+ModelBuilder builder = new ModelBuilder();
+Model model = builder
+    .setNamespace("ex", "http://example.org/")
+    .subject("ex:PotatoEaters")
+    // this painting was created on April 1, 1885
+    .add("ex:creationDate", LocalDate.parse("1885-04-01"))
+    // instead of a java.time value, you can directly create a date-typed literal as well
+    // .add("ex:creationDate", literal("1885-04-01", XSD.DATE))
 
-  // To see what's in our model, let's just print stuff to the screen
-  for(Statement st: model) {
-      // we want to see the object values of each property
-      IRI property = st.getPredicate();
-      Value value = st.getObject();
-      if (value instanceof Literal) {
-          Literal literal = (Literal)value;
-          System.out.println("datatype: " + literal.getDatatype());
+    // the painting shows 5 people
+    .add("ex:peopleDepicted", 5)
+    .build();
 
-          // get the value of the literal directly as a Java primitive.
-          if (property.getLocalName().equals("peopleDepicted")) {
-              int peopleDepicted = literal.intValue();
-              System.out.println(peopleDepicted + " people are depicted in this painting");
-          }
-          else if (property.getLocalName().equals("creationDate")) {
-              XMLGregorianCalendar calendar = literal.calendarValue();
-              Date date = calendar.toGregorianCalendar().getTime();
-              System.out.println("The painting was created on " + date);
-          }
+// To see what's in our model, let's just print stuff to the screen
+for (Statement st : model) {
+  // we want to see the object values of each property
+  IRI property = st.getPredicate();
+  Value value = st.getObject();
+  if (value.isLiteral()) {
+    Literal literal = (Literal) value;
+    System.out.println("datatype: " + literal.getDatatype());
 
-          // You can also just get the lexical value (a string) without
-          // worrying about the datatype
-          System.out.println("Lexical value: '" + literal.getLabel() + "'");
-      }
+    // get the value of the literal directly as a Java primitive.
+    if (property.getLocalName().equals("peopleDepicted")) {
+      int peopleDepicted = literal.intValue();
+      System.out.println(peopleDepicted + " people are depicted in this painting");
+    } else if (property.getLocalName().equals("creationDate")) {
+      LocalDate date = LocalDate.from(literal.temporalAccessorValue());
+      System.out.println("The painting was created on " + date);
+    }
+
+    // you can also just get the lexical value (a string) without worrying about the datatype
+    System.out.println("Lexical value: '" + literal.getLabel() + "'");
   }
+}
 ```
 
 ### Example 04: adding an artwork's title in Dutch and English
@@ -209,30 +208,31 @@ We will demonstrate the use of language tags and data types by adding some addit
 {{< example "Example 04" "model/Example04LanguageTags.java" >}} shows how we can add the title of the painting in both Dutch and English, and how we can retrieve this information back from the model:
 
 ```java {linenos=inline}
+ModelBuilder builder = new ModelBuilder();
 Model model = builder
     .setNamespace("ex", "http://example.org/")
     .subject("ex:PotatoEaters")
-	// In English, this painting is called "The Potato Eaters"
-	.add(DC.TITLE, vf.createLiteral("The Potato Eaters", "en"))
-	// In Dutch, it's called "De Aardappeleters"
-	.add(DC.TITLE,  vf.createLiteral("De Aardappeleters", "nl"))
+    // In English, this painting is called "The Potato Eaters"
+    .add(DC.TITLE, Values.literal("The Potato Eaters", "en"))
+    // In Dutch, it's called "De Aardappeleters"
+    .add(DC.TITLE, Values.literal("De Aardappeleters", "nl"))
     .build();
 
 // To see what's in our model, let's just print it to the screen
-for(Statement st: model) {
-    // we want to see the object values of each statement
-    Value value = st.getObject();
-    if (value instanceof Literal) {
-	Literal title = (Literal)value;
-	System.out.println("language: " + title.getLanguage().orElse("unknown"));
-	System.out.println(" title: " + title.getLabel());
-    }
+for (Statement st : model) {
+  // we want to see the object values of each statement
+  Value value = st.getObject();
+  if (value.isLiteral()) {
+    Literal title = (Literal) value;
+    System.out.println("language: " + title.getLanguage().orElse("unknown"));
+    System.out.println(" title: " + title.getLabel());
+  }
 }
 ```
 
 ## Blank nodes
 
-Sometimes, we may want to model some facts without explicitly giving all resources involved in that fact an identifier. For example, consider the following sentence: "Picasso has created a painting depicting cubes, and using a blue color scheme". There's several facts in this sentence:
+Sometimes, we want to model some facts without explicitly giving all resources involved in that fact an identifier. For example, consider the following sentence: "Picasso has created a painting depicting cubes, and using a blue color scheme". There are several facts in this sentence:
 
 1. Picasso created some painting;
 2. that painting depicts cubes;
@@ -248,42 +248,49 @@ Other possible uses for blank nodes are for modeling a collection of facts that 
 
 ![Image](../images/rdf-graph-4.png)
 
-WARNING: Blank nodes can be useful, but they can also complicate things. Because they can not be directly addressed (they have no identifier, after all, hence "blank"), you can only query them via their property values. And since they have no identifier, it's often hard to determine if two blank nodes are really the same resource, or two separate ones. A good rule of thumb is to only use blank nodes if it _really_ conceptually makes no sense to give something its own global identifier.
+The address itself has no identifier, but is a sort of "compound object" consisting of multiple attributes.
+
+{{< warning >}}
+Blank nodes can be useful, but they can also complicate things. They can not be directly addressed (they have no identifier, after all, hence "blank"), so you can only query them via their property values. And since they have no identifier, it's often hard to determine if two blank nodes are really the same resource, or two separate ones. A good rule of thumb is to only use blank nodes if it <strong>really</strong> conceptually makes no sense to give something its own global identifier.
+{{</ warning >}}
 
 ### Example 05: adding blank nodes to a Model
 
 {{< example "Example 05" "model/Example05BlankNode.java" >}} shows how we can add the address of Picasso to our Model:
 
 ```java {linenos=inline}
-// To create a blank node for the address, we need a ValueFactory
-ValueFactory vf = SimpleValueFactory.getInstance();
-BNode address = vf.createBNode();
+// Create a bnode for the address
+BNode address = Values.bnode();
 
-// First we do the same thing we did in example 02: create a new ModelBuilder,
-// and add two statements about Picasso.
+// First we do the same thing we did in example 02: create a new ModelBuilder, and add
+// two statements about Picasso.
 ModelBuilder builder = new ModelBuilder();
 builder
     .setNamespace("ex", "http://example.org/")
     .subject("ex:Picasso")
-	    .add(RDF.TYPE, "ex:Artist")
-	    .add(FOAF.FIRST_NAME, "Pablo")
-    // this is where it becomes new: we add the address by linking the blank
-    // node to picasso via the `ex:homeAddress` property, and then adding
-    // facts _about_ the address
-	    .add("ex:homeAddress", address) // link the blank node
-    .subject(address)			    // switch the subject
-	    .add("ex:street", "31 Art Gallery")
-	    .add("ex:city", "Madrid")
-	    .add("ex:country", "Spain");
+    .add(RDF.TYPE, "ex:Artist")
+    .add(FOAF.FIRST_NAME, "Pablo")
+    // this is where it becomes new: we add the address by linking the blank node
+    // to picasso via the `ex:homeAddress` property, and then adding facts _about_ the address
+    .add("ex:homeAddress", address) // link the blank node
+    .subject(address) // switch the subject
+    .add("ex:street", "31 Art Gallery")
+    .add("ex:city", "Madrid")
+    .add("ex:country", "Spain");
 
 Model model = builder.build();
+
+// To see what's in our model, let's just print it to the screen
+for (Statement st : model) {
+  System.out.println(st);
+}
 ```
 
 ## Reading and Writing RDF
 
-In the previous sections we saw how to print the contents of a Model to the screen, However, this is of limited use: the format is not easy to read, and certainly not by any other tools that you may wish to share the information with.
+In the previous sections we saw how to print the contents of an RDF4J `Model` to the screen, However, this is of limited use: the format is not easy to read, and certainly not by any other tools that you may wish to share the information with.
 
-Fortunately, RDF4J provides tools for reading and writing RDF models in several syntax formats, all of which are standardized, and therefore can be used to share data between applications. The most commonly used formats are RDF/XML, Turtle, and N-Triples.
+Fortunately, RDF4J provides tools for reading and writing RDF models in several syntax formats, all of which are standardized. These syntax formats can be used to share data between applications. The most commonly used formats are RDF/XML, Turtle, and N-Triples.
 
 ### Example 06: Writing to RDF/XML
 
@@ -298,20 +305,20 @@ The output will be similar to this:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <rdf:RDF
-	xmlns:ex="http://example.org/"
-	xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
-	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  xmlns:ex="http://example.org/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 
 <rdf:Description rdf:about="http://example.org/Picasso">
-	<rdf:type rdf:resource="http://example.org/Artist"/>
-	<firstName xmlns="http://xmlns.com/foaf/0.1/" rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Pablo</firstName>
-	<ex:homeAddress rdf:nodeID="node1b4koa8edx1"/>
+  <rdf:type rdf:resource="http://example.org/Artist"/>
+  <firstName xmlns="http://xmlns.com/foaf/0.1/" rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Pablo</firstName>
+  <ex:homeAddress rdf:nodeID="node1b4koa8edx1"/>
 </rdf:Description>
 
 <rdf:Description rdf:nodeID="node1b4koa8edx1">
-	<ex:street rdf:datatype="http://www.w3.org/2001/XMLSchema#string">31 Art Gallery</ex:street>
-	<ex:city rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Madrid</ex:city>
-	<ex:country rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Spain</ex:country>
+  <ex:street rdf:datatype="http://www.w3.org/2001/XMLSchema#string">31 Art Gallery</ex:street>
+  <ex:city rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Madrid</ex:city>
+  <ex:country rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Spain</ex:country>
 </rdf:Description>
 
 </rdf:RDF>
@@ -331,15 +338,17 @@ To produce other syntax formats, simply vary the supplied RDFFormat. Try out a f
 
 The output in Turtle format looks like this:
 
-    @prefix ex: <http://example.org/> .
+```turtle {linenos=inline}
+@prefix ex: <http://example.org/> .
 
-    ex:Picasso a ex:Artist ;
-            <http://xmlns.com/foaf/0.1/firstName> "Pablo" ;
-            ex:homeAddress _:node1b4koq381x1 .
+ex:Picasso a ex:Artist ;
+        <http://xmlns.com/foaf/0.1/firstName> "Pablo" ;
+        ex:homeAddress _:node1b4koq381x1 .
 
-    _:node1b4koq381x1 ex:street "31 Art Gallery" ;
-            ex:city "Madrid" ;
-            ex:country "Spain" .
+_:node1b4koq381x1 ex:street "31 Art Gallery" ;
+        ex:city "Madrid" ;
+        ex:country "Spain" .
+```
 
 If you compare this with the output of writing to RDF/XML, you will notice that the Turtle syntax format is a lot more compact, and also easier to read for a human. Let's quickly go through it:
 
@@ -349,7 +358,9 @@ Lines 3-5 show three RDF statements, all about `ex:Picasso`.
 The first statement, on line 3, says that Picasso is of type Artist. In Turtle, `a` is a shortcut for the `rdf:type` property. Notice that the line ends with a `;`. This indicates that the _next_ line in the file will be about the same subject.
 Line 4 says that Picasso's first name is "Pablo". Notice that here the full IRI is used for the property - this happens because we didn't set a namespace prefix for it when we created our model.
 
-TIP: In Turtle syntax, a full IRI always starts with `<` and ends with `>`. This makes them easy to distinguish from prefixed names, and from blank node identifiers.
+{{< info >}}
+ In Turtle syntax, a full IRI always starts with < and ends with >. This makes them easy to distinguish from prefixed names, and from blank node identifiers.
+{{</ info >}}
 
 Line 5, finally, states that Picasso has a homeAddress, which is some blank node (a blank node identifier in Turtle syntax always starts with `_:`). Note that this line ends with a `.`, which indicates that we are done stating facts about the current subject.
 
@@ -384,44 +395,39 @@ We have more sophisticated options at our disposal, however.
 {{< example "Example 09" "model/Example09Filter.java" >}} shows how we can use {{< javadoc "Model.filter" "model/Model.html#filter-org.eclipse.rdf4j.model.Resource-org.eclipse.rdf4j.model.IRI-org.eclipse.rdf4j.model.Value-org.eclipse.rdf4j.model.Resource...-" >}} to "zoom in" on a specific subject in our model. We're also using the opportunity to show how you can print out RDF statements in a slightly prettier way:
 
 ```java {linenos=inline}
-ValueFactory vf = SimpleValueFactory.getInstance();
+// We want to find all information about the artist `ex:VanGogh`.
+IRI vanGogh = Values.iri("http://example.org/VanGogh");
 
-// We want to find all information about the artist `ex:VanGogh` in our model
-IRI vanGogh = vf.createIRI("http://example.org/VanGogh");
-
-// By filtering on a specific subject we zoom in on the data that is about
-// that subject. The filter method takes a subject, predicate, object (and
-// optionally a named graph/context) argument. The more arguments we set to
-// a value, the more specific the filter becomes.
+// By filtering on a specific subject we zoom in on the data that is about that subject.
+// The filter method takes a subject, predicate, object (and optionally a named graph/context)
+// argument. The more arguments we set to a value, the more specific the filter becomes.
 Model aboutVanGogh = model.filter(vanGogh, null, null);
 
 // Iterate over the statements that are about Van Gogh
-for (Statement st: aboutVanGogh) {
-	// the subject is always `ex:VanGogh`, an IRI, so we can safely cast it
-	IRI subject = (IRI)st.getSubject();
-	// the property predicate is always an IRI
-	IRI predicate = st.getPredicate();
+for (Statement st : aboutVanGogh) {
+  // the subject will always be `ex:VanGogh`, an IRI, so we can safely cast it
+  IRI subject = (IRI) st.getSubject();
+  // the property predicate can be anything, but it's always an IRI
+  IRI predicate = st.getPredicate();
 
-	// the property value could be an IRI, a BNode, or a Literal. In RDF4J,
-	// Value is is the supertype of all possible kinds of RDF values.
-	Value object = st.getObject();
+  // the property value could be an IRI, a BNode, a Literal, or an RDF-star Triple. In RDF4J, Value is
+  // is the supertype of all possible kinds of RDF values.
+  Value object = st.getObject();
 
-	// let's print out the statement in a nice way. We ignore the namespaces
-	// and only print the local name of each IRI
-	System.out.print(subject.getLocalName() + " " + predicate.getLocalName() + " ");
-	if (object instanceof Literal) {
-		// It's a literal. print it out nicely, in quotes, and without any ugly
-		// datatype stuff
-		System.out.println("\"" + ((Literal)object).getLabel() + "\"");
-	}
-	else if (object instanceof  IRI) {
-	        // It's an IRI. Print it out, but leave off the namespace part.
-		System.out.println(((IRI)object).getLocalName());
-	}
-	else {
-	        // It's a blank node. Just print out the internal identifier.
-		System.out.println(object);
-	}
+  // let's print out the statement in a nice way. We ignore the namespaces and only print the
+  // local name of each IRI
+  System.out.print(subject.getLocalName() + " " + predicate.getLocalName() + " ");
+  if (object.isLiteral()) {
+    // it's a literal value. Let's print it out nicely, in quotes, and without any ugly
+    // datatype stuff
+    System.out.println("\"" + ((Literal) object).getLabel() + "\"");
+  } else if (object.isIRI()) {
+    // it's an IRI. Just print out the local part (without the namespace)
+    System.out.println(((IRI) object).getLocalName());
+  } else {
+    // it's a blank node or an RDF-star Triple. Just print it out as-is.
+    System.out.println(object);
+  }
 }
 ```
 
@@ -434,25 +440,27 @@ for (Statement st: aboutVanGogh) {
 Set<Value> paintings = model.filter(vanGogh, EX.CREATOR_OF, null).objects();
 ```
 
-TIP: Notice that we are suddenly using a new vocabulary constant for our property: `EX.CREATOR_OF`. It is generally a good idea to create a class containing  constants for your own IRIs when you program with RDF4J: it makes it easier to reuse them and avoids introducing typos (not to mention a lot of hassle if you later decide to rename one of your resources). See {{< example "the EX vocabulary class" "model/vocabulary/EX.java" >}} for an example of how to create your own vocabulary classes.
+{{< info >}}
+Notice that we are suddenly using a new vocabulary constant for our property: EX.CREATOR_OF. It is generally a good idea to create a class containing  constants for your own IRIs when you program with RDF4J: it makes it easier to reuse them and avoids introducing typos (not to mention a lot of hassle if you later decide to rename one of your resources). See {{< example "the EX vocabulary class" "model/vocabulary/EX.java" >}} for an example of how to create your own vocabulary classes.
+{{< / info >}}
 
 Once we have selected the values, we can iterate and do something with them. For example, we could try and retrieve further information about each value, like so:
 
 ```java {linenos=inline}
 for (Value painting: paintings) {
-	if (painting instanceof Resource) {
-		// our value is either an IRI or a blank node. Retrieve its properties and print.
-		Model paintingProperties = model.filter((Resource)painting, null, null);
+  if (painting instanceof Resource) {
+    // our value is either an IRI or a blank node. Retrieve its properties and print.
+    Model paintingProperties = model.filter((Resource)painting, null, null);
 
-		// write the info about this painting to the console in Turtle format
-		System.out.println("--- information about painting: " + painting);
-		Rio.write(paintingProperties, System.out, RDFFormat.TURTLE);
-		System.out.println();
-	}
+    // write the info about this painting to the console in Turtle format
+    System.out.println("--- information about painting: " + painting);
+    Rio.write(paintingProperties, System.out, RDFFormat.TURTLE);
+    System.out.println();
+  }
 }
 ```
 
-NOTE: The `Model.filter` method does not actually return a _new_ Model object: it returns a filtered view of the original Model. This means that invoking `filter` is very cheap, because it doesn't have to copy the contents into a new Collection. It also means that any modifications to the original Model object will show up in the filter result, and vice versa.
+The `Model.filter` method does not actually return a _new_ Model object: it returns a filtered view of the original Model. This means that invoking `filter` is very cheap, because it doesn't have to copy the contents into a new Collection. It also means that any modifications to the original Model object will show up in the filter result, and vice versa.
 
 ### Example 11: Retrieving a single property value
 
@@ -461,15 +469,15 @@ NOTE: The `Model.filter` method does not actually return a _new_ Model object: i
 ```java {linenos=inline}
 // iterate over all resources that are of type 'ex:Artist'
 for (Resource artist : model.filter(null, RDF.TYPE, EX.ARTIST).subjects()) {
-	// get all RDF triples that denote values for the `foaf:firstName` property
-	// of the current artist
-	Model firstNameTriples = model.filter(artist, FOAF.FIRST_NAME, null);
+  // get all RDF triples that denote values for the `foaf:firstName` property
+  // of the current artist
+  Model firstNameTriples = model.filter(artist, FOAF.FIRST_NAME, null);
 
-	// Get the actual first name by just selecting any property value. If no value
-	// can be found, set the first name to '(unknown)'.
-	String firstName = Models.objectString(firstNameTriples).orElse("(unknown)");
+  // Get the actual first name by just selecting any property value. If no value
+  // can be found, set the first name to '(unknown)'.
+  String firstName = Models.objectString(firstNameTriples).orElse("(unknown)");
 
-	System.out.println(artist + " has first name '" + firstName + "'");
+  System.out.println(artist + " has first name '" + firstName + "'");
 }
 ```
 
@@ -481,7 +489,7 @@ NOTE: The `Models` utility methods for selecting single values, such as `Models.
 
 ## Named Graphs and Contexts
 
-As we have seen, the RDF data model can be viewed as a graph. Sometimes it is useful to be able to group together subsets of RDF data as separate graphs. For example, you may want to use several files together, but still keep track of which statements come from which file. An RDF4J {{< javadoc "Model" "model/Model.html" >}} facilitates this by having an optional *context* parameter for most of it methods. This parameter allows you to identify a _named graph_ in the Model, that is a subset of the complete model. In this section, we will look at some examples of this mechanism in action.
+As we have seen, the RDF data model can be viewed as a graph. Sometimes it is useful to group together sets of RDF data as separate graphs. For example, you may want to use several files together, but still keep track of which statements come from which file. An RDF4J {{< javadoc "Model" "model/Model.html" >}} facilitates this by having an optional *context* parameter for most of it methods. This parameter allows you to identify a _named graph_ in the Model, that is a subset of the complete model. In this section, we will look at some examples of this mechanism in action.
 
 ### Example 12: Adding statements to two named graphs
 
@@ -496,15 +504,15 @@ builder.setNamespace("ex", "http://example.org/");
 
 // In named graph 1, we add info about Picasso
 builder.namedGraph("ex:namedGraph1")
-		.subject("ex:Picasso")
-			.add(RDF.TYPE, EX.ARTIST)
-			.add(FOAF.FIRST_NAME, "Pablo");
+    .subject("ex:Picasso")
+      .add(RDF.TYPE, EX.ARTIST)
+      .add(FOAF.FIRST_NAME, "Pablo");
 
 // In named graph 2, we add info about Van Gogh.
 builder.namedGraph("ex:namedGraph2")
-	.subject("ex:VanGogh")
-		.add(RDF.TYPE, EX.ARTIST)
-		.add(FOAF.FIRST_NAME, "Vincent");
+  .subject("ex:VanGogh")
+    .add(RDF.TYPE, EX.ARTIST)
+    .add(FOAF.FIRST_NAME, "Vincent");
 
 
 // We're done building, create our Model
@@ -512,12 +520,12 @@ Model model = builder.build();
 
 // Each named graph is stored as a separate context in our Model
 for (Resource context: model.contexts()) {
-	System.out.println("Named graph " + context + " contains: ");
+  System.out.println("Named graph " + context + " contains: ");
 
-	// write _only_ the statemements in the current named graph to the console,
-	// in N-Triples format
-	Rio.write(model.filter(null, null, null, context), System.out, RDFFormat.NTRIPLES);
-	System.out.println();
+  // write _only_ the statemements in the current named graph to the console,
+  // in N-Triples format
+  Rio.write(model.filter(null, null, null, context), System.out, RDFFormat.NTRIPLES);
+  System.out.println();
 }
 ```
 
@@ -531,7 +539,7 @@ When RDF models grow larger and more complex, simply keeping all the data in an 
 
 RDF4J has a standardized access API for RDF databases, called the Repository API. This API provides all the things we need from a database: a sophisticated transaction handling mechanism, controls to work efficiently with high data volumes, and, perhaps most importantly: support for querying your data using the [SPARQL query language](https://www.w3.org/TR/sparql11-query/).
 
-In this tutorial, we will show the basics of how to use the Repository API and execute some simple SPARQL queries over your RDF data. Explaining SPARQL or the Repository API in detail is out of scope, however. For more details on how to use the Repository API, have a look at [Programming with RDF4J](/documentation/programming).
+In this part of the tutorial, we will show the basics of how to use the Repository API and execute some simple SPARQL queries over your RDF data. Explaining SPARQL or the Repository API in detail is out of scope, however. For more details on how to use the Repository API, have a look at [Programming with RDF4J](/documentation/programming).
 
 ### Example 13: Adding an RDF Model to a database
 
@@ -549,31 +557,33 @@ Repository db = new SailRepository(new MemoryStore());
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
-	// add the model
-	conn.add(model);
+  // add the model
+  conn.add(model);
 
-	// let's check that our data is actually in the database
-	try (RepositoryResult<Statement> result = conn.getStatements(null, null, null);) {
-		for (Statement st: result) {
-			System.out.println("db contains: " + st);
-		}
-	}
+  // let's check that our data is actually in the database
+  try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
+    for (Statement st: result) {
+      System.out.println("db contains: " + st);
+    }
+  }
 }
 finally {
-	// before our program exits, make sure the database is properly shut down.
-	db.shutDown();
+  // before our program exits, make sure the database is properly shut down.
+  db.shutDown();
 }
 ```
 
-In this code example (line 8), we simply create a new {{< javadoc "Repository" "repository/Repository.html" >}} on the fly. We use a {{< javadoc "SailRepository" "repository/sail/SailRepository.html" >}} as the implementing class of the Repository interface, which takes a database implementation (known in RDF4J as a SAIL - "Storage and Inferencing Layer") as its constructor. In this case, we simply use an in-memory database implementation.
+In this code example (line 8), we simply create a new {{< javadoc "Repository" "repository/Repository.html" >}} on the fly. We use a {{< javadoc "SailRepository" "repository/sail/SailRepository.html" >}} as the implementing class of the Repository interface, which takes a database implementation (known in RDF4J as a SAIL - "Storage and Inferencing Layer") as its constructor. In this case, we use a simple in-memory database implementation.
 
-TIP: RDF4J itself provides several database implementations, and many third parties provide full connectivity for their own RDF database product to work with the RDF4J APIs. For a list of third-party databases, see this [list of vendors](http://rdf4j.org/about/rdf4j-databases/) . For more detailed information on how to create and maintain databases, see [Programming with RDF4J](/documentation/programming).
+{{< info >}}
+RDF4J itself provides several database implementations, and many third parties provide full connectivity for their own RDF database to work with the RDF4J APIs. See this <a href="http://rdf4j.org/about/#rdf4j-databases/">list of third-party databases</a>. For more detailed information on how to create and maintain databases, see <a href="/documentation/programming">Programming with RDF4J</a>.
+{{</ info >}}
 
 Once we have created and initialized our database, we open a {{< javadoc "RepositoryConnection" "repository/RepositoryConnection.html" >}} to it (line 11). This connection is an `AutoCloseable` resource that offers all sorts of methods for executing commands on the database: adding and removing data, querying, starting transactions, and so on.
 
 ### Example 14: load a file directly into a database
 
-In the code example in the previous section, we first loaded an RDF file into a Model object, and then we added that Model object to our database. This works fine for smaller files of course, but as data gets larger, you really don't want to have to load it completely in main memory before storing it in your database.
+In the code example in the previous section, we first loaded an RDF file into a Model object, and then we added that Model object to our database. This works fine for smaller files, but as data gets larger, you really don't want to have to load it completely in main memory before storing it in your database.
 
 {{< example "Example 14" "/repository/Example14AddRDFToDatabase.java" >}} shows how we can add our RDF data to a database directly, without first creating a Model:
 
@@ -583,23 +593,21 @@ Repository db = new SailRepository(new MemoryStore());
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
-    String filename = "example-data-artists.ttl";
-    try (InputStream input =
-            Example12AddRDFToDatabase.class.getResourceAsStream("/" + filename)) {
-	// add the RDF data from the inputstream directly to our database
-	conn.add(input, "", RDFFormat.TURTLE );
-    }
+  String filename = "example-data-artists.ttl";
+  try (InputStream input = Example14AddRDFToDatabase.class.getResourceAsStream("/" + filename)) {
+    // add the RDF data from the inputstream directly to our database
+    conn.add(input, "", RDFFormat.TURTLE);
+  }
 
-    // let's check that our data is actually in the database
-    try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
-        for(Statement st: result) {
-		System.out.println("db contains: " + st);
-	}
+  // let's check that our data is actually in the database
+  try (RepositoryResult<Statement> result = conn.getStatements(null, null, null)) {
+    for (Statement st : result) {
+      System.out.println("db contains: " + st);
     }
-}
-finally {
-    // before our program exits, make sure the database is properly shut down.
-    db.shutDown();
+  }
+} finally {
+  // before our program exits, make sure the database is properly shut down.
+  db.shutDown();
 }
 ```
 
@@ -615,38 +623,36 @@ Repository db = new SailRepository(new MemoryStore());
 
 // Open a connection to the database
 try (RepositoryConnection conn = db.getConnection()) {
-    String filename = "example-data-artists.ttl";
-    try (InputStream input =
-           Example13SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
-	// add the RDF data from the inputstream directly to our database
-	conn.add(input, "", RDFFormat.TURTLE );
-    }
+  String filename = "example-data-artists.ttl";
+  try (InputStream input = Example15SimpleSPARQLQuery.class.getResourceAsStream("/" + filename)) {
+    // add the RDF data from the inputstream directly to our database
+    conn.add(input, "", RDFFormat.TURTLE);
+  }
 
-    // We do a simple SPARQL SELECT-query that retrieves all resources of
-    // type `ex:Artist`, and their first names.
-    String queryString = "PREFIX ex: <http://example.org/> \n";
-    queryString += "PREFIX foaf: <" + FOAF.NAMESPACE + "> \n";
-    queryString += "SELECT ?s ?n \n";
-    queryString += "WHERE { \n";
-    queryString += "    ?s a ex:Artist; \n";
-    queryString += "       foaf:firstName ?n .";
-    queryString += "}";
-    TupleQuery query = conn.prepareTupleQuery(queryString);
-    // A QueryResult is also an AutoCloseable resource, so make sure it gets
-    // closed when done.
-    try (TupleQueryResult result = query.evaluate()) {
-	// we just iterate over all solutions in the result...
-	for (BindingSet solution: result) {
-	    // ... and print out the value of the variable bindings
-	    // for ?s and ?n
-	    System.out.println("?s = " + solution.getValue("s"));
-	    System.out.println("?n = " + solution.getValue("n"));
-	}
+  // We do a simple SPARQL SELECT-query that retrieves all resources of type `ex:Artist`,
+  // and their first names.
+  String queryString = "PREFIX ex: <http://example.org/> \n";
+  queryString += "PREFIX foaf: <" + FOAF.NAMESPACE + "> \n";
+  queryString += "SELECT ?s ?n \n";
+  queryString += "WHERE { \n";
+  queryString += "    ?s a ex:Artist; \n";
+  queryString += "       foaf:firstName ?n .";
+  queryString += "}";
+
+  TupleQuery query = conn.prepareTupleQuery(queryString);
+
+  // A QueryResult is also an AutoCloseable resource, so make sure it gets closed when done.
+  try (TupleQueryResult result = query.evaluate()) {
+    // we just iterate over all solutions in the result...
+    for (BindingSet solution : result) {
+      // ... and print out the value of the variable binding for ?s and ?n
+      System.out.println("?s = " + solution.getValue("s"));
+      System.out.println("?n = " + solution.getValue("n"));
     }
-}
-finally {
-    // Before our program exits, make sure the database is properly shut down.
-    db.shutDown();
+  }
+} finally {
+  // Before our program exits, make sure the database is properly shut down.
+  db.shutDown();
 }
 ```
 
@@ -687,9 +693,9 @@ Repository db = new SailRepository(new MemoryStore());
 try (RepositoryConnection conn = db.getConnection()) {
     String filename = "example-data-artists.ttl";
     try (InputStream input =
-	    Example14SPARQLConstructQuery.class.getResourceAsStream("/" + filename)) {
-	// add the RDF data from the inputstream directly to our database
-	conn.add(input, "", RDFFormat.TURTLE );
+      Example14SPARQLConstructQuery.class.getResourceAsStream("/" + filename)) {
+      // add the RDF data from the inputstream directly to our database
+      conn.add(input, "", RDFFormat.TURTLE );
     }
 
     // We do a simple SPARQL CONSTRUCT-query that retrieves all statements
@@ -707,11 +713,11 @@ try (RepositoryConnection conn = db.getConnection()) {
     // A QueryResult is also an AutoCloseable resource, so make sure it gets
     // closed when done.
     try (GraphQueryResult result = query.evaluate()) {
-	// we just iterate over all solutions in the result...
-	for (Statement st: result) {
-	    // ... and print them out
-	    System.out.println(st);
-	}
+  // we just iterate over all solutions in the result...
+  for (Statement st: result) {
+      // ... and print them out
+      System.out.println(st);
+  }
     }
 }
 finally {

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -85,8 +86,10 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 	public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj, IRI pred,
 			Value obj) throws QueryEvaluationException {
 		try {
-			return new TriplesIteration(dataset.getTriples(subj, pred, obj));
-		} catch (SailException e) { // TODO is this necessary?
+			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
+			// projections and conversions) we need to make sure we de-duplicate the RDF* triples here.
+			return new DistinctIteration<>(new TriplesIteration(dataset.getTriples(subj, pred, obj)));
+		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}

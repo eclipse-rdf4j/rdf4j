@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.model.util;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -146,23 +149,17 @@ public class IsomorphicTest {
 
 	@Test
 	public void spinFullForwardchained() {
-
 		isomorphic(spinFullForwardchained, spinFullForwardchained_2);
-
 	}
 
 	@Test
 	public void list() {
-
 		isomorphic(list, list_2);
-
 	}
 
 	@Test
 	public void internallyIsomorphic() {
-
 		isomorphic(internallyIsomorphic, internallyIsomorphic_2);
-
 	}
 
 	@Test
@@ -188,15 +185,84 @@ public class IsomorphicTest {
 
 	@Test
 	public void bsbmNotIsomorphic() {
-
 		notIsomorphic(bsbm, bsbmChanged);
+	}
 
+	@Test
+	public void testValidationReport() throws IOException {
+		Model m1 = getModel("shaclValidationReport.ttl");
+		Model m2 = getModel("shaclValidationReport.ttl");
+
+		assertThat(Models.isomorphic(m1, m2));
+	}
+
+	@Test(timeout = 2000)
+	public void testValidationReport_LexicalOrdering() throws IOException {
+		Model m1 = getModel("shaclValidationReport.ttl");
+		Model m2 = getModel("shaclValidationReport.ttl");
+
+		LexicalValueComparator lexicalValueComparator = new LexicalValueComparator();
+
+		m1 = m1.stream()
+				.sorted((a, b) -> lexicalValueComparator.compare(a.getObject(), b.getObject()))
+				.collect(ModelCollector.toModel());
+
+		assertThat(Models.isomorphic(m1, m2));
+	}
+
+	@Test
+	public void testValidationReport_Changed() throws IOException {
+		Model m1 = getModel("shaclValidationReport.ttl");
+		Model m2 = getModel("shaclValidationReport-changed.ttl");
+
+		assertThat(Models.isomorphic(m1, m2)).isFalse();
+	}
+
+	@Test
+	public void testIsomorphicDatatype() throws Exception {
+		String d1 = "@prefix ex: <http://example.com/ns#> .\n"
+				+ "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n"
+				+ "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+				+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+				+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n"
+				+ "\n"
+				+ "ex:PersonShape sh:not [\n"
+				+ "      sh:not [\n"
+				+ "          sh:maxCount 3;\n"
+				+ "          sh:path ex:ssn\n"
+				+ "        ]\n"
+				+ "    ];\n"
+				+ "  sh:targetClass ex:Person .";
+
+		Model m1 = Rio.parse(new StringReader(d1), RDFFormat.TURTLE);
+
+		String d2 = "@prefix ex: <http://example.com/ns#> .\n"
+				+ "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n"
+				+ "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+				+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+				+ "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n"
+				+ "\n"
+				+ "ex:PersonShape sh:not [\n"
+				+ "      sh:not [\n"
+				+ "          sh:maxCount \"3\"^^xsd:long;\n"
+				+ "          sh:path ex:ssn\n"
+				+ "        ]\n"
+				+ "    ];\n"
+				+ "  sh:targetClass ex:Person .";
+
+		Model m2 = Rio.parse(new StringReader(d2), RDFFormat.TURTLE);
+
+		assertThat(Models.isomorphic(m1, m2)).isFalse();
 	}
 
 	private static Model getModel(String name) {
 		try {
 			try (InputStream resourceAsStream = IsomorphicTest.class.getClassLoader()
-					.getResourceAsStream("benchmark/" + name)) {
+					.getResourceAsStream("benchmarkFiles/" + name)) {
 				return Rio.parse(resourceAsStream, "http://example.com/", RDFFormat.TURTLE);
 			}
 		} catch (IOException e) {
@@ -205,7 +271,6 @@ public class IsomorphicTest {
 	}
 
 	private boolean isomorphic(Model m1, Model m2) {
-
 		boolean isomorphic = Models.isomorphic(m1, m2);
 		if (!isomorphic) {
 			throw new IllegalStateException("Not isomorphic");

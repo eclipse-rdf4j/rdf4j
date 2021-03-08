@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.mock;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
@@ -16,25 +18,25 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.planNodes.IteratorData;
-import org.eclipse.rdf4j.sail.shacl.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.planNodes.Tuple;
-import org.eclipse.rdf4j.sail.shacl.planNodes.ValidationExecutionLogger;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 /**
  * @author Håvard Ottestad
  */
 public class MockInputPlanNode implements PlanNode {
 
-	Collection<Tuple> initialData;
+	Collection<ValidationTuple> initialData;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public MockInputPlanNode(Collection<Tuple> initialData) {
+	public MockInputPlanNode(Collection<ValidationTuple> initialData) {
 		this.initialData = initialData;
 	}
 
+	@SafeVarargs
 	public MockInputPlanNode(Collection<String>... list) {
 
 		initialData = Arrays.stream(list)
@@ -42,17 +44,24 @@ public class MockInputPlanNode implements PlanNode {
 						.map(SimpleValueFactory.getInstance()::createLiteral)
 						.map(l -> (Value) l)
 						.collect(Collectors.toList()))
-				.map(Tuple::new)
-				.sorted((a, b) -> new ValueComparator().compare(a.getLine().get(0), b.getLine().get(0)))
+				.map(v -> {
+					if (v.size() > 1) {
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
+					} else {
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, false);
+					}
+				})
+				.sorted(ValidationTuple::compareValue)
+				.sorted(ValidationTuple::compareFullTarget)
 				.collect(Collectors.toList());
 
 	}
 
 	@Override
-	public CloseableIteration<Tuple, SailException> iterator() {
-		return new CloseableIteration<Tuple, SailException>() {
+	public CloseableIteration<ValidationTuple, SailException> iterator() {
+		return new CloseableIteration<ValidationTuple, SailException>() {
 
-			Iterator<Tuple> iterator = initialData.iterator();
+			final Iterator<ValidationTuple> iterator = initialData.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -64,7 +73,7 @@ public class MockInputPlanNode implements PlanNode {
 			}
 
 			@Override
-			public Tuple next() throws SailException {
+			public ValidationTuple next() throws SailException {
 				return iterator.next();
 			}
 
@@ -91,15 +100,20 @@ public class MockInputPlanNode implements PlanNode {
 	}
 
 	@Override
-	public IteratorData getIteratorDataType() {
-		return IteratorData.tripleBased;
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		if (this.validationExecutionLogger == null) {
 			this.validationExecutionLogger = validationExecutionLogger;
 		}
+	}
+
+	@Override
+	public boolean producesSorted() {
+		return true;
+	}
+
+	@Override
+	public boolean requiresSorted() {
+		return false;
 	}
 
 }

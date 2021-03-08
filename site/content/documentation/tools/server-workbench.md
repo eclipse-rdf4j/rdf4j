@@ -35,7 +35,7 @@ There is a [known issue](https://github.com/eclipse/rdf4j/issues/391) affecting 
 
 To resolve issues where the request body is not getting properly interpreted as UTF-8, it is necessary to configure Tomcat to use its built-in SetCharacterEncodingFilter. More details are available at the [Tomcat wiki](https://cwiki.apache.org/confluence/display/TOMCAT/Character+Encoding#CharacterEncoding-Q3). Un-commenting the <filter> and <filter-mapping> elements for setCharacterEncodingFilter in `$CATALINA_BASE/conf/web.xml`, and restarting the server, should be the only necessary steps.
 
-## Application directory configuration
+### Application directory configuration
 
 The RDF4J Server and Workbench store configuration files and repository data in a single directory (with subdirectories). On Windows machines, this directory is `%APPDATA%\RDF4J\` by default, where `%APPDATA%` is the application data directory of the user that runs the application. For example, in case the application runs under the ‘LocalService’ user account on Windows XP, the directory is `C:\Documents and Settings\LocalService\Application Data\RDF4J\`. On Linux/UNIX, the default location is `$HOME/.RDF4J/`, for example `/home/tomcat/.rdf4j/`. We will refer to this data directory as `[RDF4J_DATA]` in the rest of this manual.
 
@@ -44,9 +44,26 @@ The location of this data directory can be reconfigured using the Java system pr
     set JAVA_OPTS=-Dorg.eclipse.rdf4j.appdata.basedir=\path\to\other\dir\ (on Windows)
     export JAVA_OPTS='-Dorg.eclipse.rdf4j.appdata.basedir=/path/to/other/dir/' (on Linux/UNIX)
 
-If you are using Apache Tomcat as a Windows Service you should use the Windows Services configuration tool to set this property. Other users can either edit the Tomcat startup script or set the property some other way.
 
 One easy way to find out what the directory is in a running instance of the RDF4J Server, is to go to http://localhost:8080/rdf4j-server/home/overview.view in your browser and click on ‘System’ in the navigation menu on the left. The data directory will be listed as one of the configuration settings of the current server.
+
+#### Tomcat as a Windows service
+
+If you are using Apache Tomcat as a Windows Service you should use the Windows Services configuration tool to set this property. Other users can either edit the Tomcat startup script or set the property some other way.
+
+#### Tomcat as a systemd service
+
+On Linux systems, systemd may impose additional restrictions on the location of the data directory. If the server seems to have started successfully, but the `[RDF4J-DATA]` directory remains empty - i.e. no `server` nor `workbench` subdirectories are being created - the tomcat service configuration needs to be adapted.
+
+For example: Tomcat 9 on Debian with `/var/rdf4j/` as the data directory requires an additional `ReadWritePaths` in the `/etc/systemd/system/tomcat9.service` file, 
+followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` to apply this change.
+
+```ini
+ [Service]
+
+ReadWritePaths=/var/rdf4j/
+```
+
 
 ### Repository Configuration
 
@@ -55,6 +72,13 @@ Each repository in RDF4J Server stores both its configuration and the actual per
 The easiest way to create and manage repositories on an RDF4J Server to use the [RDF4J Console](/documentation/tools/console) or RDF4J Workbench. Both offer commands to quickly create a new repository and guide you through the various configuration options.
 
 However, you can also directly edit the `config.ttl` of your repository to change its configuration. For example, you can use this to change the repository name as it is shown in the Workbench, or perhaps to change configuration parameters, or change the repository type. However, proceed with caution: if you make a mistake, your repository may become unreadable until after you've rectified the mistake. Also note that if you change the actual store type (e.g. switching from a memory store to a native store), it _won't_ migrate your existing data to the new store configuration!
+
+The different types of repository are: 
+- SPARQLRepository
+- HTTPRepository
+- SailRepository
+- DatasetRepository
+- ContextAwareRepository
 
 More information can be found in the [Repository configuration and templates](/documentation/tools/repository-configuration/) section of the documentation.
 
@@ -68,7 +92,7 @@ The default log level is INFO, indicating that only important status messages, w
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).
 
-The RDF4J Server exposes its functionality using a [REST API](/documentation/rest-api) that is an extension of the SPARQL protocol for RDF. This protocol defines exactly what operations can be achieved using specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each combination of URL pattern and HTTP method can be associated with a set of user roles, thus giving very fine-grained control.
+The RDF4J Server exposes its functionality using a [REST API](/documentation/reference/rest-api) that is an extension of the SPARQL protocol for RDF. This protocol defines exactly what operations can be achieved using specific URL patterns and HTTP methods (`GET`, `POST`, `PUT`, `DELETE`). Each combination of URL pattern and HTTP method can be associated with a set of user roles, thus giving very fine-grained control.
 
 In general, read operations are effected using `GET` and write operations using `PUT`, `POST` and `DELETE`. The exception to this is that POST is allowed for SPARQL queries. This is for practical reasons, because some HTTP servers have limits on the length of the parameter values for GET requests.
 

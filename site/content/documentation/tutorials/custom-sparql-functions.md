@@ -170,7 +170,7 @@ In the case of the SPARQL function registry, the name of this configuration file
 
 Apart from this configuration file, your JAR file should of course also contain the actual compiled class. All of this is fairly easy to do, for example from your Eclipse project:
 
-1. create a directory `META-INF` and a subdirectory `META-INF/services` within the `src` directory of your project (or, if you use Maven, within `src/main/resources`) See [our example resources dir](https://github.com/eclipse/rdf4j-doc/tree/master/examples/src/main/resources) for an example;
+1. create a directory `META-INF` and a subdirectory `META-INF/services` within the `src` directory of your project (or, if you use Maven, within `src/main/resources`) See [our example resources dir](https://github.com/eclipse/rdf4j/tree/main/examples/src/main/resources) for an example;
 2. Add a text file named `org.eclipse.rdf4j.query.algebra.evaluation.function.Function` to this new directory. Make sure it contains a single line with the fully qualified name of your custom function class (in our example, that’s `org.eclipse.rdf4j.example.function.PalindromeFunction`);
 3. Use Eclipse’s export function (or alternatively Maven’s `package` command) to create a JAR file (select the project, click ‘File’ -> ‘Export’ -> ‘JAR file’). Make sure the JAR file produced contains your compiled code and the sevice registry config file.
 

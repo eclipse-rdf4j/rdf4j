@@ -208,6 +208,32 @@ public class Expressions {
 		return new CustomFunction(functionIri).addOperand(operands);
 	}
 
+	/**
+	 * {@code operand IN (expression1, expression2...)}
+	 * 
+	 * @param searchTerm
+	 * @param expressions
+	 * @return an {@code IN} function
+	 *
+	 * @see <a href="https://www.w3.org/TR/sparql11-query/#func-in">SPARQL IN Function</a>
+	 */
+	public static Expression<?> in(Operand searchTerm, Operand... expressions) {
+		return new In(searchTerm, expressions);
+	}
+
+	/**
+	 * {@code operand NOT IN (expression1, expression2...)}
+	 * 
+	 * @param searchTerm
+	 * @param expressions
+	 * @return an {@code NOT IN} function
+	 *
+	 * @see <a href="https://www.w3.org/TR/sparql11-query/#func-not-in">SPARQL NOT IN Function</a>
+	 */
+	public static Expression<?> notIn(Operand searchTerm, Operand... expressions) {
+		return new In(searchTerm, false, expressions);
+	}
+
 	// ... etc...
 
 	/**

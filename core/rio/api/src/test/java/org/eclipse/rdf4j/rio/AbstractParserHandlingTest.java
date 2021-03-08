@@ -915,7 +915,7 @@ public abstract class AbstractParserHandlingTest {
 		testParser.parse(input, BASE_URI);
 
 		assertErrorListener(0, 0, 0);
-		assertModel(expectedModel); // isomorphic
+		// assertModel(expectedModel); // GH-2768 isomorphism is not maintained after skolemization
 		assertNotEquals(new HashSet<>(expectedModel), new HashSet<>(testStatements)); // blank nodes not preserved
 		assertTrue(Models.subjectBNodes(testStatements).isEmpty()); // skolemized
 	}

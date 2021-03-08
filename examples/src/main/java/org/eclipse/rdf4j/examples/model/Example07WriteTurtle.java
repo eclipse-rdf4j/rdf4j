@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -20,8 +22,7 @@ import org.eclipse.rdf4j.rio.Rio;
 /**
  * RDF Tutorial example 07: Writing an RDF model in Turtle syntax
  *
- * In this example, we show how you can use the Rio Parser/writer toolkit to write your
- * model in Turtle syntax.
+ * In this example, we show how you can use the Rio Parser/writer toolkit to write your model in Turtle syntax.
  *
  * @author Jeen Broekstra
  * @see
@@ -30,22 +31,20 @@ public class Example07WriteTurtle {
 
 	public static void main(String[] args) {
 
-		// To create a blank node for the address, we need a ValueFactory
-		ValueFactory vf = SimpleValueFactory.getInstance();
-		BNode address = vf.createBNode();
+		BNode address = bnode();
 
-		// Identically to example 03, we create a model with some data
+		// Identically to example 05, we create a model with some data
 		ModelBuilder builder = new ModelBuilder();
 		builder
 				.setNamespace("ex", "http://example.org/")
 				.subject("ex:Picasso")
-					.add(RDF.TYPE, "ex:Artist")
-					.add(FOAF.FIRST_NAME, "Pablo")
-					.add("ex:homeAddress", address) // link the blank node
-				.subject(address)			// switch the subject
-					.add("ex:street", "31 Art Gallery")
-					.add("ex:city", "Madrid")
-					.add("ex:country", "Spain");
+				.add(RDF.TYPE, "ex:Artist")
+				.add(FOAF.FIRST_NAME, "Pablo")
+				.add("ex:homeAddress", address) // link the blank node
+				.subject(address) // switch the subject
+				.add("ex:street", "31 Art Gallery")
+				.add("ex:city", "Madrid")
+				.add("ex:country", "Spain");
 
 		Model model = builder.build();
 

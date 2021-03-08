@@ -123,7 +123,6 @@ public class ArrangedWriter extends AbstractRDFWriter {
 	}
 
 	public ArrangedWriter(RDFWriter delegate, int size, boolean repeatBlankNodes) {
-		super(delegate.getOutputStream().orElse(null));
 		this.delegate = delegate;
 		this.targetQueueSize = size;
 		this.repeatBlankNodes = repeatBlankNodes;

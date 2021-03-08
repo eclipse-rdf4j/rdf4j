@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.repository;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
@@ -19,9 +22,6 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
-import java.io.IOException;
-import java.io.InputStream;
-
 /**
  * RDF Tutorial example 16: executing a SPARQL CONSTRUCT query on the database
  *
@@ -30,19 +30,16 @@ import java.io.InputStream;
 public class Example16SPARQLConstructQuery {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 		// Create a new Repository.
 		Repository db = new SailRepository(new MemoryStore());
-		db.init();
 
 		// Open a connection to the database
 		try (RepositoryConnection conn = db.getConnection()) {
 			String filename = "example-data-artists.ttl";
-			try (InputStream input =
-					Example16SPARQLConstructQuery.class.getResourceAsStream("/" + filename)) {
+			try (InputStream input = Example16SPARQLConstructQuery.class.getResourceAsStream("/" + filename)) {
 				// add the RDF data from the inputstream directly to our database
-				conn.add(input, "", RDFFormat.TURTLE );
+				conn.add(input, "", RDFFormat.TURTLE);
 			}
 
 			// We do a simple SPARQL CONSTRUCT-query that retrieves all statements about artists,
@@ -69,8 +66,7 @@ public class Example16SPARQLConstructQuery {
 					System.out.println(st);
 				}
 			}
-		}
-		finally {
+		} finally {
 			// Before our program exits, make sure the database is properly shut down.
 			db.shutDown();
 		}

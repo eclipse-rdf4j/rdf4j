@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio.binary;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * @author jeen
@@ -25,6 +26,11 @@ public class BinaryTupleQueryResultWriterTest extends AbstractTupleQueryResultWr
 	@Override
 	protected TupleQueryResultWriterFactory getWriterFactory() {
 		return new BinaryQueryResultWriterFactory();
+	}
+
+	@Override
+	protected RioSetting<?>[] getExpectedSupportedSettings() {
+		return new RioSetting<?>[] {};
 	}
 
 }

@@ -15,6 +15,6 @@ ex:PersonShape
 	],
         [
 		sh:path ex:knows ;
-		sh:in (ex:steve ex:pete) ;
+		sh:in (ex:pete ex:steve ) ;
 	]	 .
 

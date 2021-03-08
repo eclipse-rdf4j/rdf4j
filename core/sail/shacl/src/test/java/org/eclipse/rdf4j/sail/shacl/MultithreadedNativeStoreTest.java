@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
@@ -28,6 +29,7 @@ public class MultithreadedNativeStoreTest extends MultithreadedTest {
 	@Before
 	public void before() {
 		file = Files.newTemporaryFolder();
+		System.out.println("Max memory: " + Runtime.getRuntime().maxMemory() / 1024 / 1024 + " MB");
 	}
 
 	@Override

@@ -17,29 +17,42 @@ public enum SourceConstraintComponent {
 	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),
 
 	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
-	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
-
 	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
-	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
-
 	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),
+
+	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased, false),
+	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
+	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
 
 	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other, true),
 	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other, false),
 	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other, false),
-	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased, false),
+	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ConstraintType.Other, true),
 
 	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
 	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
 	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
 	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),
 
-	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
-	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),
-
 	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
 	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
-	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical, true);
+	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),
+
+	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),
+	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair,
+			true),
+
+	QualifiedMaxCountConstraintComponent(SHACL.QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,
+			false),
+	QualifiedMinCountConstraintComponent(SHACL.QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,
+			false),
+	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, true),
+	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, false);
 
 	private final IRI iri;
 	private final ConstraintType constraintType;
@@ -67,7 +80,7 @@ public enum SourceConstraintComponent {
 		PropertyPair,
 		Logical,
 		ShapeBased,
-		Other;
+		Other
 
 	}
 

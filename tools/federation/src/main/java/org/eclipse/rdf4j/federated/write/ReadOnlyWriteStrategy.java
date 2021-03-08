@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.write;
 
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -38,6 +39,11 @@ public class ReadOnlyWriteStrategy implements WriteStrategy {
 
 	@Override
 	public void rollback() throws RepositoryException {
+		// no-op
+	}
+
+	@Override
+	public void setTransactionSettings(TransactionSetting... transactionSettings) throws RepositoryException {
 		// no-op
 	}
 

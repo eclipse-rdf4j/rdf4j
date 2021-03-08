@@ -7,31 +7,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.examples.model;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.examples.model.vocabulary.EX;
-import org.eclipse.rdf4j.model.*;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Optional;
-import java.util.Set;
-
 /**
- * RDF Tutorial example 11: Getting a single property value for a particular subject.
- * In this example, we show how you can get retrieve each artist's first name and print it.
+ * RDF Tutorial example 11: Getting a single property value for a particular subject. In this example, we show how you
+ * can get retrieve each artist's first name and print it.
  *
  * @author Jeen Broekstra
  */
 public class Example11SinglePropertyValue {
 
 	public static void main(String[] args)
-			throws IOException
-	{
+			throws IOException {
 
 		String filename = "example-data-artists.ttl";
 

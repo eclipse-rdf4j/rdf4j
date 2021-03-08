@@ -28,7 +28,7 @@ These conditions are to ensure that existing user code will continue to work whe
 
 For patch releases we never allow changes in the public API, unless the change is specifically to fix a bug that aligns the actual behavior of the code with the publicly documented behavior.
 
-The main branches (`master` and `develop`) use a SNAPSHOT version number to indicate that they are snapshots on the road to the next version. The `master` version always has the same major and minor number as the latest release, with the patch version incremented by one: for example if the latest release was 3.1.0, the master version will be 3.1.1-SNAPSHOT. The `develop` version uses the next expected major/minor release number, for example 3.2.0-SNAPSHOT.
+The main branches (`main` and `develop`) use a SNAPSHOT version number to indicate that they are snapshots on the road to the next version. The `main` version always has the same major and minor number as the latest release, with the patch version incremented by one: for example if the latest release was 3.1.0, the `main` version will be 3.1.1-SNAPSHOT. The `develop` version uses the next expected major/minor release number, for example 3.2.0-SNAPSHOT.
 
 ## Workflow
 
@@ -44,7 +44,7 @@ For example: `GH-1664-transformation-servlet` is the branch for a fix for issue
 
 RDF4J uses a git branching model where collaborative feature development takes
 place on branches from the `develop` branch. This is where all development for
-the next (minor or major) release happens. The `master` branch is reserved for
+the next (minor or major) release happens. The `main` branch is reserved for
 small bug fixes (to be released in patch/service releases) only.
 
 Once a issue is complete and tested, a *Pull Request* (PR) should be created
@@ -55,12 +55,12 @@ Don't be tempted to fix several unrelated issues in a single PR please.
 The Pull Request description should start with a link to the
 issue that is addressed by the PR. If the issue is a new feature or improvment,
 the PR should target the `develop` branch. If the issue is a bug fix, the PR
-should be branched from (and target) the `master` branch.
+should be branched from (and target) the `main` branch.
 
 Tip: when starting work on an issue, and you are unsure if it will be a new
-feature or "just" a bug fix, start by branching from the `master` branch. It
+feature or "just" a bug fix, start by branching from the `main` branch. It
 will always be possible to merge your issue branch into `develop` later if
-necessary. However, if you start from `develop`, merging into `master` will not
+necessary. However, if you start from `develop`, merging into `main` will not
 be possible, and you're therefore committed to the next minor/major release.
 
 RDF4J uses 'merge-commits' as its pull request merge strategy. We aim to
@@ -73,16 +73,16 @@ strategy](/documentation/developer/merge-strategy/).
 If the change is a bug fix, contains no new features, and does not change any public or protected APIs:
 
 1. Create an issue in our [issue tracker](https://github.com/eclipse/rdf4j/issues) if it doesn't exist yet.
-1. Create an issue branch by branching off from the `master` branch, using `GH-<issuenumber>-short-description` as the branch name convention.
+1. Create an issue branch by branching off from the `main` branch, using `GH-<issuenumber>-short-description` as the branch name convention.
 2. Make the necessary changes and verify the codebase.
 3. Optionally [squash your commits](../squashing) to clean up your branch.
-3. Create a Pull Request that targets the `master` branch.
+3. Create a Pull Request that targets the `main` branch.
 4. Peers and project committers now have a chance to review the PR and make suggestions.
 5. Any modifications can be made to the _issue_ branch as recommended.
 6. Once any necessary changes have been made, project committers can mark the PR as approved.
 7. Project committers should then determine what patch release this fix will be included in by updating the milestone label of both the PR and the issue.
-8. Once a Pull Request is approved and scheduled, it can be merged into the `master` branch.
-9. After a PR has been merged into the `master` branch, the `master` branch should
+8. Once a Pull Request is approved and scheduled, it can be merged into the `main` branch.
+9. After a PR has been merged into the `main` branch, the `main` branch should
 then be merged into the `develop` branch by the project committer that merged the PR, any conflicts (such as due to new features) should be resolved.
 
 ### Feature Requests

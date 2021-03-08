@@ -16,6 +16,11 @@ import org.eclipse.rdf4j.model.IRITest;
 public class SimpleIRITest extends IRITest {
 
 	@Override
+	protected IRI iri(String iri) {
+		return new SimpleIRI(iri);
+	}
+
+	@Override
 	protected IRI iri(String namespace, String localname) {
 
 		if (namespace == null) { // handle missing checks

@@ -195,7 +195,7 @@ public class TriGParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() throws Exception {
-		assertThat(Rio.createParser(RDFFormat.TRIG).getSupportedSettings()).hasSize(14);
+		assertThat(Rio.createParser(RDFFormat.TRIG).getSupportedSettings()).hasSize(15);
 	}
 
 	@Test

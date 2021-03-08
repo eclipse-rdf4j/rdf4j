@@ -34,18 +34,24 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
 
 class SPARQLResultsSAXParser extends SimpleSAXAdapter {
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/*-----------*
 	 * Variables *
@@ -132,12 +138,25 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 			if (xmlLang != null) {
 				currentValue = valueFactory.createLiteral(text, xmlLang);
 			} else if (datatype != null) {
+				IRI datatypeIri;
 				try {
-					currentValue = valueFactory.createLiteral(text, valueFactory.createIRI(datatype));
+					datatypeIri = valueFactory.createIRI(datatype);
 				} catch (IllegalArgumentException e) {
 					// Illegal datatype URI
 					throw new SAXException(e.getMessage(), e);
 				}
+
+				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
+				// to using STRING as the datatype
+				if (RDF.LANGSTRING.equals(datatypeIri) && xmlLang == null) {
+					logger.debug(
+							"rdf:langString typed literal missing language tag: '{}'. Falling back to xsd:string.",
+							StringUtils.abbreviate(text, 10)
+					);
+					datatypeIri = XSD.STRING;
+				}
+
+				currentValue = valueFactory.createLiteral(text, datatypeIri);
 			} else {
 				currentValue = valueFactory.createLiteral(text);
 			}

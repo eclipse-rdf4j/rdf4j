@@ -15,6 +15,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -35,7 +36,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
  * @author Jeen Broekstra
  */
-public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter {
+public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 
 	private Writer writer;
 
@@ -45,9 +46,15 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	 * @param out
 	 */
 	public SPARQLResultsCSVWriter(OutputStream out) {
-		super(out);
-		Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8);
-		writer = new BufferedWriter(w, 1024);
+		this(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024));
+	}
+
+	public SPARQLResultsCSVWriter(Writer writer) {
+		this.writer = writer;
+	}
+
+	public Writer getWriter() {
+		return writer;
 	}
 
 	@Override

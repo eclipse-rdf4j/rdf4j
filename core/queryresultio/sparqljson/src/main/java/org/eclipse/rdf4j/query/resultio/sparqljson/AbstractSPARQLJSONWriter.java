@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashSet;
@@ -17,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.io.CharSink;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -44,7 +46,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter {
+abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
 
 	private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
@@ -58,10 +60,6 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 		JSON_FACTORY.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);
 		JSON_FACTORY.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 	}
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	protected boolean firstTupleWritten = false;
 
@@ -77,13 +75,24 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 
 	protected final JsonGenerator jg;
 
+	private final Writer writer;
+
 	protected AbstractSPARQLJSONWriter(OutputStream out) {
-		super(out);
+		this(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+	}
+
+	protected AbstractSPARQLJSONWriter(Writer writer) {
+		this.writer = writer;
 		try {
-			jg = JSON_FACTORY.createGenerator(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+			jg = JSON_FACTORY.createGenerator(writer);
 		} catch (IOException e) {
 			throw new IllegalArgumentException(e);
 		}
+	}
+
+	@Override
+	public final Writer getWriter() {
+		return writer;
 	}
 
 	@Override
@@ -339,11 +348,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 	@Override
 	public final Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
-
 		result.add(BasicQueryWriterSettings.JSONP_CALLBACK);
 		result.add(BasicWriterSettings.PRETTY_PRINT);
-		result.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
-		result.add(BasicWriterSettings.ENCODE_RDF_STAR);
 
 		return result;
 	}
