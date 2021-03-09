@@ -726,7 +726,7 @@ paths:
         tags:
           - transactions
         summary: Abort a transaction
-        description: An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transacion. After executing a DELETE, further operations on the same transaction will result in an error.
+        description: An active transaction can be aborted by means of a HTTP DELETE request on the transaction resource. This will execute a transaction rollback on the repository and will close the transaction. After executing a DELETE, further operations on the same transaction will result in an error.
         parameters:
           - name: repositoryID
             in: path
