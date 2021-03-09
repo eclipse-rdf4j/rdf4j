@@ -53,7 +53,7 @@ public class TriGWriter extends TurtleWriter {
 	/**
 	 * Creates a new TriGWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out The OutputStream to write the TriG document to.
+	 * @param out     The OutputStream to write the TriG document to.
 	 * @param baseIRI
 	 */
 	public TriGWriter(OutputStream out, ParsedIRI baseIRI) {
@@ -72,7 +72,7 @@ public class TriGWriter extends TurtleWriter {
 	/**
 	 * Creates a new TriGWriter that will write to the supplied Writer.
 	 *
-	 * @param writer The Writer to write the TriG document to.
+	 * @param writer  The Writer to write the TriG document to.
 	 * @param baseIRI
 	 */
 	public TriGWriter(Writer writer, ParsedIRI baseIRI) {
