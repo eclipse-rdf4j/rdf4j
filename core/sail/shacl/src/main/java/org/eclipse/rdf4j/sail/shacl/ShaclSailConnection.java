@@ -57,8 +57,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);
 
-	private List<Shape> shapes;
-
 	private final SailConnection previousStateConnection;
 	private final SailConnection serializableConnection;
 	private final SailConnection previousStateSerializableConnection;
@@ -175,8 +173,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		stats.setBaseSailEmpty(isEmpty());
-
-		this.shapes = sail.getShapes(shapesRepoConnection);
 
 		if (this.transactionSettings
 				.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
@@ -658,7 +654,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			}
 
-			List<Shape> shapesBeforeRefresh = this.shapes;
+			List<Shape> shapesBeforeRefresh = sail.getCurrentShapes();
 			List<Shape> shapesAfterRefresh;
 
 			if (isShapeRefreshNeeded) {
@@ -854,7 +850,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		prepareValidation();
-		ValidationReport validate = validate(this.shapes, true);
+		ValidationReport validate = validate(sail.getCurrentShapes(), true);
 
 		return new ShaclSailValidationException(validate).getValidationReport();
 	}
