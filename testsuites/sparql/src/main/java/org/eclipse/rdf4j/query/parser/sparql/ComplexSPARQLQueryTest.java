@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -18,6 +21,7 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -26,8 +30,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -2536,6 +2542,47 @@ public abstract class ComplexSPARQLQueryTest {
 			assertTrue(result.hasNext());
 			assertEquals("13.815", result.next().getValue("sec").stringValue());
 			assertFalse(result.hasNext());
+		}
+	}
+
+	@Test
+	public void testConstructModifiers() throws Exception {
+		loadTestData("/testdata-query/dataset-construct-modifiers.ttl");
+		String qry = "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
+				+ "PREFIX site: <http://example.org/stats#> \n"
+				+ "CONSTRUCT { \n"
+				+ "  ?iri foaf:name ?name . \n"
+				+ "  ?iri foaf:nick ?nick . \n"
+				+ "} \n"
+				+ "WHERE { \n"
+				+ "  ?iri foaf:name ?name ; \n"
+				+ "    site:hits ?hits ; \n"
+				+ "    foaf:nick ?nick . \n"
+				+ "} \n"
+				+ "ORDER BY desc(?hits) \n"
+				+ "LIMIT 3";
+		Statement correctResult[] = {
+				statement(iri("urn:1"), iri("http://xmlns.com/foaf/0.1/name"), literal("Alice"), null),
+				statement(iri("urn:1"), iri("http://xmlns.com/foaf/0.1/nick"), literal("Al"), null),
+
+				statement(iri("urn:3"), iri("http://xmlns.com/foaf/0.1/name"), literal("Eve"), null),
+				statement(iri("urn:3"), iri("http://xmlns.com/foaf/0.1/nick"), literal("Ev"), null),
+
+				statement(iri("urn:2"), iri("http://xmlns.com/foaf/0.1/name"), literal("Bob"), null),
+				statement(iri("urn:2"), iri("http://xmlns.com/foaf/0.1/nick"), literal("Bo"), null),
+		};
+		GraphQuery gq = conn.prepareGraphQuery(qry);
+		try (GraphQueryResult result = gq.evaluate()) {
+			assertNotNull(result);
+			assertTrue(result.hasNext());
+			int resultNo = 0;
+			while (result.hasNext()) {
+				Statement st = result.next();
+				assertThat(resultNo).isLessThan(correctResult.length);
+				assertEquals(correctResult[resultNo], st);
+				resultNo++;
+			}
+			assertEquals(correctResult.length, resultNo);
 		}
 	}
 

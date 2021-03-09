@@ -20,9 +20,9 @@ RDF statements are represented by the {{< javadoc "Statement" "model/Statement.h
 To create new values and statements, you can use the {{< javadoc "Values" "model/util/Values.html" >}}  and {{< javadoc "Statements" "model/util/Statements.html" >}} static factory methods, which provide easy creation of new `IRI`s, `Literal`s, `BNode`s, `Triple`s and `Statement`s based on a variety of different input objects.
 
 ```java
-import static org.eclipse.model.util.Statements.statement;
-import static org.eclipse.model.util.Values.iri;
-import static org.eclipse.model.util.Values.literal;
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 IRI bob = iri("http://example.org/bob");
 IRI nameProp = iri("http://example.org/name");
@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 ValueFactory factory = SimpleValueFactory.getInstance();
 ```
 
-For performance reasons, the `SimpleValueFactory` provides only basic input validation. The {{< javadoc "ValidatingValueFactory" "model/impl/ValidatingValueFactory.html" >}} is stricter, albeit somewhat slower (though this should not be noticable unless you are working with very significant amounts of data).
+For performance reasons, the `SimpleValueFactory` provides only basic input validation. The {{< javadoc "ValidatingValueFactory" "model/impl/ValidatingValueFactory.html" >}} is stricter, albeit somewhat slower (though this should not be noticeable unless you are working with very significant amounts of data).
 
 You can also obtain a `ValueFactory` from the {{< javadoc "Repository" "repository/Repository.html" >}} you are working with, and in fact, this is the recommend approach. For more information about this see the [Repository API documentation](/documentation/programming/repository/).
 
@@ -109,7 +109,7 @@ for (Resource person: model.filter(null, RDF.TYPE, FOAF.PERSON).subjects()) {
 
 The `filter()` method returns a `Model` again. However, the `Model` returned by this method is still backed by the original `Model`. Thus, changes that you make to this returned `Model` will automatically be reflected in the original `Model` as well.
 
-RDF4J provides three default implementations of the `Model` interface: {{< javadoc "org.eclipse.model.mpl.DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "org.eclipse.rdf4j.model.impl.LinkedHashModel" "model/impl/LinkedHashModel.html" >}}, and {{< javadoc "org.eclipse.rdf4j.model.impl.TreeModel" "model/impl/TreeModel.html" >}}. The difference between them is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticable when dealing with quite large collections of statements, however. 
+RDF4J provides three default implementations of the `Model` interface: {{< javadoc "org.eclipse.rdf4j.model.impl.DynamicModel" "model/impl/DynamicModel.html" >}}, {{< javadoc "org.eclipse.rdf4j.model.impl.LinkedHashModel" "model/impl/LinkedHashModel.html" >}}, and {{< javadoc "org.eclipse.rdf4j.model.impl.TreeModel" "model/impl/TreeModel.html" >}}. The difference between them is in their performance for different kinds of lookups and insertion patterns (see their respective javadoc entries for details). These differences are only really noticeable when dealing with quite large collections of statements, however. 
 
 ## Building RDF Models with the ModelBuilder
 
@@ -207,9 +207,9 @@ As an example, suppose we wish to add the above list of three string literals as
 The {{< javadoc "RDFCollections" "model/util/RDFCollections.html" >}} utility allows us to do this, as follows:
 
 ```java
-import static org.eclipse.model.util.Values.bnode;
-import static org.eclipse.model.util.Values.iri;
-import static org.eclipse.model.util.Values.literal;
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 String ns = "http://example.org/";
 // IRI for ex:favoriteLetters
