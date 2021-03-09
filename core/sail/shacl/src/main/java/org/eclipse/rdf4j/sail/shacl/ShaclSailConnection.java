@@ -733,8 +733,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			preparedHasRun = true;
 
+			shapesRepoConnection.prepare();
 			previousStateConnection.prepare();
 			super.prepare();
+
 		}
 
 	}
