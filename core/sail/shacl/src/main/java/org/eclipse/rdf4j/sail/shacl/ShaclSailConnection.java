@@ -82,6 +82,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	// write lock
 	private Lock writeLock;
+	private Lock readLock;
 
 	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
 	private boolean connectionListenerActive = false;
@@ -233,7 +234,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
 
+		if (readLock != null && readLock.isActive()) {
+			readLock = sail.releaseReadLock(readLock);
+		}
+
 		assert writeLock == null;
+		assert readLock == null;
 
 		if (sail.isPerformanceLogging()) {
 			logger.info("commit() excluding validation and cleanup took {} ms", System.currentTimeMillis() - before);
@@ -302,7 +308,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		if ((writeLock != null && writeLock.isActive())) {
 			writeLock = sail.releaseExclusiveWriteLock(writeLock);
 		}
+
+		if ((readLock != null && readLock.isActive())) {
+			readLock = sail.releaseReadLock(readLock);
+		}
+
 		assert writeLock == null;
+		assert readLock == null;
+
 		cleanup();
 	}
 
@@ -334,6 +347,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		shapesModifiedInCurrentTransaction = false;
 
 		assert writeLock == null;
+		assert readLock == null;
+
 		currentIsolationLevel = null;
 		if (sail.isPerformanceLogging()) {
 			logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
@@ -623,6 +638,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 									sail.closeConnection(this);
 								} finally {
 									assert writeLock == null;
+									assert readLock == null;
 
 								}
 							}
@@ -651,6 +667,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (useSerializableValidation) {
 				if (!(writeLock != null && writeLock.isActive())) {
 					writeLock = sail.acquireExclusiveWriteLock(writeLock);
+				}
+			} else {
+				// only allow one transaction to modify the shapes at a time
+				if (isShapeRefreshNeeded) {
+					if (!(writeLock != null && writeLock.isActive())) {
+						writeLock = sail.acquireExclusiveWriteLock(writeLock);
+					}
+				} else {
+					if (!(readLock != null && readLock.isActive())) {
+						readLock = sail.acquireReadLock();
+					}
 				}
 			}
 
