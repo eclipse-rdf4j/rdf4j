@@ -7,12 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
-import java.io.IOException;
+import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
+import java.io.StringWriter;
+
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
+import org.junit.Test;
 
 /**
  * @author Arjohn Kampman
@@ -100,5 +107,36 @@ public class TurtlePrettyWriterTest extends AbstractTurtleWriterTest {
 		} finally {
 			inlineBlankNodes = true;
 		}
+	}
+
+	@Test
+	public void testAbbreviateNumbers() throws Exception {
+		StringWriter sw = new StringWriter();
+
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.PRETTY_PRINT, true);
+
+		Rio.write(getAbbrevTestModel(), sw, RDFFormat.TURTLE, config);
+
+		String result = sw.toString();
+		assertTrue(result.contains("1.23456789E6 ."));
+		assertTrue(result.contains("-2 ."));
+		assertTrue(result.contains("55.66 ."));
+	}
+
+	@Test
+	public void testDontAbbreviateNumbers() throws Exception {
+		StringWriter sw = new StringWriter();
+
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.PRETTY_PRINT, true)
+				.set(TurtleWriterSettings.ABBREVIATE_NUMBERS, false);
+
+		Rio.write(getAbbrevTestModel(), sw, RDFFormat.TURTLE, config);
+
+		String result = sw.toString();
+		assertTrue(result.contains("\"1234567.89\"^^<http://www.w3.org/2001/XMLSchema#double>"));
+		assertTrue(result.contains("\"-2\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
+		assertTrue(result.contains("\"55.66\"^^<http://www.w3.org/2001/XMLSchema#decimal>"));
 	}
 }
