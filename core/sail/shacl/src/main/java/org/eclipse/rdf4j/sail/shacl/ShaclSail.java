@@ -748,7 +748,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	public boolean isSerializableValidation() {
 		if (getBaseSail() instanceof SchemaCachingRDFSInferencer) {
 			if (serializableValidation) {
-				logger.error("SchemaCachingRDFSInferencer is not supported when using serializable validation!");
+				logger.warn("SchemaCachingRDFSInferencer is not supported when using serializable validation!");
 			}
 			return false;
 		}
