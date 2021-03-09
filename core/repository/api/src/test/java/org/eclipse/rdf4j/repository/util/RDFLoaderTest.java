@@ -12,6 +12,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.permanentRedirect;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static org.eclipse.rdf4j.model.util.Statements.statement;
+import static org.eclipse.rdf4j.model.util.Values.getValueFactory;
+import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -29,7 +32,6 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -59,7 +61,7 @@ public class RDFLoaderTest {
 						.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
 						.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
 
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), SimpleValueFactory.getInstance());
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -67,10 +69,9 @@ public class RDFLoaderTest {
 
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
-				.handleStatement(SimpleValueFactory.getInstance()
-						.createStatement(SimpleValueFactory.getInstance().createIRI("http://example.org/Socrates"),
-								RDF.TYPE,
-								FOAF.PERSON));
+				.handleStatement(statement(iri("http://example.org/Socrates"),
+						RDF.TYPE,
+						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
 	}
 
@@ -90,7 +91,7 @@ public class RDFLoaderTest {
 								.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
 								.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
 
-				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), SimpleValueFactory.getInstance());
+				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -99,11 +100,10 @@ public class RDFLoaderTest {
 
 				verify(rdfHandler).startRDF();
 				verify(rdfHandler)
-						.handleStatement(SimpleValueFactory.getInstance()
-								.createStatement(
-										SimpleValueFactory.getInstance().createIRI("http://example.org/Socrates"),
-										RDF.TYPE,
-										FOAF.PERSON));
+						.handleStatement(statement(
+								iri("http://example.org/Socrates"),
+								RDF.TYPE,
+								FOAF.PERSON, null));
 				verify(rdfHandler).endRDF();
 			} finally {
 				restoreHostnameVerifier(toRestoreHostnameVerifier);
@@ -127,9 +127,9 @@ public class RDFLoaderTest {
 
 	private static SSLSocketFactory disableSSLCertificatCheck()
 			throws KeyManagementException, NoSuchAlgorithmException {
-
 		// set a trust manager that just returns true for every request (this is _very_ unsafe and should only be used
 		// in the test environment)
+
 		TrustManager trustManager = new X509TrustManager() {
 			public void checkClientTrusted(X509Certificate[] certs, String authType) {
 				// do nothing, accept all clients
