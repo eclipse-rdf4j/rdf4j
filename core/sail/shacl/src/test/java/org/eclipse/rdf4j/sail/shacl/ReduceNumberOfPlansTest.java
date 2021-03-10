@@ -42,7 +42,7 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect = shaclSail.getShapes()
+				List<PlanNode> collect = shaclSail.getCurrentShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.filter(s -> !(s instanceof EmptyNode))
@@ -55,7 +55,7 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getShapes()
+				List<PlanNode> collect2 = shaclSail.getCurrentShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.filter(s -> !(s instanceof EmptyNode))
@@ -100,7 +100,7 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect1 = shaclSail.getShapes()
+				List<PlanNode> collect1 = shaclSail.getCurrentShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.filter(s -> !(s instanceof EmptyNode))
@@ -114,7 +114,7 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect2 = shaclSail.getShapes()
+				List<PlanNode> collect2 = shaclSail.getCurrentShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.filter(s -> !(s instanceof EmptyNode))
@@ -126,7 +126,7 @@ public class ReduceNumberOfPlansTest {
 			refreshAddedRemovedStatements(connection);
 			try (ConnectionsGroup connectionsGroup = connection.getConnectionsGroup()) {
 
-				List<PlanNode> collect3 = shaclSail.getShapes()
+				List<PlanNode> collect3 = shaclSail.getCurrentShapes()
 						.stream()
 						.map(shape -> shape.generatePlans(connectionsGroup, false, false))
 						.filter(s -> !(s instanceof EmptyNode))
