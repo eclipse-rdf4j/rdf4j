@@ -167,6 +167,32 @@ public class TransactionSettingsTest {
 			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Auto;
 			assert !transactionSettings.isCacheSelectNodes();
 			assert !transactionSettings.isParallelValidation();
+			assert transactionSettings.getIsolationLevel() == IsolationLevels.SNAPSHOT_READ;
+
+			connection.commit();
+
+		}
+
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testSerializableParallelValidation() {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.setParallelValidation(true);
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			connection.begin(IsolationLevels.SERIALIZABLE,
+					ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
+
+			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
+			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
+
+			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Auto;
+			assert !transactionSettings.isParallelValidation();
 
 			connection.commit();
 
