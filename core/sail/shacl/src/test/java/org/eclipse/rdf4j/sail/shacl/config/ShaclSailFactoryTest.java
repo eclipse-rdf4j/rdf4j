@@ -9,7 +9,9 @@ package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.junit.AfterClass;
 import org.junit.Test;
 
 /**
@@ -18,6 +20,11 @@ import org.junit.Test;
  * @author Jeen Broekstra
  */
 public class ShaclSailFactoryTest {
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	@Test
 	public void getSailTypeReturnsCorrectValue() {

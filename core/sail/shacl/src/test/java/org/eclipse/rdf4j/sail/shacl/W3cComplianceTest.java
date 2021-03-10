@@ -123,8 +123,6 @@ public class W3cComplianceTest {
 
 		}
 
-		System.out.println(Arrays.toString(testFiles.toArray()));
-
 		return testFiles;
 
 	}
@@ -206,6 +204,8 @@ public class W3cComplianceTest {
 				actualConforms = true;
 			}
 
+		} finally {
+			sailRepository.shutDown();
 		}
 
 		assertEquals(expected.conforms, actualConforms);
