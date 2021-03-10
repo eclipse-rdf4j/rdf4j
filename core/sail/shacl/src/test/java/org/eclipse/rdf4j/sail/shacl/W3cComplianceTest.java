@@ -87,7 +87,7 @@ public class W3cComplianceTest {
 			assertEquals(s + " has more than one rdf:rest", size, 1);
 		});
 
-		System.out.println(AbstractShaclTest.modelToString(statements));
+//		System.out.println(AbstractShaclTest.modelToString(statements));
 
 		assert !statements.isEmpty();
 

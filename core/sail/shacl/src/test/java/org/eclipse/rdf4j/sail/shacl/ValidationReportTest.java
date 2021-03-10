@@ -114,7 +114,7 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-			Rio.write(actual, System.out, RDFFormat.TURTLE);
+//			Rio.write(actual, System.out, RDFFormat.TURTLE);
 
 			Model expected = Rio.parse(new StringReader("" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
@@ -170,7 +170,7 @@ public class ValidationReportTest {
 			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 
-			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
 
 			Model expected = Rio.parse(new StringReader("" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
@@ -235,7 +235,7 @@ public class ValidationReportTest {
 			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 
-			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
 
 			Model expected = Rio.parse(new StringReader("" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
@@ -292,7 +292,7 @@ public class ValidationReportTest {
 			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 
-			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
 
 			Model expected = Rio.parse(new StringReader(""
 					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +

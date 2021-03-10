@@ -63,8 +63,6 @@ public class TempTest {
 
 			connection.commit();
 
-			System.out.println("\n\n\n\n\n\n\n\n\n\n");
-
 			connection.begin();
 
 			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
@@ -94,8 +92,6 @@ public class TempTest {
 //
 			connection.commit();
 
-			System.out.println("\n\n\n\n\n\n\n\n\n\n");
-
 			connection.begin();
 
 			connection.remove(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
@@ -122,8 +118,6 @@ public class TempTest {
 			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class3"));
 
 			connection.commit();
-
-			System.out.println("\n\n\n\n\n\n\n\n\n\n");
 
 			connection.begin();
 
@@ -156,8 +150,6 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("c"));
 
 			connection.commit();
-
-			System.out.println("\n\n\n\n\n\n\n\n\n\n");
 
 			connection.begin();
 

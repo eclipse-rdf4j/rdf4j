@@ -246,7 +246,7 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
-			System.out.println(size(connection));
+//			System.out.println(size(connection));
 
 		}
 	}
@@ -278,7 +278,7 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
-			System.out.println(size(connection));
+//			System.out.println(size(connection));
 
 		}
 	}
@@ -396,7 +396,7 @@ public class TrackAddedStatementsTest {
 			return connection.getStatements(null, null, null, true)
 					.stream()
 					.map(Object::toString)
-					.peek(logger::info)
+//					.peek(logger::info)
 					.count();
 		} finally {
 			connection.close();
@@ -407,7 +407,7 @@ public class TrackAddedStatementsTest {
 		return connection.getStatements(null, null, null)
 				.stream()
 				.map(Object::toString)
-				.peek(logger::info)
+//				.peek(logger::info)
 				.count();
 	}
 
@@ -416,7 +416,7 @@ public class TrackAddedStatementsTest {
 			return connection.getStatements(null, null, null)
 					.stream()
 					.map(Object::toString)
-					.peek(logger::info)
+//					.peek(logger::info)
 					.count();
 		}
 	}
