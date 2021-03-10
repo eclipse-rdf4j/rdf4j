@@ -171,9 +171,10 @@ public class PathTest {
 				m1.addAll(m2);
 				return m1;
 			}).orElse(new DynamicModelFactory().createEmptyModel());
+		} finally {
+			sailRepository.shutDown();
 		}
 
-		sailRepository.shutDown();
 		return actual;
 	}
 }

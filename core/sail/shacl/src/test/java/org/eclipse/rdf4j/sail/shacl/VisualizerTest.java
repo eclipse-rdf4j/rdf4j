@@ -41,6 +41,8 @@ public class VisualizerTest {
 			connection.addStatement(vf.createBNode(), FOAF.AGE, vf.createLiteral(""));
 
 			connection.commit();
+		} finally {
+			shaclSail.shutDown();
 		}
 
 	}
@@ -66,6 +68,8 @@ public class VisualizerTest {
 			connection.removeStatement(null, bNode, RDFS.LABEL, vf.createLiteral(""));
 
 			connection.commit();
+		} finally {
+			shaclSail.shutDown();
 		}
 
 	}
@@ -91,6 +95,8 @@ public class VisualizerTest {
 			connection.removeStatement(null, bNode, RDFS.LABEL, vf.createLiteral(""));
 
 			connection.commit();
+		} finally {
+			shaclSail.shutDown();
 		}
 
 	}

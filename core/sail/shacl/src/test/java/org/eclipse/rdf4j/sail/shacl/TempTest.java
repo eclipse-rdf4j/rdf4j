@@ -73,6 +73,8 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -100,8 +102,9 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test(expected = RepositoryException.class)
@@ -132,8 +135,9 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test
@@ -157,8 +161,9 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test
@@ -193,8 +198,9 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Ignore
@@ -214,8 +220,9 @@ public class TempTest {
 			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Ignore
@@ -235,8 +242,9 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test
@@ -264,6 +272,8 @@ public class TempTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -319,6 +329,8 @@ public class TempTest {
 				}
 				throw e;
 			}
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -371,8 +383,9 @@ public class TempTest {
 				}
 				throw e;
 			}
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test
@@ -419,8 +432,9 @@ public class TempTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
-
 	}
 
 	@Test
@@ -484,6 +498,8 @@ public class TempTest {
 
 			));
 
+		} finally {
+			sailRepository.shutDown();
 		}
 	}
 

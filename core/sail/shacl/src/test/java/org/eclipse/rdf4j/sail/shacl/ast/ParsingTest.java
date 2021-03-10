@@ -30,6 +30,7 @@ public class ParsingTest {
 
 		shapes.forEach(s -> s.toModel(null, null, emptyModel, new HashSet<>(), new HashSet<>()));
 
+		shaclSail.shutDown();
 	}
 
 	@Test
@@ -49,5 +50,6 @@ public class ParsingTest {
 			}
 		});
 
+		shaclSail.shutDown();
 	}
 }

@@ -70,8 +70,9 @@ public class NativeStoreTest {
 			}
 		}
 
-		shaclSail.shutDown();
-
+		finally {
+			shaclSail.shutDown();
+		}
 		delete(file);
 	}
 

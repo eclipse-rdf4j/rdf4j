@@ -90,6 +90,8 @@ public class ValidationReportTest {
 
 			assertTrue(Models.isomorphic(expected, actual));
 
+		} finally {
+			shaclSail.shutDown();
 		}
 	}
 
@@ -141,6 +143,8 @@ public class ValidationReportTest {
 
 			assertTrue(Models.isomorphic(expected, actual));
 
+		} finally {
+			shaclSail.shutDown();
 		}
 	}
 
@@ -202,6 +206,8 @@ public class ValidationReportTest {
 
 			assertTrue(Models.isomorphic(expected, actual));
 
+		} finally {
+			shaclSail.shutDown();
 		}
 	}
 
@@ -259,6 +265,8 @@ public class ValidationReportTest {
 
 			assertTrue(Models.isomorphic(expected, actual));
 
+		} finally {
+			shaclSail.shutDown();
 		}
 	}
 
@@ -316,6 +324,8 @@ public class ValidationReportTest {
 
 			assertTrue(Models.isomorphic(expected, actual));
 
+		} finally {
+			shaclSail.shutDown();
 		}
 	}
 
