@@ -86,7 +86,6 @@ public class LeftOuterJoin implements PlanNode {
 									nextRight = rightIterator.next();
 								} else {
 									nextRight = null;
-									break;
 								}
 							}
 

@@ -11,6 +11,7 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 	private final ValidationExecutionLogger validationExecutionLogger;
 	private final PlanNode planNode;
 	private final Logger logger = LoggerFactory.getLogger(getClass());
+	private boolean empty = false;
 
 	public LoggingCloseableIteration(PlanNode planNode, ValidationExecutionLogger validationExecutionLogger) {
 		this.planNode = planNode;
@@ -43,7 +44,11 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 
 	@Override
 	public final boolean hasNext() throws SailException {
-		return localHasNext();
+		boolean hasNext = localHasNext();
+		if (!hasNext)
+			empty = true;
+		assert !hasNext || !empty : this.getClass();
+		return hasNext;
 	}
 
 	protected abstract ValidationTuple loggingNext() throws SailException;
