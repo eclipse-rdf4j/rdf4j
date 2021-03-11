@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.AfterClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public abstract class MultithreadedTest {
@@ -382,6 +383,7 @@ public abstract class MultithreadedTest {
 
 	}
 
+	@Ignore("See: https://github.com/eclipse/rdf4j/issues/2908")
 	@Test
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadUncommitted");
