@@ -8,11 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
 
@@ -32,9 +35,10 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
-			assert !transactionSettings.isCacheSelectNodes();
-			assert !transactionSettings.isParallelValidation();
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertFalse(transactionSettings.isCacheSelectNodes());
+			assertFalse(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
@@ -59,9 +63,10 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
-			assert !transactionSettings.isCacheSelectNodes();
-			assert transactionSettings.isParallelValidation();
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertFalse(transactionSettings.isCacheSelectNodes());
+			assertTrue(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
@@ -87,9 +92,10 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk;
-			assert transactionSettings.isCacheSelectNodes();
-			assert transactionSettings.isParallelValidation();
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertTrue(transactionSettings.isCacheSelectNodes());
+			assertTrue(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
@@ -113,9 +119,10 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Auto;
-			assert transactionSettings.isCacheSelectNodes();
-			assert transactionSettings.isParallelValidation();
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertTrue(transactionSettings.isCacheSelectNodes());
+			assertTrue(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
@@ -137,9 +144,9 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() != null;
-			assert transactionSettings.isCacheSelectNodes();
-			assert transactionSettings.isParallelValidation();
+			assertNotNull(transactionSettings.getValidationApproach());
+			assertTrue(transactionSettings.isCacheSelectNodes());
+			assertTrue(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
@@ -164,10 +171,11 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Auto;
-			assert !transactionSettings.isCacheSelectNodes();
-			assert !transactionSettings.isParallelValidation();
-			assert transactionSettings.getIsolationLevel() == IsolationLevels.SNAPSHOT_READ;
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertFalse(transactionSettings.isCacheSelectNodes());
+			assertFalse(transactionSettings.isParallelValidation());
+			assertSame(transactionSettings.getIsolationLevel(), IsolationLevels.SNAPSHOT_READ);
 
 			connection.commit();
 
@@ -191,8 +199,9 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assert transactionSettings.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Auto;
-			assert !transactionSettings.isParallelValidation();
+			assertSame(transactionSettings.getValidationApproach(),
+					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertFalse(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
