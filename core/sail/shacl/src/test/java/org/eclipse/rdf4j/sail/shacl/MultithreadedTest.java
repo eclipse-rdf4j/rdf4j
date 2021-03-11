@@ -383,7 +383,6 @@ public abstract class MultithreadedTest {
 
 	}
 
-	@Ignore("See: https://github.com/eclipse/rdf4j/issues/2908")
 	@Test
 	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
 		System.out.println("testLotsOfValidationFailuresReadUncommitted");
