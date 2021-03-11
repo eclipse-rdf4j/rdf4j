@@ -263,4 +263,4 @@ echo "     - Make sure that all issues in the milestone are closed, or move them
 
 echo ""
 echo "To generate the news item and release-notes you will want to run the following command:"
-echo "./release-notes.sh ${MVN_VERSION_RELEASE} patch-release-notes.md milestone-news-item.md ${RELEASE_NOTES_BRANCH}"
+echo "./release-notes.sh ${MVN_VERSION_RELEASE} patch-release-notes.md patch-news-item.md ${RELEASE_NOTES_BRANCH}"
