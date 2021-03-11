@@ -106,7 +106,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private Settings getDefaultSettings(ShaclSail sail) {
-		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled(), sail.isParallelValidation());
+		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled(), sail.isParallelValidation(),
+				currentIsolationLevel);
 	}
 
 	@Override
@@ -891,11 +892,13 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		private ShaclSail.TransactionSettings.ValidationApproach validationApproach;
 		private Boolean cacheSelectedNodes;
 		private Boolean parallelValidation;
+		private IsolationLevel isolationLevel;
 
 		public Settings() {
 		}
 
-		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation) {
+		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation,
+				IsolationLevel isolationLevel) {
 			this.cacheSelectedNodes = cacheSelectNodes;
 			if (!validationEnabled) {
 				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Disabled;
@@ -903,6 +906,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				this.validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Auto;
 			}
 			this.parallelValidation = parallelValidation;
+			this.isolationLevel = isolationLevel;
 		}
 
 		public ShaclSail.TransactionSettings.ValidationApproach getValidationApproach() {
@@ -915,6 +919,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		public boolean isParallelValidation() {
 			return parallelValidation;
+		}
+
+		public IsolationLevel getIsolationLevel() {
+			return isolationLevel;
 		}
 
 		void applyTransactionSettings(Settings transactionSettingsLocal) {
@@ -936,6 +944,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if (transactionSettingsLocal.validationApproach != null) {
 				validationApproach = transactionSettingsLocal.validationApproach;
+			}
+
+			assert transactionSettingsLocal.isolationLevel == null;
+
+			if (isolationLevel == IsolationLevels.SERIALIZABLE) {
+				if (parallelValidation) {
+					logger.warn("Parallel validation is not compatible with SERIALIZABLE isolation level!");
+				}
+
+				parallelValidation = false;
 			}
 
 		}

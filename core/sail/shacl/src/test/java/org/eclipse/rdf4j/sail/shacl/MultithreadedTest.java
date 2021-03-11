@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.AfterClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public abstract class MultithreadedTest {
