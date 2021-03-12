@@ -346,7 +346,7 @@
 		<lucene.version>7.7.2</lucene.version>
 		<solr.version>7.7.2</solr.version>
 		<elasticsearch.version>6.8.8</elasticsearch.version>
-		<jetty.version>9.4.35.v20201120</jetty.version>
+		<jetty.version>9.4.38.v20210224</jetty.version>
 		<spring.version>5.2.12.RELEASE</spring.version>
 		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
