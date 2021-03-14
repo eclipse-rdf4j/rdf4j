@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.readonly;
 
-
 import static org.springframework.http.HttpHeaders.ACCEPT;
 import static org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED_VALUE;
 
@@ -19,6 +18,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
@@ -63,18 +64,15 @@ public class QueryResponder {
 	public void sparqlPostURLencoded(
 			@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
-			@RequestParam(value = "query") String query,
-			@RequestHeader(ACCEPT) String acceptHeader,
+			@RequestParam(value = "query") String query, @RequestHeader(ACCEPT) String acceptHeader,
 			HttpServletRequest request, HttpServletResponse response) throws IOException {
 		doSparql(request, query, acceptHeader, defaultGraphUri, namedGraphUri, response);
 	}
 
 	@RequestMapping(value = "/sparql", method = RequestMethod.GET)
-	public void sparqlGet(
-			@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
+	public void sparqlGet(@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
-			@RequestParam(value = "query") String query,
-			@RequestHeader(ACCEPT) String acceptHeader,
+			@RequestParam(value = "query") String query, @RequestHeader(ACCEPT) String acceptHeader,
 			HttpServletRequest request, HttpServletResponse response) throws IOException {
 		doSparql(request, query, acceptHeader, defaultGraphUri, namedGraphUri, response);
 	}
@@ -84,13 +82,40 @@ public class QueryResponder {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			Query preparedQuery = connection.prepareQuery(QueryLanguage.SPARQL, query);
+			setQueryDataSet(preparedQuery, defaultGraphUri, namedGraphUri, connection);
 			for (QueryTypes qt : QueryTypes.values()) {
 				if (qt.accepts(preparedQuery, acceptHeader)) {
-					qt.evaluate(preparedQuery, acceptHeader, response);
+					qt.evaluate(preparedQuery, acceptHeader, response, defaultGraphUri, namedGraphUri);
 				}
 			}
 		} catch (MalformedQueryException | MismatchingAcceptHeaderException mqe) {
 			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+		} catch (IllegalArgumentException e) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Bad IRI for default or namedGraphIri");
+		}
+	}
+
+	/**
+	 * @see https://www.w3.org/TR/sparql11-protocol/#dataset
+	 * @param q the query
+	 * @param defaultGraphUri
+	 * @param namedGraphUri
+	 * @param connection
+	 */
+	private void setQueryDataSet(Query q, String defaultGraphUri, String namedGraphUri, RepositoryConnection connection) {
+		if (defaultGraphUri != null || namedGraphUri != null) {
+			SimpleDataset dataset = new SimpleDataset();
+
+			if (defaultGraphUri != null) {
+				IRI defaultIri = connection.getValueFactory().createIRI(defaultGraphUri);
+				dataset.addDefaultGraph(defaultIri);
+			}
+			
+			if (namedGraphUri != null) {
+				IRI namedIri = connection.getValueFactory().createIRI(namedGraphUri);
+				dataset.addNamedGraph(namedIri);
+			}
+			q.setDataset(dataset);
 		}
 	}
 
@@ -98,7 +123,8 @@ public class QueryResponder {
 		CONSTRUCT_OR_DESCRIBE(q -> q instanceof GraphQuery, RDFFormat.TURTLE, RDFFormat.NTRIPLES, RDFFormat.JSONLD,
 				RDFFormat.RDFXML) {
 			@Override
-			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response)
+			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response, String defaultGraphUri,
+					String namedGraphUri)
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				GraphQuery gq = (GraphQuery) q;
 				RDFFormat format = (RDFFormat) bestFormat(acceptHeader);
@@ -106,10 +132,10 @@ public class QueryResponder {
 			}
 		},
 		SELECT(q -> q instanceof TupleQuery, TupleQueryResultFormat.JSON, TupleQueryResultFormat.SPARQL,
-				TupleQueryResultFormat.CSV,
-				TupleQueryResultFormat.TSV) {
+				TupleQueryResultFormat.CSV, TupleQueryResultFormat.TSV) {
 			@Override
-			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response)
+			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response, String defaultGraphUri,
+					String namedGraphUri)
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				TupleQuery tq = (TupleQuery) q;
 				QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
@@ -120,14 +146,15 @@ public class QueryResponder {
 		ASK(q -> q instanceof BooleanQuery, BooleanQueryResultFormat.TEXT, BooleanQueryResultFormat.JSON,
 				BooleanQueryResultFormat.SPARQL) {
 			@Override
-			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response)
+			protected void evaluate(Query q, String acceptHeader, HttpServletResponse response, String defaultGraphUri,
+					String namedGraphUri)
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				BooleanQuery bq = (BooleanQuery) q;
 				QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
 				final Optional<BooleanQueryResultWriterFactory> optional = BooleanQueryResultWriterRegistry
-						.getInstance()
-						.get(format);
+						.getInstance().get(format);
 				if (optional.isPresent()) {
+
 					BooleanQueryResultWriter writer = optional.get().getWriter(response.getOutputStream());
 					writer.handleBoolean(bq.evaluate());
 				}
@@ -144,12 +171,13 @@ public class QueryResponder {
 		}
 
 		/**
-		 * Test if the query is of a type that can be answered. And that the accept headers allow for the response to be
-		 * send.
+		 * Test if the query is of a type that can be answered. And that the accept
+		 * headers allow for the response to be send.
 		 * 
 		 * @param preparedQuery
 		 * @param acceptHeader
-		 * @return true if the query is of the right type and acceptHeaders are acceptable.
+		 * @return true if the query is of the right type and acceptHeaders are
+		 *         acceptable.
 		 * @throws MismatchingAcceptHeaderException
 		 */
 		protected boolean accepts(Query preparedQuery, String acceptHeader) throws MismatchingAcceptHeaderException {
@@ -169,7 +197,8 @@ public class QueryResponder {
 			return false;
 		}
 
-		protected abstract void evaluate(Query q, String acceptHeader, HttpServletResponse response)
+		protected abstract void evaluate(Query q, String acceptHeader, HttpServletResponse response,
+				String defaultGraphUri, String namedGraphUri)
 				throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException;
 
 		protected boolean accepts(Query q) {
