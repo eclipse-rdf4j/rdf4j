@@ -351,6 +351,7 @@
 		<guava.version>29.0-jre</guava.version>
 		<jmhVersion>1.21</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
+		<maven.compiler.release>8</maven.compiler.release>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
