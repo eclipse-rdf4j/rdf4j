@@ -115,8 +115,8 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 					thread.setDaemon(true);
 					return thread;
 				});
-		threadPoolExecutor.allowCoreThreadTimeOut(true);
 		threadPoolExecutor.setKeepAliveTime(180, TimeUnit.SECONDS);
+		threadPoolExecutor.allowCoreThreadTimeOut(true);
 		this.executor = threadPoolExecutor;
 	}
 
