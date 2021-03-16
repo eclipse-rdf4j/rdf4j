@@ -19,7 +19,9 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 
+@Ignore("long-running test, disabled by default")
 public class MultithreadedNativeStoreRDFSTest extends MultithreadedTest {
 
 	File file;

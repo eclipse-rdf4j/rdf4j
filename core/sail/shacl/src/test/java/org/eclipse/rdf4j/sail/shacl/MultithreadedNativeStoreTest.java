@@ -20,6 +20,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 
+@Ignore("long-running test, disabled by default")
 public class MultithreadedNativeStoreTest extends MultithreadedTest {
 
 	File file;
