@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -104,13 +105,19 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	public SharedHttpClientSessionManager() {
 		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();
-		final int corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
-		this.executor = Executors.newScheduledThreadPool(corePoolSize, (Runnable runnable) -> {
-			Thread thread = backingThreadFactory.newThread(runnable);
-			thread.setName(String.format("rdf4j-SharedHttpClientSessionManager-%d", threadCount.getAndIncrement()));
-			thread.setDaemon(true);
-			return thread;
-		});
+		final int corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 4);
+
+		final ScheduledThreadPoolExecutor threadPoolExecutor = new ScheduledThreadPoolExecutor(corePoolSize,
+				(Runnable runnable) -> {
+					Thread thread = backingThreadFactory.newThread(runnable);
+					thread.setName(
+							String.format("rdf4j-SharedHttpClientSessionManager-%d", threadCount.getAndIncrement()));
+					thread.setDaemon(true);
+					return thread;
+				});
+		threadPoolExecutor.allowCoreThreadTimeOut(true);
+		threadPoolExecutor.setKeepAliveTime(180, TimeUnit.SECONDS);
+		this.executor = threadPoolExecutor;
 	}
 
 	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
