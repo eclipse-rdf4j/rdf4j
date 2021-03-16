@@ -7,20 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * @author Damyan Ognyanov
@@ -46,21 +48,19 @@ public class BackgroundGraphResultHangTest {
 
 	}
 
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
-
-	@Test(timeout = 1000)
+	@Test
+	@Timeout(value = 1, unit = TimeUnit.SECONDS)
 	public void testBGRHang() throws Exception {
 		String data = "@not-rdf";
+		Exception exception = assertThrows(QueryEvaluationException.class, () -> {
+			BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
+					new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
+					"http://base.org");
 
-		BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
-				new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
-				"http://base.org");
-
-		thrown.expect(QueryEvaluationException.class);
-		gRes.run();
-		gRes.getNamespaces();
-		gRes.hasNext();
+			gRes.run();
+			gRes.getNamespaces();
+			gRes.hasNext();
+		});
 	}
 
 }

@@ -47,16 +47,19 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.junit.After;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 /**
  * @author Dale Visser
  */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class AbstractCommandTest {
 
 	/*
@@ -64,11 +67,9 @@ public class AbstractCommandTest {
 	 *
 	 * Note, .silent() was added in Mockito 2, so has been removed until we update.
 	 */
-	@Rule
-	public MockitoRule abstractCommandTestMockitoRule = MockitoJUnit.rule(); // .silent();
 
-	@Rule
-	public final TemporaryFolder LOCATION = new TemporaryFolder();
+	@TempDir
+	public File locationFile;
 
 	protected RepositoryManager manager;
 
@@ -86,7 +87,7 @@ public class AbstractCommandTest {
 			{ WorkDir.NAME, new WorkDir() }
 	}).collect(Collectors.toMap(m -> (String) m[0], m -> (ConsoleSetting) m[1]));
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		if (manager != null) {
 			manager.shutDown();
@@ -193,7 +194,7 @@ public class AbstractCommandTest {
 	 * @param cmd console command
 	 */
 	protected void setWorkingDir(ConsoleCommand cmd) {
-		WorkDir location = new WorkDir(Paths.get(LOCATION.getRoot().getAbsolutePath()));
+		WorkDir location = new WorkDir(Paths.get(locationFile.getAbsolutePath()));
 		cmd.settings.put(WorkDir.NAME, location);
 	}
 }

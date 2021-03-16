@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.http.client;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
@@ -42,12 +43,13 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONWriter;
 import org.eclipse.rdf4j.query.resultio.sparqlxml.SPARQLStarResultsXMLWriter;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.WireMockServer;
 
 /**
  * Unit tests for {@link SPARQLProtocolSession}
@@ -56,15 +58,26 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
  */
 public class SPARQLProtocolSessionTest {
 
-	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
+	public static WireMockServer wireMockServer;
+
+	@BeforeAll
+	public static void setPort() {
+		wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
+		wireMockServer.start();
+		configureFor(wireMockServer.port());
+	}
+
+	@AfterAll
+	public static void closeMockPort() {
+		wireMockServer.stop();
+	}
 
 	SPARQLProtocolSession sparqlSession;
 
 	String testHeader = "X-testing-header";
 	String testValue = "foobar";
 
-	String serverURL = "http://localhost:" + wireMockRule.port() + "/rdf4j-server";
+	String serverURL = "http://localhost:" + wireMockServer.port() + "/rdf4j-server";
 	String repositoryID = "test";
 
 	SPARQLProtocolSession createProtocolSession() {
@@ -78,7 +91,7 @@ public class SPARQLProtocolSessionTest {
 		return session;
 	}
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		sparqlSession = createProtocolSession();
 	}

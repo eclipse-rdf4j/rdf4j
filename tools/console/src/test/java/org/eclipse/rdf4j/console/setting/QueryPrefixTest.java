@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.console.setting;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test query prefix setting
@@ -19,7 +19,7 @@ import org.junit.Test;
  * @author Bart Hanssens
  */
 public class QueryPrefixTest extends AbstractSettingTest {
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() {
 		settings.put(QueryPrefix.NAME, new QueryPrefix());
