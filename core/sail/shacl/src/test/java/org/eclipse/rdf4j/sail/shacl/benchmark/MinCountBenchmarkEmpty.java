@@ -113,10 +113,7 @@ public class MinCountBenchmarkEmpty {
 				connection.commit();
 			}
 
-			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 			connection.clear();
-			System.out.println();
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
 
 		}
 		repository.shutDown();

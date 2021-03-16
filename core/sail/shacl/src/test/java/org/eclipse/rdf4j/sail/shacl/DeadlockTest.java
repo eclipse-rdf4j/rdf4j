@@ -53,6 +53,8 @@ public class DeadlockTest {
 								DeadlockTest.class.getClassLoader().getResourceAsStream(shaclPath + "transaction2.qr")))
 						.execute();
 				connection.commit();
+			} finally {
+				shaclRepository.shutDown();
 			}
 		}
 	}

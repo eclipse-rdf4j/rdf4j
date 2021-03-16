@@ -126,7 +126,7 @@ public class RdfsShaclConnectionTest {
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
 					.stream()) {
-				List<Statement> collect = stream.peek(System.out::println).collect(Collectors.toList());
+				List<Statement> collect = stream.collect(Collectors.toList());
 				assertEquals(new HashSet<>(collect).size(), collect.size());
 
 			}

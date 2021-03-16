@@ -70,6 +70,8 @@ public class ReduceNumberOfPlansTest {
 
 			connection.commit();
 
+		} finally {
+			shaclSail.shutDown();
 		}
 
 	}
@@ -136,6 +138,8 @@ public class ReduceNumberOfPlansTest {
 			}
 			connection.rollback();
 
+		} finally {
+			shaclSail.shutDown();
 		}
 
 	}

@@ -58,6 +58,8 @@ public class UnknownShapesTest {
 
 		assertEquals(expected, relevantLog);
 
+		shaclRepository.shutDown();
+
 	}
 
 	@Ignore
@@ -91,6 +93,8 @@ public class UnknownShapesTest {
 				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#inverseOfWithComplex> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#inverseOfWithComplex> sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ] ."));
 
 		assertEquals(expected, relevantLog);
+
+		shaclRepository.shutDown();
 	}
 
 	class MyAppender extends AppenderBase<ILoggingEvent> {

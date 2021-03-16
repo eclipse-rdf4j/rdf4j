@@ -302,22 +302,39 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	@Override
 	public void rollback() throws SailException {
 
-		previousStateConnection.rollback();
-		shapesRepoConnection.rollback();
-		super.rollback();
+		try {
+			if (previousStateConnection.isActive()) {
+				previousStateConnection.rollback();
+			}
+		} finally {
+			try {
+				if (shapesRepoConnection.isActive()) {
+					shapesRepoConnection.rollback();
+				}
 
-		if ((writeLock != null && writeLock.isActive())) {
-			writeLock = sail.releaseExclusiveWriteLock(writeLock);
+			} finally {
+				try {
+					if (isActive()) {
+						super.rollback();
+					}
+
+				} finally {
+					if ((writeLock != null && writeLock.isActive())) {
+						writeLock = sail.releaseExclusiveWriteLock(writeLock);
+					}
+
+					if ((readLock != null && readLock.isActive())) {
+						readLock = sail.releaseReadLock(readLock);
+					}
+
+					assert writeLock == null;
+					assert readLock == null;
+
+					cleanup();
+				}
+			}
 		}
 
-		if ((readLock != null && readLock.isActive())) {
-			readLock = sail.releaseReadLock(readLock);
-		}
-
-		assert writeLock == null;
-		assert readLock == null;
-
-		cleanup();
 	}
 
 	private void cleanup() {

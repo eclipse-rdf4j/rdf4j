@@ -42,9 +42,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
 
 	}
 
@@ -70,10 +70,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 	@Test
@@ -99,10 +98,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 	@Test
@@ -126,10 +124,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 	@Test
@@ -150,10 +147,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 	@Test
@@ -205,10 +201,9 @@ public class TransactionSettingsTest {
 
 			connection.commit();
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 }

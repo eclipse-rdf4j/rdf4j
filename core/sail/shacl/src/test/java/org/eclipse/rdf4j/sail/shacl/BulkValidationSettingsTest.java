@@ -50,6 +50,8 @@ public class BulkValidationSettingsTest {
 			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
 			connection.commit();
 
+		} finally {
+			repository.shutDown();
 		}
 
 	}
@@ -74,8 +76,9 @@ public class BulkValidationSettingsTest {
 				throw e.getCause();
 			}
 
+		} finally {
+			repository.shutDown();
 		}
-
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
@@ -98,6 +101,8 @@ public class BulkValidationSettingsTest {
 				throw e.getCause();
 			}
 
+		} finally {
+			repository.shutDown();
 		}
 
 	}
@@ -129,6 +134,8 @@ public class BulkValidationSettingsTest {
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 
+		} finally {
+			repository.shutDown();
 		}
 
 	}
@@ -160,6 +167,8 @@ public class BulkValidationSettingsTest {
 				}
 			}
 
+		} finally {
+			repository.shutDown();
 		}
 
 	}
@@ -191,6 +200,8 @@ public class BulkValidationSettingsTest {
 
 			}
 
+		} finally {
+			repository.shutDown();
 		}
 
 	}

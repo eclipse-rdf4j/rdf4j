@@ -16,6 +16,7 @@ public class TargetChainTest {
 
 		List<Shape> shapes = shaclSail.getCurrentShapes();
 
+		shaclSail.shutDown();
 	}
 
 	@Test
@@ -38,6 +39,7 @@ public class TargetChainTest {
 		assert orConstraintComponent.getOr().get(0) instanceof PropertyShape;
 
 		assert !orConstraintComponent.getOr().get(0).getTargetChain().isOptimizable();
+		shaclSail.shutDown();
 
 	}
 }

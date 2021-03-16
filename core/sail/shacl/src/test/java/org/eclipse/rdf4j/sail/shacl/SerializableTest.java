@@ -24,10 +24,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class SerializableTest {
@@ -46,7 +45,7 @@ public class SerializableTest {
 				connection.begin();
 
 				ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
 
 				assertTrue(revalidate.conforms());
 
@@ -69,7 +68,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
 
 			assertTrue(revalidate.conforms());
 
@@ -90,7 +89,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
 
 			assertTrue(revalidate.conforms());
 
@@ -111,7 +110,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
 
 			assertTrue(revalidate.conforms());
 
@@ -174,8 +173,8 @@ public class SerializableTest {
 
 				try {
 					connection.commit();
-				} catch (Exception e) {
-					e.printStackTrace();
+				} catch (Exception ignored) {
+
 				}
 			}
 
@@ -198,8 +197,8 @@ public class SerializableTest {
 
 				try {
 					connection.commit();
-				} catch (Exception e) {
-					e.printStackTrace();
+				} catch (Exception ignored) {
+
 				}
 			}
 
@@ -236,8 +235,8 @@ public class SerializableTest {
 
 				try {
 					connection.commit();
-				} catch (Exception e) {
-					e.printStackTrace();
+				} catch (Exception ignored) {
+
 				}
 			}
 
@@ -259,8 +258,8 @@ public class SerializableTest {
 
 				try {
 					connection.commit();
-				} catch (Exception e) {
-					e.printStackTrace();
+				} catch (Exception ignored) {
+
 				}
 			}
 
