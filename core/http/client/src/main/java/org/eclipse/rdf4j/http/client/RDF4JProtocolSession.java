@@ -24,9 +24,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -111,15 +115,23 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 	private String transactionURL;
 
-	private ScheduledExecutorService executor;
+	private final ScheduledExecutorService pingScheduler;
 
 	private ScheduledFuture<?> ping;
 
 	private long pingDelay = PINGDELAY;
 
+	/**
+	 *
+	 * @deprecated since 3.6.2 - use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
+	 */
+	@Deprecated
 	public RDF4JProtocolSession(HttpClient client, ScheduledExecutorService executor) {
+		this(client, (ExecutorService) executor);
+	}
+
+	public RDF4JProtocolSession(HttpClient client, ExecutorService executor) {
 		super(client, executor);
-		this.executor = executor;
 
 		// we want to preserve bnode ids to allow RDF4J API methods to match
 		// blank nodes.
@@ -138,6 +150,14 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		} catch (Exception e) {
 			logger.warn("Could not read integer value of system property {}", Protocol.CACHE_TIMEOUT_PROPERTY);
 		}
+
+		// use a single-threaded scheduled executor to handle keepalive pings for transactions
+		pingScheduler = Executors.newSingleThreadScheduledExecutor((Runnable runnable) -> {
+			Thread thread = Executors.defaultThreadFactory().newThread(runnable);
+			thread.setName("rdf4j-pingScheduler");
+			thread.setDaemon(true);
+			return thread;
+		});
 	}
 
 	public void setServerURL(String serverURL) {
@@ -781,7 +801,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			ping.cancel(false);
 		}
 		if (pingDelay > 0) {
-			ping = executor.schedule(() -> {
+			ping = pingScheduler.schedule(() -> {
 				executeTransactionPing();
 			}, pingDelay, TimeUnit.MILLISECONDS);
 		}

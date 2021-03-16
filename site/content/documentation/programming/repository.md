@@ -215,9 +215,9 @@ RDF4J REST API). The HTTP client session is managed by the {{< javadoc
 "http/client/HttpClientSessionManager.html" >}}, which in turn depends
 on the Apache HttpClient.
 
-The session uses a scheduled thread pool executor to handle multithreaded
+The session uses a caching thread pool executor to handle multithreaded
 access to a remote endpoint, defined by default to use a thread pool with a
-core size of 4.
+core size of 1.
 
 To configure this to use a different core pool size, you can specify the
 `org.eclipse.rdf4j.client.executors.corePoolSize` system property with a
