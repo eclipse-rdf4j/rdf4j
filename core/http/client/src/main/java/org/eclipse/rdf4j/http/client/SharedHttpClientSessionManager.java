@@ -117,8 +117,6 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 		Integer corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);
 		((ThreadPoolExecutor) threadPoolExecutor).setCorePoolSize(corePoolSize);
-		((ThreadPoolExecutor) threadPoolExecutor).setKeepAliveTime(180, TimeUnit.SECONDS);
-		((ThreadPoolExecutor) threadPoolExecutor).allowCoreThreadTimeOut(true);
 		this.executor = threadPoolExecutor;
 	}
 
