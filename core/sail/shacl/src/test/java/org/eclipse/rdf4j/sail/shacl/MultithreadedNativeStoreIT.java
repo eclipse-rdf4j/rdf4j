@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2019 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -15,14 +15,12 @@ import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 
-@Ignore("long-running test, disabled by default")
-public class MultithreadedNativeStoreRDFSTest extends MultithreadedTest {
+public class MultithreadedNativeStoreIT extends MultithreadedTest {
 
 	File file;
 
@@ -38,18 +36,18 @@ public class MultithreadedNativeStoreRDFSTest extends MultithreadedTest {
 	@Before
 	public void before() {
 		file = Files.newTemporaryFolder();
+		System.out.println("Max memory: " + Runtime.getRuntime().maxMemory() / 1024 / 1024 + " MB");
 	}
 
 	@Override
 	NotifyingSail getBaseSail() {
 		NativeStore nativeStore = new NativeStore(file);
-		SchemaCachingRDFSInferencer schemaCachingRDFSInferencer = new SchemaCachingRDFSInferencer(nativeStore);
-		try (NotifyingSailConnection connection = schemaCachingRDFSInferencer.getConnection()) {
+		try (NotifyingSailConnection connection = nativeStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.clear();
 			connection.commit();
 		}
-		return schemaCachingRDFSInferencer;
+		return nativeStore;
 	}
 
 }

@@ -228,6 +228,35 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>integration</id>
+			<!-- Run only integration tests -->
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<version>2.19.1</version>
+						<configuration>
+							<encoding>UTF-8</encoding>
+							<forkCount>1</forkCount>
+							<reuseForks>false</reuseForks>
+							<argLine>-Xmx1G</argLine>
+							<includes>
+								<include>**/*IT.java</include>
+							</includes>
+						</configuration>
+						<executions>
+							<execution>
+								<goals>
+									<goal>integration-test</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
 			<id>doclint-java8-disable</id>
 			<activation>
 				<jdk>1.8</jdk>
@@ -777,6 +806,7 @@
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx1G</argLine>
+						<skipTests>${skip.surefire.tests}</skipTests>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -790,6 +820,7 @@
 						<argLine>-Xmx1G</argLine>
 						<includes>
 							<include>**/*Test.java</include>
+							<include>**/*IT.java</include>
 						</includes>
 					</configuration>
 				</plugin>
