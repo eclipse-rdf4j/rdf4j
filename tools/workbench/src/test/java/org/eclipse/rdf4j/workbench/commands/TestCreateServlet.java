@@ -7,12 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Dale Visser
@@ -20,19 +23,26 @@ import org.junit.Test;
 public class TestCreateServlet {
 
 	private static final String[] EXPECTED_TEMPLATES = new String[] { "memory-customrule", "memory-rdfs-dt",
-			"memory-rdfs", "memory",
-			"native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql", "memory-shacl",
-			"native-shacl" };
+			"memory-rdfs", "memory", "native-customrule", "native-rdfs-dt", "native-rdfs", "native", "remote", "sparql",
+			"memory-shacl", "native-shacl" };
 
 	/**
 	 * Regression test for SES-1907.
+	 * 
+	 * @throws IOException
 	 */
 	@Test
-	public final void testExpectedTemplatesCanBeResolved() {
+	public final void testExpectedTemplatesCanBeResolved() throws IOException {
 		for (String template : EXPECTED_TEMPLATES) {
 			System.out.println(template);
 			String resource = template + ".ttl";
-			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);
+			try (InputStream resourceAsStream = RepositoryConfig.class.getResourceAsStream(resource)) {
+				assertNotNull(resourceAsStream);
+				try (BufferedInputStream bis = new BufferedInputStream(resourceAsStream)) {
+					String createdTemplate = new String(bis.readAllBytes());
+					assertTrue(createdTemplate.contains("rep:repositoryType"));
+				}
+			}
 		}
 	}
 
