@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import com.google.common.io.Files;
 
@@ -35,9 +35,9 @@ public class ExportTest extends AbstractCommandTest {
 
 	private Export cmd;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws IOException, RDF4JException {
-		manager = new LocalRepositoryManager(LOCATION.getRoot());
+		manager = new LocalRepositoryManager(locationFile);
 
 		addRepositories("export", MEMORY_MEMBER);
 
@@ -50,12 +50,12 @@ public class ExportTest extends AbstractCommandTest {
 
 	@Test
 	public final void testExportAll() throws RepositoryException, IOException {
-		File nq = LOCATION.newFile("all.nq");
+		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getAbsolutePath());
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
-		assertTrue("File is empty", nq.length() > 0);
-		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
+		assertTrue(nq.length() > 0, "File is empty");
+		assertEquals(3, exp.contexts().size(), "Number of contexts incorrect");
 
 		nq.delete();
 	}
@@ -64,23 +64,23 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportWorkDir() throws RepositoryException, IOException {
 		setWorkingDir(cmd);
 
-		File nq = LOCATION.newFile("all.nq");
+		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getName());
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
-		assertTrue("File is empty", nq.length() > 0);
-		assertEquals("Number of contexts incorrect", 3, exp.contexts().size());
+		assertTrue(nq.length() > 0, "File is empty");
+		assertEquals(3, exp.contexts().size(), "Number of contexts incorrect");
 	}
 
 	@Test
 	public final void testExportContexts() throws RepositoryException, IOException {
-		File nq = LOCATION.newFile("default.nq");
+		File nq = new File(locationFile, "default.nq");
 		cmd.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
 		Model exp = Rio.parse(Files.newReader(nq, StandardCharsets.UTF_8), "http://example.com", RDFFormat.NQUADS);
 
-		assertTrue("File is empty", nq.length() > 0);
+		assertTrue(nq.length() > 0, "File is empty");
 
-		assertEquals("Number of contexts incorrect", 2, exp.contexts().size());
-		assertEquals("Number of triples incorrect", 4, exp.size());
+		assertEquals(2, exp.contexts().size(), "Number of contexts incorrect");
+		assertEquals(4, exp.size(), "Number of triples incorrect");
 	}
 }

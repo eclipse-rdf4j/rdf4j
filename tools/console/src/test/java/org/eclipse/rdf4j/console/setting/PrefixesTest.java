@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.setting;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
@@ -22,7 +22,7 @@ import org.mockito.ArgumentCaptor;
  * @author Bart Hanssens
  */
 public class PrefixesTest extends AbstractSettingTest {
-	@Before
+	@BeforeEach
 	@Override
 	public void setUp() {
 		settings.put(Prefixes.NAME, new Prefixes());
@@ -47,7 +47,7 @@ public class PrefixesTest extends AbstractSettingTest {
 		setParameters.execute("set", "prefixes");
 		ArgumentCaptor<String> s = ArgumentCaptor.forClass(String.class);
 		verify(mockConsoleIO).writeln(s.capture());
-		assertTrue("Does not contain dcterms", s.getValue().contains(DCTERMS.NAMESPACE));
+		assertTrue(s.getValue().contains(DCTERMS.NAMESPACE), "Does not contain dcterms");
 
 		verifyNoMoreInteractions(mockConsoleIO);
 	}
@@ -60,7 +60,7 @@ public class PrefixesTest extends AbstractSettingTest {
 		setParameters.execute("set", "prefixes");
 		ArgumentCaptor<String> s = ArgumentCaptor.forClass(String.class);
 		verify(mockConsoleIO).writeln(s.capture());
-		assertTrue("Does not contain dcterms", s.getValue().contains(DCTERMS.NAMESPACE));
+		assertTrue(s.getValue().contains(DCTERMS.NAMESPACE), "Does not contain dcterms");
 
 		verifyNoMoreInteractions(mockConsoleIO);
 	}

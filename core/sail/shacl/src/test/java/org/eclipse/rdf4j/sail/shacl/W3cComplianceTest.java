@@ -87,7 +87,7 @@ public class W3cComplianceTest {
 			assertEquals(s + " has more than one rdf:rest", size, 1);
 		});
 
-		System.out.println(AbstractShaclTest.modelToString(statements));
+//		System.out.println(AbstractShaclTest.modelToString(statements));
 
 		assert !statements.isEmpty();
 
@@ -122,8 +122,6 @@ public class W3cComplianceTest {
 			}
 
 		}
-
-		System.out.println(Arrays.toString(testFiles.toArray()));
 
 		return testFiles;
 
@@ -206,6 +204,8 @@ public class W3cComplianceTest {
 				actualConforms = true;
 			}
 
+		} finally {
+			sailRepository.shutDown();
 		}
 
 		assertEquals(expected.conforms, actualConforms);

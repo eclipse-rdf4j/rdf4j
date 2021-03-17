@@ -32,9 +32,16 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.junit.AfterClass;
 import org.junit.Test;
 
 public class ShaclSailConfigTest {
+
+	@AfterClass
+	public static void afterClass() {
+		GlobalValidationExecutionLogging.loggingEnabled = false;
+	}
 
 	@Test
 	public void defaultsCorrectlySet() {

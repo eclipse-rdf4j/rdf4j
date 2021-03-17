@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.query.resultio;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -40,8 +40,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Peter Ansell
@@ -97,7 +96,7 @@ public abstract class AbstractQueryResultIOTest {
 			format = QueryResultIO.getBooleanParserFormatForFileName(fileName);
 		}
 
-		assertTrue("Could not find parser for this format.", format.isPresent());
+		assertTrue(format.isPresent(), "Could not find parser for this format.");
 		assertEquals(getFormat(), format.get());
 	}
 
@@ -520,7 +519,7 @@ public abstract class AbstractQueryResultIOTest {
 
 		try {
 			parser.parse(in);
-			Assert.fail("Did not find expected parse exception");
+			fail("Did not find expected parse exception");
 		} catch (QueryResultParseException expected) {
 
 		}
@@ -706,7 +705,7 @@ public abstract class AbstractQueryResultIOTest {
 		BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);
 		try {
 			parser.parse(in);
-			Assert.fail("Did not find expected parse exception");
+			fail("Did not find expected parse exception");
 		} catch (QueryResultParseException e) {
 
 		}

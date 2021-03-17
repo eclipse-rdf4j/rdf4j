@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Arrays;
 
@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Bart Hanssens
@@ -27,13 +27,13 @@ import org.junit.Test;
 public class UtilTest {
 	private static Repository repo;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setupClass() {
 		repo = new SailRepository(new MemoryStore());
 		repo.initialize();
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void tearDownClass() {
 		repo.shutDown();
 	}
@@ -49,7 +49,7 @@ public class UtilTest {
 		String[] tokens = { "command", ONE, TWO };
 		Resource[] ctxs = Util.getContexts(tokens, 1, repo);
 
-		assertTrue("Not equal", Arrays.equals(check, ctxs));
+		assertTrue(Arrays.equals(check, ctxs), "Not equal");
 	}
 
 	@Test
@@ -57,7 +57,7 @@ public class UtilTest {
 		String[] tokens = { "command", "command2", "NULL" };
 
 		Resource[] ctxs = Util.getContexts(tokens, 2, repo);
-		assertTrue("Not null", ctxs[0] == null);
+		assertTrue(ctxs[0] == null, "Not null");
 	}
 
 	@Test
@@ -77,6 +77,6 @@ public class UtilTest {
 
 		String expect = " one, two\n" + " three\n" + " four\n" + " five, six\n" + " seven\n" + " eight";
 		String fmt = Util.formatToWidth(10, " ", str, ", ");
-		assertTrue("Format not OK", expect.equals(fmt));
+		assertTrue(expect.equals(fmt), "Format not OK");
 	}
 }

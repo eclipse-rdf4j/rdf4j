@@ -8,12 +8,14 @@
 package org.eclipse.rdf4j.console.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -29,10 +31,9 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sparql.config.SPARQLRepositoryConfig;
 import org.eclipse.rdf4j.repository.sparql.config.SPARQLRepositoryFactory;
 import org.eclipse.rdf4j.sail.federation.config.FederationConfig;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 
 /**
@@ -58,15 +59,17 @@ public class FederateTest extends AbstractCommandTest {
 
 	private static final String FED_DESCRIPTION = "Test Federation Title";
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	@TempDir
+	public File tempDir;
 
 	@InjectMocks
 	private Federate federate;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
-		manager = new LocalRepositoryManager(tempDir.newFolder("federate-test-repository-manager"));
+		File baseDir = new File(tempDir, "federate-test-repository-manager");
+		assertTrue(baseDir.mkdir());
+		manager = new LocalRepositoryManager(baseDir);
 		addRepositories("federate", MEMORY_MEMBER_ID1, MEMORY_MEMBER_ID2, HTTP_MEMBER_ID, HTTP2_MEMBER_ID,
 				SPARQL_MEMBER_ID, SPARQL2_MEMBER_ID);
 		when(mockConsoleState.getManager()).thenReturn(manager);

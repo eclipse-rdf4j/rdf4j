@@ -1098,6 +1098,8 @@ public class TransactionalIsolationTest {
 
 			add(connection, "ex:pete a ex:Person .");
 
+		} finally {
+			sailRepository.shutDown();
 		}
 	}
 

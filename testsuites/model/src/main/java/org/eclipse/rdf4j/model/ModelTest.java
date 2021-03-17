@@ -7,12 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
@@ -22,25 +24,21 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestInstance.Lifecycle;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Abstract test suite for implementations of the {@link Model} interface
  *
  * @author Peter Ansell
  */
+@TestInstance(Lifecycle.PER_CLASS)
+@Timeout(value = 1000, unit = MILLISECONDS)
 public abstract class ModelTest {
-
-	@Rule
-	public Timeout timeout = Timeout.millis(10000);
-
-	@Rule
-	public ExpectedException thrown = ExpectedException.none();
 
 	protected Literal literal1;
 
@@ -246,7 +244,7 @@ public abstract class ModelTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		uri1 = vf.createIRI("urn:test:uri:1");
 		uri2 = vf.createIRI("urn:test:uri:2");
@@ -262,7 +260,7 @@ public abstract class ModelTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 	}
 

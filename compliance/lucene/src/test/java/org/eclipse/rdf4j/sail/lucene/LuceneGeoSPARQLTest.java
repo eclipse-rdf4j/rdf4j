@@ -14,8 +14,8 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class LuceneGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 
@@ -37,14 +37,14 @@ public class LuceneGeoSPARQLTest extends AbstractLuceneSailGeoSPARQLTest {
 	}
 
 	@Test
-	@Ignore // JTS is required
+	@Disabled // JTS is required
 	@Override
 	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		super.testIntersectionQuery();
 	}
 
 	@Test
-	@Ignore // JTS is required
+	@Disabled // JTS is required
 	@Override
 	public void testComplexIntersectionQuery()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {

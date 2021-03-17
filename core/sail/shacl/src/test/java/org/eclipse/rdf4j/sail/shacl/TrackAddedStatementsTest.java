@@ -47,6 +47,8 @@ public class TrackAddedStatementsTest {
 
 			assertNull(shaclSailConnection.addedStatements);
 			assertNull(shaclSailConnection.removedStatements);
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -70,6 +72,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -101,6 +105,8 @@ public class TrackAddedStatementsTest {
 			assertNull(shaclSailConnection.addedStatements);
 			assertNull(shaclSailConnection.removedStatements);
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -131,6 +137,8 @@ public class TrackAddedStatementsTest {
 			assertNull(shaclSailConnection.addedStatements);
 			assertNull(shaclSailConnection.removedStatements);
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -159,6 +167,8 @@ public class TrackAddedStatementsTest {
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			assertEquals(0, size(connection));
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -183,6 +193,8 @@ public class TrackAddedStatementsTest {
 		assertNull(shaclSailConnection.removedStatements);
 
 		assertEquals(0, size(shaclRepository));
+
+		shaclRepository.shutDown();
 
 	}
 
@@ -212,6 +224,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 
 	}
@@ -246,8 +260,10 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
-			System.out.println(size(connection));
+//			System.out.println(size(connection));
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -278,8 +294,10 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
-			System.out.println(size(connection));
+//			System.out.println(size(connection));
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -310,6 +328,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -336,6 +356,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -363,6 +385,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -388,6 +412,8 @@ public class TrackAddedStatementsTest {
 
 			connection.commit();
 
+		} finally {
+			shaclRepository.shutDown();
 		}
 	}
 
@@ -396,7 +422,7 @@ public class TrackAddedStatementsTest {
 			return connection.getStatements(null, null, null, true)
 					.stream()
 					.map(Object::toString)
-					.peek(logger::info)
+//					.peek(logger::info)
 					.count();
 		} finally {
 			connection.close();
@@ -407,7 +433,7 @@ public class TrackAddedStatementsTest {
 		return connection.getStatements(null, null, null)
 				.stream()
 				.map(Object::toString)
-				.peek(logger::info)
+//				.peek(logger::info)
 				.count();
 	}
 
@@ -416,7 +442,7 @@ public class TrackAddedStatementsTest {
 			return connection.getStatements(null, null, null)
 					.stream()
 					.map(Object::toString)
-					.peek(logger::info)
+//					.peek(logger::info)
 					.count();
 		}
 	}

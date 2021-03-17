@@ -62,6 +62,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
@@ -82,6 +84,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
@@ -102,6 +106,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
@@ -119,6 +125,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
@@ -141,6 +149,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
@@ -164,6 +174,8 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
+		} finally {
+			sailRepository.shutDown();
 		}
 
 	}
