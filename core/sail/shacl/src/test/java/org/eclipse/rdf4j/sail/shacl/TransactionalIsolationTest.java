@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class TransactionalIsolationTest {
@@ -767,7 +768,7 @@ public class TransactionalIsolationTest {
 		}
 	}
 
-	@Ignore // we don't support updating shapes through SPARQL at the moment
+	@Disabled // we don't support updating shapes through SPARQL at the moment
 	@Test
 	public void testUpdateShapesSparql() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
