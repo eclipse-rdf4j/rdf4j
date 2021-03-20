@@ -29,7 +29,7 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class ShaclValidationReportTest {
+public class ShaclValidationReportIT {
 
 	private static TestServer server;
 

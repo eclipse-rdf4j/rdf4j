@@ -61,7 +61,7 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.opencsv.CSVReader;
 
-public class ProtocolTest {
+public class ProtocolIT {
 
 	private static TestServer server;
 
@@ -571,7 +571,7 @@ public class ProtocolTest {
 		RDFFormat dataFormat = Rio.getParserFormatForFileName(file).orElse(RDFFormat.RDFXML);
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
-		try (InputStream dataStream = ProtocolTest.class.getResourceAsStream(file)) {
+		try (InputStream dataStream = ProtocolIT.class.getResourceAsStream(file)) {
 			OutputStream connOut = conn.getOutputStream();
 
 			try {
