@@ -58,9 +58,9 @@ import org.slf4j.LoggerFactory;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreTransactionsTest {
+public class ElasticsearchStoreTransactionsIT {
 
-	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTransactionsTest.class);
+	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTransactionsIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static EmbeddedElastic embeddedElastic;
@@ -486,7 +486,7 @@ public class ElasticsearchStoreTransactionsTest {
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.add(
-					ElasticsearchStoreTransactionsTest.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
+					ElasticsearchStoreTransactionsIT.class.getClassLoader().getResourceAsStream("testFile.ttl"), "",
 					RDFFormat.TURTLE);
 			connection.commit();
 

@@ -11,24 +11,22 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.repository.GraphQueryResultTest;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreRepositoryTest extends RepositoryTest {
+public class ElasticsarchGraphQueryResultIT extends GraphQueryResultTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
-
 	private static SingletonClientProvider clientPool;
 
 	@BeforeClass
@@ -48,15 +46,8 @@ public class ElasticsearchStoreRepositoryTest extends RepositoryTest {
 	}
 
 	@Override
-	protected Repository createRepository() {
-		SailRepository sailRepository = new SailRepository(
+	protected Repository newRepository() {
+		return new SailRepository(
 				new ElasticsearchStore(clientPool, "index1"));
-		return sailRepository;
-	}
-
-	@Ignore
-	@Override
-	public void testShutdownFollowedByInit() throws Exception {
-		// ignore test
 	}
 }

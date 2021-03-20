@@ -12,7 +12,7 @@ import java.io.IOException;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.TupleQueryResultTest;
+import org.eclipse.rdf4j.repository.SparqlOrderByTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
@@ -22,7 +22,7 @@ import org.junit.BeforeClass;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreTupleQueryResultTest extends TupleQueryResultTest {
+public class ElasticsearchStoreSparqlOrderByIT extends SparqlOrderByTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -47,7 +47,9 @@ public class ElasticsearchStoreTupleQueryResultTest extends TupleQueryResultTest
 
 	@Override
 	protected Repository newRepository() throws IOException {
-		SailRepository sailRepository = new SailRepository(new ElasticsearchStore(clientPool, "index1"));
+		SailRepository sailRepository = new SailRepository(
+				new ElasticsearchStore(clientPool, "index1"));
 		return sailRepository;
 	}
+
 }
