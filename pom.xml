@@ -245,6 +245,7 @@
 		<profile>
 			<id>quick</id>
 			<properties>
+				<skipUnitTests>true</skipUnitTests>
 				<skipTests>true</skipTests>
 				<skipITs>true</skipITs>
 			</properties>
