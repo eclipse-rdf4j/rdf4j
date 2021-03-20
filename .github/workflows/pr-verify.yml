@@ -25,8 +25,10 @@ jobs:
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
       run: mvn -B clean install -Pquick,\!formatting
-    - name: Run tests
-      run: mvn -B verify --file pom.xml
+    - name: Run unit tests
+      run: mvn -B test
+    - name: Run integration and compliance tests
+      run: mvn -B verify -DskipUnitTests
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh

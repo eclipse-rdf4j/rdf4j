@@ -24,7 +24,7 @@ jobs:
     - name: Build
       run: mvn -B clean install -Pquick,\!formatting
     - name: Run tests
-      run: mvn -B integration-test -Pintegration -Dskip.surefire.tests
+      run: mvn -B verify
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
