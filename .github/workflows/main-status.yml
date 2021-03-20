@@ -29,4 +29,4 @@ jobs:
     - name: Build
       run: mvn -B clean install -Pquick,\!formatting 
     - name: Verify
-      run: mvn -B verify -P\!formatting 
+      run: mvn -B verify -P\!formatting

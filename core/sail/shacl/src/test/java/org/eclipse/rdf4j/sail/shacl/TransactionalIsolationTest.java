@@ -7,18 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -27,13 +26,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.WriterConfig;
-import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TransactionalIsolationTest {
 
@@ -88,7 +84,7 @@ public class TransactionalIsolationTest {
 		}
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testUpdatingShapesViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -135,19 +131,17 @@ public class TransactionalIsolationTest {
 			try {
 				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			} catch (RepositoryException e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 		} finally {
 			sailRepository.shutDown();
 		}
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
 	public void testAddingShapesAfterData() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
@@ -174,7 +168,7 @@ public class TransactionalIsolationTest {
 			try {
 				connection.commit();
 			} catch (RepositoryException e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 
 		} finally {
@@ -227,7 +221,7 @@ public class TransactionalIsolationTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -262,7 +256,7 @@ public class TransactionalIsolationTest {
 				add(connection1, "ex:steve a ex:Person .");
 
 			} catch (Throwable e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 
 		} finally {

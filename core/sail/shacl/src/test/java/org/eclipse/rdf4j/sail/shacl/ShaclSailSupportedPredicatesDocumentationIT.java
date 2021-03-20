@@ -33,11 +33,11 @@ import org.junit.runners.Parameterized;
  * @author Håvard Ottestad
  */
 @RunWith(Parameterized.class)
-public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShaclTest {
+public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTest {
 
 	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 
-	public ShaclSailSupportedPredicatesDocumentationTest(String testCasePath, String path,
+	public ShaclSailSupportedPredicatesDocumentationIT(String testCasePath, String path,
 			ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
@@ -75,7 +75,7 @@ public class ShaclSailSupportedPredicatesDocumentationTest extends AbstractShacl
 		String shaclFile = getShaclPath();
 
 		return Rio.parse(
-				ShaclSailSupportedPredicatesDocumentationTest.class.getClassLoader().getResourceAsStream(shaclFile), "",
+				ShaclSailSupportedPredicatesDocumentationIT.class.getClassLoader().getResourceAsStream(shaclFile), "",
 				RDFFormat.TURTLE);
 	}
 

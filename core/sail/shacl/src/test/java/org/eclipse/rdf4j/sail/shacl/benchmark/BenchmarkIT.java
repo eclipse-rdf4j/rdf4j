@@ -9,7 +9,8 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.junit.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -22,6 +23,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
  *
  * @author Håvard Ottestad
  */
+@Tag("slow")
 public class BenchmarkIT {
 
 	{
