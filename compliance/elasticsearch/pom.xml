@@ -16,6 +16,14 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
+					<encoding>UTF-8</encoding>
+					<forkCount>0</forkCount>
+					<reuseForks>false</reuseForks>
+					<argLine>-Xmx1G</argLine>
+					<includes>
+						<include>**/*IT.java</include>
+						<include>**/*Test.java</include>
+					</includes>
 					<systemPropertyVariables>
 						<tests.security.manager>false</tests.security.manager>
 					</systemPropertyVariables>
@@ -55,11 +63,6 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-rio-rdfxml</artifactId>
 			<version>${project.version}</version>
@@ -74,11 +77,6 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>jcl-over-slf4j</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>ch.qos.logback</groupId>
-			<artifactId>logback-classic</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

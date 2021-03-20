@@ -67,6 +67,14 @@
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
+							<encoding>UTF-8</encoding>
+							<forkCount>0</forkCount>
+							<reuseForks>false</reuseForks>
+							<argLine>-Xmx1G</argLine>
+							<includes>
+								<include>**/*IT.java</include>
+								<include>**/*Test.java</include>
+							</includes>
 							<excludedGroups>slow</excludedGroups>
 						</configuration>
 					</plugin>
@@ -74,6 +82,35 @@
 			</build>
 		</profile>
 	</profiles>
+	<dependencies>
+		<!-- shared test dependencies -->
+		<!-- Testing: JUnit -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.vintage</groupId>
+			<artifactId>junit-vintage-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-classic</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
 	<build>
 		<pluginManagement>
 			<plugins>
@@ -120,6 +157,10 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
 					<configuration>
+						<encoding>UTF-8</encoding>
+						<forkCount>0</forkCount>
+						<reuseForks>false</reuseForks>
+						<argLine>-Xmx1G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 							<include>**/*Test.java</include>

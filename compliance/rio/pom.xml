@@ -108,11 +108,6 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>junit</groupId>
-			<artifactId>junit</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
 			<scope>test</scope>
@@ -135,6 +130,14 @@
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
+							<encoding>UTF-8</encoding>
+							<forkCount>0</forkCount>
+							<reuseForks>false</reuseForks>
+							<argLine>-Xmx1G</argLine>
+							<includes>
+								<include>**/*IT.java</include>
+								<include>**/*Test.java</include>
+							</includes>
 							<argLine>--add-modules=java.xml.bind</argLine>
 						</configuration>
 					</plugin>
@@ -142,18 +145,4 @@
 			</build>
 		</profile>
 	</profiles>
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-failsafe-plugin</artifactId>
-				<configuration>
-					<excludes>
-						<exclude>**/N3ParserTest.java</exclude>
-						<exclude>**/TestServer.java</exclude>
-					</excludes>
-				</configuration>
-			</plugin>
-		</plugins>
-	</build>
 </project>

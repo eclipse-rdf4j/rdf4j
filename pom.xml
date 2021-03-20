@@ -220,10 +220,23 @@
 		<profile>
 			<id>quick</id>
 			<properties>
-				<skipUnitTests>true</skipUnitTests>
 				<skipTests>true</skipTests>
 				<skipITs>true</skipITs>
 			</properties>
+		</profile>
+		<profile>
+			<id>skipUnitTests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<skipTests>true</skipTests>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
 		</profile>
 		<profile>
 			<id>doclint-java8-disable</id>
@@ -775,7 +788,6 @@
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx1G</argLine>
-						<skipTests>${skipUnitTests}</skipTests>
 					</configuration>
 				</plugin>
 				<plugin>
