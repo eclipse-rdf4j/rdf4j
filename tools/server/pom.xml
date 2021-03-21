@@ -10,6 +10,9 @@
 	<packaging>war</packaging>
 	<name>RDF4J: HTTP server</name>
 	<description>HTTP server implementing a REST-style protocol</description>
+	<properties>
+		<testserver.webapp.dir>${project.build.directory}/rdf4j-server</testserver.webapp.dir>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -117,12 +120,16 @@
 	<build>
 		<plugins>
 			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>properties-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
 					<warName>rdf4j-server</warName>
 					<archiveClasses>true</archiveClasses>
-					<webappDirectory>${project.build.directory}/rdf4j-server</webappDirectory>
+					<webappDirectory>${testserver.webapp.dir}</webappDirectory>
 				</configuration>
 			</plugin>
 			<plugin>

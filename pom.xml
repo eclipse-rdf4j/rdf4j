@@ -374,8 +374,8 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
-			2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for 
+				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-annotations</artifactId>
@@ -780,6 +780,23 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-source-plugin</artifactId>
 					<version>2.4</version>
+				</plugin>
+				<plugin>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>properties-maven-plugin</artifactId>
+					<version>1.0.0</version>
+					<executions>
+						<execution>
+							<phase>generate-resources</phase>
+							<goals>
+								<goal>write-project-properties</goal>
+							</goals>
+							<configuration>
+								<!--  make maven project properties available to read from Java -->
+								<outputFile>${project.build.outputDirectory}/maven-config.properties</outputFile>
+							</configuration>
+						</execution>
+					</executions>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
