@@ -581,7 +581,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
-//		System.out.println("### EXPECTEd ###");
+//		System.out.println("### EXPECTED ###");
 //		System.out.println(data);
 //		System.out.println("#################\n");
 
@@ -593,6 +593,82 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 //		System.out.println("### ACTUAL ###");
 //		System.out.println(stringWriter.toString());
 //		System.out.println("#################\n");
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testBlankNodeInliningFIND_A_BETTER_TEST_NAME_ONCE_WE_FIGURE_OUT_WHAT_IS_WRONG() throws Exception {
+		String data = "@prefix dc: <http://purl.org/dc/terms/> .\n" +
+				"@prefix ns0: <http://www.w3.org/ns/earl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"<http://example.org/DISPLAY_NAME>\n" +
+				"  a <http://www.w3.org/ns/earl#TestCriterion>, <http://www.w3.org/ns/earl#TestRequirement> ;\n" +
+				"  dc:title \"FEATURE NAME\" ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:assertedBy <http://example.org/> ;\n" +
+				"    ns0:test <http://example.org/DISPLAY_NAME> ;\n" +
+				"    ns0:subject <http://example.org/test> ;\n" +
+				"    ns0:mode ns0:automatic ;\n" +
+				"    ns0:result [\n" +
+				"      a ns0:TestResult ;\n" +
+				"      ns0:outcome ns0:failed ;\n" +
+				"      dc:date \"1970-01-01T01:00:00.999+01:00\"^^xsd:dateTime\n" +
+				"    ]\n" +
+				"  ] ;\n" +
+				"  dc:hasPart _:genid2, _:genid3 .\n" +
+				"\n" +
+				"_:genid2\n" +
+				"  a ns0:TestCriterion, ns0:TestCase ;\n" +
+				"  dc:title \"SCENARIO 1\" ;\n" +
+				"  dc:isPartOf <http://example.org/DISPLAY_NAME> ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:assertedBy <http://example.org/> ;\n" +
+				"    ns0:test _:genid2 ;\n" +
+				"    ns0:subject <http://example.org/test> ;\n" +
+				"    ns0:mode ns0:automatic ;\n" +
+				"    ns0:result [\n" +
+				"      a ns0:TestResult ;\n" +
+				"      ns0:outcome ns0:failed ;\n" +
+				"      dc:date \"1970-01-01T01:00:01.999+01:00\"^^xsd:dateTime\n" +
+				"    ]\n" +
+				"  ] .\n" +
+				"\n" +
+				"_:genid3\n" +
+				"  a ns0:TestCriterion, ns0:TestCase ;\n" +
+				"  dc:title \"SCENARIO 2\" ;\n" +
+				"  dc:isPartOf <http://example.org/DISPLAY_NAME> ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:assertedBy <http://example.org/> ;\n" +
+				"    ns0:test _:genid3 ;\n" +
+				"    ns0:subject <http://example.org/test> ;\n" +
+				"    ns0:mode ns0:automatic ;\n" +
+				"    ns0:result [\n" +
+				"      a ns0:TestResult ;\n" +
+				"      ns0:outcome ns0:passed ;\n" +
+				"      dc:date \"1970-01-01T01:00:02.999+01:00\"^^xsd:dateTime\n" +
+				"    ]\n" +
+				"  ] .";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+		System.out.println("### EXPECTED ###");
+		System.out.println(data);
+		System.out.println("#################\n");
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+		System.out.println("### ACTUAL ###");
+		System.out.println(stringWriter.toString());
+		System.out.println("#################\n");
 
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
