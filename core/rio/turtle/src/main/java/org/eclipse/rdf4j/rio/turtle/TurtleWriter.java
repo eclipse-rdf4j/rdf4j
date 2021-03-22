@@ -849,15 +849,35 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 			if (processedSubjects.contains(subject)) {
 				continue;
 			}
-			if (subject instanceof BNode && inlineBNodes) {
+			if (subject.isBNode() && inlineBNodes) {
 				Set<Resource> otherSubjects = contextData.filter(null, null, subject).subjects();
-				if (otherSubjects.stream().anyMatch(s -> !processedSubjects.contains(s))) {
+				if (otherSubjects.stream()
+						.anyMatch(s -> !processedSubjects.contains(s)
+								&& !isInBlankNodeCycle((BNode) subject, contextData, processedSubjects,
+										new HashSet<>()))) {
+					// Other unprocessed subject bnode used by this subject is present, and current subject is not part
+					// of a cycle. We should not yet pick this subject.
 					continue;
 				}
 			}
 			return Optional.of(subject);
 		}
 		return Optional.empty();
+	}
+
+	private boolean isInBlankNodeCycle(BNode subject, Model contextData, Set<Resource> processedSubjects,
+			Set<BNode> visited) {
+		visited.add(subject);
+		for (Statement st : contextData.filter(null, null, subject)) {
+			if (st.getSubject().isBNode()) {
+				BNode otherSubject = (BNode) st.getSubject();
+				if (visited.contains(otherSubject)) {
+					return true;
+				}
+				return isInBlankNodeCycle(otherSubject, contextData, processedSubjects, visited);
+			}
+		}
+		return false;
 	}
 
 	private void processSubject(Model contextData, Resource subject, Set<Resource> processedSubjects) {
