@@ -70,8 +70,19 @@
 		<profile>
 			<id>jdk9</id>
 			<activation>
-				<jdk>[1.9,9,10)</jdk>
+				<jdk>[9,)</jdk>
 			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<forkCount>0</forkCount>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
 			<dependencies>
 				<dependency>
 					<groupId>org.apache.solr</groupId>

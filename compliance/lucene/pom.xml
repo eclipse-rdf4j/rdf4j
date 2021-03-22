@@ -45,12 +45,4 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-	<profiles>
-		<profile>
-			<id>jdk9</id>
-			<activation>
-				<jdk>[1.9,9,10)</jdk>
-			</activation>
-		</profile>
-	</profiles>
 </project>
