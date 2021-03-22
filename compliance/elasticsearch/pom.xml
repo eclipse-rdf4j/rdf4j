@@ -16,14 +16,6 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
-					<encoding>UTF-8</encoding>
-					<forkCount>1</forkCount>
-					<reuseForks>false</reuseForks>
-					<argLine>-Xmx1G</argLine>
-					<includes>
-						<include>**/*IT.java</include>
-						<include>**/*Test.java</include>
-					</includes>
 					<systemPropertyVariables>
 						<tests.security.manager>false</tests.security.manager>
 					</systemPropertyVariables>
