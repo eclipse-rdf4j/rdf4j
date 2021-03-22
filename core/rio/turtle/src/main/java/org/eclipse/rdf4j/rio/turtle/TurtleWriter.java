@@ -853,8 +853,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 				Set<Resource> otherSubjects = contextData.filter(null, null, subject).subjects();
 				if (otherSubjects.stream()
 						.anyMatch(s -> !processedSubjects.contains(s)
-								&& !isInBlankNodeCycle((BNode) subject, contextData, processedSubjects,
-										new HashSet<>()))) {
+								&& !isInBlankNodeCycle((BNode) subject, contextData, processedSubjects))) {
 					// Other unprocessed subject bnode used by this subject is present, and current subject is not part
 					// of a cycle. We should not yet pick this subject.
 					continue;
@@ -865,16 +864,23 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 		return Optional.empty();
 	}
 
-	private boolean isInBlankNodeCycle(BNode subject, Model contextData, Set<Resource> processedSubjects,
-			Set<BNode> visited) {
-		visited.add(subject);
-		for (Statement st : contextData.filter(null, null, subject)) {
-			if (st.getSubject().isBNode()) {
-				BNode otherSubject = (BNode) st.getSubject();
-				if (visited.contains(otherSubject)) {
-					return true;
+	private boolean isInBlankNodeCycle(BNode subject, Model contextData, Set<Resource> processedSubjects) {
+		final Set<BNode> visited = new HashSet<>();
+
+		final ArrayDeque<BNode> nodeStack = new ArrayDeque<>();
+		nodeStack.push(subject);
+
+		while (!nodeStack.isEmpty()) {
+			BNode currentSubject = nodeStack.pop();
+			visited.add(currentSubject);
+			for (Statement st : contextData.filter(null, null, currentSubject)) {
+				if (st.getSubject().isBNode()) {
+					BNode otherSubject = (BNode) st.getSubject();
+					if (visited.contains(otherSubject)) {
+						return true;
+					}
+					nodeStack.push(otherSubject);
 				}
-				return isInBlankNodeCycle(otherSubject, contextData, processedSubjects, visited);
 			}
 		}
 		return false;
