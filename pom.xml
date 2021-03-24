@@ -718,8 +718,8 @@
 								<Implementation-Title>${project.name}</Implementation-Title>
 								<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
 								<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
-								<Implementation-Version>${project.version}+${buildNumber}</Implementation-Version>
-								<Implementation-Build>${buildNumber}</Implementation-Build>
+								<Implementation-Version>${project.version}</Implementation-Version>
+								<Implementation-Build-Date>${maven.build.timestamp}</Implementation-Build-Date>
 							</manifestEntries>
 						</archive>
 					</configuration>
@@ -734,9 +734,9 @@
 							<Implementation-Title>${project.name}</Implementation-Title>
 							<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
 							<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
-							<Implementation-Version>${project.version}+${buildNumber}</Implementation-Version>
-							<Implementation-Build>${buildNumber}</Implementation-Build>
-							<Bundle-Version>${project.version}+${buildNumber}</Bundle-Version>
+							<Implementation-Version>${project.version}</Implementation-Version>
+							<Implementation-Build-Date>${maven.build.timestamp}</Implementation-Build-Date>
+							<Bundle-Version>${project.version}</Bundle-Version>
 						</instructions>
 					</configuration>
 				</plugin>
@@ -848,8 +848,8 @@
 								<Implementation-Title>${project.name}</Implementation-Title>
 								<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
 								<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
-								<Implementation-Version>${project.version}+${buildNumber}</Implementation-Version>
-								<Implementation-Build>${buildNumber}</Implementation-Build>
+								<Implementation-Version>${project.version}</Implementation-Version>
+								<Implementation-Build-Date>${maven.build.timestamp}</Implementation-Build-Date>
 							</manifestEntries>
 						</archive>
 					</configuration>
@@ -944,22 +944,6 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>buildnumber-maven-plugin</artifactId>
-				<version>1.4</version>
-				<executions>
-					<execution>
-						<phase>validate</phase>
-						<goals>
-							<goal>create</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<shortRevisionLength>7</shortRevisionLength>
-				</configuration>
-			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>animal-sniffer-maven-plugin</artifactId>
