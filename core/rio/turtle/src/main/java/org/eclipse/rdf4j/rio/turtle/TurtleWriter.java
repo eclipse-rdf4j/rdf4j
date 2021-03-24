@@ -845,45 +845,25 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	}
 
 	private Optional<Resource> nextSubject(Model contextData, Set<Resource> processedSubjects) {
+		// first try finding a subject that has not yet been processed and is not the object of another
+		// unprocessed subject
 		for (Resource subject : contextData.subjects()) {
 			if (processedSubjects.contains(subject)) {
 				continue;
 			}
 			if (subject.isBNode() && inlineBNodes) {
 				Set<Resource> otherSubjects = contextData.filter(null, null, subject).subjects();
-				if (otherSubjects.stream()
-						.anyMatch(s -> !processedSubjects.contains(s)
-								&& !isInBlankNodeCycle((BNode) subject, contextData, processedSubjects))) {
-					// Other unprocessed subject bnode used by this subject is present, and current subject is not part
-					// of a cycle. We should not yet pick this subject.
+				if (otherSubjects.stream().anyMatch(s -> !processedSubjects.contains(s))) {
+					// Other unprocessed subject using this subject as an object is present. Skip this one for now.
 					continue;
 				}
 			}
 			return Optional.of(subject);
 		}
-		return Optional.empty();
-	}
 
-	private boolean isInBlankNodeCycle(BNode subject, Model contextData, Set<Resource> processedSubjects) {
-		final Set<BNode> visited = new HashSet<>();
-
-		final ArrayDeque<BNode> nodeStack = new ArrayDeque<>();
-		nodeStack.push(subject);
-
-		while (!nodeStack.isEmpty()) {
-			BNode currentSubject = nodeStack.pop();
-			visited.add(currentSubject);
-			for (Statement st : contextData.filter(null, null, currentSubject)) {
-				if (st.getSubject().isBNode()) {
-					BNode otherSubject = (BNode) st.getSubject();
-					if (visited.contains(otherSubject)) {
-						return true;
-					}
-					nodeStack.push(otherSubject);
-				}
-			}
-		}
-		return false;
+		// Ensure we did not inadvertently miss any subjects. This can happen when there is a cyclic relation between
+		// blank nodes.
+		return contextData.subjects().stream().filter(subject -> !processedSubjects.contains(subject)).findAny();
 	}
 
 	private void processSubject(Model contextData, Resource subject, Set<Resource> processedSubjects) {
