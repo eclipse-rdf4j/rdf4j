@@ -28,23 +28,21 @@ jobs:
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
-    - uses: vishnudxb/cancel-workflow@v1.2
+    - name: Cancel workflow on failure
+      uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
       with:
         repo: eclipse/rdf4j
         workflow_id: ${{ github.run_id }}
-        access_token: ${{ github.token }} 
+        access_token: ${{ github.token }}
   integration-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        jdk: [1.8, 15]
     steps:
     - uses: actions/checkout@v1
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.jdk }}
+        java-version: 1.8
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
@@ -61,23 +59,21 @@ jobs:
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
-    - uses: vishnudxb/cancel-workflow@v1.2
+    - name: Cancel workflow on failure
+      uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
       with:
         repo: eclipse/rdf4j
         workflow_id: ${{ github.run_id }}
-        access_token: ${{ github.token }} 
+        access_token: ${{ github.token }}
   slow-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        jdk: [1.8, 15]
     steps:
     - uses: actions/checkout@v1
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.jdk }}
+        java-version: 1.8
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
