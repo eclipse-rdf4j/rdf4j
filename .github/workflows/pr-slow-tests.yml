@@ -1,4 +1,4 @@
-name: pull request verify
+name: PR full compliance
 
 on: pull_request
 
@@ -21,12 +21,12 @@ jobs:
         key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
-    - name: Verify formatting
+    - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Build and unit test
-      run: mvn -B -T 2 clean install -P\!formatting -DskipITs -Dmaven.javadoc.skip=true 
-    - name: Run integration and compliance tests
-      run: mvn -B verify -PskipUnitTests,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Build
+      run: mvn -B -T 2 clean install -Pquick,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Verify
+      run: mvn -B verify -P\!skipSlowTests,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
