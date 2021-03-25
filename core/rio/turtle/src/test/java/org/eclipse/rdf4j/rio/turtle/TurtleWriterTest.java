@@ -581,7 +581,7 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
 
-//		System.out.println("### EXPECTEd ###");
+//		System.out.println("### EXPECTED ###");
 //		System.out.println(data);
 //		System.out.println("#################\n");
 
@@ -594,6 +594,115 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 //		System.out.println(stringWriter.toString());
 //		System.out.println("#################\n");
 
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testBlankNodeInlining_directCircularReference() throws Exception {
+		String data = "@prefix dc: <http://purl.org/dc/terms/> .\n" +
+				"@prefix ns0: <http://www.w3.org/ns/earl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"<http://example.org/DISPLAY_NAME>\n" +
+				"  a <http://www.w3.org/ns/earl#TestCriterion> ;\n" +
+				"  dc:hasPart _:genid3 .\n" +
+				"\n" +
+				"_:genid3\n" +
+				"  a ns0:TestCase ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:test _:genid3 \n" + // direct circular reference between two blank nodes
+				"  ] .";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
+//
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
+//
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testBlankNodeInlining_indirectCircularReference() throws Exception {
+		String data = "@prefix dc: <http://purl.org/dc/terms/> .\n" +
+				"@prefix ns0: <http://www.w3.org/ns/earl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"<http://example.org/DISPLAY_NAME>\n" +
+				"  a <http://www.w3.org/ns/earl#TestCriterion> ;\n" +
+				"  dc:hasPart _:genid3 .\n" +
+				"\n" +
+				"_:genid3\n" +
+				"  a ns0:TestCase ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:test [ ns0:reference _:genid3 ] \n" + // indirect blank node cycle
+				"  ] .";
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
+
+		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
+		assertTrue(Models.isomorphic(expected, actual));
+	}
+
+	@Test
+	public void testBlankNodeInlining_indirectCircularReferenceWithIRI() throws Exception {
+		String data = "@prefix dc: <http://purl.org/dc/terms/> .\n" +
+				"@prefix ns0: <http://www.w3.org/ns/earl#> .\n" +
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n" +
+				"\n" +
+				"<http://example.org/DISPLAY_NAME>\n" +
+				"  a <http://www.w3.org/ns/earl#TestCriterion> ;\n" +
+				"  dc:hasPart _:genid3 .\n" +
+				"\n" +
+				"_:genid3\n" +
+				"  a ns0:TestCase ;\n" +
+				"  ns0:assertions [\n" +
+				"    a ns0:Assertion ;\n" +
+				"    ns0:test ns0:testSubject \n" +
+				"  ] ." +
+				" ns0:testSubject ns0:reference _:genid3 ."; // blank node cycle broken with an IRI subject
+
+		Model expected = Rio.parse(new StringReader(data), "", RDFFormat.TURTLE);
+
+//		System.out.println("### EXPECTED ###");
+//		System.out.println(data);
+//		System.out.println("#################\n");
+
+		StringWriter stringWriter = new StringWriter();
+		WriterConfig config = new WriterConfig();
+		config.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(expected, stringWriter, RDFFormat.TURTLE, config);
+
+//		System.out.println("### ACTUAL ###");
+//		System.out.println(stringWriter.toString());
+//		System.out.println("#################\n");
+//
 		Model actual = Rio.parse(new StringReader(stringWriter.toString()), "", RDFFormat.TURTLE);
 		assertTrue(Models.isomorphic(expected, actual));
 	}
