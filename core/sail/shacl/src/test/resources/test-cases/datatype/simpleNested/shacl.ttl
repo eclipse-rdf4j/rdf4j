@@ -15,7 +15,14 @@ ex:PersonShape
 		        sh:property [
 			        sh:path ex:age ;
 		                sh:datatype xsd:integer ;
-		        ]
-	        ]
+		        ];
+		        sh:property [
+			        sh:path ex:temp ;
+			        sh:property [
+			                sh:path ex:age ;
+		                        sh:datatype xsd:integer ;
+		                ];
+		        ];
+	        ];
 	] .
 
