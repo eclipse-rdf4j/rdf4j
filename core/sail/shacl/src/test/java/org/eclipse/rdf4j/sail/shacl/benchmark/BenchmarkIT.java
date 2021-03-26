@@ -9,7 +9,8 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.junit.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -17,12 +18,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 /**
- * This runs (almost) all the benchmarks during unit testing so that we know that we haven't broken any of the
+ * This runs (almost) all the benchmarks during integration testing so that we know that we haven't broken any of the
  * benchmarks.
  *
  * @author Håvard Ottestad
  */
-public class BenchmarkJunitTests {
+@Tag("slow")
+public class BenchmarkIT {
 
 	{
 		GlobalValidationExecutionLogging.loggingEnabled = false;

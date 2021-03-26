@@ -11,9 +11,10 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.repository.GraphQueryResultTest;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConcurrencyTest;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
@@ -22,7 +23,11 @@ import org.junit.BeforeClass;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsarchGraphQueryResultTest extends GraphQueryResultTest {
+/**
+ * An extension of {@link SailConcurrencyTest} for testing the class
+ * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
+ */
+public class ElasticsearchStoreConcurrencyIT extends SailConcurrencyTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -45,9 +50,18 @@ public class ElasticsarchGraphQueryResultTest extends GraphQueryResultTest {
 
 	}
 
+	/*---------*
+	 * Methods *
+	 *---------*/
+
 	@Override
-	protected Repository newRepository() {
-		return new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
+	protected NotifyingSail createSail() throws SailException {
+		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
+		try (NotifyingSailConnection connection = sail.getConnection()) {
+			connection.begin();
+			connection.clear();
+			connection.commit();
+		}
+		return sail;
 	}
 }

@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.http.server;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
@@ -25,11 +28,15 @@ import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Herko ter Horst
  */
 public class TestServer {
+
+	private static Logger logger = LoggerFactory.getLogger(TestServer.class);
 
 	private static final String HOST = "localhost";
 
@@ -48,8 +55,11 @@ public class TestServer {
 
 	private final Server jetty;
 
-	public TestServer() {
+	public TestServer() throws IOException {
 		System.clearProperty("DEBUG");
+		PropertiesReader reader = new PropertiesReader("maven-config.properties");
+		String webappDir = reader.getProperty("testserver.webapp.dir");
+		logger.debug("build path: {}", webappDir);
 
 		jetty = new Server();
 
@@ -112,6 +122,21 @@ public class TestServer {
 
 		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
 
+	}
+
+	static class PropertiesReader {
+		private Properties properties;
+
+		public PropertiesReader(String propertyFileName) throws IOException {
+			InputStream is = getClass().getClassLoader()
+					.getResourceAsStream(propertyFileName);
+			this.properties = new Properties();
+			this.properties.load(is);
+		}
+
+		public String getProperty(String propertyName) {
+			return this.properties.getProperty(propertyName);
+		}
 	}
 
 }

@@ -9,8 +9,10 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.Tag;
 
-public class MultithreadedMemoryStoreTest extends MultithreadedTest {
+@Tag("slow")
+public class MultithreadedMemoryStoreIT extends MultithreadedTest {
 	@Override
 	NotifyingSail getBaseSail() {
 		return new MemoryStore();

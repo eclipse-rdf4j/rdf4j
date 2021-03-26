@@ -27,6 +27,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Build
-      run: mvn -B clean install -Pquick,\!formatting 
-    - name: Compliance tests
-      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
+      run: mvn -B -T 2 clean install -Pquick,\!formatting 
+    - name: Run all tests
+      run: mvn -B verify -P\!skipSlowTests,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true

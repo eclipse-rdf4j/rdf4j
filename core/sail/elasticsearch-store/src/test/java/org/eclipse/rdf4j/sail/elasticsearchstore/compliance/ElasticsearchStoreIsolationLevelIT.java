@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
+import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
@@ -24,23 +24,21 @@ import org.junit.BeforeClass;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 /**
- * An extension of RDFStoreTest for testing the class
- * <tt>org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore</tt>.
+ * An extension of {@link SailIsolationLevelTest} for testing the class
+ * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
-public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
-
-	/*---------*
-	 * Methods *
-	 *---------*/
+public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
-	static SingletonClientProvider clientPool;
+
+	private static SingletonClientProvider clientPool;
 
 	@BeforeClass
-	public static void beforeClass() throws IOException, InterruptedException {
+	public static void beforeClass() throws Exception {
 
+		SailIsolationLevelTest.setUpClass();
 		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
 		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
 
@@ -51,10 +49,11 @@ public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
 
 		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+
 	}
 
 	@Override
-	protected NotifyingSail createSail() throws SailException {
+	protected Sail createSail() throws SailException {
 		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
 		try (NotifyingSailConnection connection = sail.getConnection()) {
 			connection.begin();
@@ -63,4 +62,5 @@ public class ElasticsearchStoreTest extends RDFNotifyingStoreTest {
 		}
 		return sail;
 	}
+
 }

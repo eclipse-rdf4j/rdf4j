@@ -38,9 +38,9 @@ import org.slf4j.LoggerFactory;
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
 // Tests transaction failures that the Write-Ahead-Log should be able to recover from
-public class ElasticsearchStoreWALTest {
+public class ElasticsearchStoreWalIT {
 
-	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreWALTest.class);
+	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreWalIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static EmbeddedElastic embeddedElastic;

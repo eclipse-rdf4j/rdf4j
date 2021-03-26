@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.repository.http;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.webapp.WebAppContext;
@@ -19,11 +21,15 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Herko ter Horst
  */
 public class HTTPMemServer {
+
+	private static Logger logger = LoggerFactory.getLogger(HTTPMemServer.class);
 
 	private static final String HOST = "localhost";
 
@@ -43,15 +49,17 @@ public class HTTPMemServer {
 
 	private final Server jetty;
 
-	public HTTPMemServer() {
+	public HTTPMemServer() throws IOException {
 		System.clearProperty("DEBUG");
+		PropertiesReader reader = new PropertiesReader("maven-config.properties");
+		String webappDir = reader.getProperty("testserver.webapp.dir");
+		logger.debug("build path: {}", webappDir);
 
 		jetty = new Server(PORT);
 
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(RDF4J_CONTEXT);
-		// warPath configured in pom.xml maven-war-plugin configuration
-		webapp.setWar("./target/rdf4j-server");
+		webapp.setWar(webappDir);
 		jetty.setHandler(webapp);
 	}
 
@@ -83,6 +91,21 @@ public class HTTPMemServer {
 			conn.add(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE);
 		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
+		}
+	}
+
+	static class PropertiesReader {
+		private Properties properties;
+
+		public PropertiesReader(String propertyFileName) throws IOException {
+			InputStream is = getClass().getClassLoader()
+					.getResourceAsStream(propertyFileName);
+			this.properties = new Properties();
+			this.properties.load(is);
+		}
+
+		public String getProperty(String propertyName) {
+			return this.properties.getProperty(propertyName);
 		}
 	}
 }

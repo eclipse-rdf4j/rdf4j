@@ -28,5 +28,5 @@ jobs:
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Build
       run: mvn -B clean install -Pquick,\!formatting
-    - name: Compliance tests
-      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
+    - name: Verify
+      run: mvn -B verify -P\!skipSlowTests,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true

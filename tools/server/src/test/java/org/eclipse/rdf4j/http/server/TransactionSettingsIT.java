@@ -31,7 +31,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class TransactionSettingsTest {
+public class TransactionSettingsIT {
 
 	private static TestServer server;
 

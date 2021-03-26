@@ -11,30 +11,32 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.runners.Parameterized;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreConnectionTest extends RepositoryConnectionTest {
+/**
+ * An extension of RDFStoreTest for testing the class
+ * <tt>org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore</tt>.
+ */
+public class ElasticsearchStoreIT extends RDFNotifyingStoreTest {
 
-	public ElasticsearchStoreConnectionTest(IsolationLevel level) {
-		super(level);
-	}
+	/*---------*
+	 * Methods *
+	 *---------*/
 
 	private static EmbeddedElastic embeddedElastic;
 
 	private static File installLocation = Files.newTemporaryFolder();
-	private static SingletonClientProvider clientPool;
+	static SingletonClientProvider clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
@@ -49,22 +51,16 @@ public class ElasticsearchStoreConnectionTest extends RepositoryConnectionTest {
 
 		clientPool.close();
 		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
-
-	}
-
-	@Parameterized.Parameters(name = "{0}")
-	public static IsolationLevel[] parameters() {
-		return new IsolationLevel[] {
-				IsolationLevels.NONE,
-				IsolationLevels.READ_UNCOMMITTED,
-				IsolationLevels.READ_COMMITTED
-		};
 	}
 
 	@Override
-	protected Repository createRepository() {
-		return new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
+	protected NotifyingSail createSail() throws SailException {
+		NotifyingSail sail = new ElasticsearchStore(clientPool, "index1");
+		try (NotifyingSailConnection connection = sail.getConnection()) {
+			connection.begin();
+			connection.clear();
+			connection.commit();
+		}
+		return sail;
 	}
-
 }

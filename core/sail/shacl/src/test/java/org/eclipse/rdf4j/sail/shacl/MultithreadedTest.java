@@ -36,14 +36,13 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
-import org.junit.AfterClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
 
 public abstract class MultithreadedTest {
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	@AfterClass
+	@AfterAll
 	public static void afterClass() {
 		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}

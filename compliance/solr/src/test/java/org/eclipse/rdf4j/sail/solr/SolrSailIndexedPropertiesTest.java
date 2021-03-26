@@ -14,10 +14,29 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.solr.SolrIndexTest.PropertiesReader;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 
 public class SolrSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 
 	private static final String DATA_DIR = "target/test-data";
+
+	private static String toRestoreSolrHome = null;
+
+	@BeforeClass
+	public static void setUpClass() throws Exception {
+		toRestoreSolrHome = System.getProperty("solr.solr.home");
+		PropertiesReader reader = new PropertiesReader("maven-config.properties");
+		String testSolrHome = reader.getProperty("test.solr.home");
+		System.setProperty("solr.solr.home", testSolrHome);
+	}
+
+	@AfterClass
+	public static void tearDownClass() throws Exception {
+		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
+		toRestoreSolrHome = null;
+	}
 
 	@Override
 	protected void configure(LuceneSail sail) {

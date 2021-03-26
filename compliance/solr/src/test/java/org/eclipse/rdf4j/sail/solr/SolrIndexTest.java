@@ -16,6 +16,7 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -41,10 +42,16 @@ import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SolrIndexTest {
+
+	private static final Logger logger = LoggerFactory.getLogger(SolrIndexTest.class);
 
 	private static final String DATA_DIR = "target/test-data";
 
@@ -82,6 +89,23 @@ public class SolrIndexTest {
 	SolrIndex index;
 	SolrClient client;
 
+	private static String toRestoreSolrHome = null;
+
+	@BeforeClass
+	public static void setUpClass() throws Exception {
+		toRestoreSolrHome = System.getProperty("solr.solr.home");
+		PropertiesReader reader = new PropertiesReader("maven-config.properties");
+		String testSolrHome = reader.getProperty("test.solr.home");
+		logger.debug("setting solr home to {}", testSolrHome);
+		System.setProperty("solr.solr.home", testSolrHome);
+	}
+
+	@AfterClass
+	public static void tearDownClass() throws Exception {
+		System.setProperty("solr.solr.home", toRestoreSolrHome == null ? "" : toRestoreSolrHome);
+		toRestoreSolrHome = null;
+	}
+
 	@Before
 	public void setUp() throws Exception {
 		index = new SolrIndex();
@@ -94,6 +118,7 @@ public class SolrIndexTest {
 	@After
 	public void tearDown() throws Exception {
 		index.shutDown();
+
 		FileUtils.deleteDirectory(new File(DATA_DIR));
 	}
 
@@ -413,5 +438,20 @@ public class SolrIndexTest {
 			}
 		}
 
+	}
+
+	static class PropertiesReader {
+		private Properties properties;
+
+		public PropertiesReader(String propertyFileName) throws IOException {
+			InputStream is = getClass().getClassLoader()
+					.getResourceAsStream(propertyFileName);
+			this.properties = new Properties();
+			this.properties.load(is);
+		}
+
+		public String getProperty(String propertyName) {
+			return this.properties.getProperty(propertyName);
+		}
 	}
 }
