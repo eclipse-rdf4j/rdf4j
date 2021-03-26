@@ -849,19 +849,25 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	}
 
 	private Optional<Resource> nextSubject(Model contextData, Set<Resource> processedSubjects) {
+		// first try finding a subject that has not yet been processed and is not the object of another
+		// unprocessed subject
 		for (Resource subject : contextData.subjects()) {
 			if (processedSubjects.contains(subject)) {
 				continue;
 			}
-			if (subject instanceof BNode && inlineBNodes) {
+			if (subject.isBNode() && inlineBNodes) {
 				Set<Resource> otherSubjects = contextData.filter(null, null, subject).subjects();
 				if (otherSubjects.stream().anyMatch(s -> !processedSubjects.contains(s))) {
+					// Other unprocessed subject using this subject as an object is present. Skip this one for now.
 					continue;
 				}
 			}
 			return Optional.of(subject);
 		}
-		return Optional.empty();
+
+		// Ensure we did not inadvertently miss any subjects. This can happen when there is a cyclic relation between
+		// blank nodes.
+		return contextData.subjects().stream().filter(subject -> !processedSubjects.contains(subject)).findAny();
 	}
 
 	private void processSubject(Model contextData, Resource subject, Set<Resource> processedSubjects) {
