@@ -45,9 +45,9 @@ import org.slf4j.LoggerFactory;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreTest {
+public class ElasticsearchStoreIT {
 
-	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTest.class);
+	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static EmbeddedElastic embeddedElastic;
@@ -233,7 +233,7 @@ public class ElasticsearchStoreTest {
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			stopWatch.stop();
 
-			ElasticsearchStoreTransactionsTest.logTime(stopWatch, "Creating repo and getting connection",
+			ElasticsearchStoreTransactionsIT.logTime(stopWatch, "Creating repo and getting connection",
 					TimeUnit.SECONDS);
 
 			stopWatch = StopWatch.createStarted();
@@ -244,12 +244,12 @@ public class ElasticsearchStoreTest {
 			}
 			connection.commit();
 			stopWatch.stop();
-			ElasticsearchStoreTransactionsTest.logTime(stopWatch, "Adding data", TimeUnit.SECONDS);
+			ElasticsearchStoreTransactionsIT.logTime(stopWatch, "Adding data", TimeUnit.SECONDS);
 
 			stopWatch = StopWatch.createStarted();
 			assertEquals(count, connection.size());
 			stopWatch.stop();
-			ElasticsearchStoreTransactionsTest.logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
+			ElasticsearchStoreTransactionsIT.logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
 
 		}
 

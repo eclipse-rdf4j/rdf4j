@@ -40,8 +40,8 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
-public class NativeStoreConsistencyTest {
-	private static final Logger logger = LoggerFactory.getLogger(NativeStoreConsistencyTest.class);
+public class NativeStoreConsistencyIT {
+	private static final Logger logger = LoggerFactory.getLogger(NativeStoreConsistencyIT.class);
 
 	/*-----------*
 	 * Variables *
@@ -63,70 +63,71 @@ public class NativeStoreConsistencyTest {
 		File dataDir = tempDir.newFolder("nativestore-consistency");
 
 		Repository repo = new SailRepository(new NativeStore(dataDir, "spoc,psoc"));
-		repo.initialize();
 
-		RepositoryConnection conn = repo.getConnection();
+		try (RepositoryConnection conn = repo.getConnection()) {
+			// Step1: setup the initial database state
+			logger.info("Preserving initial state ...");
+			conn.begin();
+			RDFInserter inserter = new RDFInserter(conn) {
+				private int count;
 
-		// Step1: setup the initial database state
-		logger.info("Preserving initial state ...");
-		conn.begin();
-		RDFInserter inserter = new RDFInserter(conn) {
-			private int count;
-
-			@Override
-			protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
-				super.addStatement(subj, pred, obj, ctxt);
-				if (count++ % 1000 == 0) {
-					con.commit();
-					con.begin();
+				@Override
+				protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
+					super.addStatement(subj, pred, obj, ctxt);
+					if (count++ % 1000 == 0) {
+						con.commit();
+						con.begin();
+					}
 				}
-			}
-		};
-		RDFLoader loader = new RDFLoader(conn.getParserConfig(), conn.getValueFactory());
-		loader.load(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/initialState.nq"), "",
-				RDFFormat.NQUADS, inserter);
-		conn.commit();
-		logger.info("Number of statements: " + conn.size());
+			};
+			RDFLoader loader = new RDFLoader(conn.getParserConfig(), conn.getValueFactory());
+			loader.load(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/initialState.nq"), "",
+					RDFFormat.NQUADS, inserter);
+			conn.commit();
+			logger.info("Number of statements: " + conn.size());
 
-		// Step 2: in a single transaction remove "oldContext", then add
-		// statements to "newContext"
-		conn.begin();
+			// Step 2: in a single transaction remove "oldContext", then add
+			// statements to "newContext"
+			conn.begin();
 
-		logger.info("Removing old context");
-		conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
+			logger.info("Removing old context");
+			conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
 
-		logger.info("Adding updated context");
-		conn.add(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/newTriples.nt"), "", RDFFormat.NTRIPLES,
-				newContext);
-		conn.commit();
+			logger.info("Adding updated context");
+			conn.add(getClass().getResourceAsStream("/nativestore-testdata/SES-1867/newTriples.nt"), "",
+					RDFFormat.NTRIPLES,
+					newContext);
+			conn.commit();
 
-		// Step 3: check whether oldContext is actually empty
-		List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, false, oldContext));
-		logger.info("Not deleted statements: " + stmts.size());
+			// Step 3: check whether oldContext is actually empty
+			List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, false, oldContext));
+			logger.info("Not deleted statements: " + stmts.size());
 
-		conn.close();
+		}
 		repo.shutDown();
 
 		// Step 4: check the repository size with SPOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "spoc"));
-		repo.initialize();
-		conn = repo.getConnection();
-		logger.info("Repository size with SPOC index only: " + conn.size());
-		Model spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
-		conn.close();
+
+		Model spocStatements;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			logger.info("Repository size with SPOC index only: " + conn.size());
+			spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+		}
 		repo.shutDown();
 
 		// Step 5: check the repository size with PSOC only
 		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new NativeStore(dataDir, "psoc"));
-		repo.initialize();
-		conn = repo.getConnection();
-		logger.info("Repository size with PSOC index only: " + conn.size());
-		Model psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
-		conn.close();
+
+		Model psocStatements;
+		try (RepositoryConnection conn = repo.getConnection()) {
+			logger.info("Repository size with PSOC index only: " + conn.size());
+			psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+		}
 		repo.shutDown();
 
 		// Step 6: computing the differences of the contents of the indices
@@ -151,5 +152,4 @@ public class NativeStoreConsistencyTest {
 		assertEquals(0, differenceA.size());
 		assertEquals(0, differenceB.size());
 	}
-
 }

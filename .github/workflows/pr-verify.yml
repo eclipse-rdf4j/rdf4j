@@ -1,4 +1,4 @@
-name: pull request verify
+name: PR verify
 
 on: pull_request
 
@@ -13,7 +13,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.jdk }}  
+        java-version: ${{ matrix.jdk }}
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
@@ -21,13 +21,72 @@ jobs:
         key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
-    - name: Verify formatting
+    - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Build
-      run: mvn -B clean install -Pquick,\!formatting
-    - name: Run tests
-      run: mvn -B verify -Pcompliance,\!formatting --file pom.xml
+    - name: Test
+      run: mvn -B clean test -P\!formatting -DskipITs -Dmaven.javadoc.skip=true
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
-    
+    - name: Cancel workflow on failure
+      uses: vishnudxb/cancel-workflow@v1.2
+      if: failure()
+      with:
+        repo: eclipse/rdf4j
+        workflow_id: ${{ github.run_id }}
+        access_token: ${{ github.token }}
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
+    - name: Check formatting
+      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+    - name: Build
+      run: mvn -B -T 2 clean install -Pquick,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Verify
+      run: mvn -B verify -PskipUnitTests,\!formatting -Dmaven.javadoc.skip=true -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Print test failures
+      if: failure()
+      run: ./scripts/printTestResults.sh
+    - name: Cancel workflow on failure
+      uses: vishnudxb/cancel-workflow@v1.2
+      if: failure()
+      with:
+        repo: eclipse/rdf4j
+        workflow_id: ${{ github.run_id }}
+        access_token: ${{ github.token }}
+  slow-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: 1.8
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
+    - name: Check formatting
+      run: mvn -B formatter:validate impsort:check xml-format:xml-check
+    - name: Build
+      run: mvn -B -T 2 clean install -Pquick,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Verify
+      run: mvn -B verify -P\!skipSlowTests,\!formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Print test failures
+      if: failure()
+      run: ./scripts/printTestResults.sh

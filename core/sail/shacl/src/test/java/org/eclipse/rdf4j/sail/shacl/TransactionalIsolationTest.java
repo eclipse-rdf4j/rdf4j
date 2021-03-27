@@ -7,18 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertFalse;
-import static junit.framework.TestCase.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
 
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -27,13 +26,11 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.WriterConfig;
-import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class TransactionalIsolationTest {
 
@@ -88,7 +85,7 @@ public class TransactionalIsolationTest {
 		}
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testUpdatingShapesViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -135,19 +132,17 @@ public class TransactionalIsolationTest {
 			try {
 				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			} catch (RepositoryException e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 		} finally {
 			sailRepository.shutDown();
 		}
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
 	public void testAddingShapesAfterData() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
@@ -174,7 +169,7 @@ public class TransactionalIsolationTest {
 			try {
 				connection.commit();
 			} catch (RepositoryException e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 
 		} finally {
@@ -227,7 +222,7 @@ public class TransactionalIsolationTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testViolation() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -262,7 +257,7 @@ public class TransactionalIsolationTest {
 				add(connection1, "ex:steve a ex:Person .");
 
 			} catch (Throwable e) {
-				throw e.getCause();
+				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
 
 		} finally {
@@ -555,283 +550,6 @@ public class TransactionalIsolationTest {
 	}
 
 	@Test
-	public void testIsolation2_multithreaded_READ_COMMITTED() throws Throwable {
-
-		for (int i = 0; i < 1000; i++) {
-
-			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-
-			SailRepository sailRepository = new SailRepository(shaclSail);
-			sailRepository.init();
-
-			try {
-				CountDownLatch countDownLatch = new CountDownLatch(2);
-
-				Runnable t1 = () -> {
-
-					try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-						connection.begin(IsolationLevels.READ_COMMITTED);
-						for (int k = 0; k < 1000; k++) {
-							addInTransaction(connection, "ex:steve" + k + " a ex:Person .");
-
-						}
-
-						countDownLatch.countDown();
-						try {
-							countDownLatch.await();
-						} catch (InterruptedException e) {
-							throw new IllegalStateException();
-						}
-
-						try {
-							connection.commit();
-						} catch (Throwable ignored) {
-						}
-
-					}
-
-				};
-
-				Thread thread1 = new Thread(t1);
-
-				thread1.start();
-
-				Runnable t2 = () -> {
-					try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-						connection.begin(IsolationLevels.READ_COMMITTED);
-						StringReader shaclRules = new StringReader(String.join("\n", "",
-								"@prefix ex: <http://example.com/ns#> .",
-								"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-								"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-								"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-
-								"ex:PersonShape",
-								"        a sh:NodeShape  ;",
-								"        sh:targetClass ex:Person ;",
-								"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										" ."));
-
-						try {
-							connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-						} catch (IOException e) {
-							throw new IllegalStateException();
-						}
-
-						countDownLatch.countDown();
-						try {
-							countDownLatch.await();
-						} catch (InterruptedException e) {
-							throw new IllegalStateException();
-						}
-
-						try {
-							connection.commit();
-						} catch (Throwable ignored) {
-						}
-					}
-
-				};
-
-				Thread thread2 = new Thread(t2);
-
-				thread2.start();
-
-				thread1.join();
-				thread2.join();
-
-				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-					connection.begin();
-					ValidationReport validationReport = ((ShaclSailConnection) connection.getSailConnection())
-							.revalidate();
-
-					if (!validationReport.conforms()) {
-						Model statements = validationReport.asModel();
-						WriterConfig writerConfig = new WriterConfig();
-						writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-						writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-						Rio.write(statements, System.out, RDFFormat.TURTLE, writerConfig);
-					}
-
-					assertTrue(validationReport.conforms());
-
-					connection.commit();
-				}
-			} finally {
-				sailRepository.shutDown();
-			}
-
-		}
-	}
-
-	@Test
-	public void testIsolation2_multithreaded_SNAPSHOT() throws Throwable {
-
-		for (int i = 0; i < 1000; i++) {
-
-			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-
-			SailRepository sailRepository = new SailRepository(shaclSail);
-			sailRepository.init();
-
-			try {
-
-				CountDownLatch countDownLatch = new CountDownLatch(2);
-
-				Runnable t1 = () -> {
-
-					try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-						connection.begin(IsolationLevels.SNAPSHOT);
-						for (int k = 0; k < 1000; k++) {
-							addInTransaction(connection, "ex:steve" + k + " a ex:Person .");
-
-						}
-
-						countDownLatch.countDown();
-						try {
-							countDownLatch.await();
-						} catch (InterruptedException e) {
-							throw new IllegalStateException();
-						}
-
-						try {
-							connection.commit();
-						} catch (Throwable ignored) {
-						}
-
-					}
-
-				};
-
-				Thread thread1 = new Thread(t1);
-
-				thread1.start();
-
-				Runnable t2 = () -> {
-					try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-						connection.begin(IsolationLevels.SNAPSHOT);
-						StringReader shaclRules = new StringReader(String.join("\n", "",
-								"@prefix ex: <http://example.com/ns#> .",
-								"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-								"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-								"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-
-								"ex:PersonShape",
-								"        a sh:NodeShape  ;",
-								"        sh:targetClass ex:Person ;",
-								"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										"        sh:property [",
-								"                sh:path ex:age ;",
-								"                sh:minCount 1 ;",
-								"        ] ;" +
-										" ."));
-
-						try {
-							connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-						} catch (IOException e) {
-							throw new IllegalStateException();
-						}
-
-						countDownLatch.countDown();
-						try {
-							countDownLatch.await();
-						} catch (InterruptedException e) {
-							throw new IllegalStateException();
-						}
-
-						try {
-							connection.commit();
-						} catch (Throwable ignored) {
-						}
-					}
-
-				};
-
-				Thread thread2 = new Thread(t2);
-
-				thread2.start();
-
-				thread1.join();
-				thread2.join();
-
-				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-					connection.begin();
-					ValidationReport validationReport = ((ShaclSailConnection) connection.getSailConnection())
-							.revalidate();
-
-					if (!validationReport.conforms()) {
-						Model statements = validationReport.asModel();
-						WriterConfig writerConfig = new WriterConfig();
-						writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-						writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-						Rio.write(statements, System.out, RDFFormat.TURTLE, writerConfig);
-					}
-
-					assertTrue(validationReport.conforms());
-
-					connection.commit();
-				}
-			} finally {
-				sailRepository.shutDown();
-			}
-
-		}
-	}
-
-	@Test
 	public void testIsolation3() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -1050,7 +768,7 @@ public class TransactionalIsolationTest {
 		}
 	}
 
-	@Ignore // we don't support updating shapes through SPARQL at the moment
+	@Disabled // we don't support updating shapes through SPARQL at the moment
 	@Test
 	public void testUpdateShapesSparql() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());

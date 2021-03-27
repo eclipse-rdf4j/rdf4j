@@ -17,14 +17,16 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 
-public class MultithreadedNativeStoreRDFSTest extends MultithreadedTest {
+@Tag("slow")
+public class MultithreadedNativeStoreRDFSIT extends MultithreadedTest {
 
 	File file;
 
-	@After
+	@AfterEach
 	public void after() {
 		try {
 			FileUtils.deleteDirectory(file);
@@ -33,7 +35,7 @@ public class MultithreadedNativeStoreRDFSTest extends MultithreadedTest {
 		}
 	}
 
-	@Before
+	@BeforeEach
 	public void before() {
 		file = Files.newTemporaryFolder();
 	}

@@ -41,9 +41,9 @@ import org.slf4j.LoggerFactory;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class InferenceTest {
+public class InferenceIT {
 
-	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTest.class);
+	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static EmbeddedElastic embeddedElastic;

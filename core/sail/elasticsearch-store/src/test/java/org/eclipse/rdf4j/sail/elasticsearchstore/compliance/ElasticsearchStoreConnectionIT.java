@@ -11,18 +11,25 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.SparqlRegexTest;
+import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.runners.Parameterized;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-public class ElasticsearchStoreSparqlRegexTest extends SparqlRegexTest {
+public class ElasticsearchStoreConnectionIT extends RepositoryConnectionTest {
+
+	public ElasticsearchStoreConnectionIT(IsolationLevel level) {
+		super(level);
+	}
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -45,10 +52,19 @@ public class ElasticsearchStoreSparqlRegexTest extends SparqlRegexTest {
 
 	}
 
-	@Override
-	protected Repository newRepository() throws IOException {
-		SailRepository sailRepository = new SailRepository(
-				new ElasticsearchStore(clientPool, "index1"));
-		return sailRepository;
+	@Parameterized.Parameters(name = "{0}")
+	public static IsolationLevel[] parameters() {
+		return new IsolationLevel[] {
+				IsolationLevels.NONE,
+				IsolationLevels.READ_UNCOMMITTED,
+				IsolationLevels.READ_COMMITTED
+		};
 	}
+
+	@Override
+	protected Repository createRepository() {
+		return new SailRepository(
+				new ElasticsearchStore(clientPool, "index1"));
+	}
+
 }

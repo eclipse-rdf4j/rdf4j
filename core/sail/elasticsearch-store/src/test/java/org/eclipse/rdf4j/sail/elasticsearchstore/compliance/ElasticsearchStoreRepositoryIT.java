@@ -11,23 +11,19 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.SailConcurrencyTest;
-import org.eclipse.rdf4j.sail.SailInterruptTest;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryTest;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 
 import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 
-/**
- * An extension of {@link SailConcurrencyTest} for testing the class
- * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
- */
-public class ElasticsearchStoreInterruptTest extends SailInterruptTest {
+public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 
 	private static EmbeddedElastic embeddedElastic;
 
@@ -52,13 +48,15 @@ public class ElasticsearchStoreInterruptTest extends SailInterruptTest {
 	}
 
 	@Override
-	protected NotifyingSail createSail() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(clientPool, "index1");
-		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
-			connection.begin();
-			connection.clear();
-			connection.commit();
-		}
-		return elasticsearchStore;
+	protected Repository createRepository() {
+		SailRepository sailRepository = new SailRepository(
+				new ElasticsearchStore(clientPool, "index1"));
+		return sailRepository;
+	}
+
+	@Ignore
+	@Override
+	public void testShutdownFollowedByInit() throws Exception {
+		// ignore test
 	}
 }

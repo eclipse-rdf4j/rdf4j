@@ -18,9 +18,9 @@ import org.junit.runners.Parameterized;
  * @author Håvard Ottestad
  */
 @RunWith(Parameterized.class)
-public class ShaclTest extends AbstractShaclTest {
+public class ShaclIT extends AbstractShaclTest {
 
-	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public ShaclIT(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 
