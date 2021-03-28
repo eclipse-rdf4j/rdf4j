@@ -57,12 +57,14 @@ fi
 # check Java version
 if  !  mvn -v | grep -q "Java version: 1.8."; then
   echo "";
-  echo "You need to use Java 8!";
-  echo "mvn -v";
-  echo "";
-  exit 1;
+  echo "Java 1.8 expected but not detected";
+  read -rp "Continue (y/n)?" choice
+  case "${choice}" in
+      y|Y ) echo "";;
+      n|N ) exit;;
+      * ) echo "unknown response, exiting"; exit;;
+  esac
 fi
-
 
 # check that we are on main or develop
 if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
