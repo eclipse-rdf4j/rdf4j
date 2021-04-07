@@ -8,7 +8,9 @@
 package org.eclipse.rdf4j.repository.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -18,6 +20,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -75,6 +78,25 @@ public class SPARQLConnectionTest {
 		String expectedTriple2 = "<" + FOAF.AGENT + "> <" + RDF.TYPE + "> <" + RDFS.CLASS + ">";
 
 		assertThat(sparqlUpdate).containsOnlyOnce("INSERT DATA").contains(expectedTriple1).contains(expectedTriple2);
+	}
+
+	@Test
+	public void testRemoveDataWithBlankNodes() throws Exception {
+		ArgumentCaptor<String> sparqlUpdateCaptor = ArgumentCaptor.forClass(String.class);
+
+		BNode node = bnode();
+		subject.begin();
+		subject.remove(node, RDF.TYPE, RDFS.CLASS);
+		subject.remove(node, RDFS.LABEL, literal("foo"));
+		subject.commit();
+
+		verify(client).sendUpdate(any(), sparqlUpdateCaptor.capture(), any(), any(), anyBoolean(), anyInt(), any());
+
+		String sparqlUpdate = sparqlUpdateCaptor.getValue();
+		String expectedTriple1 = "<" + RDF.TYPE + "> <" + RDFS.CLASS + ">";
+		String expectedTriple2 = "<" + RDFS.LABEL + "> \"foo\"";
+
+		assertThat(sparqlUpdate).containsOnlyOnce("DELETE WHERE").contains(expectedTriple1).contains(expectedTriple2);
 	}
 
 	@Test

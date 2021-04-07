@@ -795,49 +795,51 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					}
 					qb.append("    GRAPH <" + namedGraph + "> { \n");
 				}
-				createDataBody(qb, statements, true);
+				createDataBody(qb, statements, true, false);
 				if (context != null) {
 					qb.append(" } \n");
 				}
 			}
 		} else {
-			createDataBody(qb, statements, false);
+			createDataBody(qb, statements, false, false);
 		}
 		qb.append("}");
 
 		return qb.toString();
 	}
 
-	private String createDeleteDataCommand(Iterable<? extends Statement> statements, Resource... contexts) {
+	private String createDeleteCommand(Iterable<? extends Statement> statements, Resource... contexts) {
 		StringBuilder qb = new StringBuilder();
-		qb.append("DELETE DATA \n");
-		qb.append("{ \n");
+		boolean blankNodesInData = false;
 		if (contexts.length > 0) {
 			for (Resource context : contexts) {
 				if (context != null) {
 					String namedGraph = context.stringValue();
 					if (context instanceof BNode) {
 						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
+						// identifiers, so we need to skolemize the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
 					qb.append("    GRAPH <" + namedGraph + "> { \n");
 				}
-				createDataBody(qb, statements, true);
+				blankNodesInData = createDataBody(qb, statements, true, true);
 				if (context != null) {
 					qb.append(" } \n");
 				}
 			}
 		} else {
-			createDataBody(qb, statements, false);
+			blankNodesInData = createDataBody(qb, statements, false, true);
 		}
-		qb.append("}");
 
-		return qb.toString();
+		if (blankNodesInData) {
+			return "DELETE WHERE { \n" + qb.toString() + "}";
+		}
+		return "DELETE DATA \n{ \n" + qb.toString() + "}";
 	}
 
-	private void createDataBody(StringBuilder qb, Iterable<? extends Statement> statements, boolean ignoreContext) {
+	private boolean createDataBody(StringBuilder qb, Iterable<? extends Statement> statements, boolean ignoreContext,
+			boolean convertBNodeToVar) {
+		boolean blankNodesInData = false;
 		for (Statement st : statements) {
 			final Resource context = st.getContext();
 			if (!ignoreContext) {
@@ -845,15 +847,20 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 					String namedGraph = context.stringValue();
 					if (context instanceof BNode) {
 						// SPARQL does not allow blank nodes as named graph
-						// identifiers, so we need to skolemize
-						// the blank node id.
+						// identifiers, so we need to skolemize the blank node id.
 						namedGraph = "urn:nodeid:" + context.stringValue();
 					}
 					qb.append("    GRAPH <" + namedGraph + "> { \n");
 				}
 			}
 			if (st.getSubject() instanceof BNode) {
-				qb.append("_:" + st.getSubject().stringValue() + " ");
+				if (convertBNodeToVar) {
+					// blank nodes are not allowed in DELETE templates, so we replace with a variable
+					qb.append("?node_" + st.getSubject().stringValue() + " ");
+				} else {
+					qb.append("_:" + st.getSubject().stringValue() + " ");
+				}
+				blankNodesInData = true;
 			} else {
 				qb.append("<" + st.getSubject().stringValue() + "> ");
 			}
@@ -874,7 +881,13 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				}
 				qb.append(" ");
 			} else if (st.getObject() instanceof BNode) {
-				qb.append("_:" + st.getObject().stringValue() + " ");
+				if (convertBNodeToVar) {
+					// blank nodes are not allowed in DELETE templates, so we replace with a variable
+					qb.append("?node_" + st.getObject().stringValue() + " ");
+				} else {
+					qb.append("_:" + st.getObject().stringValue() + " ");
+				}
+				blankNodesInData = true;
 			} else {
 				qb.append("<" + st.getObject().stringValue() + "> ");
 			}
@@ -884,6 +897,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 				qb.append("    }\n");
 			}
 		}
+		return blankNodesInData;
 	}
 
 	@Override
@@ -920,7 +934,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	private void flushPendingRemoves() {
 		if (!pendingRemoves.isEmpty()) {
 			for (Resource context : pendingRemoves.contexts()) {
-				String sparqlCommand = createDeleteDataCommand(pendingRemoves.getStatements(null, null, null, context),
+				String sparqlCommand = createDeleteCommand(pendingRemoves.getStatements(null, null, null, context),
 						context);
 				sparqlTransaction.append(sparqlCommand);
 				sparqlTransaction.append("; ");

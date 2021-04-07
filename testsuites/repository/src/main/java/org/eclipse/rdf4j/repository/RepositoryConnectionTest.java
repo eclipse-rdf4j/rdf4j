@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -51,11 +54,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Namespaces;
+import org.eclipse.rdf4j.model.util.RDFCollections;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -1074,6 +1077,40 @@ public abstract class RepositoryConnectionTest {
 		testCon.remove(alice, null, null);
 		assertThat(testCon.hasStatement(alice, name, nameAlice, false)).isFalse();
 		assertThat(testCon.isEmpty()).isTrue();
+	}
+
+	@Test
+	public void testRemoveModelWithBlankNodes() throws Exception {
+		Resource head1 = bnode(), head2 = bnode();
+
+		// create first collection
+		Model collection1 = RDFCollections
+				.asRDF(Arrays.asList(new Literal[] { literal("A"), literal("B"), literal("C") }), head1,
+						new LinkedHashModel());
+
+		// create different collection with same items
+		Model collection2 = RDFCollections.asRDF(
+				Arrays.asList(new Literal[] { literal("A"), literal("B"), literal("C") }), head2,
+				new LinkedHashModel());
+
+		IRI hasCollection = iri("foo:hasCollection");
+
+		Model model = new LinkedHashModel();
+		collection1.add(bob, hasCollection, head1);
+		model.addAll(collection1);
+		collection2.add(alice, hasCollection, head2);
+		model.addAll(collection2);
+
+		testCon.begin();
+		testCon.add(model);
+		testCon.commit();
+
+		assertThat(testCon.hasStatement(bob, hasCollection, null, false)).isTrue();
+		assertThat(testCon.hasStatement(alice, hasCollection, null, false)).isTrue();
+		testCon.remove(collection1);
+
+		assertThat(testCon.hasStatement(bob, hasCollection, null, false)).isFalse();
+		assertThat(testCon.hasStatement(alice, hasCollection, null, false)).isTrue();
 	}
 
 	@Test
