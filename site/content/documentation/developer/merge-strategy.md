@@ -13,8 +13,9 @@ merge it.
 
 We use merge-commits exclusively to merge pull requests into our main branches
 as this preserves the history of changes and who made those changes accurately.
-You as a contributor are completely free to use rebasing, squashing or merge on
-your own branches as you see fit, of course.
+You as a contributor are completely free to use rebasing, squashing or merging
+on your own branches as you see fit, of course - as long as you make sure that
+history of your branch is clean when it's time to merge your PR.
 
 Note: we previously experimented with using 'squash-and-merge' as our Pull
 Request strategy. The advantage of this was that it kept the main branch
@@ -60,6 +61,3 @@ We prefer meaningful commits because:
 
 That said, if occassionally a less "perfect" commit message slips through, that's
 fine. We're all human.
-
-And oh yeah: don't forget to [sign off your commits](/documentation/developer/workflow/#patch-requests)!
-
