@@ -847,8 +847,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			q = LatLonShape.newLineQuery(geoField, relation, (Line) shape);
 		} else if (shape instanceof Line[]) {
 			q = LatLonShape.newLineQuery(geoField, relation, (Line[]) shape);
-		} else if (shape instanceof Rectangle[]) {
+		} else if (shape instanceof Rectangle) {
 			Rectangle box = (Rectangle) shape;
+			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);
+		} else if (shape instanceof Rectangle[]) {
+			Rectangle box = ((Rectangle[]) shape)[0];
 			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);
 		}
 		return q;
