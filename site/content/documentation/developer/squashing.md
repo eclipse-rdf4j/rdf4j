@@ -4,7 +4,7 @@ toc: true
 autonumbering: true
 ---
 
-When submitting a pull request to RDF4J, we sometimes ask that you squash your commits, either so you can clean up the commit history a bit, or for example when some of your commits weren't correctly signed off. Here we explain a simple way to do that.
+When submitting a pull request to RDF4J, we sometimes ask that you squash your commits, to clean up the commit history a bit. Here we explain a simple way to do that.
 
 <!--more-->
 
@@ -14,8 +14,7 @@ On the command line, a relatively simple way to squash commits is as follows:
 
 1. Make sure your local `main` and `develop` branches are up to date with the upstream.
 2. Check out your pull request branch.
-3. Run `git rebase -i main --signoff` (or `git rebase -i develop --signoff` if your branch started from the _develop_ branch).
-    - The `--signoff` flag here makes sure that the new commit produced by the squash operation is correctly signed off.
+3. Run `git rebase -i main` (or `git rebase -i develop` if your branch started from the _develop_ branch).
     - You should see a list of commits, each commit starting with the word `pick`.
    - Make sure the first commit says "pick" and change the rest from "pick" to "squash".
 4. Save and close the editor.
@@ -59,7 +58,7 @@ git checkout GH-1234-my-feature-branch
 The second step is starting an "interactive rebase", using the following command:
 
 ```bash
-git rebase -i develop --signoff
+git rebase -i develop
 ```
 
 In this command, `develop` identifies the branch against which we

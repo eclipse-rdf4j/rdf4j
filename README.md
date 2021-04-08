@@ -43,13 +43,15 @@ guidelines](https://github.com/eclipse/rdf4j/blob/main/.github/CONTRIBUTING.md).
 
 The short version:
 
-1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this by logging into the [Eclipse projects forge](http://www.eclipse.org/contribute/cla); click on "Eclipse Contributor Agreement"; and Complete the form. Be sure to use the same email address when you register for the account that you intend to use on Git commit records. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
+1. Digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php), as follows: 
+     * [Register an Eclipse account](https://accounts.eclipse.org/user/register). **Important**: Use the same email address that you will use on Git commits as the author address. 
+     * Open the [ECA form](https://accounts.eclipse.org/user/eca) and complete it. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
 2. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix - or if you're picking up an existing issue, comment on that issue that you intend to provide a solution for it.
 3. Fork the GitHub repository.
 4. Create a new branch (starting from main) for your changes. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number.
 5. Make your changes on this branch. Apply the [RDF4J code formatting guidelines](https://github.com/eclipse/rdf4j/blob/main/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
-7. Commit your changes into the branch. Use meaningful commit messages. Reference the issue number in each commit message (for example "GH-276: added null check"). **IMPORTANT**: *sign off* every commit (using the `-s` flag). 
-8. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
+7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
+8. Commit your changes into the branch. Make sure the commit author name and e-mail correspond to what you used to sign the ECA. Use meaningful commit messages. Reference the issue number in each commit message (for example "GH-276: added null check").
 9. Once your fix is complete, put it up for review by opening a Pull Request against the main branch in the central Github repository. If you have a lot of commits on your PR, make sure to [squash your commits](https://rdf4j.org/documentation/developer/squashing).
 
 These steps are explained in more detail in the [Contributor
