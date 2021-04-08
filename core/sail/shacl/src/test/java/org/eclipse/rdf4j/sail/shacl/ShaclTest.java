@@ -18,9 +18,9 @@ import org.junit.runners.Parameterized;
  * @author Håvard Ottestad
  */
 @RunWith(Parameterized.class)
-public class ShaclIT extends AbstractShaclTest {
+public class ShaclTest extends AbstractShaclTest {
 
-	public ShaclIT(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
+	public ShaclTest(String testCasePath, String path, ExpectedResult expectedResult, IsolationLevel isolationLevel) {
 		super(testCasePath, path, expectedResult, isolationLevel);
 	}
 
@@ -31,6 +31,10 @@ public class ShaclIT extends AbstractShaclTest {
 
 	@Test
 	public void testSingleTransaction() {
+		// we don't need to run this test for every isolation level
+		if (isolationLevel != IsolationLevels.NONE) {
+			return;
+		}
 		runWithAutomaticLogging(() -> runTestCaseSingleTransaction(testCasePath, path, expectedResult, isolationLevel));
 	}
 
