@@ -265,7 +265,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testGetStatements_SingleLiteral() {
+	public void testGetStatements_SingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 
 		Iterator<Statement> selection = model.getStatements(null, null, literal1).iterator();
@@ -276,7 +276,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testGetStatements_IteratorModification() {
+	public void testGetStatements_IteratorModification() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, uri2);
 		model.add(uri1, RDFS.LABEL, uri3);
@@ -295,7 +295,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testGetStatements_ConcurrentModificationOfModel() {
+	public void testGetStatements_ConcurrentModificationOfModel() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, uri2);
 		model.add(uri1, RDFS.LABEL, uri3);
@@ -317,7 +317,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testGetStatements_AddToEmptyModel() {
+	public void testGetStatements_AddToEmptyModel() {
 		Model model = getNewEmptyModel();
 		Iterator<Statement> selection = model.getStatements(null, null, null).iterator();
 		assertThat(selection.hasNext()).isFalse();
@@ -333,7 +333,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#filter(Resource, IRI, Value, Resource...)}.
 	 */
 	@Test
-	public final void testFilterSingleLiteral() {
+	public void testFilterSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 		Model filter1 = model.filter(null, null, literal1);
 		assertFalse(filter1.isEmpty());
@@ -342,7 +342,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_AddToEmptyFilteredModel() {
+	public void testFilter_AddToEmptyFilteredModel() {
 		Model model = getNewEmptyModel();
 		Model filter = model.filter(null, null, null);
 		assertTrue(filter.isEmpty());
@@ -353,7 +353,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_RemoveFromFilter() {
+	public void testFilter_RemoveFromFilter() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, literal1, uri1);
 		Model filter = model.filter(uri1, RDFS.LABEL, literal1, uri1);
@@ -365,7 +365,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_AddToNonEmptyFilteredModel() {
+	public void testFilter_AddToNonEmptyFilteredModel() {
 		Model model = getNewModelObjectSingleLiteral();
 		Model filter = model.filter(null, null, literal1);
 		assertFalse(filter.isEmpty());
@@ -375,7 +375,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_AddToEmptyOriginalModel() {
+	public void testFilter_AddToEmptyOriginalModel() {
 		Model model = getNewEmptyModel();
 		Model filter = model.filter(null, null, null);
 		assertTrue(filter.isEmpty());
@@ -386,7 +386,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_RemoveFromOriginal() {
+	public void testFilter_RemoveFromOriginal() {
 		Model model = getNewEmptyModel();
 		model.add(uri1, RDFS.LABEL, literal1, uri1);
 		Model filter = model.filter(uri1, RDFS.LABEL, literal1, uri1);
@@ -398,7 +398,7 @@ public abstract class ModelTest {
 	}
 
 	@Test
-	public final void testFilter_AddToOriginalModel() {
+	public void testFilter_AddToOriginalModel() {
 		Model model = getNewModelObjectSingleLiteral();
 		Model filter = model.filter(null, null, literal1);
 		assertFalse(filter.isEmpty());
@@ -413,7 +413,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#contains(Resource, IRI, Value, Resource...)} .
 	 */
 	@Test
-	public final void testContainsSingleLiteral() {
+	public void testContainsSingleLiteral() {
 		Model model = getNewModelObjectSingleLiteral();
 		assertTrue(model.contains(null, null, literal1));
 		assertTrue(model.contains(null, null, literal1, (Resource) null));
@@ -423,7 +423,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#subjects()}.
 	 */
 	@Test
-	public final void testSubjects() {
+	public void testSubjects() {
 		Model m = getNewModelObjectDoubleLiteral();
 
 		final int modelSizeBefore = m.size();
@@ -444,7 +444,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#predicates()}.
 	 */
 	@Test
-	public final void testPredicates() {
+	public void testPredicates() {
 		Model m = getNewModelObjectDoubleLiteral();
 
 		final int modelSizeBefore = m.size();
@@ -465,7 +465,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#objects()}.
 	 */
 	@Test
-	public final void testObjects() {
+	public void testObjects() {
 		Model m = getNewModelObjectDoubleLiteral();
 
 		final int modelSizeBefore = m.size();
@@ -486,7 +486,7 @@ public abstract class ModelTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.Model#contexts()}.
 	 */
 	@Test
-	public final void testContexts() {
+	public void testContexts() {
 		Model m = getNewModelTwoContexts();
 
 		final int modelSizeBefore = m.size();
