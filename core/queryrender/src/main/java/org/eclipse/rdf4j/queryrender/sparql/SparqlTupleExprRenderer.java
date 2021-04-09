@@ -10,7 +10,10 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -299,6 +302,43 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		mJoinBuffer.append(indent()).append(renderPattern(thePattern));
 
 		ctxClose(thePattern);
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(Extension node)
+			throws Exception {
+		if (!node.getParentNode().getClass().equals(Extension.class)) {
+			mJoinBuffer
+					.append(indent())
+					.append("bind(");
+			node.visitChildren(this);
+			mJoinBuffer.append(" as ?")
+					.append(node.getBindingNames().iterator().next())
+					.append(").\n");
+		} else {
+			node.visitChildren(this);
+		}
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(ExtensionElem node)
+			throws Exception {
+		node.visitChildren(this);
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(ValueConstant node)
+			throws Exception {
+		mJoinBuffer.append(node.getValue().stringValue());
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
