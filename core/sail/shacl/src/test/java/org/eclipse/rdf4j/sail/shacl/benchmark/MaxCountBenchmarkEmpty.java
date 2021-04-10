@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.eclipse.rdf4j.sail.shacl.testimp.TestNotifyingSail;
@@ -89,6 +90,27 @@ public class MaxCountBenchmarkEmpty {
 				connection.add(statements);
 				connection.commit();
 			}
+		}
+		repository.shutDown();
+
+	}
+
+	@Benchmark
+	public void shaclBulk() throws Exception {
+
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.ttl"));
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			for (List<Statement> statements : allStatements) {
+				connection.add(statements);
+			}
+			connection.commit();
 		}
 		repository.shutDown();
 

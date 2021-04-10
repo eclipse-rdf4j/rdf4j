@@ -105,7 +105,6 @@ public class ValueInBenchmarkEmpty {
 				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.ttl"));
 
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
-//		((ShaclSail) repository.getSail()).disableValidation();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -118,6 +117,31 @@ public class ValueInBenchmarkEmpty {
 				connection.add(statements);
 				connection.commit();
 			}
+		}
+
+		repository.shutDown();
+
+	}
+
+	@Benchmark
+	public void shaclBulk() throws Exception {
+
+		SailRepository repository = new SailRepository(
+				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.ttl"));
+
+		((ShaclSail) repository.getSail()).setDashDataShapes(true);
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.commit();
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			for (List<Statement> statements : allStatements) {
+				connection.add(statements);
+			}
+			connection.commit();
 		}
 
 		repository.shutDown();
