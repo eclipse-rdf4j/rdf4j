@@ -203,7 +203,7 @@
 						</executions>
 						<configuration>
 							<encoding>utf8</encoding>
-							<source>1.8</source>
+							<source>8</source>
 							<additionalparam>${javadoc.opts}</additionalparam>
 						</configuration>
 					</plugin>
@@ -245,6 +245,7 @@
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none</javadoc.opts>
+				<additional.j.option/>
 			</properties>
 		</profile>
 		<profile>
@@ -254,6 +255,7 @@
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
+				<additional.j.option>--no-module-directories</additional.j.option>
 			</properties>
 		</profile>
 		<profile>
@@ -747,28 +749,29 @@
 					<configuration>
 						<source>8</source>
 						<additionalparam>${javadoc.opts}</additionalparam>
-						<additionnalDependencies>
-							<additionnalDependency>
+						<additionalJOption>${additional.j.option}</additionalJOption>
+						<additionalDependencies>
+							<additionalDependency>
 								<groupId>org.elasticsearch</groupId>
 								<artifactId>elasticsearch</artifactId>
 								<version>${elasticsearch.version}</version>
-							</additionnalDependency>
-							<additionnalDependency>
+							</additionalDependency>
+							<additionalDependency>
 								<groupId>org.elasticsearch</groupId>
 								<artifactId>elasticsearch-x-content</artifactId>
 								<version>${elasticsearch.version}</version>
-							</additionnalDependency>
-							<additionnalDependency>
+							</additionalDependency>
+							<additionalDependency>
 								<groupId>org.elasticsearch.client</groupId>
 								<artifactId>transport</artifactId>
 								<version>${elasticsearch.version}</version>
-							</additionnalDependency>
-							<additionnalDependency>
+							</additionalDependency>
+							<additionalDependency>
 								<groupId>org.apache.solr</groupId>
 								<artifactId>solr-core</artifactId>
 								<version>${solr.version}</version>
-							</additionnalDependency>
-						</additionnalDependencies>
+							</additionalDependency>
+						</additionalDependencies>
 					</configuration>
 				</plugin>
 				<plugin>
