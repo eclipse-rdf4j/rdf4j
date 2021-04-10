@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -40,7 +40,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	public DashHasValueInConstraintComponent(Resource hasValueIn, RepositoryConnection connection) {
 		super(hasValueIn);
 		this.hasValueIn = Collections
-				.unmodifiableSet(new LinkedHashSet<>(HelperTool.toList(connection, hasValueIn, Value.class)));
+				.unmodifiableSet(new LinkedHashSet<>(ShaclAstLists.toList(connection, hasValueIn, Value.class)));
 	}
 
 	public DashHasValueInConstraintComponent(DashHasValueInConstraintComponent dashHasValueInConstraintComponent) {
@@ -53,7 +53,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 		model.add(subject, DASH.hasValueIn, getId());
 
 		if (!model.contains(getId(), null, null)) {
-			HelperTool.listToRdf(hasValueIn, getId(), model);
+			ShaclAstLists.listToRdf(hasValueIn, getId(), model);
 		}
 	}
 

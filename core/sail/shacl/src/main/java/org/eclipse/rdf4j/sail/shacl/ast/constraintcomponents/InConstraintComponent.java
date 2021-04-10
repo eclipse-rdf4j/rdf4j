@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
@@ -24,7 +24,7 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	public InConstraintComponent(RepositoryConnection connection, Resource in) {
 		super(in);
-		this.in = Collections.unmodifiableSet(new LinkedHashSet<>(HelperTool.toList(connection, in, Value.class)));
+		this.in = Collections.unmodifiableSet(new LinkedHashSet<>(ShaclAstLists.toList(connection, in, Value.class)));
 	}
 
 	public InConstraintComponent(InConstraintComponent inConstraintComponent) {
@@ -37,7 +37,7 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 		model.add(subject, SHACL.IN, getId());
 
 		if (!model.contains(getId(), null, null)) {
-			HelperTool.listToRdf(in, getId(), model);
+			ShaclAstLists.listToRdf(in, getId(), model);
 		}
 	}
 

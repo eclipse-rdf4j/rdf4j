@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
@@ -37,7 +37,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 	public AndConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache, ShaclSail shaclSail) {
 		super(id);
-		and = HelperTool.toList(connection, id, Resource.class)
+		and = ShaclAstLists.toList(connection, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
@@ -66,7 +66,7 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		if (!model.contains(getId(), null, null)) {
-			HelperTool.listToRdf(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+			ShaclAstLists.listToRdf(and.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 		}
 
 	}
