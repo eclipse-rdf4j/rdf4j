@@ -1,3 +1,10 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.List;
@@ -88,10 +95,9 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 
-		super.toModel(subject, predicate, model, cycleDetection, rdfListDedupe);
+		super.toModel(subject, predicate, model, cycleDetection);
 		model.add(getId(), RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
 		if (subject != null) {
@@ -103,14 +109,14 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		}
 
 		model.add(getId(), SHACL.PATH, path.getId());
-		path.toModel(path.getId(), null, model, cycleDetection, rdfListDedupe);
+		path.toModel(path.getId(), null, model, cycleDetection);
 
 		if (cycleDetection.contains(getId())) {
 			return;
 		}
 		cycleDetection.add(getId());
 
-		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection, rdfListDedupe));
+		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection));
 
 	}
 

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LanguageInFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -31,7 +31,7 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	public LanguageInConstraintComponent(RepositoryConnection connection,
 			Resource languageIn) {
 		super(languageIn);
-		this.languageIn = HelperTool.toList(connection, languageIn, Value.class)
+		this.languageIn = ShaclAstLists.toList(connection, languageIn, Value.class)
 				.stream()
 				.map(Value::stringValue)
 				.collect(Collectors.toList());
@@ -52,17 +52,14 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.LANGUAGE_IN, getId());
-		if (!rdfListDedupe.contains(getId())) {
-			rdfListDedupe.add(getId());
 
-			HelperTool.listToRdf(languageIn.stream()
+		if (!model.contains(getId(), null, null)) {
+			ShaclAstLists.listToRdf(languageIn.stream()
 					.map(Values::literal)
 					.collect(Collectors.toList()), getId(), model);
 		}
-
 	}
 
 	@Override

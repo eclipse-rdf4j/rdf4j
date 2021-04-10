@@ -68,8 +68,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.QUALIFIED_VALUE_SHAPE, getId());
 
 		if (qualifiedValueShapesDisjoint != null) {
@@ -80,7 +79,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			model.add(subject, SHACL.QUALIFIED_MIN_COUNT, literal(BigInteger.valueOf(qualifiedMinCount)));
 		}
 
-		qualifiedValueShape.toModel(null, null, model, cycleDetection, rdfListDedupe);
+		qualifiedValueShape.toModel(null, null, model, cycleDetection);
 
 	}
 

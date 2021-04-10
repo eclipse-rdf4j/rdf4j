@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
@@ -40,7 +40,7 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
 			Cache cache, ShaclSail shaclSail) {
 		super(id);
-		or = HelperTool.toList(connection, id, Resource.class)
+		or = ShaclAstLists.toList(connection, id, Resource.class)
 				.stream()
 				.map(r -> new ShaclProperties(r, connection))
 				.map(p -> {
@@ -59,19 +59,16 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.OR, getId());
 		if (!cycleDetection.contains(getId())) {
 			cycleDetection.add(getId());
-			or.forEach(o -> o.toModel(null, null, model, cycleDetection, rdfListDedupe));
+			or.forEach(o -> o.toModel(null, null, model, cycleDetection));
 		}
 
-		if (!rdfListDedupe.contains(getId())) {
-			rdfListDedupe.add(getId());
-			HelperTool.listToRdf(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
+		if (!model.contains(getId(), null, null)) {
+			ShaclAstLists.listToRdf(or.stream().map(Shape::getId).collect(Collectors.toList()), getId(), model);
 		}
-
 	}
 
 	@Override

@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.HelperTool;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 
 public class ClosedConstraintComponent extends AbstractConstraintComponent {
@@ -35,7 +35,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 		}).collect(Collectors.toList());
 
 		if (ignoredProperties != null) {
-			this.ignoredProperties = HelperTool.toList(connection, ignoredProperties, IRI.class);
+			this.ignoredProperties = ShaclAstLists.toList(connection, ignoredProperties, IRI.class);
 		} else {
 			this.ignoredProperties = Collections.emptyList();
 		}
@@ -48,8 +48,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.CLOSED, literal(true));
 		// TODO: add ignored properties to model!
 

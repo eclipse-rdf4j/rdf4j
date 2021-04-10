@@ -40,8 +40,7 @@ public class NodeKindConstraintComponent extends SimpleAbstractConstraintCompone
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.NODE_KIND_PROP, nodeKind.iri);
 	}
 

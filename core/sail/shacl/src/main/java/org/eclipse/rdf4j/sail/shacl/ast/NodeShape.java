@@ -1,3 +1,10 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.Set;
@@ -81,9 +88,8 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
-		super.toModel(subject, predicate, model, cycleDetection, rdfListDedupe);
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
+		super.toModel(subject, predicate, model, cycleDetection);
 		model.add(getId(), RDF.TYPE, SHACL.NODE_SHAPE);
 
 		if (subject != null) {
@@ -100,7 +106,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		}
 		cycleDetection.add(getId());
 
-		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection, rdfListDedupe));
+		constraintComponents.forEach(c -> c.toModel(getId(), null, model, cycleDetection));
 
 	}
 

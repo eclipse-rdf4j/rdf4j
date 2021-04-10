@@ -1,3 +1,10 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.io.StringWriter;
@@ -16,6 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
@@ -153,17 +161,15 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	/**
 	 *
-	 * @param model         the model to export the shapes into
-	 * @param rdfListDedupe a set used to dedupe the output
+	 * @param model the model to export the shapes into
 	 * @return the provided model
 	 */
-	public Model toModel(Model model, Set<Resource> rdfListDedupe) {
-		toModel(null, null, model, new HashSet<>(), rdfListDedupe);
+	public Model toModel(Model model) {
+		toModel(null, null, model, new HashSet<>());
 		return model;
 	}
 
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		ModelBuilder modelBuilder = new ModelBuilder();
 
 		modelBuilder.subject(getId());
@@ -173,7 +179,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		target.forEach(t -> {
-			t.toModel(getId(), null, model, cycleDetection, rdfListDedupe);
+			t.toModel(getId(), null, model, cycleDetection);
 		});
 
 		model.addAll(modelBuilder.build());
@@ -540,7 +546,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	@Override
 	public String toString() {
-		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()), new HashSet<>());
+		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
 		statements.setNamespace(SHACL.NS);
 		statements.setNamespace(XSD.NS);
 		WriterConfig writerConfig = new WriterConfig();
