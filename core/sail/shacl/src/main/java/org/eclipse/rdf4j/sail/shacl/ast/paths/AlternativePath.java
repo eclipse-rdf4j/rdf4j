@@ -31,10 +31,9 @@ public class AlternativePath extends Path {
 	}
 
 	@Override
-	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection,
-			Set<Resource> rdfListDedupe) {
+	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
 		model.add(subject, SHACL.ALTERNATIVE_PATH, alternativePath.getId());
-		alternativePath.toModel(alternativePath.getId(), null, model, cycleDetection, rdfListDedupe);
+		alternativePath.toModel(alternativePath.getId(), null, model, cycleDetection);
 	}
 
 	@Override

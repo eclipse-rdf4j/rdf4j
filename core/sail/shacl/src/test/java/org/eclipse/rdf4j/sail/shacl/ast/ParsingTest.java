@@ -28,7 +28,7 @@ public class ParsingTest {
 
 		DynamicModel emptyModel = new DynamicModelFactory().createEmptyModel();
 
-		shapes.forEach(s -> s.toModel(null, null, emptyModel, new HashSet<>(), new HashSet<>()));
+		shapes.forEach(s -> s.toModel(null, null, emptyModel, new HashSet<>()));
 
 		shaclSail.shutDown();
 	}

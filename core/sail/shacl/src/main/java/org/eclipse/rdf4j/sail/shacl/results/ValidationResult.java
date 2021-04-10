@@ -111,7 +111,7 @@ public class ValidationResult {
 		value.ifPresent(v -> model.add(getId(), SHACL.VALUE, v));
 
 		if (this.path != null) {
-			path.toModel(path.getId(), null, model, new HashSet<>(), rdfListDedupe);
+			path.toModel(path.getId(), null, model, new HashSet<>());
 			model.add(getId(), SHACL.RESULT_PATH, path.getId());
 		}
 
@@ -124,7 +124,7 @@ public class ValidationResult {
 //			detail.asModel(model);
 //		}
 
-		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>(), rdfListDedupe);
+		shape.toModel(getId(), SHACL.SOURCE_SHAPE, model, new HashSet<>());
 
 		return model;
 	}
