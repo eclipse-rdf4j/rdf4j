@@ -310,17 +310,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	@Override
 	public void meet(Extension node)
 			throws Exception {
-		if (!node.getParentNode().getClass().equals(Extension.class)) {
-			mJoinBuffer
-					.append(indent())
-					.append("bind(");
-			node.visitChildren(this);
-			mJoinBuffer.append(" as ?")
-					.append(node.getBindingNames().iterator().next())
-					.append(").\n");
-		} else {
-			node.visitChildren(this);
-		}
+		node.visitChildren(this);
 	}
 
 	/**
@@ -329,7 +319,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	@Override
 	public void meet(ExtensionElem node)
 			throws Exception {
+		mJoinBuffer.append(indent()).append("bind(");
 		node.visitChildren(this);
+		mJoinBuffer.append(" as ?").append(node.getName()).append(").\n");
 	}
 
 	/**
@@ -339,6 +331,14 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	public void meet(ValueConstant node)
 			throws Exception {
 		mJoinBuffer.append(node.getValue().stringValue());
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(Var node) {
+		mJoinBuffer.append("?").append(node.getName());
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
