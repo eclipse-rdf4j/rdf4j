@@ -1029,7 +1029,9 @@ public class SpinParser {
 			}
 
 			ProjectionElem projElem = new ProjectionElem(varName, projName);
-			projElem.setSourceExpression(new ExtensionElem(valueExpr, varName));
+			if (!(valueExpr instanceof Var && ((Var) valueExpr).getName().equals(varName))) {
+				projElem.setSourceExpression(new ExtensionElem(valueExpr, varName));
+			}
 			if (!aggregates.isEmpty()) {
 				projElem.setAggregateOperatorInExpression(true);
 				if (group == null) {
