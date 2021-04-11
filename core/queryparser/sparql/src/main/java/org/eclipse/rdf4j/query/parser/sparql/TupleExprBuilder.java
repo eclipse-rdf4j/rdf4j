@@ -601,15 +601,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				Var projVar = (Var) child.jjtAccept(this, null);
 				ProjectionElem elem = new ProjectionElem(projVar.getName());
 				projElemList.addElement(elem);
-
-				VarCollector whereClauseVarCollector = new VarCollector();
-				result.visit(whereClauseVarCollector);
-
-				if (!whereClauseVarCollector.collectedVars.contains(projVar)) {
-					ExtensionElem extElem = new ExtensionElem(projVar, projVar.getName());
-					extension.addElement(extElem);
-					elem.setSourceExpression(extElem);
-				}
 			} else {
 				throw new IllegalStateException("required alias for non-Var projection elements not found");
 			}
@@ -1764,37 +1755,37 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTSubstr node, Object data) throws VisitorException {
-		return createFunctionCall(FN.SUBSTRING.toString(), node, 2, 3);
+		return createFunctionCall(FN.SUBSTRING.stringValue(), node, 2, 3);
 	}
 
 	@Override
 	public FunctionCall visit(ASTConcat node, Object data) throws VisitorException {
-		return createFunctionCall(FN.CONCAT.toString(), node, 1, Integer.MAX_VALUE);
+		return createFunctionCall(FN.CONCAT.stringValue(), node, 1, Integer.MAX_VALUE);
 	}
 
 	@Override
 	public FunctionCall visit(ASTAbs node, Object data) throws VisitorException {
-		return createFunctionCall(FN.NUMERIC_ABS.toString(), node, 1, 1);
+		return createFunctionCall(FN.NUMERIC_ABS.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTCeil node, Object data) throws VisitorException {
-		return createFunctionCall(FN.NUMERIC_CEIL.toString(), node, 1, 1);
+		return createFunctionCall(FN.NUMERIC_CEIL.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTContains node, Object data) throws VisitorException {
-		return createFunctionCall(FN.CONTAINS.toString(), node, 2, 2);
+		return createFunctionCall(FN.CONTAINS.stringValue(), node, 2, 2);
 	}
 
 	@Override
 	public FunctionCall visit(ASTFloor node, Object data) throws VisitorException {
-		return createFunctionCall(FN.NUMERIC_FLOOR.toString(), node, 1, 1);
+		return createFunctionCall(FN.NUMERIC_FLOOR.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTRound node, Object data) throws VisitorException {
-		return createFunctionCall(FN.NUMERIC_ROUND.toString(), node, 1, 1);
+		return createFunctionCall(FN.NUMERIC_ROUND.stringValue(), node, 1, 1);
 	}
 
 	@Override
@@ -1829,7 +1820,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		ValueConstant uriNode = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, null);
 		IRI functionURI = (IRI) uriNode.getValue();
 
-		FunctionCall functionCall = new FunctionCall(functionURI.toString());
+		FunctionCall functionCall = new FunctionCall(functionURI.stringValue());
 
 		for (int i = 1; i < node.jjtGetNumChildren(); i++) {
 			Node argNode = node.jjtGetChild(i);
@@ -1841,7 +1832,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTEncodeForURI node, Object data) throws VisitorException {
-		return createFunctionCall(FN.ENCODE_FOR_URI.toString(), node, 1, 1);
+		return createFunctionCall(FN.ENCODE_FOR_URI.stringValue(), node, 1, 1);
 	}
 
 	@Override
@@ -1857,37 +1848,37 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTStrStarts node, Object data) throws VisitorException {
-		return createFunctionCall(FN.STARTS_WITH.toString(), node, 2, 2);
+		return createFunctionCall(FN.STARTS_WITH.stringValue(), node, 2, 2);
 	}
 
 	@Override
 	public FunctionCall visit(ASTStrEnds node, Object data) throws VisitorException {
-		return createFunctionCall(FN.ENDS_WITH.toString(), node, 2, 2);
+		return createFunctionCall(FN.ENDS_WITH.stringValue(), node, 2, 2);
 	}
 
 	@Override
 	public FunctionCall visit(ASTStrLen node, Object data) throws VisitorException {
-		return createFunctionCall(FN.STRING_LENGTH.toString(), node, 1, 1);
+		return createFunctionCall(FN.STRING_LENGTH.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTStrAfter node, Object data) throws VisitorException {
-		return createFunctionCall(FN.SUBSTRING_AFTER.toString(), node, 2, 2);
+		return createFunctionCall(FN.SUBSTRING_AFTER.stringValue(), node, 2, 2);
 	}
 
 	@Override
 	public FunctionCall visit(ASTStrBefore node, Object data) throws VisitorException {
-		return createFunctionCall(FN.SUBSTRING_BEFORE.toString(), node, 2, 2);
+		return createFunctionCall(FN.SUBSTRING_BEFORE.stringValue(), node, 2, 2);
 	}
 
 	@Override
 	public FunctionCall visit(ASTUpperCase node, Object data) throws VisitorException {
-		return createFunctionCall(FN.UPPER_CASE.toString(), node, 1, 1);
+		return createFunctionCall(FN.UPPER_CASE.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTLowerCase node, Object data) throws VisitorException {
-		return createFunctionCall(FN.LOWER_CASE.toString(), node, 1, 1);
+		return createFunctionCall(FN.LOWER_CASE.stringValue(), node, 1, 1);
 	}
 
 	@Override
@@ -1902,37 +1893,37 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTYear node, Object data) throws VisitorException {
-		return createFunctionCall(FN.YEAR_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.YEAR_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTMonth node, Object data) throws VisitorException {
-		return createFunctionCall(FN.MONTH_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.MONTH_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTDay node, Object data) throws VisitorException {
-		return createFunctionCall(FN.DAY_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.DAY_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTHours node, Object data) throws VisitorException {
-		return createFunctionCall(FN.HOURS_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.HOURS_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTMinutes node, Object data) throws VisitorException {
-		return createFunctionCall(FN.MINUTES_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.MINUTES_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTSeconds node, Object data) throws VisitorException {
-		return createFunctionCall(FN.SECONDS_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.SECONDS_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
 	public FunctionCall visit(ASTTimezone node, Object data) throws VisitorException {
-		return createFunctionCall(FN.TIMEZONE_FROM_DATETIME.toString(), node, 1, 1);
+		return createFunctionCall(FN.TIMEZONE_FROM_DATETIME.stringValue(), node, 1, 1);
 	}
 
 	@Override
@@ -2166,7 +2157,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTReplace node, Object data) throws VisitorException {
-		return createFunctionCall(FN.REPLACE.toString(), node, 3, 4);
+		return createFunctionCall(FN.REPLACE.stringValue(), node, 3, 4);
 	}
 
 	@Override
