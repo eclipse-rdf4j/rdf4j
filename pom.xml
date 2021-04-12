@@ -352,7 +352,7 @@
 		<logback.version>1.1.11</logback.version>
 		<httpclient.version>4.5.13</httpclient.version>
 		<httpcore.version>4.4.14</httpcore.version>
-		<jackson.version>2.10.5</jackson.version>
+		<jackson.version>2.11.4</jackson.version>
 		<jsonldjava.version>0.13.2</jsonldjava.version>
 		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
