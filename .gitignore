@@ -7,6 +7,7 @@
 **/.settings
 bin
 **/bin
+**/.factorypath
 
 # Eclipse Plug-In Settings
 .pmd
