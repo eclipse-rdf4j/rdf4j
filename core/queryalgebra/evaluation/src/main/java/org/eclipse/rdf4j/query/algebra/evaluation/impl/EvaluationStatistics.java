@@ -113,7 +113,7 @@ public class EvaluationStatistics {
 			// statement pattern.
 			cardinality = 2.0 * getCardinality(
 					new StatementPattern(node.getSubjectVar().clone(), pathVar, node.getObjectVar().clone(),
-							node.getContextVar() != null ? node.getContextVar() : null));
+							node.getContextVar() != null ? node.getContextVar().clone() : null));
 		}
 
 		@Override

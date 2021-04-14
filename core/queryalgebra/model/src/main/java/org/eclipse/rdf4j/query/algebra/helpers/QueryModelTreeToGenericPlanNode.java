@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
-import java.util.IdentityHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -26,9 +25,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	GenericPlanNode top = null;
 	QueryModelNode topTupleExpr;
-	ArrayDeque<GenericPlanNode> deque = new ArrayDeque<>();
-	ArrayDeque<QueryModelNode> deque2 = new ArrayDeque<>();
-	IdentityHashMap<QueryModelNode, QueryModelNode> visited = new IdentityHashMap<>();
+	ArrayDeque<GenericPlanNode> planNodes = new ArrayDeque<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this.topTupleExpr = topTupleExpr;
@@ -38,13 +35,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return top;
 	}
 
-	// node.getParentNode() is not reliable because nodes are reused and parent is not maintained! This is why we use a
-	// queue to maintain the effective parent stack.
 	@Override
 	protected void meetNode(QueryModelNode node) {
-		assert !visited.containsKey(node);
-		visited.put(node, node);
-
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
@@ -66,18 +58,14 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			top = genericPlanNode;
 		}
 
-		if (!deque.isEmpty()) {
-			GenericPlanNode genericParentNode = deque.getLast();
+		if (!planNodes.isEmpty()) {
+			GenericPlanNode genericParentNode = planNodes.getLast();
 			genericParentNode.addPlans(genericPlanNode);
-			assert node.getParentNode() == deque2.getLast();
 		}
 
-		deque.addLast(genericPlanNode);
-		deque2.addLast(node);
+		planNodes.addLast(genericPlanNode);
 		super.meetNode(node);
-		deque.removeLast();
-		deque2.removeLast();
-
+		planNodes.removeLast();
 	}
 
 }

@@ -13,16 +13,17 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-public class QueryModelNormalizerTest {
+public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
-	private static QueryModelNormalizer subject;
+	private QueryModelNormalizer subject;
 
-	@BeforeClass
-	public static void setUpBeforeClass() throws Exception {
-		subject = new QueryModelNormalizer();
+	@BeforeEach
+	public void setup() throws Exception {
+		subject = getOptimizer();
 	}
 
 	@Test
@@ -67,6 +68,11 @@ public class QueryModelNormalizerTest {
 		subject.meet(union);
 
 		assertThat(p.getArg()).isEqualTo(union);
+	}
+
+	@Override
+	public QueryModelNormalizer getOptimizer() {
+		return new QueryModelNormalizer();
 	}
 
 }

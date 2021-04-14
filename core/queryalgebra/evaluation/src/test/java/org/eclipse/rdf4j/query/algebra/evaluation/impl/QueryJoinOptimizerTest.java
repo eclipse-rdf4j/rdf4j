@@ -12,6 +12,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
@@ -22,6 +24,8 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -34,7 +38,7 @@ import org.junit.Test;
  *
  * @author Mark
  */
-public class QueryJoinOptimizerTest {
+public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void testBindingSetAssignmentOptimization() throws RDF4JException {
@@ -121,6 +125,11 @@ public class QueryJoinOptimizerTest {
 				.isInstanceOf(Extension.class);
 	}
 
+	@Override
+	public QueryJoinOptimizer getOptimizer() {
+		return new QueryJoinOptimizer();
+	}
+
 	private TupleExpr findLeaf(TupleExpr expr) {
 		if (expr instanceof UnaryTupleOperator) {
 			return findLeaf(((UnaryTupleOperator) expr).getArg());
@@ -134,7 +143,7 @@ public class QueryJoinOptimizerTest {
 	private void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryJoinOptimizer opt = getOptimizer();
 		QueryRoot optRoot = new QueryRoot(pq.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -160,4 +169,5 @@ public class QueryJoinOptimizerTest {
 			return join;
 		}
 	}
+
 }
