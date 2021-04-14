@@ -94,7 +94,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			} else {
 				mJoinBuffer.append("?").append(aContext.getName());
 			}
-			mJoinBuffer.append(" {\n");
+			mJoinBuffer.append(" {").append(System.lineSeparator());
 			mIndent += 2;
 		}
 	}
@@ -134,26 +134,29 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 				&& (theJoin.getParentNode() instanceof Join || theJoin.getParentNode() instanceof LeftJoin);
 
 		if (aNeedsNewScope) {
-			mJoinBuffer.append("{\n");
+			mJoinBuffer.append("{").append(System.lineSeparator());
 		}
 
 		theJoin.getLeftArg().visit(this);
 
-		mJoinBuffer.append(indent()).append("OPTIONAL {\n");
+		mJoinBuffer.append(indent()).append("OPTIONAL {").append(System.lineSeparator());
 
 		mIndent += 2;
 		theJoin.getRightArg().visit(this);
 
 		if (theJoin.getCondition() != null) {
-			mJoinBuffer.append(indent()).append("filter").append(renderValueExpr(theJoin.getCondition())).append("\n");
+			mJoinBuffer.append(indent())
+					.append("filter")
+					.append(renderValueExpr(theJoin.getCondition()))
+					.append(System.lineSeparator());
 		}
 
 		mIndent -= 2;
 
-		mJoinBuffer.append(indent()).append("}.\n");
+		mJoinBuffer.append(indent()).append("}.").append(System.lineSeparator());
 
 		if (aNeedsNewScope) {
-			mJoinBuffer.append("}.\n");
+			mJoinBuffer.append("}.").append(System.lineSeparator());
 		}
 
 		ctxClose(theJoin);
@@ -192,29 +195,22 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		ctxOpen(theOp);
 
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
-		if (aLeft.endsWith("\n")) {
+		if (aLeft.endsWith(System.lineSeparator())) {
 			aLeft = aLeft.substring(0, aLeft.length() - 1);
 		}
 
 		String aRight = renderTupleExpr(theOp.getRightArg());
-		if (aRight.endsWith("\n")) {
+		if (aRight.endsWith(System.lineSeparator())) {
 			aRight = aRight.substring(0, aRight.length() - 1);
 		}
 
-		mJoinBuffer.append(indent())
-				.append("{\n")
-				.append(aLeft)
-				.append("\n")
-				.append(indent())
-				.append("}\n")
-				.append(indent())
-				.append("union\n")
-				.append(indent())
-				.append("{\n")
-				.append(aRight)
-				.append("\n")
-				.append(indent())
-				.append("}.\n");
+		mJoinBuffer.append(indent()).append("{").append(System.lineSeparator());
+		mJoinBuffer.append(aLeft).append(System.lineSeparator());
+		mJoinBuffer.append(indent()).append("}").append(System.lineSeparator());
+		mJoinBuffer.append(indent()).append("union").append(System.lineSeparator());
+		mJoinBuffer.append(indent()).append("{").append(System.lineSeparator());
+		mJoinBuffer.append(aRight).append(System.lineSeparator());
+		mJoinBuffer.append(indent()).append("}.").append(System.lineSeparator());
 
 		ctxClose(theOp);
 	}
@@ -227,13 +223,10 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n{")
-				.append(aLeft)
-				.append("}")
-				.append("\nminus\n")
-				.append("{")
-				.append(aRight)
-				.append("}.\n");
+		mJoinBuffer.append(System.lineSeparator());
+		mJoinBuffer.append("{").append(aLeft).append("}");
+		mJoinBuffer.append(System.lineSeparator()).append("minus").append(System.lineSeparator());
+		mJoinBuffer.append("{").append(aRight).append("}.").append(System.lineSeparator());
 	}
 
 	/**
@@ -244,13 +237,11 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		String aLeft = renderTupleExpr(theOp.getLeftArg());
 		String aRight = renderTupleExpr(theOp.getRightArg());
 
-		mJoinBuffer.append("\n")
-				.append(aLeft)
-				.append("}")
-				.append("\nintersection\n")
-				.append("{")
-				.append(aRight)
-				.append("}.\n");
+		mJoinBuffer.append(System.lineSeparator());
+		// is "{" missing?
+		mJoinBuffer.append(aLeft).append("}").append(System.lineSeparator());
+		mJoinBuffer.append("intersection").append(System.lineSeparator());
+		mJoinBuffer.append("{").append(aRight).append("}.").append(System.lineSeparator());
 	}
 
 	/**
@@ -290,7 +281,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		// mJoinBuffer.append("}.");
 		// }
 
-		mJoinBuffer.append("\n");
+		mJoinBuffer.append(System.lineSeparator());
 
 		ctxClose(theFilter);
 	}
@@ -322,7 +313,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	public void meet(ExtensionElem node) throws Exception {
 		mJoinBuffer.append(indent()).append("bind(");
 		node.visitChildren(this);
-		mJoinBuffer.append(" as ?").append(node.getName()).append(").\n");
+		mJoinBuffer.append(" as ?").append(node.getName()).append(").").append(System.lineSeparator());
 	}
 
 	@Override
@@ -376,8 +367,10 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
-		return renderValueExpr(thePattern.getSubjectVar()) + " " + renderValueExpr(thePattern.getPredicateVar()) + " "
-				+ "" + renderValueExpr(thePattern.getObjectVar()) + ".\n";
-
+		StringBuffer sb = new StringBuffer();
+		sb.append(renderValueExpr(thePattern.getSubjectVar())).append(" ");
+		sb.append(renderValueExpr(thePattern.getPredicateVar())).append(" ");
+		sb.append(renderValueExpr(thePattern.getObjectVar())).append(".").append(System.lineSeparator());
+		return sb.toString();
 	}
 }
