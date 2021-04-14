@@ -3,7 +3,6 @@ package org.eclipse.rdf4j.benchmark;
 import java.io.File;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -15,7 +14,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -45,8 +46,9 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryOrderBenchmark {
-
-	private File tempDir;
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
+	private File dataDir;
 
 	private Repository repository;
 
@@ -64,10 +66,8 @@ public class QueryOrderBenchmark {
 	@Setup
 	@Before
 	public void setup() throws Exception {
-		tempDir = File.createTempFile("nativestore", "");
-		tempDir.delete();
-		tempDir.mkdirs();
-		NativeStore sail = new NativeStore(tempDir, "spoc,posc");
+		dataDir = tempDir.newFolder();
+		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
 		sail.setIterationCacheSyncThreshold(syncThreshold);
 		repository = new SailRepository(sail);
 		initialize();
@@ -95,7 +95,6 @@ public class QueryOrderBenchmark {
 	public void tearDown() throws Exception {
 		conn.close();
 		repository.shutDown();
-		FileUtil.deleteDir(tempDir);
 	}
 
 	@Test

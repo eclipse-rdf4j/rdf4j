@@ -7,31 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 public class NativeStoreRepositoryTest extends RepositoryTest {
-
-	private File dataDir;
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new NativeStore(dataDir, "spoc"));
+		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
 	}
-
-	@Override
-	public void tearDown() throws Exception {
-		try {
-			super.tearDown();
-		} finally {
-			FileUtil.deleteDir(dataDir);
-		}
-	}
-
 }

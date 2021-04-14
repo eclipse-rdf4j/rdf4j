@@ -35,6 +35,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
+	private File dataDir;
 
 	/*---------*
 	 * Methods *
@@ -43,7 +44,8 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 	@Override
 	protected NotifyingSail createSail() throws SailException {
 		try {
-			NotifyingSail sail = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
+			dataDir = tempDir.newFolder();
+			NotifyingSail sail = new NativeStore(dataDir, "spoc,posc");
 			sail.init();
 			return sail;
 		} catch (IOException e) {
@@ -75,7 +77,7 @@ public class NativeStoreTest extends RDFNotifyingStoreTest {
 		con.close();
 		sail.shutDown();
 
-		File contextFile = new File(tempDir.getRoot(), "/nativestore/contexts.dat");
+		File contextFile = new File(dataDir, "/contexts.dat");
 		Files.delete(contextFile);
 
 		sail.init();
