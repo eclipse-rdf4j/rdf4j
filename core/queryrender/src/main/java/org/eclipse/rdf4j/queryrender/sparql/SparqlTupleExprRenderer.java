@@ -10,15 +10,18 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -308,8 +311,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Extension node)
-			throws Exception {
+	public void meet(Extension node) throws Exception {
 		node.visitChildren(this);
 	}
 
@@ -317,28 +319,60 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(ExtensionElem node)
-			throws Exception {
+	public void meet(ExtensionElem node) throws Exception {
 		mJoinBuffer.append(indent()).append("bind(");
 		node.visitChildren(this);
 		mJoinBuffer.append(" as ?").append(node.getName()).append(").\n");
 	}
 
-	/**
-	 * @inheritDoc
-	 */
 	@Override
-	public void meet(ValueConstant node)
-			throws Exception {
-		mJoinBuffer.append(node.getValue().stringValue());
+	public void meet(FunctionCall node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Str node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(ArbitraryLengthPath node) throws Exception {
+		if (!(node.getPathExpression() instanceof StatementPattern)) {
+			// unsupported ArbitraryLengthPath
+			return;
+		}
+
+		StatementPattern statement = (StatementPattern) node.getPathExpression();
+
+		String plusSymbol = "";
+		if (node.getMinLength() == 1) {
+			plusSymbol = "+";
+		}
+
+		mJoinBuffer.append(renderValueExpr(statement.getSubjectVar()))
+				.append(" ")
+				.append(renderValueExpr(statement.getPredicateVar()))
+				.append(plusSymbol)
+				.append(" ")
+				.append(renderValueExpr(statement.getObjectVar()))
+				.append(System.lineSeparator());
 	}
 
 	/**
 	 * @inheritDoc
 	 */
 	@Override
-	public void meet(Var node) {
-		mJoinBuffer.append("?").append(node.getName());
+	public void meet(ValueConstant node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	/**
+	 * @throws Exception
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(Var node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
 	}
 
 	String renderPattern(StatementPattern thePattern) throws Exception {
