@@ -41,8 +41,6 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(?b as ?b).").append(lineSeparator); // TODO: delete this line when sparql parser stop adding
-																// redundant ExtensionElems
 		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b).").append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -63,8 +61,6 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(?b as ?b).").append(lineSeparator); // TODO: delete this line when sparql parser stop adding
-																// redundant ExtensionElems
 		sb.append("  bind(?s as ?b).").append(lineSeparator);
 		sb.append("  ?s ?p ?o.").append(lineSeparator);
 		sb.append("}");
@@ -86,8 +82,6 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(?b1 as ?b1).").append(lineSeparator); // TODO: delete these lines when sparql parser stop
-		sb.append("  bind(?b2 as ?b2).").append(lineSeparator); // adding redundant ExtensionElems
 		sb.append("  bind(\"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b2).");
 		sb.append(lineSeparator);
 		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
@@ -111,8 +105,6 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(?b2 as ?b2).").append(lineSeparator); // TODO: delete this line when sparql parser stop adding
-																// redundant ExtensionElems
 		sb.append("  bind(<http://www.example.org/MyFunction>");
 		sb.append("(\"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>, ?b1) as ?b2).");
 		sb.append(lineSeparator);
@@ -137,8 +129,6 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(?b2 as ?b2).").append(lineSeparator); // TODO: delete this line when sparql parser stop adding
-																// redundant ExtensionElems
 		sb.append("  bind(<http://www.w3.org/2005/xpath-functions#concat>");
 		sb.append("(\"\"\"numberStr: \"\"\"^^<http://www.w3.org/2001/XMLSchema#string>,  str(?b1)) as ?b2).");
 		sb.append(lineSeparator);
