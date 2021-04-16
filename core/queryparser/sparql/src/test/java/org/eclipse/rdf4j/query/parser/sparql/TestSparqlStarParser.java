@@ -119,10 +119,7 @@ public class TestSparqlStarParser {
 	 * Projection
 	 *    ProjectionElemList
 	 *      ProjectionElem "ref"
-	 *    Extension
-	 *       ExtensionElem (ref)
-	 *          Var (name=ref)
-	 *       BindingSetAssignment ([[ref=<<urn:A urn:B "1"^^<http://www.w3.org/2001/XMLSchema#integer>>>]])
+	 *      BindingSetAssignment ([[ref=<<urn:A urn:B "1"^^<http://www.w3.org/2001/XMLSchema#integer>>>]])
 	 * @throws Exception
 	 */
 	@Test
@@ -135,18 +132,8 @@ public class TestSparqlStarParser {
 		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
 		Projection proj = (Projection) q.getTupleExpr();
 
-		assertTrue("expect extension", proj.getArg() instanceof Extension);
-		Extension ext = (Extension) proj.getArg();
-
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
-		ExtensionElem elem = ext.getElements().get(0);
-
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
-		assertEquals("names should match", elem.getName(), ((Var) elem.getExpr()).getName());
-
-		assertTrue("expect BindingSetAssignment as arg", ext.getArg() instanceof BindingSetAssignment);
-		BindingSetAssignment values = (BindingSetAssignment) ext.getArg();
+		assertTrue("expect BindingSetAssignment as arg", proj.getArg() instanceof BindingSetAssignment);
+		BindingSetAssignment values = (BindingSetAssignment) proj.getArg();
 		boolean oneValue[] = new boolean[] { false };
 		values.getBindingSets().forEach(bs -> {
 			Value v = bs.getValue("ref");
@@ -175,15 +162,12 @@ public class TestSparqlStarParser {
 	 *      ProjectionElem "ref"
 	 *   Extension
 	 *      ExtensionElem (ref)
-	 *         Var (name=ref)
-	 *      Extension
-	 *         ExtensionElem (ref)
-	 *            Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
-	 *         TripleRef
-	 *            Var (name=_const_6a63478_uri, value=urn:A, anonymous)
-	 *            Var (name=_const_6a63479_uri, value=urn:B, anonymous)
-	 *            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	 *            Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
+	 *         Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
+	 *      TripleRef
+	 *         Var (name=_const_6a63478_uri, value=urn:A, anonymous)
+	 *         Var (name=_const_6a63479_uri, value=urn:B, anonymous)
+	 *         Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	 *         Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
 	 * @throws Exception
 	 */
 	@Test
@@ -198,20 +182,11 @@ public class TestSparqlStarParser {
 
 		assertTrue("expect extension", proj.getArg() instanceof Extension);
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
+		assertTrue("single extension element", ext.getElements().size() == 1);
 		ExtensionElem elem = ext.getElements().get(0);
 
 		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
-		assertEquals("names should match", elem.getName(), ((Var) elem.getExpr()).getName());
-
-		assertTrue("expect extension", ext.getArg() instanceof Extension);
-		ext = (Extension) ext.getArg();
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
-		elem = ext.getElements().get(0);
-
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
+		assertTrue("expect Var in extension element", elem.getExpr() instanceof Var);
 		String anonVar = ((Var) elem.getExpr()).getName();
 
 		assertTrue("expect TripleRef", ext.getArg() instanceof TripleRef);
@@ -234,15 +209,12 @@ public class TestSparqlStarParser {
 	 *      ProjectionElem "ref"
 	 *   Extension
 	 *      ExtensionElem (ref)
-	 *         Var (name=ref)
-	 *      Extension
-	 *         ExtensionElem (ref)
-	 *            Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
-	 *         TripleRef
-	 *            Var (name=s)
-	 *            Var (name=p)
-	 *            Var (name=o)
-	 *            Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
+	 *         Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
+	 *      TripleRef
+	 *         Var (name=s)
+	 *         Var (name=p)
+	 *         Var (name=o)
+	 *         Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
 	 *
 	 * @throws Exception
 	 */
@@ -273,15 +245,7 @@ public class TestSparqlStarParser {
 
 		assertEquals("name should match", elem.getName(), "ref");
 		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
-		assertEquals("names should match", elem.getName(), ((Var) elem.getExpr()).getName());
 
-		assertTrue("expect extension", ext.getArg() instanceof Extension);
-		ext = (Extension) ext.getArg();
-		assertTrue("single extention elemrnt", ext.getElements().size() == 1);
-		elem = ext.getElements().get(0);
-
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
 		String anonVar = ((Var) elem.getExpr()).getName();
 
 		assertTrue("expect TripleRef", ext.getArg() instanceof TripleRef);
@@ -660,8 +624,6 @@ public class TestSparqlStarParser {
 	 *       ProjectionElem "ref"
 	 *       ProjectionElem "count"
 	 *    Extension
-	 *       ExtensionElem (ref)
-	 *          Var (name=ref)
 	 *       ExtensionElem (count)
 	 *          Count (Distinct)
 	 *             Var (name=p)
@@ -700,14 +662,9 @@ public class TestSparqlStarParser {
 
 		assertTrue("expect extension", proj.getArg() instanceof Extension);
 		Extension ext = (Extension) proj.getArg();
-		assertTrue("two extention elements", ext.getElements().size() == 2);
+		assertTrue("one extension element", ext.getElements().size() == 1);
 		ExtensionElem elem = ext.getElements().get(0);
 
-		assertEquals("name should match", elem.getName(), "ref");
-		assertTrue("expect Var in extention element", elem.getExpr() instanceof Var);
-		assertEquals("names should match", elem.getName(), ((Var) elem.getExpr()).getName());
-
-		elem = ext.getElements().get(1);
 		assertEquals("name should match", elem.getName(), "count");
 		assertTrue("expect Count in extention element", elem.getExpr() instanceof Count);
 		Count count = (Count) elem.getExpr();

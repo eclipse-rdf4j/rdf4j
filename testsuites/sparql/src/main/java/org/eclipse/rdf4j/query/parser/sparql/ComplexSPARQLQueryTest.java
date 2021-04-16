@@ -2586,6 +2586,24 @@ public abstract class ComplexSPARQLQueryTest {
 		}
 	}
 
+	@Test
+	public void testSelectBindOnly() throws Exception {
+		String query = "select ?b1 ?b2 ?b3\n"
+				+ "where {\n"
+				+ "  bind(1 as ?b1)\n"
+				+ "}";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertThat(result.size()).isEqualTo(1);
+		BindingSet solution = result.get(0);
+
+		assertThat(solution.getValue("b1")).isEqualTo(literal("1", XSD.INTEGER));
+		assertThat(solution.getValue("b2")).isNull();
+		assertThat(solution.getValue("b3")).isNull();
+
+	}
+
 	private boolean containsSolution(List<BindingSet> result, Binding... solution) {
 		final MapBindingSet bs = new MapBindingSet();
 		for (Binding b : solution) {

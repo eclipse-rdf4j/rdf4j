@@ -284,13 +284,10 @@ class SailSourceModel extends AbstractModel {
 				CloseableIteration<? extends Statement, SailException> stmts;
 				stmts = dataset().getStatements(subj, pred, obj, contexts);
 				try {
-
 					while (stmts.hasNext()) {
 						Statement st = stmts.next();
-
-						sink.deprecate(st);
+						sink().deprecate(st);
 					}
-
 				} finally {
 					stmts.close();
 				}
@@ -367,12 +364,10 @@ class SailSourceModel extends AbstractModel {
 			CloseableIteration<? extends Statement, SailException> stmts;
 			stmts = dataset().getStatements(subj, pred, obj, contexts);
 			try {
-
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
-					sink.deprecate(st);
+					sink().deprecate(st);
 				}
-
 			} finally {
 				stmts.close();
 			}
