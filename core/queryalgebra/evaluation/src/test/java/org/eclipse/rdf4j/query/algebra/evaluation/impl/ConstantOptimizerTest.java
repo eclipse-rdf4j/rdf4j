@@ -7,9 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -24,15 +25,16 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  */
-public class ConstantOptimizerTest {
+public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void testAndOptimization() throws RDF4JException {
@@ -57,7 +59,7 @@ public class ConstantOptimizerTest {
 		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
 
 		optimized.visit(finder);
-		assertFalse("optimized query should no longer contain && operator", finder.logicalAndfound);
+		assertThat(finder.logicalAndfound).isFalse();
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
@@ -92,7 +94,7 @@ public class ConstantOptimizerTest {
 		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
 
 		optimized.visit(finder);
-		assertFalse("optimized query should no longer contain function call", finder.functionCallFound);
+		assertThat(finder.functionCallFound).isFalse();
 
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
@@ -135,5 +137,10 @@ public class ConstantOptimizerTest {
 		new BindingAssigner().optimize(optRoot, null, bs);
 		new ConstantOptimizer(strategy).optimize(optRoot, null, bs);
 		return optRoot;
+	}
+
+	@Override
+	public ConstantOptimizer getOptimizer() {
+		return new ConstantOptimizer(mock(StrictEvaluationStrategy.class));
 	}
 }

@@ -873,4 +873,38 @@ public class QueryPlanRetrievalTest {
 
 	}
 
+	@Test
+	public void testArbitraryLengthPath() {
+
+		String expected = "Projection\n"
+				+ "╠══ProjectionElemList\n"
+				+ "║     ProjectionElem \"a\"\n"
+				+ "║     ProjectionElem \"b\"\n"
+				+ "║     ProjectionElem \"c\"\n"
+				+ "║     ProjectionElem \"d\"\n"
+				+ "╚══Join (JoinIterator)\n"
+				+ "   ├──StatementPattern (costEstimate=6, resultSizeEstimate=12)\n"
+				+ "   │     Var (name=a)\n"
+				+ "   │     Var (name=b)\n"
+				+ "   │     Var (name=c)\n"
+				+ "   └──ArbitraryLengthPath (costEstimate=5, resultSizeEstimate=24)\n"
+				+ "         Var (name=c)\n"
+				+ "         StatementPattern (resultSizeEstimate=0)\n"
+				+ "            Var (name=c)\n"
+				+ "            Var (name=_const_f804988f_uri, value=http://a, anonymous)\n"
+				+ "            Var (name=d)\n"
+				+ "         Var (name=d)\n";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c. ?c <http://a>* ?d}");
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+
+			assertThat(actual).isEqualTo(expected);
+		}
+		sailRepository.shutDown();
+
+	}
+
 }

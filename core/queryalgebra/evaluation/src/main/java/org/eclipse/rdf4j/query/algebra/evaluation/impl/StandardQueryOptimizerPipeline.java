@@ -56,7 +56,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new QueryJoinOptimizer(evaluationStatistics),
 				new IterativeEvaluationOptimizer(),
 				new FilterOptimizer(),
-				new OrderLimitOptimizer());
+				new OrderLimitOptimizer(),
+				new ParentReferenceCleaner());
 	}
 
 }

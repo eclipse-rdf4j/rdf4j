@@ -112,7 +112,8 @@ public class EvaluationStatistics {
 			// the length of the path is unknown but expected to be _at least_ twice that of a normal
 			// statement pattern.
 			cardinality = 2.0 * getCardinality(
-					new StatementPattern(node.getSubjectVar(), pathVar, node.getObjectVar(), node.getContextVar()));
+					new StatementPattern(node.getSubjectVar().clone(), pathVar, node.getObjectVar().clone(),
+							node.getContextVar() != null ? node.getContextVar().clone() : null));
 		}
 
 		@Override
