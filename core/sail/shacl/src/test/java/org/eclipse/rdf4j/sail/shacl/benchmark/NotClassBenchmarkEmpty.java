@@ -67,6 +67,7 @@ public class NotClassBenchmarkEmpty {
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		allStatements = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
 			IRI person = vf.createIRI("http://example.com/" + i + "_" + j);

@@ -408,7 +408,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
 				previousStateConnection, addedStatements, removedStatements, stats,
-				this::getRdfsSubClassOfReasoner, transactionSettings);
+				this::getRdfsSubClassOfReasoner, transactionSettings, sail.experimentalSparqlValidation);
 	}
 
 	private ValidationReport performValidation(List<Shape> shapes, boolean validateEntireBaseSail,
@@ -792,7 +792,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
 						new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner),
 						previousStateSerializableConnection, addedStatements, removedStatements, stats,
-						this::getRdfsSubClassOfReasoner, transactionSettings)) {
+						this::getRdfsSubClassOfReasoner, transactionSettings, sail.experimentalSparqlValidation)) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
 					// actually force a transaction to start

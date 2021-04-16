@@ -1065,6 +1065,8 @@ abstract public class AbstractShaclTest {
 		shaclSail.setDashDataShapes(true);
 		shaclSail.setPerformanceLogging(false);
 
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
+
 		repository.init();
 
 		return repository;

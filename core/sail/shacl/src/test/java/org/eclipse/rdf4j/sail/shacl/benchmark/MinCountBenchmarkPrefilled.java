@@ -66,6 +66,7 @@ public class MinCountBenchmarkPrefilled {
 	public void setUp() throws Exception {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		if (shaclRepo != null) {
 			shaclRepo.shutDown();
