@@ -24,7 +24,7 @@ public class NativeStoreInferencingTest extends InferencingTest {
 	@Override
 	protected Sail createSail() {
 		try {
-			NotifyingSail sailStack = new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
+			NotifyingSail sailStack = new NativeStore(tempDir.newFolder(), "spoc,posc");
 			sailStack = new SchemaCachingRDFSInferencer(sailStack);
 			return sailStack;
 		} catch (IOException e) {

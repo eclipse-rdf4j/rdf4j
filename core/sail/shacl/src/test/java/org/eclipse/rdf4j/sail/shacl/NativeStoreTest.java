@@ -8,38 +8,38 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.StringReader;
 
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public class NativeStoreTest {
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	@Test
 	public void testEmpty() throws IOException {
 
-		File file = Files.newTemporaryFolder();
+		File file = tempDir.newFolder();
 
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new NativeStore(file)));
 		shaclSail.init();
 
 		shaclSail.shutDown();
-
-		delete(file);
 	}
 
 	@Test(expected = ShaclSailValidationException.class)
 	public void testPersistedShapes() throws Throwable {
 
-		File file = Files.newTemporaryFolder();
+		File file = tempDir.newFolder();
 
 		SailRepository shaclSail = new SailRepository(new ShaclSail(new NativeStore(file)));
 		shaclSail.init();
@@ -73,7 +73,6 @@ public class NativeStoreTest {
 		finally {
 			shaclSail.shutDown();
 		}
-		delete(file);
 	}
 
 	private void addShapes(SailRepository shaclSail) throws IOException {
@@ -96,16 +95,4 @@ public class NativeStoreTest {
 
 		}
 	}
-
-	void delete(File f) throws IOException {
-		if (f.isDirectory()) {
-			for (File c : f.listFiles()) {
-				delete(c);
-			}
-		}
-		if (!f.delete()) {
-			throw new FileNotFoundException("Failed to delete file: " + f);
-		}
-	}
-
 }

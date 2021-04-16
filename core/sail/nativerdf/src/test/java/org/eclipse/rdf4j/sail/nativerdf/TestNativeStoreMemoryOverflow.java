@@ -9,12 +9,10 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import static org.junit.Assert.assertEquals;
 
-import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Statement;
@@ -25,7 +23,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
@@ -41,7 +41,8 @@ public class TestNativeStoreMemoryOverflow {
 		return IsolationLevels.values();
 	}
 
-	private File dataDir;
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	private Repository testRepository;
 
@@ -70,19 +71,14 @@ public class TestNativeStoreMemoryOverflow {
 	}
 
 	private Repository createRepository() throws IOException {
-		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new NativeStore(dataDir, "spoc"));
+		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
 	}
 
 	@After
 	public void tearDown() throws Exception {
-		try {
-			testCon2.close();
-			testCon.close();
-			testRepository.shutDown();
-		} finally {
-			FileUtil.deleteDir(dataDir);
-		}
+		testCon2.close();
+		testCon.close();
+		testRepository.shutDown();
 	}
 
 	@Test
