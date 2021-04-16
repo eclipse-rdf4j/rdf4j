@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -70,6 +71,8 @@ public class TurtleParser extends AbstractRDFParser {
 	private int lineNumber = 1;
 
 	private final StringBuilder parsingBuilder = new StringBuilder();
+
+	private Statement lastStatement;
 
 	/*--------------*
 	 * Constructors *
@@ -366,6 +369,9 @@ public class TurtleParser extends AbstractRDFParser {
 	protected void parseObjectList() throws IOException, RDFParseException, RDFHandlerException {
 		parseObject();
 
+		if (skipWSC() == '{') {
+			parseAnnotation();
+		}
 		while (skipWSC() == ',') {
 			readCodePoint();
 			skipWSC();
@@ -1099,9 +1105,9 @@ public class TurtleParser extends AbstractRDFParser {
 
 	protected void reportStatement(Resource subj, IRI pred, Value obj) throws RDFParseException, RDFHandlerException {
 		if (subj != null && pred != null && obj != null) {
-			Statement st = createStatement(subj, pred, obj);
+			lastStatement = createStatement(subj, pred, obj);
 			if (rdfHandler != null) {
-				rdfHandler.handleStatement(st);
+				rdfHandler.handleStatement(lastStatement);
 			}
 		}
 	}
@@ -1379,4 +1385,15 @@ public class TurtleParser extends AbstractRDFParser {
 
 		return null;
 	}
+
+	protected void parseAnnotation() throws IOException {
+		verifyCharacterOrFail(readCodePoint(), "{");
+		verifyCharacterOrFail(readCodePoint(), "|");
+		skipWSC();
+		subject = Values.triple(lastStatement);
+		parsePredicateObjectList();
+		verifyCharacterOrFail(readCodePoint(), "|");
+		verifyCharacterOrFail(readCodePoint(), "}");
+	}
+
 }
