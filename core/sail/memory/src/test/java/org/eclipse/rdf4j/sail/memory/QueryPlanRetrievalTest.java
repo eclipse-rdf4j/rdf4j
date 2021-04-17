@@ -483,52 +483,50 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareGraphQuery(CONSTRUCT_QUERY);
 
 			String actual = query.explain(Explanation.Level.Executed).toString();
-			String expected = "Reduced (resultSizeActual=3)\n" +
-					"   MultiProjection (resultSizeActual=4)\n" +
-					"      ProjectionElemList\n" +
-					"         ProjectionElem \"a\" AS \"subject\"\n" +
-					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
-					"         ProjectionElem \"c\" AS \"object\"\n" +
-					"      ProjectionElemList\n" +
-					"         ProjectionElem \"a\" AS \"subject\"\n" +
-					"         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n" +
-					"         ProjectionElem \"d\" AS \"object\"\n" +
-					"      Extension (resultSizeActual=2)\n" +
-					"      ╠══ExtensionElem (_const_f5e5585a_uri)\n" +
-					"      ║     ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n" +
-					"      ╚══LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"         ├──Join (JoinIterator) (resultSizeActual=2)\n" +
-					"         │  ╠══StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n" +
-					"         │  ║     Var (name=a)\n" +
-					"         │  ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"         │  ║     Var (name=d)\n" +
-					"         │  ╚══Filter (resultSizeActual=2)\n" +
-					"         │     ├──Compare (!=)\n" +
-					"         │     │     Var (name=c)\n" +
-					"         │     │     Var (name=d)\n" +
-					"         │     └──Join (HashJoinIteration) (resultSizeActual=6)\n" +
-					"         │        ╠══Filter (resultSizeActual=6)\n" +
-					"         │        ║  ├──Compare (!=)\n" +
-					"         │        ║  │     Var (name=c)\n" +
-					"         │        ║  │     ValueConstant (value=\"<\")\n" +
-					"         │        ║  └──StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n"
-					+
-					"         │        ║        Var (name=a)\n" +
-					"         │        ║        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
-					+
-					"         │        ║        Var (name=c)\n" +
-					"         │        ╚══LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
-					+
-					"         │           ├──SingletonSet (resultSizeActual=4)\n" +
-					"         │           └──StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n" +
-					"         │                 Var (name=d)\n" +
-					"         │                 Var (name=e)\n" +
-					"         │                 Var (name=f)\n" +
-					"         └──StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n" +
-					"               Var (name=d)\n" +
-					"               Var (name=e)\n" +
-					"               Var (name=f)\n";
+
+			String expected = "Reduced (resultSizeActual=3)\n"
+					+ "   MultiProjection (resultSizeActual=4)\n"
+					+ "      ProjectionElemList\n"
+					+ "         ProjectionElem \"a\" AS \"subject\"\n"
+					+ "         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n"
+					+ "         ProjectionElem \"c\" AS \"object\"\n"
+					+ "      ProjectionElemList\n"
+					+ "         ProjectionElem \"a\" AS \"subject\"\n"
+					+ "         ProjectionElem \"_const_f5e5585a_uri\" AS \"predicate\"\n"
+					+ "         ProjectionElem \"d\" AS \"object\"\n"
+					+ "      Extension (resultSizeActual=2)\n"
+					+ "      ╠══LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n"
+					+ "      ║  ├──Join (JoinIterator) (resultSizeActual=2)\n"
+					+ "      ║  │  ╠══StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=4)\n"
+					+ "      ║  │  ║     Var (name=a)\n"
+					+ "      ║  │  ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "      ║  │  ║     Var (name=d)\n"
+					+ "      ║  │  ╚══Filter (resultSizeActual=2)\n"
+					+ "      ║  │     ├──Compare (!=)\n"
+					+ "      ║  │     │     Var (name=c)\n"
+					+ "      ║  │     │     Var (name=d)\n"
+					+ "      ║  │     └──Join (HashJoinIteration) (resultSizeActual=6)\n"
+					+ "      ║  │        ╠══Filter (resultSizeActual=6)\n"
+					+ "      ║  │        ║  ├──Compare (!=)\n"
+					+ "      ║  │        ║  │     Var (name=c)\n"
+					+ "      ║  │        ║  │     ValueConstant (value=\"<\")\n"
+					+ "      ║  │        ║  └──StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=6)\n"
+					+ "      ║  │        ║        Var (name=a)\n"
+					+ "      ║  │        ║        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					+ "      ║  │        ║        Var (name=c)\n"
+					+ "      ║  │        ╚══LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=4)\n"
+					+ "      ║  │           ├──SingletonSet (resultSizeActual=4)\n"
+					+ "      ║  │           └──StatementPattern (resultSizeEstimate=12, resultSizeActual=48)\n"
+					+ "      ║  │                 Var (name=d)\n"
+					+ "      ║  │                 Var (name=e)\n"
+					+ "      ║  │                 Var (name=f)\n"
+					+ "      ║  └──StatementPattern (resultSizeEstimate=12, resultSizeActual=2)\n"
+					+ "      ║        Var (name=d)\n"
+					+ "      ║        Var (name=e)\n"
+					+ "      ║        Var (name=f)\n"
+					+ "      ╚══ExtensionElem (_const_f5e5585a_uri)\n"
+					+ "            ValueConstant (value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type)\n";
+
 			Assert.assertEquals(expected, actual);
 
 		}
