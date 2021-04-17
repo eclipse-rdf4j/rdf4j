@@ -10,16 +10,34 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -322,7 +340,98 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	@Override
+	public void meet(And node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Or node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Compare node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Bound node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(If theOp) throws Exception {
+		mJoinBuffer.append("if(");
+		theOp.getCondition().visit(this);
+		mJoinBuffer.append(", ");
+		theOp.getResult().visit(this);
+		mJoinBuffer.append(", ");
+		theOp.getAlternative().visit(this);
+		mJoinBuffer.append(")");
+	}
+
+	@Override
+	public void meet(In node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	// @Override
+	// public void meet(Coalesce node) throws Exception {
+	// mJoinBuffer.append(renderValueExpr(node));
+	// }
+
+	@Override
+	public void meet(SameTerm node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IsURI node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IsBNode node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IsLiteral node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IsNumeric node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Datatype node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(IRIFunction node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
 	public void meet(Str node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Regex node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(Lang node) throws Exception {
+		mJoinBuffer.append(renderValueExpr(node));
+	}
+
+	@Override
+	public void meet(LangMatches node) throws Exception {
 		mJoinBuffer.append(renderValueExpr(node));
 	}
 
@@ -340,13 +449,9 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			plusSymbol = "+";
 		}
 
-		mJoinBuffer.append(renderValueExpr(statement.getSubjectVar()))
-				.append(" ")
-				.append(renderValueExpr(statement.getPredicateVar()))
-				.append(plusSymbol)
-				.append(" ")
-				.append(renderValueExpr(statement.getObjectVar()))
-				.append(System.lineSeparator());
+		mJoinBuffer.append(renderValueExpr(statement.getSubjectVar())).append(" ");
+		mJoinBuffer.append(renderValueExpr(statement.getPredicateVar())).append(plusSymbol).append(" ");
+		mJoinBuffer.append(renderValueExpr(statement.getObjectVar())).append(".").append(System.lineSeparator());
 	}
 
 	/**
