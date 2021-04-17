@@ -178,12 +178,21 @@ public class EffectiveTarget {
 					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
+			List<StatementMatcher> statementMatchersRemoval = optional != null
+					? optional.getStatementMatcher().collect(Collectors.toCollection(ArrayList::new))
+					: new ArrayList<>();
+
+			if (chain.getFirst().target instanceof RSXTargetShape) {
+				statementMatchersRemoval.addAll(chain.getFirst().getStatementMatcher().collect(Collectors.toList()));
+				includeTargetsAffectedByRemoval = true;
+			}
+
 			TargetChainRetriever targetChainRetriever;
-			if (includeTargetsAffectedByRemoval && optional != null) {
+			if (includeTargetsAffectedByRemoval) {
 				targetChainRetriever = new TargetChainRetriever(
 						connectionsGroup,
 						statementMatchers,
-						optional.getStatementMatcher().collect(Collectors.toList()),
+						statementMatchersRemoval,
 						query,
 						getVars(),
 						scope

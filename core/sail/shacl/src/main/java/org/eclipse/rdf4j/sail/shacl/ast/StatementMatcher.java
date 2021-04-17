@@ -7,8 +7,10 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -42,6 +44,72 @@ public class StatementMatcher {
 		this.predicateValue = predicate == null ? null : (IRI) predicate.value;
 		this.objectName = object == null ? null : object.name;
 		this.objectValue = object == null ? null : object.value;
+	}
+
+	public static List<StatementMatcher> reduce(List<StatementMatcher> statementMatchers) {
+		List<StatementMatcher> wildcardMatchers = statementMatchers.stream()
+				.filter(s -> s.subjectIsWildcard() || s.predicateIsWildcard() || s.objectIsWildcard())
+				.collect(Collectors.toList());
+
+		if (wildcardMatchers.isEmpty()) {
+			return statementMatchers;
+		}
+
+		return statementMatchers.stream().filter(s -> {
+			for (StatementMatcher statementMatcher : wildcardMatchers) {
+				if (statementMatcher != s && statementMatcher.covers(s)) {
+					return false;
+				}
+			}
+
+			return true;
+		}).collect(Collectors.toList());
+
+	}
+
+	private boolean covers(StatementMatcher s) {
+
+		if (subjectIsWildcard()) {
+			if (s.subjectName != null) {
+				return false;
+			}
+		} else {
+			if (!Objects.equals(subjectName, s.subjectName)) {
+				return false;
+			}
+			if (!Objects.equals(subjectValue, s.subjectValue)) {
+				return false;
+			}
+		}
+
+		if (predicateIsWildcard()) {
+			if (s.predicateName != null) {
+				return false;
+			}
+		} else {
+			if (!Objects.equals(predicateName, s.predicateName)) {
+				return false;
+			}
+			if (!Objects.equals(predicateValue, s.predicateValue)) {
+				return false;
+			}
+		}
+
+		if (objectIsWildcard()) {
+			if (s.objectName != null) {
+				return false;
+			}
+		} else {
+			if (!Objects.equals(objectName, s.objectName)) {
+				return false;
+			}
+			if (!Objects.equals(objectValue, s.objectValue)) {
+				return false;
+			}
+		}
+
+		return true;
+
 	}
 
 	public String getSubjectName() {

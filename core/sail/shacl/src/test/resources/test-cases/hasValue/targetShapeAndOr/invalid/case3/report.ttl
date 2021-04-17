@@ -1,0 +1,28 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+
+[] a sh:ValidationReport;
+  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  sh:conforms false;
+  sh:result [ a sh:ValidationResult;
+      sh:focusNode "abc";
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1f3n6fqsvx11
+    ], [ a sh:ValidationResult;
+      sh:focusNode ex:Person;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1f3n6fqsvx11
+    ] .
+
+_:node1f3n6fqsvx11 a sh:PropertyShape;
+  sh:minCount 1;
+  sh:path ex:info2 .
