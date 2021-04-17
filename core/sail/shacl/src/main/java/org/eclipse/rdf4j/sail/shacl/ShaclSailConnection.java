@@ -439,15 +439,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							planNode.receiveLogger(validationExecutionLogger);
 						}
 
+						// Important to start measuring time before we call .iterator() since the initialisation of the
+						// iterator will already do a lot of work if there is for instance a Sort in the pipeline
+						// because Sort (among others) will consume its parent iterator and sort the results on
+						// initialization!
+						long before = 0;
+						if (sail.isPerformanceLogging()) {
+							before = System.currentTimeMillis();
+						}
+
 						try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode
 								.iterator()) {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								logger.info("Start execution of plan:\n{}\n", shapePlanNodeTuple.getShape().toString());
-							}
-
-							long before = 0;
-							if (sail.isPerformanceLogging()) {
-								before = System.currentTimeMillis();
 							}
 
 							ValidationResultIterator validationResults;
