@@ -76,6 +76,11 @@ public class GroupElem extends AbstractQueryModelNode {
 	}
 
 	@Override
+	public String getSignature() {
+		return super.getSignature() + " (" + name + ")";
+	}
+
+	@Override
 	public boolean equals(Object other) {
 		if (other instanceof GroupElem) {
 			GroupElem o = (GroupElem) other;
