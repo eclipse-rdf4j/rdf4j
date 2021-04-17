@@ -376,7 +376,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for 
+			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
 				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
@@ -990,18 +990,21 @@
 			</extension>
 		</extensions>
 	</build>
-	<repositories>
-		<repository>
-			<releases>
-				<enabled>false</enabled>
-			</releases>
-			<snapshots>
-				<enabled>true</enabled>
-			</snapshots>
-			<id>oss-sonatype-snapshots</id>
-			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
-		</repository>
-	</repositories>
+	<!--
+	See: GH-3005 and https://www.eclipse.org/lists/rdf4j-dev/msg01815.html
+		<repositories>
+			<repository>
+				<releases>
+					<enabled>false</enabled>
+				</releases>
+				<snapshots>
+					<enabled>true</enabled>
+				</snapshots>
+				<id>oss-sonatype-snapshots</id>
+				<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+			</repository>
+		</repositories>
+		-->
 	<scm>
 		<connection>scm:git:git://github.com:eclipse/rdf4j.git</connection>
 		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>
