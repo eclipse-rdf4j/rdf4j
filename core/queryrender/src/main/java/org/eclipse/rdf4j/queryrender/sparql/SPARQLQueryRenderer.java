@@ -56,7 +56,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 		if (theQuery instanceof ParsedTupleQuery) {
 			aQuery.append("select ");
 		} else if (theQuery instanceof ParsedBooleanQuery) {
-			aQuery.append("ask\n");
+			aQuery.append("ask").append(System.lineSeparator());
 		} else {
 			aQuery.append("construct ");
 		}
@@ -74,13 +74,13 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 			aFirst = true;
 
 			if (!(theQuery instanceof ParsedTupleQuery)) {
-				aQuery.append(" {\n");
+				aQuery.append(" {").append(System.lineSeparator());
 			}
 
 			for (ProjectionElemList aList : mRenderer.getProjection()) {
 				if (SparqlTupleExprRenderer.isSPOElemList(aList)) {
 					if (!aFirst) {
-						aQuery.append("\n");
+						aQuery.append(System.lineSeparator());
 					} else {
 						aFirst = false;
 					}
@@ -108,7 +108,8 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 						// &&
 						// !mRenderer.getExtensions().containsKey(aElem.getSourceName())))
 						// {
-						// aQuery.append(" as ").append(mRenderer.getExtensions().containsKey(aElem.getTargetName())
+						// aQuery.append(" as
+						// ").append(mRenderer.getExtensions().containsKey(aElem.getTargetName())
 						// ?
 						// mRenderer.renderValueExpr(mRenderer.getExtensions().get(aElem.getTargetName()))
 						// : aElem.getTargetName());
@@ -121,22 +122,22 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 				aQuery.append("}");
 			}
 
-			aQuery.append("\n");
+			aQuery.append(System.lineSeparator());
 		} else if (mRenderer.getProjection().isEmpty()) {
 			if (theQuery instanceof ParsedGraphQuery) {
-				aQuery.append("{ }\n");
+				aQuery.append("{ }").append(System.lineSeparator());
 			} else if (theQuery instanceof ParsedTupleQuery) {
-				aQuery.append("*\n");
+				aQuery.append("*").append(System.lineSeparator());
 			}
 		}
 
 		if (theQuery.getDataset() != null) {
 			for (IRI aURI : theQuery.getDataset().getDefaultGraphs()) {
-				aQuery.append("from <").append(aURI).append(">\n");
+				aQuery.append("from <").append(aURI).append(">").append(System.lineSeparator());
 			}
 
 			for (IRI aURI : theQuery.getDataset().getNamedGraphs()) {
-				aQuery.append("from named <").append(aURI).append(">\n");
+				aQuery.append("from named <").append(aURI).append(">").append(System.lineSeparator());
 			}
 		}
 
@@ -155,13 +156,13 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 				aQuery.append("where ");
 			}
 
-			aQuery.append("{\n");
+			aQuery.append("{").append(System.lineSeparator());
 			aQuery.append(aBody);
 			aQuery.append("}");
 		}
 
 		if (!mRenderer.getOrdering().isEmpty()) {
-			aQuery.append("\norder by ");
+			aQuery.append(System.lineSeparator()).append("order by ");
 
 			aFirst = true;
 			for (OrderElem aOrder : mRenderer.getOrdering()) {
@@ -182,11 +183,11 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 		}
 
 		if (mRenderer.getLimit() != -1 && !(theQuery instanceof ParsedBooleanQuery)) {
-			aQuery.append("\nlimit ").append(mRenderer.getLimit());
+			aQuery.append(System.lineSeparator()).append("limit ").append(mRenderer.getLimit());
 		}
 
 		if (mRenderer.getOffset() != -1) {
-			aQuery.append("\noffset ").append(mRenderer.getOffset());
+			aQuery.append(System.lineSeparator()).append("offset ").append(mRenderer.getOffset());
 		}
 
 		return aQuery.toString();
