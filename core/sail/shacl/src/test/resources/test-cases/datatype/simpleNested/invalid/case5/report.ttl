@@ -54,6 +54,12 @@ ex:PersonShape a sh:NodeShape;
           sh:property [ a sh:PropertyShape;
               sh:datatype xsd:integer;
               sh:path ex:age
+            ], [ a sh:PropertyShape;
+              sh:path ex:temp;
+              sh:property [ a sh:PropertyShape;
+                  sh:datatype xsd:integer;
+                  sh:path ex:age
+                ]
             ]
         ]
     ];

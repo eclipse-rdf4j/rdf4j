@@ -17,13 +17,19 @@
     ] .
 
 ex:PersonShape a sh:NodeShape;
-  sh:targetClass ex:Person;
   sh:node [ a sh:NodeShape;
       sh:property [ a sh:PropertyShape;
           sh:path ex:knows;
           sh:property [ a sh:PropertyShape;
-              sh:path ex:age;
-              sh:datatype xsd:integer
+              sh:datatype xsd:integer;
+              sh:path ex:age
+            ], [ a sh:PropertyShape;
+              sh:path ex:temp;
+              sh:property [ a sh:PropertyShape;
+                  sh:datatype xsd:integer;
+                  sh:path ex:age
+                ]
             ]
         ]
-    ] .
+    ];
+  sh:targetClass ex:Person .

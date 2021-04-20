@@ -1,6 +1,8 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -12,6 +14,8 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -28,9 +32,9 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 
 public class ClassConstraintComponent extends AbstractConstraintComponent {
 
-	Resource clazz;
+	IRI clazz;
 
-	public ClassConstraintComponent(Resource clazz) {
+	public ClassConstraintComponent(IRI clazz) {
 		this.clazz = clazz;
 	}
 
@@ -230,5 +234,59 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		return super.requiresEvaluation(connectionsGroup, scope)
 				|| connectionsGroup.getRemovedStatements().hasStatement(null, RDF.TYPE, clazz, true)
 				|| connectionsGroup.getAddedStatements().hasStatement(null, RDF.TYPE, clazz, true);
+	}
+
+	@Override
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+
+		String targetVarPrefix = "target_";
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
+		String query = effectiveTarget.getQuery(false);
+
+		StatementMatcher.Variable value;
+
+		if (scope == Scope.nodeShape) {
+
+			value = null;
+
+			StatementMatcher.Variable target = effectiveTarget.getTargetVar();
+
+			query += getFilter(connectionsGroup, target);
+
+		} else {
+			value = new StatementMatcher.Variable("value");
+
+			String pathQuery = getTargetChain().getPath()
+					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+							connectionsGroup.getRdfsSubClassOfReasoner()))
+					.orElseThrow(IllegalStateException::new);
+
+			query += pathQuery;
+			query += getFilter(connectionsGroup, value);
+		}
+
+		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+
+		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);
+
+	}
+
+	private String getFilter(ConnectionsGroup connectionsGroup, StatementMatcher.Variable target) {
+		Set<Resource> allClasses = connectionsGroup.getRdfsSubClassOfReasoner().backwardsChain(clazz);
+
+		String condition = allClasses.stream()
+				.map(c -> "EXISTS{?" + target.getName() + " a <" + c.stringValue() + ">}")
+				.reduce((a, b) -> a + " || " + b)
+				.orElseThrow(IllegalStateException::new);
+
+		return "\n FILTER(!(" + condition + "))";
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.SPARQL;
 	}
 }
