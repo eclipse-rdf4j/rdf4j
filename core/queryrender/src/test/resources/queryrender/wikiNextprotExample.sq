@@ -1,0 +1,16 @@
+SELECT * WHERE {
+  <http://www.wikidata.org/entity/Q426194> <http://www.wikidata.org/prop/direct/P352> ?uniprotid.
+  BIND(URI(CONCAT("http://purl.uniprot.org/uniprot/", ?uniprotid)) AS ?uniprot)
+  SERVICE <https://nextprot.metaphacts.net/bigdata/sparql> {
+    ?nextprot <http://www.w3.org/2004/02/skos/core#exactMatch> ?uniprot.
+    ?nextprot <http://nextprot.org/rdf#isoform> ?tmp1 . 
+    ?tmp1 <http://nextprot.org/rdf#expressionProfile> ?expression.
+    ?expression <http://www.w3.org/2000/01/rdf-schema#comment> ?comment.
+    ?expression <http://nextprot.org/rdf#term> ?tmp2 . 
+    ?tmp2 <http://www.w3.org/2000/01/rdf-schema#label> ?term.
+    ?expression <http://nextprot.org/rdf#evidence> ?evidence.
+    ?evidence <http://nextprot.org/rdf#expressionLevel> ?expressionLevel.
+    ?evidence <http://nextprot.org/rdf#quality> ?quality.
+    ?evidence <http://nextprot.org/rdf#evidenceCode> ?evidenceCode.
+  }
+}

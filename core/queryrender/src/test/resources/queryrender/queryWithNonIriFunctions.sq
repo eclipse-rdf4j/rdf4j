@@ -1,0 +1,16 @@
+SELECT * WHERE 
+{ 
+	BIND(STRLANG("test", LANG("en"@en)) AS ?s)
+	BIND(STRDT("123", xsd:integer) as ?d)
+	BIND(BNODE() as ?bnode)
+	BIND(UUID() as ?e)
+	BIND(STRUUID() as ?f)
+	BIND(RAND() as ?g)
+	BIND(NOW() as ?h)
+	BIND(tz("2011-01-10T14:45:13.815-05:00"^^xsd:dateTime) as ?tz)
+	BIND(MD5("abc") as ?md5)
+	BIND(SHA1("abc") as ?sha1)
+	BIND(SHA256("abc") as ?sha256)
+	BIND(SHA384("abc") as ?sha384)
+	BIND(SHA512("abc") as ?sha512)
+}
