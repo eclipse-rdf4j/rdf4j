@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.slf4j.Logger;
@@ -263,8 +264,8 @@ public class BindSelect implements PlanNode {
 
 		String query = BindSelect.this.query;
 
-		query = query.replace("#VALUES_INJECTION_POINT#", values.toString());
-		query = "select * where { " + values.toString() + query + "\n}";
+		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, values.toString());
+		query = "select * where { " + values + query + "\n}";
 
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)

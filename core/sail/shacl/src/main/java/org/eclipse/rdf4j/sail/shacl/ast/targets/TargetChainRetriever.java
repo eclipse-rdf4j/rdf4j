@@ -38,7 +38,7 @@ public class TargetChainRetriever implements PlanNode {
 	private static final Logger logger = LoggerFactory.getLogger(TargetChainRetriever.class);
 
 	private final ConnectionsGroup connectionsGroup;
-	private final List<StatementMatcher> statementPatterns;
+	private final List<StatementMatcher> statementMatchers;
 	private final List<StatementMatcher> removedStatementMatchers;
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
@@ -47,10 +47,11 @@ public class TargetChainRetriever implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
-			List<StatementMatcher> statementPatterns, List<StatementMatcher> removedStatementMatchers, String query,
+			List<StatementMatcher> statementMatchers, List<StatementMatcher> removedStatementMatchers, String query,
 			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
-		this.statementPatterns = statementPatterns;
+		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
+
 		this.scope = scope;
 
 		String sparqlProjection = vars.stream()
@@ -58,16 +59,17 @@ public class TargetChainRetriever implements PlanNode {
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.query = "select " + sparqlProjection + " where {" + query + "}";
+		this.query = "select " + sparqlProjection + " where {\n" + query + "\n}";
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.get();
 
-		this.removedStatementMatchers = removedStatementMatchers != null ? removedStatementMatchers
+		this.removedStatementMatchers = removedStatementMatchers != null
+				? StatementMatcher.reduce(removedStatementMatchers)
 				: Collections.emptyList();
-		assert this.removedStatementMatchers.size() <= 1;
+
 	}
 
 	@Override
@@ -75,7 +77,7 @@ public class TargetChainRetriever implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final Iterator<StatementMatcher> statementPatternIterator = statementPatterns.iterator();
+			final Iterator<StatementMatcher> statementPatternIterator = statementMatchers.iterator();
 			final Iterator<StatementMatcher> removedStatementIterator = removedStatementMatchers.iterator();
 
 			StatementMatcher currentStatementMatcher;
@@ -85,6 +87,9 @@ public class TargetChainRetriever implements PlanNode {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> results;
 
 			ParsedQuery parsedQuery;
+
+			// for de-duping bindings
+			MapBindingSet previousBindings;
 
 			public void calculateNextStatementMatcher() {
 				if (statements != null && statements.hasNext()) {
@@ -116,6 +121,8 @@ public class TargetChainRetriever implements PlanNode {
 						currentStatementMatcher = statementPatternIterator.next();
 						connection = connectionsGroup.getAddedStatements();
 					} else {
+						if (!connectionsGroup.getStats().hasRemoved())
+							break;
 						currentStatementMatcher = removedStatementIterator.next();
 						connection = connectionsGroup.getRemovedStatements();
 					}
@@ -125,6 +132,8 @@ public class TargetChainRetriever implements PlanNode {
 							currentStatementMatcher.getPredicateValue(),
 							currentStatementMatcher.getObjectValue(), false);
 				} while (!statements.hasNext());
+
+				previousBindings = null;
 
 			}
 
@@ -143,9 +152,9 @@ public class TargetChainRetriever implements PlanNode {
 
 						MapBindingSet bindings = new MapBindingSet();
 
-						if (statements == null || !statements.hasNext()) {
+						while (statements == null || !statements.hasNext()) {
 							calculateNextStatementMatcher();
-							if (statements == null || !statements.hasNext()) {
+							if (statements == null) {
 								return;
 							}
 						}
@@ -170,6 +179,12 @@ public class TargetChainRetriever implements PlanNode {
 								&& !currentStatementMatcher.objectIsWildcard()) {
 							bindings.addBinding(currentStatementMatcher.getObjectName(), next.getObject());
 						}
+
+						if (bindingsEquivalent(currentStatementMatcher, bindings, previousBindings)) {
+							continue;
+						}
+
+						previousBindings = bindings;
 
 						// TODO: Should really bulk this operation!
 
@@ -233,6 +248,36 @@ public class TargetChainRetriever implements PlanNode {
 		};
 	}
 
+	private static boolean bindingsEquivalent(StatementMatcher currentStatementMatcher, MapBindingSet bindings,
+			MapBindingSet previousBindings) {
+		if (currentStatementMatcher == null || bindings == null || previousBindings == null) {
+			return false;
+		}
+
+		boolean equivalent = true;
+
+		if (equivalent && currentStatementMatcher.getSubjectValue() == null
+				&& !currentStatementMatcher.subjectIsWildcard()) {
+			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getSubjectName()),
+					previousBindings.getBinding(currentStatementMatcher.getSubjectName()));
+		}
+
+		if (equivalent && currentStatementMatcher.getPredicateValue() == null
+				&& !currentStatementMatcher.predicateIsWildcard()) {
+			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getPredicateName()),
+					previousBindings.getBinding(currentStatementMatcher.getPredicateName()));
+		}
+
+		if (equivalent && currentStatementMatcher.getObjectValue() == null
+				&& !currentStatementMatcher.objectIsWildcard()) {
+			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getObjectName()),
+					previousBindings.getBinding(currentStatementMatcher.getObjectName()));
+		}
+
+		return equivalent;
+
+	}
+
 	@Override
 	public int depth() {
 		return 0;
@@ -272,7 +317,7 @@ public class TargetChainRetriever implements PlanNode {
 			return false;
 		}
 		TargetChainRetriever that = (TargetChainRetriever) o;
-		return statementPatterns.equals(that.statementPatterns) &&
+		return statementMatchers.equals(that.statementMatchers) &&
 				removedStatementMatchers.equals(that.removedStatementMatchers) &&
 				query.equals(that.query) &&
 				scope == that.scope;
@@ -280,13 +325,13 @@ public class TargetChainRetriever implements PlanNode {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(statementPatterns, removedStatementMatchers, query, scope);
+		return Objects.hash(statementMatchers, removedStatementMatchers, query, scope);
 	}
 
 	@Override
 	public String toString() {
 		return "TargetChainRetriever{" +
-				"statementPatterns=" + statementPatterns +
+				"statementPatterns=" + statementMatchers +
 				", removedStatementMatchers=" + removedStatementMatchers +
 				", query='" + query.replace("\n", "\t") + '\'' +
 				", scope=" + scope +
