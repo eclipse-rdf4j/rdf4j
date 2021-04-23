@@ -47,6 +47,10 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	private static final int LARGE_BLOCK = 10000;
 
+	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
+	// we have space for one more block. The limit is currently set at 32 MB
+	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
+
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
 	private LinkedHashModel memory;
@@ -243,9 +247,11 @@ abstract class MemoryOverflowModel extends AbstractModel {
 					if (blockSize > maxBlockSize) {
 						maxBlockSize = blockSize;
 					}
+
 					// Sync if either the estimated size of the next block is larger than remaining memory, or
 					// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
-					if (freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
+					if (freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING ||
+							freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
 						logger.debug("syncing at {} triples. max block size: {}", size, maxBlockSize);
 						overflowToDisk();
 					}
