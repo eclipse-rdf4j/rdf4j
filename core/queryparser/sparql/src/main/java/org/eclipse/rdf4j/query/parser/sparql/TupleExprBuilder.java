@@ -786,14 +786,15 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// Retrieve all StatementPatterns from the construct expression
 		List<StatementPattern> statementPatterns = StatementPatternCollector.process(constructExpr);
 
-		if (constructExpr instanceof Filter) {
+		SameTermCollector collector = new SameTermCollector();
+		constructExpr.visit(collector);
+		if (!collector.getCollectedSameTerms().isEmpty()) {
 			// sameTerm filters in construct (this can happen when there's a
-			// cyclic
-			// path defined, see SES-1685 and SES-2104)
+			// cyclic path defined, see SES-1685 and SES-2104)
 
 			// we remove the sameTerm filters by simply replacing all mapped
 			// variable occurrences
-			Set<SameTerm> sameTermConstraints = getSameTermConstraints((Filter) constructExpr);
+			Set<SameTerm> sameTermConstraints = collector.getCollectedSameTerms();
 			statementPatterns = replaceSameTermVars(statementPatterns, sameTermConstraints);
 		}
 
@@ -897,13 +898,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 		return statementPatterns;
-	}
-
-	private Set<SameTerm> getSameTermConstraints(Filter filter) throws VisitorException {
-		final SameTermCollector collector = new SameTermCollector();
-		filter.visit(collector);
-
-		return collector.getCollectedSameTerms();
 	}
 
 	@Override
