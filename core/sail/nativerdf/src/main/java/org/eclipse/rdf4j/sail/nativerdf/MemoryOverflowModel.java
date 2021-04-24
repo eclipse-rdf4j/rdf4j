@@ -47,6 +47,10 @@ abstract class MemoryOverflowModel extends AbstractModel {
 
 	private static final int LARGE_BLOCK = 10000;
 
+	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
+	// we have space for one more block. The limit is currently set at 32 MB
+	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
+
 	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 
 	private LinkedHashModel memory;
@@ -62,7 +66,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private long maxBlockSize = 0;
 
 	public MemoryOverflowModel() {
-		memory = new LinkedHashModel();
+		memory = new LinkedHashModel(LARGE_BLOCK);
 	}
 
 	public MemoryOverflowModel(Model model) {
@@ -76,7 +80,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	}
 
 	public MemoryOverflowModel(Set<Namespace> namespaces) {
-		memory = new LinkedHashModel(namespaces);
+		memory = new LinkedHashModel(namespaces, LARGE_BLOCK);
 	}
 
 	@Override
@@ -243,9 +247,11 @@ abstract class MemoryOverflowModel extends AbstractModel {
 					if (blockSize > maxBlockSize) {
 						maxBlockSize = blockSize;
 					}
+
 					// Sync if either the estimated size of the next block is larger than remaining memory, or
-					// if less than 10% of the heap is still free (this last condition to avoid GC overhead limit)
-					if (freeToAllocateMemory < Math.min(0.1 * maxMemory, maxBlockSize)) {
+					// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
+					if (freeToAllocateMemory < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING ||
+							freeToAllocateMemory < Math.min(0.15 * maxMemory, maxBlockSize)) {
 						logger.debug("syncing at {} triples. max block size: {}", size, maxBlockSize);
 						overflowToDisk();
 					}
@@ -282,7 +288,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 				}
 			};
 			disk.addAll(memory);
-			memory = new LinkedHashModel(memory.getNamespaces());
+			memory = new LinkedHashModel(memory.getNamespaces(), LARGE_BLOCK);
 			logger.debug("overflow synced to disk");
 		} catch (IOException | SailException e) {
 			String path = dataDir != null ? dataDir.getAbsolutePath() : "(unknown)";
