@@ -7,6 +7,7 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -283,47 +284,17 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		StatementMatcher.Variable someObject = new StatementMatcher.Variable(
-				UUID.randomUUID().toString().replace("-", ""));
+		List<SparqlFragment> sparqlFragments = constraintComponents.stream()
+				.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(object,
+						StatementMatcher.Variable.getRandomInstance(), rdfsSubClassOfReasoner, Scope.propertyShape))
+				.collect(Collectors.toList());
 
-		boolean isFilterCondition = constraintComponents.stream()
-				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
-						Scope.propertyShape))
-				.map(SparqlFragment::isFilterCondition)
-				.findFirst()
-				.orElse(false);
-
-		if (isFilterCondition) {
-			String sparql = constraintComponents.stream()
-					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
-							Scope.propertyShape))
-					.map(SparqlFragment::getFragment)
-					.collect(Collectors.joining(" ) && ( ", "( ", " )"));
-
-			return SparqlFragment.filterCondition(sparql);
-
+		if (SparqlFragment.isFilterCondition(sparqlFragments)) {
+			return SparqlFragment.and(sparqlFragments);
 		} else {
-			String sparql = constraintComponents.stream()
-					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
-							Scope.propertyShape))
-					.map(SparqlFragment::getFragment)
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
-			return SparqlFragment.bgp(sparql);
+			return SparqlFragment.join(sparqlFragments);
 		}
 
-	}
-
-	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		StatementMatcher.Variable someObject = new StatementMatcher.Variable(
-				UUID.randomUUID().toString().replace("-", ""));
-
-		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(object, someObject, rdfsSubClassOfReasoner,
-						Scope.propertyShape));
 	}
 
 }

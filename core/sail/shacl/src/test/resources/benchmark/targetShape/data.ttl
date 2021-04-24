@@ -1,0 +1,140 @@
+@base        <https://starwars.org/resource/>.
+@prefix voc: <https://starwars.org/vocabulary/>.
+@prefix so: <http://www.ontotext.com/semantic-object/>.
+
+<droid/R2-D2> a voc:Droid, voc:Character;
+  voc:name "R2-D2";
+  voc:primaryFunction "Repair droid";
+  voc:descr "Smart and funny (also giggles)";
+  voc:friends <human/LukeSkywalker>, <droid/C-3PO>.
+
+<human/LukeSkywalker> a voc:Human, voc:AllHuman, voc:Character;
+  voc:name "Luke Skywalker";
+  voc:descr "intern Jeddai";
+  voc:height 1.72;
+  voc:mass 59.0;
+  voc:numberSlavesPossessed 1;
+  voc:friends <droid/R2-D2>, <human/LeiaOrgana>.
+
+<human/LeiaOrgana> a voc:Human, voc:AllHuman, voc:Character;
+  voc:name "Leia Organa";
+  voc:descr "Fabulous princess";
+  voc:height 1.68;
+  voc:age 32;
+  voc:numberSlavesPossessed 0;
+  # voc:mass: You don't ask a woman about that
+  voc:friends <human/LukeSkywalker>, <slave/Slave1>.
+
+<human/DarthVader> a voc:Human, voc:AllHuman, voc:Character;
+  voc:name "Darth Vader";
+  voc:descr "evil overlord";
+  voc:height 2.10;
+  voc:mass 140.0 ;
+  voc:numberSlavesPossessed 1000.
+  # voc:friend: None
+
+<droid/C-3PO> a voc:Droid, voc:Character;
+  voc:name "C-3PO";
+  voc:primaryFunction "Translator droid";
+  #voc:descr None
+  voc:friend <droid/R2-D2> .
+
+<droid/AlternativeDroid> a voc:Droid, voc:DroidAlternative, voc:Character;
+  voc:name "Alty";
+  voc:descr "Droid with multiple self types".
+
+<droid/AlternativeDroidSingleType> a voc:DroidAlternative, voc:Character;
+  voc:name "Alty Single";
+  voc:descr "Droid with only the alternative type".
+
+<droid/ABC-123> a voc:Droid, voc:Character;
+  voc:name "ABC-123";
+  voc:descr "droid 123";
+  voc:bestfriend <slave/SlaveWithInvFriends>;
+  voc:friends <slave/Slave3>.
+
+<droidMI/MI-123> a voc:DroidWithMandatoryInfo, voc:Character;
+  voc:name "MI-123";
+  voc:descr "droid MI 123 missing mandatory info".
+
+<slave/Slave1> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "Slaves have no name";
+  voc:descr "very important";
+  voc:height 1.95;
+  voc:mass 79.0;
+  voc:age 33;
+  voc:clonedOn "2018-01-01"^^xsd:date;
+  voc:imprisonedOn "2018-01-02"^^xsd:date;
+  voc:enemies <human/DarthVader>, <human/LeiaOrgana>;
+  voc:bestfriend <human/LukeSkywalker>;
+  voc:friends <droid/R2-D2>, <human/LeiaOrgana>;
+  voc:mandatoryfriends <human/LeiaOrgana>, <droid/R2-D2>;
+  voc:friendsNoRangeCheck <droid/R2-D2>;
+  voc:anyHumanFriends <human/LeiaOrgana>, <slave/Slave2>, <droid/R2-D2>;
+  voc:info "This is slave1,  it inherits from AllHuman, Clone, and Character".
+
+<slave/Slave2> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "Slaves have no name2";
+  voc:descr "one that misses mandatory field mandatoryfriends" ;
+  voc:age 22;
+  voc:imprisonedOn "2018-01-01"^^xsd:date;
+  voc:bestfriend <human/DarthVader>.
+
+<slave/Slave3> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:imprisonedOn "2019-01-02"^^xsd:date;
+  voc:name "Slaves 3";
+  voc:friends <slave/SlaveWithInvFriends>.
+
+<slave/Slave4> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:imprisonedOn "2010-01-02"^^xsd:date;
+  voc:name "Slaves 4";
+  voc:bestfriend <cloneSoldier/cloneSoldierWithInvFriends>.
+
+<slave/SlaveWithInvFriends> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "Slave With Inverse Friends";
+  voc:imprisonedOn "2005-01-02"^^xsd:date;
+  voc:descr "has inverse friends inversed from friends property".
+
+<slave/SlaveWithExtraType> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character, voc:SomethingExtra;
+   voc:name "Slave With Inverse Friends";
+   voc:descr "has inverse friends inversed from friends property".
+
+<cloneSoldier/cloneSoldierWithInvFriends> a voc:CloneSoldier, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "CloneSoldier With Inverse Friends inversed from bestfriend".
+
+<cloneSlave/cloneSlave1> a voc:CloneSlave;
+  voc:name "CloneSlave who has inverse friendzonedinv from a CloneFriend".
+
+<cloneFriend/friendZonedCloneFriend> a voc:CloneFriend, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "CloneFriend who friendzoned a cloneslave";
+  voc:friendZoned <cloneSlave/cloneSlave1>.
+
+<cloneAlly/cloneAlly1> a voc:CloneAlly;
+  voc:name "CloneAlly1, who should have bestFriendInv CloneAlly2".
+
+<cloneAlly/cloneAlly2> a voc:CloneAlly;
+  voc:name "CloneAlly2, who has CloneAlly1 as bestfriend";
+  voc:enemy <cloneAlly/cloneAlly1>.
+
+###
+#data for testing INHERITING NAME with rdfProp
+###
+<slave/SlaveWithScooter1> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "Slave SlaveWithScooter1";
+  voc:scooter <scooter/Scooter1>.
+
+<scooter/Scooter1> a voc:Scooter, voc:Vehicle;
+    voc:name "This should NEVER be seen, as name property is overridden in the parent Vehicle class";
+    voc:nameInRdf "We should display this name".
+
+<slave/SlaveWithScooter2> a voc:Slave, voc:Clone, voc:AllHuman, voc:Character;
+  voc:name "Slave SlaveWithScooter2";
+  voc:scooter <scooter/Scooter2NoName>.
+
+<scooter/Scooter2NoName> a voc:Scooter, voc:Vehicle;
+    voc:name "This should NEVER be seen, as name property is overridden in the parent Vehicle class".
+
+###
+# END of data for testing INHERITING NAME with rdfProp
+###
+

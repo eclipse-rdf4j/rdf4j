@@ -2,9 +2,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -33,7 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 
-public class AndConstraintComponent extends AbstractConstraintComponent {
+public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	List<Shape> and;
 
 	public AndConstraintComponent(Resource id, RepositoryConnection connection,
@@ -139,107 +137,10 @@ public class AndConstraintComponent extends AbstractConstraintComponent {
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		boolean isFilterCondition = and.stream()
-				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope))
-				.map(SparqlFragment::isFilterCondition)
-				.findFirst()
-				.orElse(false);
-
-		if (scope == Scope.nodeShape) {
-
-			if (!isFilterCondition) {
-				String collect = and
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.map(s -> s.replaceAll("(?m)^", "\t"))
-						.reduce((a, b) -> a + " \n " + b)
-						.orElse("");
-				return SparqlFragment.bgp(collect);
-
-			} else {
-				String collect = and
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.collect(Collectors.joining(" ) && ( ", "( ",
-								" )"));
-				return SparqlFragment.filterCondition(collect);
-
-			}
-		} else if (scope == Scope.propertyShape) {
-
-			if (!isFilterCondition) {
-				throw new UnsupportedOperationException();
-			} else {
-
-				Path path = getTargetChain().getPath().get();
-
-				String collect = and
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.collect(Collectors.joining(" ) && ( ", "( ",
-								" )"));
-
-				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
-
-				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
-						+ "\n\tFILTER(!(" + collect + "))\n})";
-
-				String pathQuery2 = path.getTargetQueryFragment(subject,
-						StatementMatcher.Variable.getRandomInstance(), rdfsSubClassOfReasoner);
-
-				query = "{\n" +
-						VALUES_INJECTION_POINT + "\n " +
-						"" + query.replaceAll("(?m)^", "\t") + " \n" +
-						"} UNION {\n" +
-						"\t " + VALUES_INJECTION_POINT + "\n" +
-						"\t ?" + subject.getName() + " " + randomVariable() + " " + randomVariable() + ".\n" +
-						"\t FILTER(NOT EXISTS {\n " +
-						"" + pathQuery2.replaceAll("(?m)^", "\t")
-						+ " \n" +
-						"})\n" +
-						"}";
-
-				return SparqlFragment.bgp(query);
-			}
-		} else {
-			throw new UnsupportedOperationException("Unknown scope: " + scope);
-		}
+		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope, and,
+				getTargetChain(),
+				SparqlFragment::join, SparqlFragment::and);
 
 	}
 
-	private String randomVariable() {
-		return "?" + UUID.randomUUID().toString().replace("-", "");
-	}
-
-	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-
-		StatementMatcher subjectPattern = new StatementMatcher(
-				object,
-				null,
-				null
-		);
-
-		StatementMatcher objectPattern = new StatementMatcher(
-				null,
-				null,
-				object
-		);
-
-		Stream<StatementMatcher> statementPatternStream = and.stream()
-				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(object,
-						StatementMatcher.Variable.getRandomInstance(),
-						rdfsSubClassOfReasoner, Scope.nodeShape));
-
-		return Stream.concat(statementPatternStream, Stream.of(subjectPattern, objectPattern));
-
-	}
 }

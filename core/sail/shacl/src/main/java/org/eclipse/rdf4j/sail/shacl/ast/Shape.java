@@ -269,26 +269,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					properties.getIgnoredProperties()));
 		}
 
-		properties.getOr()
-				.stream()
-				.map(or -> new OrConstraintComponent(or, connection, cache, shaclSail))
-				.forEach(constraintComponent::add);
-
-		properties.getXone()
-				.stream()
-				.map(xone -> new XoneConstraintComponent(xone, connection, cache, shaclSail))
-				.forEach(constraintComponent::add);
-
-		properties.getAnd()
-				.stream()
-				.map(and -> new AndConstraintComponent(and, connection, cache, shaclSail))
-				.forEach(constraintComponent::add);
-
-		properties.getNot()
-				.stream()
-				.map(or -> new NotConstraintComponent(or, connection, cache, shaclSail))
-				.forEach(constraintComponent::add);
-
 		properties.getClazz()
 				.stream()
 				.map(ClassConstraintComponent::new)
@@ -342,6 +322,26 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					.map(hasValueIn -> new DashHasValueInConstraintComponent(hasValueIn, connection))
 					.forEach(constraintComponent::add);
 		}
+
+		properties.getOr()
+				.stream()
+				.map(or -> new OrConstraintComponent(or, connection, cache, shaclSail))
+				.forEach(constraintComponent::add);
+
+		properties.getXone()
+				.stream()
+				.map(xone -> new XoneConstraintComponent(xone, connection, cache, shaclSail))
+				.forEach(constraintComponent::add);
+
+		properties.getAnd()
+				.stream()
+				.map(and -> new AndConstraintComponent(and, connection, cache, shaclSail))
+				.forEach(constraintComponent::add);
+
+		properties.getNot()
+				.stream()
+				.map(or -> new NotConstraintComponent(or, connection, cache, shaclSail))
+				.forEach(constraintComponent::add);
 
 		return constraintComponent;
 	}
@@ -429,17 +429,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	 * @return
 	 */
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
-	}
-
-	/**
-	 * For rsx:targetShape
-	 *
-	 * @return
-	 */
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());

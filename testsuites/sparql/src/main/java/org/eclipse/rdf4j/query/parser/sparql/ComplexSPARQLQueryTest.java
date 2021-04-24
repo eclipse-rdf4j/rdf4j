@@ -21,7 +21,6 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -33,7 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -885,6 +884,7 @@ public abstract class ComplexSPARQLQueryTest {
 		conn.add(new StringReader("@prefix : <urn:> . :a :p :b . :b :p :a ."), "", RDFFormat.TURTLE);
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
+
 		try (TupleQueryResult result = query.evaluate();) {
 			assertNotNull(result);
 
@@ -2584,6 +2584,30 @@ public abstract class ComplexSPARQLQueryTest {
 			}
 			assertEquals(correctResult.length, resultNo);
 		}
+	}
+
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/3011
+	 */
+	@Test
+	public void testConstruct_CyclicPathWithJoin() {
+		IRI test = iri("urn:test"), a = iri("urn:a"), b = iri("urn:b"), c = iri("urn:c");
+		conn.add(test, RDF.TYPE, DCAT.CATALOG);
+
+		String query = "PREFIX dcat: <http://www.w3.org/ns/dcat#>\n"
+				+ "\n"
+				+ "CONSTRUCT {\n"
+				+ "<urn:a> <urn:b> ?x .\n"
+				+ "  ?x <urn:c> ?x .\n"
+				+ "}\n"
+				+ "WHERE {\n"
+				+ "  ?x a dcat:Catalog .\n"
+				+ "}";
+
+		Model result = QueryResults.asModel(conn.prepareGraphQuery(query).evaluate());
+
+		assertThat(result.contains(a, b, test)).isTrue();
+		assertThat(result.contains(test, c, test)).isTrue();
 	}
 
 	@Test

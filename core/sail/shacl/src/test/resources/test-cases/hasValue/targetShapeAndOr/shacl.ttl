@@ -13,8 +13,7 @@ ex:shape1
 	        sh:property [
         		sh:path ex:info ;
         		sh:and (
-        		        [sh:or ([sh:hasValue "blue"]
-        		        [sh:hasValue "fjwklejf"])]
+        		        [sh:or ( [sh:hasValue "blue"] [sh:hasValue "fjwklejf"] ) ]
         		        [ sh:hasValue "red"]
         		) ;
         	]

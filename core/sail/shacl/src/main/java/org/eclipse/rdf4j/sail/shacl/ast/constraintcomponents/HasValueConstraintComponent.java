@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -140,33 +140,45 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+
+		List<StatementMatcher> statementMatchers = Collections.emptyList();
 
 		if (getTargetChain().getPath().isPresent()) {
 			Path path = getTargetChain().getPath().get();
 
-			return path.getStatementMatcher(subject, object, rdfsSubClassOfReasoner);
+			statementMatchers = path
+					.getStatementMatcher(subject, new StatementMatcher.Variable(hasValue), rdfsSubClassOfReasoner)
+					.collect(Collectors.toList());
 		}
 
-		throw new IllegalStateException("Dunno what to do here!");
-	}
-
-	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
 
-			return SparqlFragment
-					.bgp("BIND(" + stringRepresentationOfValue(hasValue) + " as ?" + object.getName() + ")\n"
-							+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner));
+			if (hasValue.isIRI()) {
+				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n"
+						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner), statementMatchers);
+			}
+			if (hasValue.isLiteral()) {
+				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n"
+						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner), statementMatchers);
+			}
+
+			throw new UnsupportedOperationException(
+					"value was unsupported type: " + hasValue.getClass().getSimpleName());
 
 		} else {
-			return SparqlFragment
-					.filterCondition("?" + object.getName() + " = " + stringRepresentationOfValue(hasValue));
+			if (hasValue.isIRI()) {
+				return SparqlFragment.filterCondition("?" + object.getName() + " = <" + hasValue + ">",
+						statementMatchers);
+			} else if (hasValue.isLiteral()) {
+				return SparqlFragment.filterCondition("?" + object.getName() + " = " + hasValue, statementMatchers);
+			}
+			throw new UnsupportedOperationException(
+					"value was unsupported type: " + hasValue.getClass().getSimpleName());
+
 		}
 	}
 

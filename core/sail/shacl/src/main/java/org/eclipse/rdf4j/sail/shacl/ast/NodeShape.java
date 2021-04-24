@@ -7,6 +7,8 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -236,41 +238,16 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		boolean isFilterCondition = constraintComponents.stream()
-				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
+		List<SparqlFragment> sparqlFragments = constraintComponents.stream()
+				.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
 						Scope.nodeShape))
-				.map(SparqlFragment::isFilterCondition)
-				.findFirst()
-				.orElse(false);
+				.collect(Collectors.toList());
 
-		if (isFilterCondition) {
-			String sparql = constraintComponents.stream()
-					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-							Scope.nodeShape))
-					.map(SparqlFragment::getFragment)
-					.collect(Collectors.joining(" ) && ( ", "( ", " )"));
-
-			return SparqlFragment.filterCondition(sparql);
-
+		if (SparqlFragment.isFilterCondition(sparqlFragments)) {
+			return SparqlFragment.and(sparqlFragments);
 		} else {
-			String sparql = constraintComponents.stream()
-					.map(c -> c.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-							Scope.nodeShape))
-					.map(SparqlFragment::getFragment)
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
-			return SparqlFragment.bgp(sparql);
+			return SparqlFragment.join(sparqlFragments);
 		}
 	}
 
-	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-
-		return constraintComponents.stream()
-				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(subject, object,
-						rdfsSubClassOfReasoner, Scope.nodeShape));
-
-	}
 }

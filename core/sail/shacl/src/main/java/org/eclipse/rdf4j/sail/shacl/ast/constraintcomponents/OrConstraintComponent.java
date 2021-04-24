@@ -3,9 +3,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -36,7 +34,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 
-public class OrConstraintComponent extends AbstractConstraintComponent {
+public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 	List<Shape> or;
 
 	public OrConstraintComponent(Resource id, RepositoryConnection connection,
@@ -166,167 +164,14 @@ public class OrConstraintComponent extends AbstractConstraintComponent {
 		return or.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
 	}
 
-//	@Override
-//	public String buildSparqlValidNodes_rsx_targetShape(Var subject, Var object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-//		if (scope == Scope.propertyShape) {
-//			// within property shape
-//			String objectVariable = randomVariable();
-//			String pathQuery1 = getTargetChain().getPath().get().getTargetQueryFragment(subject, object, null);
-//
-//			String collect = or.stream()
-//				.map(l -> l.stream()
-//					.map(p -> p.buildSparqlValidNodes(objectVariable))
-//					.reduce((a, b) -> a + " && " + b))
-//				.filter(Optional::isPresent)
-//				.map(Optional::get)
-//				.collect(Collectors.joining(" ) || ( ", "( ",
-//					" )"));
-//
-//			String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
-//				+ "\n\tFILTER(!(" + collect + "))\n})";
-//
-//			String pathQuery2 = getPath().getQuery(targetVar, randomVariable(), null);
-//
-//			query = "{\n" + VALUES_INJECTION_POINT + "\n " + query.replaceAll("(?m)^", "\t")
-//				+ " \n} UNION {\n\t" + VALUES_INJECTION_POINT + "\n\t" + targetVar + " "
-//				+ randomVariable() + " "
-//				+ randomVariable() + ".\n\tFILTER(NOT EXISTS {\n " + pathQuery2.replaceAll("(?m)^", "\t")
-//				+ " \n})\n}";
-//
-//			return query;
-//		} else if (!childrenHasOwnPathRecursive()) {
-//
-//			return or.stream()
-//				.map(l -> l.stream()
-//					.map(p -> p.buildSparqlValidNodes(targetVar))
-//					.reduce((a, b) -> a + " && " + b))
-//				.filter(Optional::isPresent)
-//				.map(Optional::get)
-//				.collect(Collectors.joining(" ) || ( ", "( ",
-//					" )"));
-//		} else {
-//			// within node shape
-//			return or.stream()
-//				.map(l -> l.stream().map(p -> p.buildSparqlValidNodes(targetVar)).reduce((a, b) -> a + "\n" + b))
-//				.filter(Optional::isPresent)
-//				.map(Optional::get)
-//				.map(s -> s.replaceAll("(?m)^", "\t"))
-//				.collect(
-//					Collectors.joining("\n} UNION {\n" + VALUES_INJECTION_POINT + "\n",
-//						"{\n" + VALUES_INJECTION_POINT + "\n",
-//						"\n}"));
-//		}
-//	}
-
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 
-		boolean isFilterCondition = or.stream()
-				.map(o -> o.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, scope))
-				.map(SparqlFragment::isFilterCondition)
-				.findFirst()
-				.orElse(false);
-
-		if (scope == Scope.nodeShape) {
-
-			if (!isFilterCondition) {
-				String collect = or
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.map(s -> s.replaceAll("(?m)^", "\t"))
-						.collect(
-								Collectors.joining(
-										"\n} UNION {\n" + VALUES_INJECTION_POINT + "\n",
-										"{\n" + VALUES_INJECTION_POINT + "\n",
-										"\n}"));
-				return SparqlFragment.bgp(collect);
-
-			} else {
-				String collect = or
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.collect(Collectors.joining(" ) || ( ", "( ", " )"));
-				return SparqlFragment.filterCondition(collect);
-
-			}
-		} else if (scope == Scope.propertyShape) {
-
-			if (!isFilterCondition) {
-				throw new UnsupportedOperationException();
-			} else {
-
-				Path path = getTargetChain().getPath().get();
-
-				String collect = or
-						.stream()
-						.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object,
-								rdfsSubClassOfReasoner, scope))
-						.map(SparqlFragment::getFragment)
-						.collect(Collectors.joining(" ) || ( ", "( ",
-								" )"));
-
-				String pathQuery1 = path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
-
-				String query = pathQuery1 + "\n FILTER (! EXISTS {\n" + pathQuery1.replaceAll("(?m)^", "\t")
-						+ "\n\tFILTER(!(" + collect + "))\n})";
-
-				String pathQuery2 = path.getTargetQueryFragment(subject,
-						new StatementMatcher.Variable(UUID.randomUUID().toString().replace("-", "")),
-						rdfsSubClassOfReasoner);
-
-				query = "{\n" +
-						VALUES_INJECTION_POINT + "\n " +
-						"" + query.replaceAll("(?m)^", "\t") + " \n" +
-						"} UNION {\n" +
-						"\t " + VALUES_INJECTION_POINT + "\n" +
-						"\t ?" + subject.getName() + " " + randomVariable() + " " + randomVariable() + ".\n" +
-						"\t FILTER(NOT EXISTS {\n " +
-						"" + pathQuery2.replaceAll("(?m)^", "\t")
-						+ " \n" +
-						"})\n" +
-						"}";
-
-				return SparqlFragment.bgp(query);
-			}
-		} else {
-			throw new UnsupportedOperationException("Unknown scope: " + scope);
-		}
-
-	}
-
-	private String randomVariable() {
-		return "?" + UUID.randomUUID().toString().replace("-", "");
-	}
-
-	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-
-		StatementMatcher subjectPattern = new StatementMatcher(
-				object,
-				null,
-				null
-		);
-
-		StatementMatcher objectPattern = new StatementMatcher(
-				null,
-				null,
-				object
-		);
-
-		Stream<StatementMatcher> statementPatternStream = or.stream()
-				.flatMap(c -> c.getStatementMatchers_rsx_targetShape(object,
-						new StatementMatcher.Variable("someVarName"),
-						rdfsSubClassOfReasoner, Scope.nodeShape));
-
-		return Stream.concat(statementPatternStream, Stream.of(subjectPattern, objectPattern));
+		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope, or,
+				getTargetChain(),
+				SparqlFragment::union, SparqlFragment::or);
 
 	}
 

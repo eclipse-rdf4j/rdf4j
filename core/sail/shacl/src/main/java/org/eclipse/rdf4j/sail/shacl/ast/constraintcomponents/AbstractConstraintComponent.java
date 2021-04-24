@@ -1,6 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.stream.Stream;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
@@ -85,16 +85,14 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	@Override
-	public Stream<StatementMatcher> getStatementMatchers_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
-		throw new UnsupportedOperationException(this.getClass().getSimpleName());
-	}
-
-	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
+
+	static String randomSparqlVariable() {
+		return "?" + UUID.randomUUID().toString().replace("-", "");
+	}
+
 }
